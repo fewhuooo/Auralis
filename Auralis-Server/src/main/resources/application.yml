@@ -57,28 +57,20 @@ auralis:
     chat-thinking-enabled: ${AURALIS_AI_CHAT_THINKING_ENABLED:true}
     overview-thinking-enabled: ${AURALIS_AI_OVERVIEW_THINKING_ENABLED:false}
     encryption-key: ${AURALIS_AI_ENCRYPTION_KEY:}
-    default-provider: ${AURALIS_AI_DEFAULT_PROVIDER:DEEPSEEK}
-    defaults:
-      deepseek:
-        base-url: ${AURALIS_AI_DEEPSEEK_BASE_URL:https://api.deepseek.com}
-        chat-model: ${AURALIS_AI_DEEPSEEK_CHAT_MODEL:deepseek-chat}
-        embedding-model: ${AURALIS_AI_DEEPSEEK_EMBEDDING_MODEL:bge-m3}
-        api-key: ${DEEPSEEK_API_KEY:}
-      openai-compatible:
-        base-url: ${AURALIS_AI_OPENAI_BASE_URL:https://api.openai.com/v1}
-        chat-model: ${AURALIS_AI_OPENAI_CHAT_MODEL:gpt-4o-mini}
-        embedding-model: ${AURALIS_AI_OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
-        api-key: ${OPENAI_API_KEY:}
-      siliconflow:
-        base-url: ${AURALIS_AI_SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
-        chat-model: ${AURALIS_AI_SILICONFLOW_CHAT_MODEL:deepseek-ai/DeepSeek-V3}
-        embedding-model: ${AURALIS_AI_SILICONFLOW_EMBEDDING_MODEL:BAAI/bge-m3}
-        api-key: ${SILICONFLOW_API_KEY:}
+    generation:
+      base-url: ${AURALIS_AI_GENERATION_BASE_URL:}
+      model: ${AURALIS_AI_GENERATION_MODEL:}
+      api-key: ${AURALIS_AI_GENERATION_API_KEY:}
+      context-tokens: ${AURALIS_AI_GENERATION_CONTEXT_TOKENS:0}
+      max-output-tokens: ${AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS:0}
+    embedding:
+      base-url: ${AURALIS_AI_EMBEDDING_BASE_URL:}
+      model: ${AURALIS_AI_EMBEDDING_MODEL:}
+      api-key: ${AURALIS_AI_EMBEDDING_API_KEY:}
     provider-connect-timeout-millis: ${AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS:3000}
     request-timeout-millis: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:10000}
     overview-response-timeout-millis: ${AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS:120000}
     overview-task-timeout-millis: ${AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS:240000}
-    overview-max-retries: ${AURALIS_AI_OVERVIEW_MAX_RETRIES:3}
     overview-model-capacities: []
     # Zero disables each extra Overview cap; model capacity and usage quotas remain enforced.
     overview-limits:
@@ -88,26 +80,11 @@ auralis:
       max-output-tokens: ${AURALIS_AI_OVERVIEW_MAX_OUTPUT_TOKENS:0}
       max-response-bytes: ${AURALIS_AI_OVERVIEW_MAX_RESPONSE_BYTES:0}
       max-result-chars: ${AURALIS_AI_OVERVIEW_MAX_RESULT_CHARS:0}
-      max-checkpoint-chars: ${AURALIS_AI_OVERVIEW_MAX_CHECKPOINT_CHARS:0}
-      max-plan-chars: ${AURALIS_AI_OVERVIEW_MAX_PLAN_CHARS:0}
-      max-node-descriptor-chars: ${AURALIS_AI_OVERVIEW_MAX_NODE_DESCRIPTOR_CHARS:0}
-      max-chapters: ${AURALIS_AI_OVERVIEW_MAX_CHAPTERS:0}
-      max-sections: ${AURALIS_AI_OVERVIEW_MAX_SECTIONS:0}
-      max-prose-chars: ${AURALIS_AI_OVERVIEW_MAX_PROSE_CHARS:0}
-      max-guide-items: ${AURALIS_AI_OVERVIEW_MAX_GUIDE_ITEMS:0}
-      max-source-ids-per-section: ${AURALIS_AI_OVERVIEW_MAX_SOURCE_IDS_PER_SECTION:0}
-      max-provenance-sections: ${AURALIS_AI_OVERVIEW_MAX_PROVENANCE_SECTIONS:0}
-      max-provenance-refs-per-section: ${AURALIS_AI_OVERVIEW_MAX_PROVENANCE_REFS_PER_SECTION:0}
-      max-provenance-refs: ${AURALIS_AI_OVERVIEW_MAX_PROVENANCE_REFS:0}
-      max-provenance-locations: ${AURALIS_AI_OVERVIEW_MAX_PROVENANCE_LOCATIONS:0}
-      max-writer-nodes-per-plan: ${AURALIS_AI_OVERVIEW_MAX_WRITER_NODES_PER_PLAN:0}
       max-input-snapshot-chars: ${AURALIS_AI_OVERVIEW_MAX_INPUT_SNAPSHOT_CHARS:0}
       max-source-manifest-chars: ${AURALIS_AI_OVERVIEW_MAX_SOURCE_MANIFEST_CHARS:0}
       max-job-request-chars: ${AURALIS_AI_OVERVIEW_MAX_JOB_REQUEST_CHARS:0}
       max-sources: ${AURALIS_AI_OVERVIEW_MAX_SOURCES:0}
       max-title-chars: ${AURALIS_AI_OVERVIEW_MAX_TITLE_CHARS:0}
-      max-identity-chars: ${AURALIS_AI_OVERVIEW_MAX_IDENTITY_CHARS:0}
-      max-provenance-locations-per-ref: ${AURALIS_AI_OVERVIEW_MAX_PROVENANCE_LOCATIONS_PER_REF:0}
     max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}
     max-retrieved-chunks: ${AURALIS_AI_MAX_RETRIEVED_CHUNKS:8}
     ingestion-max-bytes: ${AURALIS_AI_INGESTION_MAX_BYTES:5242880}
@@ -123,9 +100,6 @@ auralis:
     ingestion-lease-millis: ${AURALIS_AI_INGESTION_LEASE_MILLIS:300000}
     ingestion-max-attempts: ${AURALIS_AI_INGESTION_MAX_ATTEMPTS:3}
     shadow-token-estimate-enabled: ${AURALIS_AI_SHADOW_TOKEN_ESTIMATE_ENABLED:true}
-    overview-input-token-estimator-mode: ${AURALIS_AI_OVERVIEW_INPUT_TOKEN_ESTIMATOR_MODE:legacy-bytes}
-    overview-output-recovery-enabled: ${AURALIS_AI_OVERVIEW_OUTPUT_RECOVERY_ENABLED:true}
-    overview-adaptive-generation-enabled: ${AURALIS_AI_OVERVIEW_ADAPTIVE_GENERATION_ENABLED:false}
     overview-cache-max-bytes: ${AURALIS_AI_OVERVIEW_CACHE_MAX_BYTES:268435456}
     overview-cache-max-generations: ${AURALIS_AI_OVERVIEW_CACHE_MAX_GENERATIONS:1000}
     limits:
@@ -149,8 +123,8 @@ auralis:
       raw-content-capture-directory: ${AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_DIR:/tmp/auralis-chat-diagnostics}
       max-model-calls: ${AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS:0}
       max-embedding-calls: ${AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS:0}
-      max-iterations: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:8}
-      max-tool-calls: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:12}
+      max-iterations: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:12}
+      max-tool-calls: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:20}
       max-tool-result-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES:65536}
       max-serialized-request-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_SERIALIZED_REQUEST_UTF8_BYTES:524288}
       attempt-deadline-seconds: ${AURALIS_AI_CHAT_AGENT_ATTEMPT_DEADLINE_SECONDS:300}

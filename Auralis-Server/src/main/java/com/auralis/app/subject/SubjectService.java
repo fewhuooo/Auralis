@@ -1,6 +1,7 @@
 package com.auralis.app.subject;
 
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.CoreResourceInsert;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
@@ -22,14 +23,17 @@ import java.util.UUID;
 public class SubjectService {
 
     private final SubjectRepository subjectRepository;
+    private final CoreResourceInsert resourceInsert;
     private final SubjectLockCoordinator subjectLockCoordinator;
     private final ApplicationEventPublisher eventPublisher;
 
     public SubjectService(
             SubjectRepository subjectRepository,
+            CoreResourceInsert resourceInsert,
             SubjectLockCoordinator subjectLockCoordinator,
             ApplicationEventPublisher eventPublisher) {
         this.subjectRepository = subjectRepository;
+        this.resourceInsert = resourceInsert;
         this.subjectLockCoordinator = subjectLockCoordinator;
         this.eventPublisher = eventPublisher;
     }
@@ -45,7 +49,7 @@ public class SubjectService {
         if (subjectRepository.existsByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(userId, name)) {
             throw new DomainException("MUTATION_REJECTED", "Subject name is already used");
         }
-        SubjectView result = view(subjectRepository.save(new SubjectEntity(
+        SubjectView result = view(resourceInsert.insert("subjects", new SubjectEntity(
                 subjectId, userId, name, command.description(), command.iconKey(),
                 defaultSortKey(command.sortKey()), false)));
         publishChange(userId, result, "CREATE");

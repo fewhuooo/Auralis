@@ -4,7 +4,6 @@ import com.auralis.app.shared.config.AuralisProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -25,8 +24,6 @@ public class OverviewJobWorker {
     private final ScheduledExecutorService heartbeatScheduler;
     private final UUID workerId = UUID.randomUUID();
     private final AtomicBoolean dispatching = new AtomicBoolean();
-    @Value("${auralis.ai.overview-adaptive-generation-enabled:false}")
-    private boolean adaptiveEnabled;
 
     public OverviewJobWorker(OverviewJobService service, OverviewJobRepository repository,
                              AuralisProperties properties,
@@ -46,7 +43,7 @@ public class OverviewJobWorker {
         } catch (RuntimeException failure) {
             LOGGER.warn("Overview job expiry scan failed safely: {}", failure.getClass().getSimpleName());
         }
-        if (!adaptiveEnabled || !dispatching.compareAndSet(false, true)) return;
+        if (!dispatching.compareAndSet(false, true)) return;
         long leaseMillis = properties.ai().limits().reservationLeaseMillis();
         OverviewJobRepository.JobRow job;
         try {

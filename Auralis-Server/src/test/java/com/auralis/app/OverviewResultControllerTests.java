@@ -6,8 +6,6 @@ import com.auralis.app.ai.OverviewResultCommand;
 import com.auralis.app.ai.OverviewResultService;
 import com.auralis.app.ai.OverviewInputDescriptor;
 import com.auralis.app.ai.OverviewSourceManifestEntry;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityNodeInput;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
@@ -59,38 +57,6 @@ class OverviewResultControllerTests {
     @Autowired private ObjectMapper objectMapper;
 
     @Test
-    void sourcePutAcceptsCandidateInputWireAndRejectsMissingOwnerJobWithoutWritingResultOrReceipt() throws Exception {
-        var owner = owner();
-        String token = bearer(owner.tokens().accessToken());
-        UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand("Candidate input subject", null, null, "001")).id();
-        SourceEntity source = createReadySource(owner.user().id(), subjectId, "Candidate source");
-        UUID clientWriteId = UUID.randomUUID();
-        var command = new OverviewResultCommand(0L, clientWriteId, OverviewMode.ALL,
-                source.getIngestionRevision(), null, null, null, null,
-                fullResult(source.getId(), "Candidate output"), newIdentity(fullResult(source.getId(), "Candidate output")),
-                null, null, new OverviewResultCommand.CandidateInput(UUID.randomUUID(), 3));
-
-        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(command)))
-                .andExpect(status().isNotFound());
-
-        var conflicting = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
-                source.getIngestionRevision(), null, "client-input-must-not-be-trusted", null, null,
-                fullResult(source.getId(), "Candidate output"), null, null, null,
-                new OverviewResultCommand.CandidateInput(UUID.randomUUID(), 3));
-        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(conflicting)))
-                .andExpect(status().isBadRequest());
-
-        assertThat(jdbcTemplate.queryForObject("select count(*) from overview_results where user_id=? and scope_type='SOURCE' and scope_id=?",
-                Integer.class, owner.user().id(), source.getId())).isZero();
-        assertThat(jdbcTemplate.queryForObject("select count(*) from overview_write_receipts where user_id=? and client_write_id=?",
-                Integer.class, owner.user().id(), clientWriteId)).isZero();
-    }
-
-    @Test
     void revokedWriteReceiptCannotReplayItsOldSnapshot() throws Exception {
         var owner = owner();
         String token = bearer(owner.tokens().accessToken());
@@ -98,7 +64,7 @@ class OverviewResultControllerTests {
         SourceEntity source = createReadySource(owner.user().id(), subjectId, "Revoked receipt source");
         var command = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
                 source.getIngestionRevision(), null, null, null, null,
-                fullResult(source.getId(), "Receipt snapshot content"), newIdentity(fullResult(source.getId(), "Receipt snapshot content")), null);
+                fullResult("Receipt snapshot content"));
         String body = objectMapper.writeValueAsString(command);
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON).content(body))
@@ -119,9 +85,9 @@ class OverviewResultControllerTests {
                 new SubjectCommand("Long overview title subject", null, null, "001")).id();
         SourceEntity source = createReadySource(owner.user().id(), subjectId, "Long title source");
         String longTitle = "动态标题".repeat(76);
-        var result = fullResult(source.getId(), longTitle);
+        var result = fullResult(longTitle);
         var command = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
-                source.getIngestionRevision(), null, null, null, null, result, newIdentity(result), null);
+                source.getIngestionRevision(), null, null, null, null, result);
 
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
@@ -142,23 +108,22 @@ class OverviewResultControllerTests {
         Instant cachedSummaryAt = Instant.parse("2026-09-01T11:00:00Z");
         var firstCommand = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
                 source.getIngestionRevision(), null, null, cachedOutlineAt, cachedSummaryAt,
-                fullResult(source.getId(), "Original"), newIdentity(fullResult(source.getId(), "Original")), null);
+                fullResult("Original"));
         String firstBody = objectMapper.writeValueAsString(firstCommand);
 
         var first = mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON).content(firstBody))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.outlineVersion").value(1)).andExpect(jsonPath("$.summaryVersion").value(1))
-                .andExpect(jsonPath("$.schemaVersion").value(1)).andExpect(jsonPath("$.title").value("Original"))
+                .andExpect(jsonPath("$.schemaVersion").value(2)).andExpect(jsonPath("$.title").value("Original"))
                 .andReturn();
         JsonNode firstJson = objectMapper.readTree(first.getResponse().getContentAsString());
         String persistedId = firstJson.path("id").asString();
         assertThat(firstJson.at("/outlineInputDescriptor/origin").asString()).isEqualTo("SOURCE_REVISION");
         assertThat(firstJson.at("/summaryInputDescriptor/origin").asString()).isEqualTo("SOURCE_REVISION");
-        OutlineIdentityInput existingIdentity = identityFrom(firstJson.path("outlineIdentity"));
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON).content(firstBody))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.identityReady").value(true));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
         mockMvc.perform(get("/api/overview-results/sources/{id}", source.getId())
                         .param("ingestionRevision", source.getIngestionRevision().toString())
                         .header(HttpHeaders.AUTHORIZATION, token))
@@ -184,39 +149,16 @@ class OverviewResultControllerTests {
                 .andExpect(jsonPath("$.subjectId").value(movedSubjectId.toString()))
                 .andExpect(jsonPath("$.version").value(1));
 
-        OverviewResultCommand oldShapeReplay = new OverviewResultCommand(0L, firstCommand.clientWriteId(), OverviewMode.ALL,
-                source.getIngestionRevision(), null, null, cachedOutlineAt, cachedSummaryAt,
-                fullResult(source.getId(), "Original"));
-        String legacyPayloadHash = legacyPayloadHash(source.getId(), oldShapeReplay);
-        JsonNode oldSnapshot = objectMapper.readTree(first.getResponse().getContentAsString());
-        var oldReceiptView = (tools.jackson.databind.node.ObjectNode) oldSnapshot;
-        oldReceiptView.remove("identityReady");
-        oldReceiptView.remove("outlineIdentity");
-        oldReceiptView.remove("outlineProvenance");
-        jdbcTemplate.update("update overview_write_receipts set payload_hash = ?, response_snapshot = ? where client_write_id = ?",
-                legacyPayloadHash, objectMapper.writeValueAsString(oldSnapshot), firstCommand.clientWriteId());
-        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(oldShapeReplay)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.identityReady").value(false))
-                .andExpect(result -> {
-                    JsonNode replayedBody = objectMapper.readTree(result.getResponse().getContentAsString());
-                    assertThat(replayedBody.has("outlineIdentity")).isTrue();
-                    assertThat(replayedBody.path("outlineIdentity").isNull()).isTrue();
-                })
-                .andExpect(jsonPath("$.outlineProvenance").doesNotExist());
-
         Instant nextOutlineAt = Instant.parse("2026-09-02T10:00:00Z");
         var partial = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.OUTLINE,
                 source.getIngestionRevision(), null, null, nextOutlineAt, null,
-                outlineOnlyResult(source.getId(), "Updated outline"), existingIdentity, null);
+                outlineOnlyResult("Updated outline"));
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(partial)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(2))
                 .andExpect(jsonPath("$.outlineVersion").value(2)).andExpect(jsonPath("$.summaryVersion").value(1))
-                .andExpect(jsonPath("$.summary.overview").value("Summary Original"))
+                .andExpect(jsonPath("$.summaryMarkdown").value("Summary Original"))
                 .andExpect(jsonPath("$.outlineGeneratedAt").value(nextOutlineAt.toString()))
                 .andExpect(jsonPath("$.summaryGeneratedAt").value(cachedSummaryAt.toString()));
 
@@ -228,25 +170,12 @@ class OverviewResultControllerTests {
                         .content(objectMapper.writeValueAsString(summaryOnly)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(3))
                 .andExpect(jsonPath("$.outlineVersion").value(2)).andExpect(jsonPath("$.summaryVersion").value(2))
-                .andExpect(jsonPath("$.identityReady").value(true))
-                .andExpect(jsonPath("$.outlineIdentity.nodes[0].nodeId")
-                        .value(firstJson.at("/outlineIdentity/nodes/0/nodeId").asString()));
+                .andExpect(jsonPath("$.outlineMarkdown").value(outlineOnlyResult("Updated outline").outlineMarkdown()))
+                .andExpect(jsonPath("$.summaryMarkdown").value("Updated summary"));
 
-        JsonNode outline = objectMapper.readTree(mockMvc.perform(get("/api/overview-results/sources/{id}/outline", source.getId())
+        mockMvc.perform(get("/api/overview-results/sources/{id}/outline", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(3))
-                .andReturn().getResponse().getContentAsString());
-        assertThat(outline.at("/nodes/1").has("summary")).isFalse();
-        assertThat(outline.toString()).doesNotContain("Section summary");
-        String sectionId = outline.at("/nodes/1/sectionId").asString();
-        mockMvc.perform(get("/api/overview-results/sources/{id}/sections/{sectionId}", source.getId(), sectionId)
-                        .param("version", "3").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(3))
-                .andExpect(jsonPath("$.section.title").value("Section"))
-                .andExpect(jsonPath("$.section.summary").value("Section summary"));
-        mockMvc.perform(get("/api/overview-results/sources/{id}/sections/{sectionId}", source.getId(), sectionId)
-                        .param("version", "2").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isConflict());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/overview-results/sources/{id}/sections/{sectionId}", source.getId(), UUID.randomUUID())
                         .param("version", "3").header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isNotFound());
@@ -259,13 +188,92 @@ class OverviewResultControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isNotFound());
         var reseed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
-                nextRevision, null, null, null, null, fullResult(source.getId(), "New revision"),
-                newIdentity(fullResult(source.getId(), "New revision")), null);
+                nextRevision, null, null, null, null, fullResult("New revision"));
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reseed)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(4))
                 .andExpect(jsonPath("$.outlineVersion").value(3)).andExpect(jsonPath("$.summaryVersion").value(3));
+    }
+
+    @Test
+    void legacyResultIsUnavailableUntilACompleteWriteMatchesItsPhysicalVersion() throws Exception {
+        var owner = owner();
+        UUID userId = owner.user().id();
+        String token = bearer(owner.tokens().accessToken());
+        UUID subjectId = subjectService.create(userId, new SubjectCommand("Legacy overview", null, null, "001")).id();
+        SourceEntity source = createReadySource(userId, subjectId, "Legacy source");
+        putSourceOverview(userId, token, source, 0, "Initial");
+        String oldOutline = "[{\"title\":\"Legacy chapter\",\"sections\":[]}]";
+        jdbcTemplate.update("update overview_results set schema_version=1, version=7, outline=?, summary=? where scope_id=?",
+                oldOutline, "{\"overview\":\"Legacy summary\"}", source.getId());
+
+        mockMvc.perform(get("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isNotFound());
+        assertThat(overviewResultService.readCurrentSource(userId, source.getId(), source.getIngestionRevision())).isEmpty();
+        assertThat(overviewResultService.currentSourceOverviewIds(userId,
+                java.util.Map.of(source.getId(), source.getIngestionRevision()))).isEmpty();
+
+        var stale = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
+                source.getIngestionRevision(), null, null, null, null, fullResult("New Markdown"));
+        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(stale)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.current.version").value(7))
+                .andExpect(jsonPath("$.current.schemaVersion").value(1))
+                .andExpect(jsonPath("$.current.outline").doesNotExist());
+        var partial = new OverviewResultCommand(7L, UUID.randomUUID(), OverviewMode.OUTLINE,
+                source.getIngestionRevision(), null, null, null, null, outlineOnlyResult("New Markdown"));
+        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(partial)))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject("select outline from overview_results where scope_id=?",
+                String.class, source.getId())).isEqualTo(oldOutline);
+
+        var replacement = new OverviewResultCommand(7L, UUID.randomUUID(), OverviewMode.ALL,
+                source.getIngestionRevision(), null, null, null, null, fullResult("New Markdown"));
+        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(8))
+                .andExpect(jsonPath("$.schemaVersion").value(2))
+                .andExpect(jsonPath("$.outlineMarkdown").value(replacement.result().outlineMarkdown()))
+                .andExpect(jsonPath("$.summaryMarkdown").value(replacement.result().summaryMarkdown()));
+
+        jdbcTemplate.update("update overview_write_receipts set response_snapshot=? where client_write_id=?",
+                "{\"schemaVersion\":1,\"outline\":[],\"summary\":{}}", replacement.clientWriteId());
+        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void invalidStoredMarkdownIsReportedAsAnInternalError() throws Exception {
+        var owner = owner();
+        UUID userId = owner.user().id();
+        String token = bearer(owner.tokens().accessToken());
+        UUID subjectId = subjectService.create(userId, new SubjectCommand("Corrupt overview", null, null, "001")).id();
+        SourceEntity source = createReadySource(userId, subjectId, "Corrupt source");
+        putSourceOverview(userId, token, source, 0, "Initial");
+        jdbcTemplate.update("update overview_results set outline=? where scope_id=?", "[]", source.getId());
+
+        mockMvc.perform(get("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isInternalServerError());
+
+        var partial = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.SUMMARY,
+                source.getIngestionRevision(), null, null, null, null, summaryOnlyResult("Update"));
+        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(partial)))
+                .andExpect(status().isInternalServerError());
+        assertThat(jdbcTemplate.queryForObject("select version from overview_results where scope_id=?",
+                Long.class, source.getId())).isEqualTo(1L);
     }
 
     @Test
@@ -300,12 +308,12 @@ class OverviewResultControllerTests {
         SourceEntity source = createReadySource(owner.user().id(), subjectId, "Manifest source", SourceType.FILE);
         createReadySource(owner.user().id(), subjectId, "Manifest text", SourceType.TEXT);
         createReadySource(owner.user().id(), subjectId, "Manifest URL", SourceType.URL);
-        JsonNode initialSourceOverview = putSourceOverview(owner.user().id(), token, source, 0, "Source one");
+        putSourceOverview(owner.user().id(), token, source, 0, "Source one");
 
         var manifest = List.of(new OverviewSourceManifestEntry(source.getId(), source.getIngestionRevision(), 1L, 1L));
         var subjectSeed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
                 manifest, fingerprint(source.getId(), source.getIngestionRevision(), 1, 1), null, null,
-                fullResult(source.getId(), "Subject output"), newIdentity(fullResult(source.getId(), "Subject output")), null);
+                fullResult("Subject output"));
         mockMvc.perform(put("/api/overview-results/subjects/{id}", subjectId)
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(subjectSeed)))
@@ -321,8 +329,7 @@ class OverviewResultControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token)).andExpect(status().isOk());
 
         var sourceOutlineUpdate = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.OUTLINE,
-                source.getIngestionRevision(), null, null, null, null, outlineOnlyResult(source.getId(), "Source two"),
-                identityFrom(initialSourceOverview.path("outlineIdentity")), null);
+                source.getIngestionRevision(), null, null, null, null, outlineOnlyResult("Source two"));
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(sourceOutlineUpdate)))
@@ -333,7 +340,7 @@ class OverviewResultControllerTests {
 
         var stale = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.ALL, null,
                 manifest, fingerprint(source.getId(), source.getIngestionRevision(), 1, 1), null, null,
-                fullResult(source.getId(), "Stale subject"), newIdentity(fullResult(source.getId(), "Stale subject")), null);
+                fullResult("Stale subject"));
         mockMvc.perform(put("/api/overview-results/subjects/{id}", subjectId)
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(stale)))
@@ -342,7 +349,7 @@ class OverviewResultControllerTests {
         var currentManifest = List.of(new OverviewSourceManifestEntry(source.getId(), source.getIngestionRevision(), 2L, 1L));
         var reseed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
                 currentManifest, fingerprint(source.getId(), source.getIngestionRevision(), 2, 1), null, null,
-                fullResult(source.getId(), "Refreshed subject"), newIdentity(fullResult(source.getId(), "Refreshed subject")), null);
+                fullResult("Refreshed subject"));
         mockMvc.perform(put("/api/overview-results/subjects/{id}", subjectId)
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(reseed)))
@@ -355,7 +362,7 @@ class OverviewResultControllerTests {
         var movedManifest = List.of(new OverviewSourceManifestEntry(source.getId(), source.getIngestionRevision(), 2L, 1L));
         var movedSubjectSeed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
                 movedManifest, fingerprint(source.getId(), source.getIngestionRevision(), 2, 1), null, null,
-                fullResult(source.getId(), "Moved subject output"), newIdentity(fullResult(source.getId(), "Moved subject output")), null);
+                fullResult("Moved subject output"));
         mockMvc.perform(put("/api/overview-results/subjects/{id}", movedSubjectId)
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(movedSubjectSeed)))
@@ -409,8 +416,7 @@ class OverviewResultControllerTests {
                 availableSource.getIngestionRevision(), 1L, 1L));
         var availableSeed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
                 availableManifest, fingerprint(availableSource.getId(), availableSource.getIngestionRevision(), 1, 1),
-                null, null, fullResult(availableSource.getId(), "Available subject"),
-                newIdentity(fullResult(availableSource.getId(), "Available subject")), null);
+                null, null, fullResult("Available subject"));
         mockMvc.perform(put("/api/overview-results/subjects/{id}", availableSubjectId)
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(availableSeed)))
@@ -418,21 +424,19 @@ class OverviewResultControllerTests {
 
         SourceEntity staleSource = createReadySource(owner.user().id(), staleSubjectId,
                 "Stale batch source", SourceType.FILE);
-        JsonNode staleSourceResult = putSourceOverview(owner.user().id(), token, staleSource, 0, "Stale source");
+        putSourceOverview(owner.user().id(), token, staleSource, 0, "Stale source");
         var staleManifest = List.of(new OverviewSourceManifestEntry(staleSource.getId(),
                 staleSource.getIngestionRevision(), 1L, 1L));
         var staleSeed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
                 staleManifest, fingerprint(staleSource.getId(), staleSource.getIngestionRevision(), 1, 1),
-                null, null, fullResult(staleSource.getId(), "Stale subject"),
-                newIdentity(fullResult(staleSource.getId(), "Stale subject")), null);
+                null, null, fullResult("Stale subject"));
         mockMvc.perform(put("/api/overview-results/subjects/{id}", staleSubjectId)
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(staleSeed)))
                 .andExpect(status().isOk());
         var staleSourceUpdate = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.OUTLINE,
                 staleSource.getIngestionRevision(), null, null, null, null,
-                outlineOnlyResult(staleSource.getId(), "Changed source"),
-                identityFrom(staleSourceResult.path("outlineIdentity")), null);
+                outlineOnlyResult("Changed source"));
         mockMvc.perform(put("/api/overview-results/sources/{id}", staleSource.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(staleSourceUpdate)))
@@ -550,8 +554,7 @@ class OverviewResultControllerTests {
     private JsonNode putSourceOverview(UUID userId, String token, SourceEntity source, long baseVersion,
                                        String title) throws Exception {
         var command = new OverviewResultCommand(baseVersion, UUID.randomUUID(), OverviewMode.ALL,
-                source.getIngestionRevision(), null, null, null, null, fullResult(source.getId(), title),
-                newIdentity(fullResult(source.getId(), title)), null);
+                source.getIngestionRevision(), null, null, null, null, fullResult(title));
         var result = mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(command)))
@@ -559,62 +562,17 @@ class OverviewResultControllerTests {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private OutlineIdentityInput newIdentity(OverviewDtos.OverviewResponse result) {
-        var nodes = new java.util.ArrayList<OutlineIdentityNodeInput>();
-        for (int chapter = 0; chapter < result.outline().size(); chapter++) {
-            nodes.add(new OutlineIdentityNodeInput(List.of(chapter), null));
-            for (int section = 0; section < result.outline().get(chapter).sections().size(); section++) {
-                nodes.add(new OutlineIdentityNodeInput(List.of(chapter, section), null));
-            }
-        }
-        return new OutlineIdentityInput(1, nodes);
+    private OverviewDtos.OverviewResponse fullResult(String title) {
+        return new OverviewDtos.OverviewResponse(2, title,
+                outlineOnlyResult(title).outlineMarkdown(), "Summary " + title);
     }
 
-    private OutlineIdentityInput identityFrom(JsonNode value) {
-        var nodes = new java.util.ArrayList<OutlineIdentityNodeInput>();
-        for (JsonNode node : value.path("nodes")) {
-            var path = new java.util.ArrayList<Integer>();
-            node.path("path").forEach(segment -> path.add(segment.asInt()));
-            nodes.add(new OutlineIdentityNodeInput(path, UUID.fromString(node.path("nodeId").asString())));
-        }
-        return new OutlineIdentityInput(value.path("schemaVersion").asInt(), nodes);
-    }
-
-    private String legacyPayloadHash(UUID sourceId, OverviewResultCommand command) throws Exception {
-        LegacyReceiptPayload payload = new LegacyReceiptPayload("SOURCE", sourceId, command.baseVersion(),
-                command.clientWriteId(), command.mode(), command.ingestionRevision(), List.of(),
-                command.inputFingerprint(), command.outlineGeneratedAt(), command.summaryGeneratedAt(),
-                new OverviewDtos.OverviewResponse(command.result().schemaVersion(), command.result().title(),
-                        command.result().outline(), command.result().summary()));
-        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
-                objectMapper.writeValueAsString(payload).getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private record LegacyReceiptPayload(String scopeType, UUID scopeId, long baseVersion, UUID clientWriteId,
-                                        OverviewMode mode, UUID ingestionRevision,
-                                        List<OverviewSourceManifestEntry> sourceManifest,
-                                        String inputFingerprint, Instant outlineGeneratedAt, Instant summaryGeneratedAt,
-                                        OverviewDtos.OverviewResponse result) {
-    }
-
-    private OverviewDtos.OverviewResponse fullResult(UUID sourceId, String title) {
-        return new OverviewDtos.OverviewResponse(1, title,
-                List.of(new OverviewDtos.OverviewChapter("Chapter " + title,
-                        List.of(new OverviewDtos.OverviewSection("Section", "Section summary",
-                                List.of(sourceId.toString()), null)))),
-                new OverviewDtos.OverviewSummary("Summary " + title, List.of("Point"), List.of("Step")));
-    }
-
-    private OverviewDtos.OverviewResponse outlineOnlyResult(UUID sourceId, String title) {
-        return new OverviewDtos.OverviewResponse(1, title,
-                List.of(new OverviewDtos.OverviewChapter("Chapter " + title,
-                        List.of(new OverviewDtos.OverviewSection("Section", "Section summary",
-                                List.of(sourceId.toString()), null)))), null);
+    private OverviewDtos.OverviewResponse outlineOnlyResult(String title) {
+        return new OverviewDtos.OverviewResponse(2, title, "## Chapter " + title + "\n\n### Section\n\nSection summary", null);
     }
 
     private OverviewDtos.OverviewResponse summaryOnlyResult(String title) {
-        return new OverviewDtos.OverviewResponse(1, title, null,
-                new OverviewDtos.OverviewSummary(title, List.of("Point"), List.of("Step")));
+        return new OverviewDtos.OverviewResponse(2, title, null, title);
     }
 
     private String fingerprint(UUID sourceId, UUID revision, long outlineVersion, long summaryVersion) throws Exception {

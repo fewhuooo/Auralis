@@ -155,15 +155,17 @@ test('useAssetStore resolves localAssetId and serverAssetId locally before any d
     await localRepo.mapServerAssetId(model.id, 'server-local-first')
     globalThis.fetch = async () => { throw new Error('NETWORK_MUST_NOT_BE_USED_FOR_LOCAL_ASSET') }
 
-    const local = await assetStore.resolveLocalFile('server-local-first', 'preview.pdf', 'application/pdf')
+    const local = await assetStore.resolveLocalFile('server-local-first')
     assert.ok(local)
     assert.equal(await local.file.text(), 'offline preview bytes')
-    const input = await assetStore.resolveSourceInput('server-local-first', 'preview.pdf', 'application/pdf')
+    assert.equal(local.file.name, 'preview.pdf')
+    assert.equal(local.file.type, 'application/pdf')
+    const input = await assetStore.resolveSourceInput('server-local-first')
     assert.equal(await input.file.text(), 'offline preview bytes')
 
     authStore.user = { id: 'user-local-first-other', email: 'other@example.com' }
     authStore.serverDeviceId = 'device-local-first-other'
-    assert.equal(await assetStore.resolveLocalFile(model.id, 'preview.pdf', 'application/pdf'), null)
+    assert.equal(await assetStore.resolveLocalFile(model.id), null)
   } finally {
     globalThis.fetch = originalFetch
     releaseLocalAssetSyncQueue('user-local-first', 'device-local-first')
@@ -186,7 +188,11 @@ test('useAssetStore falls back only for a missing local asset and fences an owne
 
   request.post = async (url) => {
     assert.match(url, /\/api\/assets\/server-only-asset\/download-url/)
-    return { url: 'https://object.test/server-only-asset' }
+    return {
+      url: 'https://object.test/server-only-asset',
+      originalName: 'server.pptx',
+      mimeType: 'application/octet-stream',
+    }
   }
   globalThis.fetch = async (url) => {
     assert.equal(url, 'https://object.test/server-only-asset')
@@ -202,7 +208,7 @@ test('useAssetStore falls back only for a missing local asset and fences an owne
   }
 
   try {
-    const pending = assetStore.resolveSourceInput('server-only-asset', 'server.pdf', 'application/pdf')
+    const pending = assetStore.resolveSourceInput('server-only-asset')
     await blobStarted
     authStore.user = { id: 'user-download-fence-b', email: 'b@example.com' }
     authStore.serverDeviceId = 'device-download-fence-b'
@@ -216,8 +222,20 @@ test('useAssetStore falls back only for a missing local asset and fences an owne
       status: 200,
       blob: async () => new Blob(['fallback bytes'], { type: 'application/pdf' }),
     })
-    const fallback = await assetStore.resolveSourceInput('server-only-asset', 'server.pdf', 'application/pdf')
+    const fallback = await assetStore.resolveSourceInput('server-only-asset')
     assert.equal(await fallback.file.text(), 'fallback bytes')
+    assert.equal(fallback.file.name, 'server.pptx')
+    assert.equal(fallback.file.type, 'application/octet-stream')
+
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+    await assert.rejects(() => assetStore.resolveSourceInput('server-only-asset'), /NETWORK_OFFLINE/)
+    globalThis.fetch = async () => ({
+      ok: true,
+      blob: async () => { throw new TypeError('Connection closed during body download') },
+    })
+    await assert.rejects(() => assetStore.resolveSourceInput('server-only-asset'), /NETWORK_OFFLINE/)
+    globalThis.fetch = async () => ({ ok: false, status: 503 })
+    await assert.rejects(() => assetStore.resolveSourceInput('server-only-asset'), /ASSET_DOWNLOAD_FAILED_503/)
   } finally {
     request.post = originalPost
     globalThis.fetch = originalFetch
@@ -473,10 +491,10 @@ test('useSourceStore.deleteSourceFile: a pre-commit failure keeps the Source vis
   const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   const overview = new OverviewRepository(authStore.user.id, authStore.serverDeviceId, { storage: createMemoryStorage() })
   const overviewResponse = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: 'Keep this result',
-    outline: [{ title: 'Chapter', sections: [{ title: 'Section', summary: 'Text', sourceIds: [sourceId], locator: null }] }],
-    summary: { overview: 'Keep this summary', keyPoints: ['Point'], learningPath: ['Chapter'] },
+    outlineMarkdown: '## Chapter\n- Section',
+    summaryMarkdown: 'Keep this summary',
   }
   const originalCommitMutation = repo.commitMutation.bind(repo)
   const originalTombstone = repo.tombstone.bind(repo)
@@ -551,10 +569,10 @@ test('useSourceStore retries post-commit Overview cleanup from deleted Source re
   const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   const overview = new OverviewRepository(authStore.user.id, authStore.serverDeviceId, { storage: createMemoryStorage() })
   const overviewResponse = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: 'Cleanup after commit',
-    outline: [{ title: 'Chapter', sections: [{ title: 'Section', summary: 'Text', sourceIds: [sourceId], locator: null }] }],
-    summary: { overview: 'Cleanup summary', keyPoints: ['Point'], learningPath: ['Chapter'] },
+    outlineMarkdown: '## Chapter\n- Section',
+    summaryMarkdown: 'Cleanup summary',
   }
   let discardCalls = 0
   let secondDiscardResolve
@@ -692,7 +710,7 @@ test('useSubjectStore hydration restores a local-only draft after rejected Subje
       repository: repo,
       serverDeviceId: authStore.serverDeviceId,
       api: {
-        async pushChanges() { return { results: [{ clientMutationId: parentMutation.clientMutationId, decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-reject-hydration', current: { id: 'subject-reject-hydration', name: 'Remote', version: 2, deletedAt: null } }] } },
+        async pushChanges() { return { results: [{ clientMutationId: parentMutation.clientMutationId, decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-reject-hydration', mutationType: 'DELETE', current: { id: 'subject-reject-hydration', name: 'Remote', version: 2, deletedAt: null } }] } },
         async pullChanges() { return { changes: [], nextCursor: 'reject-hydration', hasMore: false, resetRequired: false } },
         async getSnapshot() { return { snapshotCursor: 'reject-hydration', subjects: [{ id: 'subject-reject-hydration', name: 'Remote', version: 2 }], sources: [], knowledgeBlocks: [], tasks: [], relations: [] } },
       },
@@ -895,6 +913,7 @@ test('useSyncStore: switch during A queue wakeup lets B sync independently, pres
     assert.equal(aPush.authorization, 'Bearer token-core-switch-a')
     assert.equal(aPush.scope?.isCurrent(), true)
     assert.equal(aPush.payload.mutations[0]?.resourceId, subjectId)
+    assert.equal('_localCrudPredecessor' in aPush.payload.mutations[0].payload, false)
 
     switchedToB = true
     setSession(userB, deviceB, 'session-core-switch-b', 'token-core-switch-b')
@@ -906,7 +925,8 @@ test('useSyncStore: switch during A queue wakeup lets B sync independently, pres
     await assert.rejects(promiseA, /SYNC_SCOPE_CHANGED/)
     assert.equal(syncStore.isSyncing, true, 'A finally must not clear B cycle state')
     assert.equal(syncStore.lastSyncError, null, 'A stale completion must not write an error into B state')
-    assert.deepEqual(await repoA.listUnresolved(), pendingBeforeSwitch, 'A outbox mutation must remain recoverable')
+    assert.deepEqual(await repoA.listUnresolved(), [{ ...pendingBeforeSwitch[0], status: 'inflight',
+      payload: aPush.payload.mutations[0].payload }], 'A outbox keeps the exact sent request for recovery')
     assert.equal(aPush.scope?.isCurrent(), false, 'A request scope must expire after the account switch')
     assert.deepEqual(transportCalls.filter((call) => call.switchedToB && call.scope?.key === aPush.scope?.key), [], 'a stale A request must not reach the adapter after B login')
     assert.ok(transportCalls.filter((call) => call.authorization === 'Bearer token-core-switch-b')
@@ -1567,7 +1587,7 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
     if (url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
     if (url === '/api/auth/refresh') {
       assert.equal(payload?.refreshToken, 'refresh-asset-queue-a')
-      return { data: { tokens: { accessToken: 'token-asset-queue-a2', refreshToken: 'refresh-asset-queue-a2' } }, status: 200, statusText: 'OK', headers: {}, config }
+      return { data: { tokens: { accessToken: 'token-asset-queue-a2', refreshToken: 'refresh-asset-queue-a2' }, sessionId: 'sid-asset-queue-a2' }, status: 200, statusText: 'OK', headers: {}, config }
     }
     if (url === '/api/assets/upload-intents') {
       const name = payload?.originalName

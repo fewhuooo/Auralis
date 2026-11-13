@@ -13,8 +13,6 @@ public interface SourceChunkRepository extends JpaRepository<SourceChunkEntity, 
 
     List<SourceChunkEntity> findAllByUserId(UUID userId);
 
-    List<SourceChunkEntity> findAllByUserIdAndActiveTrue(UUID userId);
-
     List<SourceChunkEntity> findAllByUserIdAndSourceIdOrderByOrdinalAsc(UUID userId, UUID sourceId);
 
     List<SourceChunkEntity> findAllByUserIdAndSourceIdAndGenerationOrderByOrdinalAsc(
@@ -29,7 +27,7 @@ public interface SourceChunkRepository extends JpaRepository<SourceChunkEntity, 
                and chunk.active = true
              order by chunk.ordinal asc
             """)
-    List<SourceChunkEntity> findActiveForAdaptiveOverview(
+    List<SourceChunkEntity> findActiveForRawOverviewInput(
             @Param("userId") UUID userId,
             @Param("sourceId") UUID sourceId,
             Pageable pageable);

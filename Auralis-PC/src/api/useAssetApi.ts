@@ -23,14 +23,6 @@ export interface AssetView {
   updatedAt?: string
 }
 
-export type AssetStatusCompat = DownloadUrlResponse & {
-  subject?: string
-  fileName?: string
-  objectName?: string
-  contentType?: string
-  fileSize?: number
-}
-
 /**
  * Validate file size on client side before upload intent.
  */
@@ -131,15 +123,9 @@ export interface UploadAssetOptions {
  */
 export async function uploadAsset(
   file: File,
-  optionsOrSubject?: UploadAssetOptions | string,
-  legacyOnProgress?: (percent: number, stage: string) => void
+  options: UploadAssetOptions = {},
 ): Promise<{ assetId: string; asset: AssetView }> {
   validateUploadFile(file)
-
-  const options: UploadAssetOptions =
-    typeof optionsOrSubject === 'object' && optionsOrSubject !== null
-      ? optionsOrSubject
-      : { onProgress: legacyOnProgress }
 
   options.onProgress?.(5, '校验文件...')
   options.onProgress?.(10, '申请上传凭证...')
@@ -170,45 +156,6 @@ export async function uploadAsset(
   options.onProgress?.(100, '上传处理完成')
 
   return { assetId: intent.assetId, asset }
-}
-
-// Temporary compatibility adapters for unmigrated view components (migrating in Task 8)
-export async function getPresignedUrl(fileName: string, contentType: string = 'application/octet-stream') {
-  const intent = await createUploadIntent({
-    baseVersion: 0,
-    clientImportId: globalThis.crypto?.randomUUID?.() || '00000000-0000-4000-8000-000000000000',
-    originalName: fileName,
-    mimeType: contentType,
-  })
-  return {
-    presignedUrl: intent.uploadUrl ?? '',
-    objectName: intent.assetId ?? '',
-    bucket: '',
-    maxFileSizeMb: 50,
-    expiresInMinutes: 15,
-  }
-}
-
-export function uploadToMinIO(
-  uploadUrl: string,
-  file: File,
-  onProgress?: (percent: number) => void
-): Promise<void> {
-  return uploadToObjectStorage(uploadUrl, file, undefined, onProgress)
-}
-
-export async function bindAsset(
-  objectName: string,
-  _fileName: string,
-  _fileSize: number,
-  _contentType: string,
-  _subject?: string
-) {
-  return completeUpload(objectName)
-}
-
-export async function getAssetStatus(assetId: string): Promise<AssetStatusCompat> {
-  return getDownloadUrl(assetId)
 }
 
 export const useAssetApi = {

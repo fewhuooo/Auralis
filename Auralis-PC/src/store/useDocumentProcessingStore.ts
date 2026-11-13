@@ -6,6 +6,7 @@ interface DocumentSourceScheduler {
   schedule(sourceId: string): Promise<unknown>
   resume(sourceIds: string[]): Promise<unknown>
   retry(jobId: string): Promise<unknown>
+  resumePausedDraft(sourceId: string): Promise<unknown>
 }
 
 export interface LocalOcrPageProgress {
@@ -19,6 +20,7 @@ interface LocalOcrProgressReader {
     attempt: number
     localContentRevision: string
     checkpointJson: string | null
+    pausedDraft: boolean
   }>>
 }
 
@@ -38,6 +40,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     localOcrRefreshSequence: 0,
     localOcrProgressBySource: {} as Record<string, LocalOcrPageProgress>,
     localOcrProgressIdentityBySource: {} as Record<string, LocalOcrProgressIdentity>,
+    pausedDraftSourceIds: [] as string[],
     loading: false,
     lastError: null as string | null,
   }),
@@ -59,6 +62,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
       this.localOcrRefreshSequence += 1
       this.localOcrProgressBySource = {}
       this.localOcrProgressIdentityBySource = {}
+      this.pausedDraftSourceIds = []
     },
     setJobs(jobs: DocumentProcessingJob[]): void {
       this.jobs = jobs
@@ -87,6 +91,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
         const previousProjection = this.localOcrProgressIdentityBySource
         const records = await reader.list()
         for (const record of records) {
+          if (record.pausedDraft) continue
           if (!record.checkpointJson) continue
           const hasRunIdentity = Number.isInteger(record.attempt)
             && typeof record.localContentRevision === 'string'
@@ -158,11 +163,13 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
         if (!isCurrent()) return
         this.localOcrProgressIdentityBySource = identityProjection
         this.localOcrProgressBySource = projection
+        this.pausedDraftSourceIds = [...new Set(records.filter((record) => record.pausedDraft).map((record) => record.localSourceId))]
       } catch {
         // A local reader failure must not prevent the durable Job refresh.
         if (!isCurrent()) return
         this.localOcrProgressIdentityBySource = {}
         this.localOcrProgressBySource = {}
+        this.pausedDraftSourceIds = []
       }
     },
     async start(jobId: string): Promise<void> {
@@ -184,7 +191,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     async resumePending(): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
       if (!this.scheduler) throw new Error('DOCUMENT_JOB_SCHEDULER_UNAVAILABLE')
-      const resumablePhases = new Set(['PAUSED_NETWORK', 'QUEUED', 'EXTRACTING', 'OCR_RUNNING'])
+      const resumablePhases = new Set(['QUEUED', 'EXTRACTING', 'OCR_RUNNING'])
       const jobs = await this.runner.list()
       const sourceIds = [...new Set(jobs
         .filter((job) => resumablePhases.has(job.phase))
@@ -198,6 +205,10 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     async retry(jobId: string): Promise<void> {
       if (!this.scheduler) throw new Error('DOCUMENT_JOB_SCHEDULER_UNAVAILABLE')
       await this.scheduler.retry(jobId)
+    },
+    async resumePausedDraft(sourceId: string): Promise<void> {
+      if (!this.scheduler) throw new Error('DOCUMENT_JOB_SCHEDULER_UNAVAILABLE')
+      await this.scheduler.resumePausedDraft(sourceId)
     },
     async cancel(jobId: string): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')

@@ -50,6 +50,11 @@ public record AiProviderRequest(
         AiProviderRequestValidator.validate(messages, tools);
     }
 
+    public AiProviderRequest withMaxTokens(int maxTokens) {
+        return new AiProviderRequest(model, messages, tools, temperature, maxTokens, structuredJson,
+                overviewCapacityRequest, overviewResponseByteLimit, thinkingEnabled);
+    }
+
     public AiProviderRequest withThinkingEnabled(Boolean enabled) {
         return new AiProviderRequest(model, messages, tools, temperature, maxTokens, structuredJson,
                 overviewCapacityRequest, overviewResponseByteLimit, enabled);

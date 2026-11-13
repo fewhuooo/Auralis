@@ -219,7 +219,7 @@
                       <IconRotate :size="18" :stroke-width="2" />
                     </span>
                     <div class="subject-review__panel-name">
-                      待复习 <span class="subject-review__panel-count">· {{ statesLoaded ? counts.due + ' 个' : '—' }}</span>
+                      待复习 <span class="subject-review__panel-count">· {{ statesLoaded ? scheduledReviewBlocks.length + ' 个' : '—' }}</span>
                     </div>
                   </div>
                   <div class="subject-review__panel-actions">
@@ -236,7 +236,8 @@
                 </div>
                 <div class="subject-review__panel-footer">
                   <span class="subject-review__panel-hint">
-                    <template v-if="counts.due > 0">今日到期 {{ counts.due }} · 未掌握 {{ counts.pendingLearning + counts.reviewing }}</template>
+                    <template v-if="pendingReviewIds.size > 0">待核对 {{ pendingReviewIds.size }} · 未掌握 {{ counts.pendingLearning + counts.reviewing }}</template>
+                    <template v-else-if="counts.due > 0">今日到期 {{ counts.due }} · 未掌握 {{ counts.pendingLearning + counts.reviewing }}</template>
                     <template v-else-if="voluntaryCount > 0">今日无到期知识块 · 可通过上方“自测复习”随机抽查自测（共 {{ voluntaryCount }} 个）</template>
                     <template v-else>暂无复习内容</template>
                   </span>
@@ -637,13 +638,19 @@ const learningBlocks = computed(() => {
   })
 })
 
-const dueReviewBlocks = computed(() => {
+const pendingReviewIds = computed(() => new Set(activeBlocks.value.flatMap((block) => {
+  const state = stateById.value.get(block.id)
+  return state?.pendingReviewId && state.pendingReviewRating && state.pendingReviewBaseline ? [block.id] : []
+})))
+
+const scheduledReviewBlocks = computed(() => {
   if (!statesLoaded.value) return []
   return activeBlocks.value.filter((block) => {
+    if (pendingReviewIds.value.has(block.id)) return true
     if (categoryFor(block.id) !== 'reviewing') return false
     const dueAt = Date.parse(stateById.value.get(block.id)?.dueAt ?? '')
     return Number.isFinite(dueAt) && dueAt <= now.value
-  }).sort((left, right) => Date.parse(stateById.value.get(left.id)?.dueAt ?? '') - Date.parse(stateById.value.get(right.id)?.dueAt ?? ''))
+  })
 })
 
 
@@ -667,7 +674,7 @@ const targetVoluntaryCount = computed(() => {
 
 const canStartReview = computed(() => {
   if (isLoading.value || !statesLoaded.value) return false
-  return dueReviewBlocks.value.length > 0
+  return scheduledReviewBlocks.value.length > 0
 })
 
 
@@ -949,11 +956,11 @@ async function startReviewing(): Promise<void> {
     localActionError.value = '正在加载复习状态，请稍候…'
     return
   }
-  if (dueReviewBlocks.value.length > 0) {
+  if (scheduledReviewBlocks.value.length > 0) {
     try {
       reviewStore.startLifecycleRound({
         subjectId: props.subjectId,
-        knowledgeBlocks: dueReviewBlocks.value.map((block) => ({ id: block.id, version: block.version })),
+        knowledgeBlocks: scheduledReviewBlocks.value.map((block) => ({ id: block.id, version: block.version })),
         groupSize: groupSize.value,
         now: new Date(now.value),
       })

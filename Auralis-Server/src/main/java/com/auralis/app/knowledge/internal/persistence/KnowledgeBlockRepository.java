@@ -20,6 +20,18 @@ public interface KnowledgeBlockRepository extends JpaRepository<KnowledgeBlockEn
     @Query("select block.subjectId from KnowledgeBlockEntity block where block.id = :id and block.userId = :userId")
     Optional<UUID> findSubjectIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 
+    @Query("""
+            select block.subjectId as subjectId, block.sourceId as sourceId from KnowledgeBlockEntity block
+            where block.id = :id and block.userId = :userId
+            """)
+    Optional<MutationLinks> findMutationLinks(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    interface MutationLinks {
+        UUID getSubjectId();
+
+        UUID getSourceId();
+    }
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select block from KnowledgeBlockEntity block where block.id = :id and block.userId = :userId "
             + "and block.deletedAt is null")

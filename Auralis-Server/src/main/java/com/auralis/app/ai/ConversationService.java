@@ -9,7 +9,6 @@ import com.auralis.app.ai.internal.persistence.ChatAttemptEntity;
 import com.auralis.app.ai.internal.persistence.ChatRunEntity;
 import com.auralis.app.ai.internal.persistence.ChatRunRepository;
 import com.auralis.app.shared.error.DomainException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
@@ -28,16 +27,6 @@ public class ConversationService {
     private final ChatRunRepository chatRunRepository;
     private final ObjectMapper objectMapper;
 
-    public ConversationService(ConversationRepository conversationRepository, MessageRepository messageRepository) {
-        this(conversationRepository, messageRepository, null, null, null);
-    }
-
-    public ConversationService(ConversationRepository conversationRepository, MessageRepository messageRepository,
-            ChatAttemptRepository chatAttemptRepository, ObjectMapper objectMapper) {
-        this(conversationRepository, messageRepository, chatAttemptRepository, null, objectMapper);
-    }
-
-    @Autowired
     public ConversationService(ConversationRepository conversationRepository, MessageRepository messageRepository,
             ChatAttemptRepository chatAttemptRepository, ChatRunRepository chatRunRepository, ObjectMapper objectMapper) {
         this.conversationRepository = conversationRepository;
@@ -110,160 +99,9 @@ public class ConversationService {
         conversationRepository.saveAndFlush(entity);
     }
 
-    @Transactional
-    public MessageView appendMessage(
-            UUID userId,
-            UUID conversationId,
-            AiMessageRole role,
-            String content,
-            AiMessageStatus status,
-            String model,
-            String errorCode) {
-        return appendMessage(userId, conversationId, role, content, status, model, errorCode, null);
-    }
-
-    @Transactional
-    public MessageView appendMessage(
-            UUID userId,
-            UUID conversationId,
-            AiMessageRole role,
-            String content,
-            AiMessageStatus status,
-            String model,
-            String errorCode,
-            String clientRequestId) {
-        if (content == null || (content.isBlank() && status == AiMessageStatus.COMPLETED)) {
-            throw new IllegalArgumentException("Message content must not be blank");
-        }
-        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
-        return appendMessageLocked(conversation, userId, role, content, status, model, errorCode,
-                normalizeClientRequestId(clientRequestId), null);
-    }
-
-    /**
-     * Reserves the USER message in one short, conversation-row-locked transaction.
-     * Streaming and provider I/O happen only after this transaction has committed.
-     */
-    @Transactional
-    public ClientRequestReservation reserveUserMessage(
-            UUID userId,
-            UUID requestedConversationId,
-            String titleIfCreating,
-            String content,
-            String clientRequestId) {
-        String normalizedClientRequestId = normalizeClientRequestId(clientRequestId);
-        if (normalizedClientRequestId != null) {
-            Optional<ClientRequestReplay> existing = findClientRequestReplay(userId, normalizedClientRequestId);
-            if (existing.isPresent()) {
-                return ClientRequestReservation.replay(existing.get());
-            }
-        }
-
-        ConversationView created = requestedConversationId == null
-                ? create(userId, new ConversationCommand(titleIfCreating, 0L, normalizedClientRequestId))
-                : null;
-        UUID conversationId = created == null ? requestedConversationId : created.id();
-        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
-
-        // A second caller with the same conversation waits on the row lock and
-        // observes the first caller's reservation before it can call a provider.
-        if (normalizedClientRequestId != null) {
-            Optional<ClientRequestReplay> existing = findClientRequestReplay(userId, normalizedClientRequestId);
-            if (existing.isPresent()) {
-                return ClientRequestReservation.replay(existing.get());
-            }
-        }
-
-        MessageView userMessage = appendMessageLocked(conversation, userId, AiMessageRole.USER, content,
-                AiMessageStatus.COMPLETED, null, null, normalizedClientRequestId, null);
-        return ClientRequestReservation.started(conversationId, userMessage);
-    }
-
-    @Transactional
-    public MessageView appendAssistantReply(
-            UUID userId,
-            UUID conversationId,
-            UUID replyToMessageId,
-            String content,
-            AiMessageStatus status,
-            String model,
-            String errorCode) {
-        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
-        return appendMessageLocked(conversation, userId, AiMessageRole.ASSISTANT, content, status, model, errorCode,
-                null, replyToMessageId, null);
-    }
-
-    @Transactional
-    public MessageView appendAssistantReply(
-            UUID userId, UUID conversationId, UUID replyToMessageId, String content,
-            AiMessageStatus status, String model, String errorCode, String usageJson) {
-        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
-        return appendMessageLocked(conversation, userId, AiMessageRole.ASSISTANT, content, status, model, errorCode,
-                null, replyToMessageId, usageJson);
-    }
-
-    @Transactional(readOnly = true)
-    public Optional<ClientRequestReplay> findClientRequestReplay(UUID userId, String clientRequestId) {
-        String normalized = normalizeClientRequestId(clientRequestId);
-        if (normalized == null) {
-            return Optional.empty();
-        }
-        return messageRepository.findByUserIdAndClientRequestId(userId, normalized)
-                .map(userMessage -> new ClientRequestReplay(
-                        userMessage.getConversationId(), toView(userMessage), messageRepository
-                                .findByConversationIdAndUserIdAndReplyToMessageId(
-                                        userMessage.getConversationId(), userId, userMessage.getId())
-                                .map(this::toView)
-                                .orElse(null)));
-    }
-
-    private MessageView appendMessageLocked(
-            ConversationEntity conversation,
-            UUID userId,
-            AiMessageRole role,
-            String content,
-            AiMessageStatus status,
-            String model,
-            String errorCode,
-            String clientRequestId,
-            UUID replyToMessageId) {
-        return appendMessageLocked(conversation, userId, role, content, status, model, errorCode,
-                clientRequestId, replyToMessageId, null);
-    }
-
-    private MessageView appendMessageLocked(
-            ConversationEntity conversation,
-            UUID userId,
-            AiMessageRole role,
-            String content,
-            AiMessageStatus status,
-            String model,
-            String errorCode,
-            String clientRequestId,
-            UUID replyToMessageId,
-            String usageJson) {
-        if (content == null || (content.isBlank() && status == AiMessageStatus.COMPLETED)) {
-            throw new IllegalArgumentException("Message content must not be blank");
-        }
-        long nextSequence = conversation.allocateNextMessageSequence();
-        conversationRepository.saveAndFlush(conversation);
-        MessageEntity message = new MessageEntity(
-                UUID.randomUUID(), conversation.getId(), userId, nextSequence, role, status,
-                content.trim(), model, errorCode, usageJson, clientRequestId, replyToMessageId);
-        return toView(messageRepository.saveAndFlush(message));
-    }
-
-    private ConversationEntity requireActiveEntity(UUID userId, UUID conversationId) {
-        return conversationRepository.findByIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Conversation was not found"));
-    }
 
     private ConversationEntity requireActive(UUID userId, UUID conversationId) {
-        return requireActiveEntity(userId, conversationId);
-    }
-
-    private ConversationEntity requireActiveForUpdate(UUID userId, UUID conversationId) {
-        return conversationRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
+        return conversationRepository.findByIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Conversation was not found"));
     }
 
@@ -295,8 +133,7 @@ public class ConversationService {
     }
 
     private ActiveChatRunView activeRun(ConversationEntity conversation) {
-        if (chatRunRepository == null || chatAttemptRepository == null || objectMapper == null
-                || conversation.getActiveChatRunId() == null
+        if (conversation.getActiveChatRunId() == null
                 || !Short.valueOf((short) 1).equals(conversation.getChatProtocolVersion())) return null;
         ChatRunEntity run = chatRunRepository.findByIdAndUserIdAndConversationId(
                 conversation.getActiveChatRunId(), conversation.getUserId(), conversation.getId()).orElse(null);
@@ -324,15 +161,13 @@ public class ConversationService {
 
     private MessageView toView(MessageEntity entity) {
         List<java.util.Map<String, Object>> parts = List.of();
-        if (chatAttemptRepository != null && objectMapper != null) {
-            ChatAttemptEntity attempt = chatAttemptRepository.findByReplyMessageId(entity.getId()).orElse(null);
-            if (attempt != null) {
-                try {
-                    parts = objectMapper.readValue(attempt.getPublicPartsJson(),
-                            new TypeReference<List<java.util.Map<String, Object>>>() {});
-                } catch (RuntimeException exception) {
-                    throw new DomainException("CHAT_SNAPSHOT_UNAVAILABLE", "Chat snapshot is unavailable");
-                }
+        ChatAttemptEntity attempt = chatAttemptRepository.findByReplyMessageId(entity.getId()).orElse(null);
+        if (attempt != null) {
+            try {
+                parts = objectMapper.readValue(attempt.getPublicPartsJson(),
+                        new TypeReference<List<java.util.Map<String, Object>>>() {});
+            } catch (RuntimeException exception) {
+                throw new DomainException("CHAT_SNAPSHOT_UNAVAILABLE", "Chat snapshot is unavailable");
             }
         }
         return new MessageView(entity.getId(), entity.getMessageSequence(), entity.getRole(), entity.getStatus(),
@@ -343,26 +178,6 @@ public class ConversationService {
     private void requireChatProtocol(ConversationEntity entity) {
         if (!Short.valueOf((short) 1).equals(entity.getChatProtocolVersion())) {
             throw new DomainException("CHAT_PROTOCOL_UNSUPPORTED", "This conversation cannot be displayed by Chat protocol 1");
-        }
-    }
-
-    public record ClientRequestReplay(
-            UUID conversationId,
-            MessageView userMessage,
-            MessageView assistantMessage) {
-    }
-
-    public record ClientRequestReservation(
-            UUID conversationId,
-            MessageView userMessage,
-            MessageView assistantMessage,
-            boolean started) {
-        static ClientRequestReservation started(UUID conversationId, MessageView userMessage) {
-            return new ClientRequestReservation(conversationId, userMessage, null, true);
-        }
-
-        static ClientRequestReservation replay(ClientRequestReplay replay) {
-            return new ClientRequestReservation(replay.conversationId(), replay.userMessage(), replay.assistantMessage(), false);
         }
     }
 }

@@ -139,7 +139,7 @@ public class ChatAgentOrchestrator {
         command.validateProtocol();
         ChatRuntimePersistenceService.Admission replay = persistence.findReplay(userId, command);
         if (replay != null) return replay;
-        AiSettingsService.ResolvedSettings resolved = settings.resolve(userId, defaultProvider());
+        AiSettingsService.ResolvedSettings resolved = settings.resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
         return persistence.admit(userId, command, executionProfile(resolved));
     }
 
@@ -299,6 +299,12 @@ public class ChatAgentOrchestrator {
                 int iterationOrder = Math.toIntExact(iterations.incrementAndGet()) - 1;
                 if (iterationOrder >= properties.maxIterations()) {
                     throw new DomainException("CHAT_ITERATION_LIMIT", "Chat iteration limit reached");
+                }
+                if (iterationOrder == properties.maxIterations() - 1) {
+                    finishWithoutTools = true;
+                    toolStopReason = "ITERATION_LIMIT_REACHED";
+                    currentIterationMessages.add(SystemMessage.from(
+                            "This is the final allowed model iteration for this attempt. Do not call any tool, including display or activity tools. This closeout instruction takes precedence over tool use and repair instructions. Answer the user's question now using evidence already received; clearly state any remaining gaps instead of claiming unsupported conclusions. No further model iteration is available."));
                 }
                 UUID iterationId = UUID.randomUUID();
                 activeIterationId.set(iterationId);
@@ -750,9 +756,11 @@ public class ChatAgentOrchestrator {
                         readScope.validateCurrent();
                         persistence.validatePublicationOwner(userId, conversationId, run.getId(), attemptId, ownerFence);
                         invalidateOpenDisplayBlocks(displayBlocks, parts, iterationId, run, attempt, sequence, sink);
-                        String closeout = "TOOL_CALL_LIMIT_REACHED".equals(toolStopReason)
-                                ? "本轮可用工具调用次数已用完，无法继续执行新工具；当前回答可能不完整。"
-                                : "当前所选资料中仍未能读取到足以支持回答的内容，因此我不能给出基于资料的结论。";
+                        String closeout = switch (toolStopReason) {
+                            case "ITERATION_LIMIT_REACHED" -> "本轮已到达生成轮次上限，无法继续执行新工具；当前回答可能不完整。";
+                            case "TOOL_CALL_LIMIT_REACHED" -> "本轮可用工具调用次数已用完，无法继续执行新工具；当前回答可能不完整。";
+                            default -> "当前所选资料中仍未能读取到足以支持回答的内容，因此我不能给出基于资料的结论。";
+                        };
                         appendText(parts, closeout);
                         emit(sink, sequence, run, attempt, iterationId, null, "text.delta",
                                 Map.of("text", closeout, "publicTextDelta", closeout));
@@ -813,12 +821,15 @@ public class ChatAgentOrchestrator {
                 } else {
                     logContextCapacityRejection(run.getId(), attemptId, iterations.get(), capacityRejection);
                 }
-                invalidateOpenDisplayBlocks(displayBlocks, parts, activeIterationId.get(), run, attempt, sequence, sink);
             }
         } finally {
             if (!readyBusinessCommitted.get()) {
-                try { invalidateOpenDisplayBlocks(displayBlocks, parts, null, run, attempt, sequence, sink); }
-                catch (RuntimeException ignored) { /* preserve terminal cleanup after a disconnected stream */ }
+                invalidateOpenDisplayBlocks(displayBlocks, parts, null, run, attempt, sequence, event -> {
+                    try { sink.accept(event); }
+                    catch (RuntimeException disconnected) {
+                        // Every open block must settle locally even when its error event cannot be delivered.
+                    }
+                });
             }
             deadlineTask.cancel(false);
             cancelPollTask.cancel(false);
@@ -928,17 +939,10 @@ public class ChatAgentOrchestrator {
                     + "; retrievalMode=" + context.readingContext().retrievalMode()
                     + "; source selection is revalidated by server. Never treat client scope as authority."));
         }
-        List<MessageView> previousMessages = new ArrayList<>();
-        for (var message : view.messages()) {
-            if (message.messageSequence() >= userMessage.getMessageSequence()) break;
-            previousMessages.add(message);
-        }
-        List<ChatEvidenceHistoryProjector.HistoryTurn> priorTurns = priorTurns(userId, conversationId, previousMessages);
+        List<ChatEvidenceHistoryProjector.HistoryTurn> priorTurns = priorTurns(userId, conversationId,
+                view.messages(), userMessage.getMessageSequence());
         ArrayList<ChatMessage> currentTurn = new ArrayList<>();
-        currentTurn.add(UserMessage.from(userMessage.getContent()));
-        if (context.selectionText() != null && !context.selectionText().isBlank()) {
-            currentTurn.add(UserMessage.from("Selected text supplied by the user (context only):\n" + context.selectionText()));
-        }
+        currentTurn.add(quotedUserMessage(userMessage.getContent(), context.selectionText()));
         if ("activity_submission".equals(run.getAction())) {
             ChatActivityEntity activity = persistence.activityForSubmissionRun(run.getId(), userId);
             if (activity != null) {
@@ -953,39 +957,36 @@ public class ChatAgentOrchestrator {
     }
 
     private List<ChatEvidenceHistoryProjector.HistoryTurn> priorTurns(UUID userId, UUID conversationId,
-            List<MessageView> messages) {
+            List<MessageView> messages, long currentUserSequence) {
         Map<UUID, ChatRunEntity> runsByUserMessage = new HashMap<>();
         List<ChatRunEntity> priorRuns = persistence.conversationRunHistory(userId, conversationId);
         for (ChatRunEntity priorRun : priorRuns == null ? List.<ChatRunEntity>of() : priorRuns) {
             runsByUserMessage.put(priorRun.getUserMessageId(), priorRun);
         }
-        ArrayList<ChatEvidenceHistoryProjector.HistoryTurn> result = new ArrayList<>();
-        ArrayList<MessageView> turn = new ArrayList<>();
-        for (MessageView message : messages) {
-            if (message.role() == AiMessageRole.USER && !turn.isEmpty()) {
-                result.add(historyTurn(userId, conversationId, turn, runsByUserMessage));
-                turn.clear();
-            }
-            turn.add(message);
-        }
-        if (!turn.isEmpty()) result.add(historyTurn(userId, conversationId, turn, runsByUserMessage));
-        return List.copyOf(result);
+        Map<UUID, MessageView> messagesById = messages.stream()
+                .collect(java.util.stream.Collectors.toMap(MessageView::id, message -> message));
+        return messages.stream()
+                .filter(message -> message.role() == AiMessageRole.USER
+                        && message.messageSequence() < currentUserSequence)
+                .map(message -> historyTurn(userId, conversationId, message,
+                        runsByUserMessage.get(message.id()), messagesById))
+                .toList();
     }
 
     private ChatEvidenceHistoryProjector.HistoryTurn historyTurn(UUID userId, UUID conversationId,
-            List<MessageView> turn, Map<UUID, ChatRunEntity> runsByUserMessage) {
+            MessageView userMessage, ChatRunEntity turnRun, Map<UUID, MessageView> messagesById) {
+        if (turnRun == null) {
+            throw new DomainException("CHAT_CONTEXT_UNAVAILABLE", "Chat turn context is unavailable");
+        }
         ArrayList<ChatMessage> publicMessages = new ArrayList<>();
-        ChatRunEntity turnRun = null;
-        for (MessageView message : turn) {
-            if (message.role() == AiMessageRole.USER) {
-                publicMessages.add(UserMessage.from(message.content()));
-                turnRun = runsByUserMessage.get(message.id());
-            } else if (message.role() == AiMessageRole.ASSISTANT && message.content() != null && !message.content().isBlank()) {
-                publicMessages.add(AiMessage.from(message.content()));
-            }
+        publicMessages.add(quotedUserMessage(userMessage.content(),
+                buildRunContext(userId, turnRun, null, null).selectionText()));
+        MessageView reply = messagesById.get(turnRun.getCurrentReplyMessageId());
+        if (reply != null && reply.content() != null && !reply.content().isBlank()) {
+            publicMessages.add(AiMessage.from(reply.content()));
         }
         List<ChatToolEvidence> evidence = List.of();
-        if (turnRun != null && turnRun.getCurrentAttemptId() != null) {
+        if (turnRun.getCurrentAttemptId() != null) {
             try {
                 evidence = evidenceCodec.decode(persistence.privateToolEvidence(userId, conversationId,
                         turnRun.getId(), turnRun.getCurrentAttemptId()));
@@ -994,6 +995,11 @@ public class ChatAgentOrchestrator {
             }
         }
         return new ChatEvidenceHistoryProjector.HistoryTurn(publicMessages, evidence);
+    }
+
+    private UserMessage quotedUserMessage(String content, String selectionText) {
+        return UserMessage.from(selectionText == null || selectionText.isBlank() ? content
+                : content + "\n\nSelected text supplied by the user (context only):\n" + selectionText);
     }
 
     private AiChatRequestCapacity.Check serializedRequestCheck(List<ChatMessage> messages,
@@ -1210,11 +1216,6 @@ public class ChatAgentOrchestrator {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
-    }
-    private AiProviderType defaultProvider() {
-        String configured = auralisProperties.ai().defaultProvider();
-        try { return AiProviderType.valueOf(configured.trim().toUpperCase(java.util.Locale.ROOT)); }
-        catch (Exception e) { return AiProviderType.SILICONFLOW; }
     }
     Map<String, Long> accounting(UUID userId, ChatRunEntity run) {
         try {

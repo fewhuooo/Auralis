@@ -25,7 +25,7 @@ public final class ParsedDocumentDtos {
             @NotBlank @Size(max = 128) String parserVersion,
             @NotBlank @Size(max = 128) String normalizationVersion,
             @Schema(nullable = true) @Size(max = 160) String ocrModelVersion,
-            @Pattern(regexp = "[0-9a-fA-F]{64}") String sourceAssetSha256,
+            @NotNull @Pattern(regexp = "[0-9a-fA-F]{64}") String sourceAssetSha256,
             @NotBlank @Pattern(regexp = "[0-9a-fA-F]{64}") String payloadSha256,
             @NotNull @Positive long sizeBytes) {
 

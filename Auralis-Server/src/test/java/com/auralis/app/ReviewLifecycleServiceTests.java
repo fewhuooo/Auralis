@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = AuralisApplication.class)
@@ -732,6 +733,75 @@ class ReviewLifecycleServiceTests {
         assertThat(afterContent.path("lastReviewId").isNull()).isTrue();
         JsonNode states = subjectStates(owner, subjectId);
         assertThat(states.path("items").get(0).path("needsLearning").booleanValue()).isTrue();
+    }
+
+    @Test
+    void titleEditKeepsReviewTargetAndReplaysOnlyAnAcceptedOldRequest() throws Exception {
+        Owner owner = owner("title-edit-review");
+        UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand("Title edit", null, null, "001")).id();
+        var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
+                subjectId, null, "Before title edit", "body", null));
+        JsonNode learned = postCommand(owner, "/api/reviews/lifecycle/learning-completions",
+                learningCompletion(UUID.randomUUID(), block.id(), block.version(), 0, block.content(), null));
+        UUID reviewId = UUID.randomUUID();
+        var select = attempt(UUID.randomUUID(), block.id(), block.version(), learned.path("state").path("version").longValue(),
+                block.content(), reviewId, ReviewLifecycleRating.HARD);
+        JsonNode selected = postCommand(owner, "/api/reviews/lifecycle/attempts", select);
+        long selectedVersion = selected.path("state").path("version").longValue();
+        var renamed = knowledgeBlockService.update(owner.userId(), block.id(), block.version(), new KnowledgeBlockCommand(
+                subjectId, null, "After title edit", block.content(), null));
+
+        assertThat(postCommand(owner, "/api/reviews/lifecycle/attempts", select)).isEqualTo(selected);
+        String confirmPath = "/api/reviews/lifecycle/attempts/" + reviewId + "/confirmations";
+        UUID confirmId = UUID.randomUUID();
+        mockMvc.perform(post(confirmPath).header("Authorization", owner.authorization())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(resolution(confirmId, block.id(), block.version(),
+                                selectedVersion, block.content()))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("RESOURCE_VERSION_CONFLICT"));
+        assertThat(history(owner, block.id()).path("state").path("pendingReviewId").asText()).isEqualTo(reviewId.toString());
+        assertThat(history(owner, block.id()).path("commands").size()).isEqualTo(2);
+
+        JsonNode confirmed = postCommand(owner, confirmPath,
+                resolution(confirmId, block.id(), renamed.version(), selectedVersion, block.content()));
+        assertThat(confirmed.path("effectiveReview").path("effectiveRating").asText()).isEqualTo("HARD");
+        assertThat(confirmed.path("state").path("pendingReviewId").isNull()).isTrue();
+        assertThat(history(owner, block.id()).path("commands").get(2).path("rating").asText()).isEqualTo("HARD");
+
+        knowledgeBlockService.update(owner.userId(), block.id(), renamed.version(), new KnowledgeBlockCommand(
+                subjectId, null, renamed.title(), "new body", null));
+        mockMvc.perform(post("/api/reviews/lifecycle/attempts").header("Authorization", owner.authorization())
+                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(select)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("RESOURCE_VERSION_CONFLICT"));
+    }
+
+    @Test
+    void movingAReviewedBlockBackDoesNotRestoreAnOldConfirmationTarget() throws Exception {
+        Owner owner = owner("move-pending-review");
+        UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand("From", null, null, "001")).id();
+        UUID destinationId = subjectService.create(owner.userId(), new SubjectCommand("To", null, null, "001")).id();
+        var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
+                subjectId, null, "Moving block", "body", null));
+        JsonNode learned = postCommand(owner, "/api/reviews/lifecycle/learning-completions",
+                learningCompletion(UUID.randomUUID(), block.id(), block.version(), 0, block.content(), null));
+        UUID reviewId = UUID.randomUUID();
+        JsonNode selected = postCommand(owner, "/api/reviews/lifecycle/attempts", attempt(UUID.randomUUID(), block.id(),
+                block.version(), learned.path("state").path("version").longValue(), block.content(), reviewId, ReviewLifecycleRating.GOOD));
+        var moved = knowledgeBlockService.update(owner.userId(), block.id(), block.version(), new KnowledgeBlockCommand(
+                destinationId, null, block.title(), block.content(), null));
+        var movedBack = knowledgeBlockService.update(owner.userId(), block.id(), moved.version(), new KnowledgeBlockCommand(
+                subjectId, null, block.title(), block.content(), null));
+        JsonNode history = history(owner, block.id());
+        JsonNode current = history.path("state");
+        assertThat(current.path("dueAt")).isEqualTo(selected.path("state").path("dueAt"));
+        assertThat(current.path("pendingReviewId").isNull()).isTrue();
+        assertThat(current.path("lastReviewId").isNull()).isTrue();
+        assertThat(history.path("effectiveReviews").get(0).path("resolution").asText()).isEqualTo("SUPERSEDED");
+        mockMvc.perform(post("/api/reviews/lifecycle/attempts/" + reviewId + "/confirmations")
+                        .header("Authorization", owner.authorization()).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(resolution(UUID.randomUUID(), block.id(), movedBack.version(),
+                                current.path("version").longValue(), block.content()))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("MUTATION_REJECTED"));
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.relation.internal.persistence.RelationEntity;
 import com.auralis.app.relation.internal.persistence.RelationRepository;
 import com.auralis.app.relation.internal.persistence.RelationEndpointSnapshot;
+import com.auralis.app.shared.domain.CoreResourceInsert;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
@@ -30,6 +31,7 @@ import java.util.UUID;
 public class RelationService {
 
     private final RelationRepository relationRepository;
+    private final CoreResourceInsert resourceInsert;
     private final SubjectLockCoordinator subjectLockCoordinator;
     private final SourceService sourceService;
     private final KnowledgeBlockService knowledgeBlockService;
@@ -38,12 +40,14 @@ public class RelationService {
 
     public RelationService(
             RelationRepository relationRepository,
+            CoreResourceInsert resourceInsert,
             SubjectLockCoordinator subjectLockCoordinator,
             SourceService sourceService,
             KnowledgeBlockService knowledgeBlockService,
             TaskService taskService,
             ApplicationEventPublisher eventPublisher) {
         this.relationRepository = relationRepository;
+        this.resourceInsert = resourceInsert;
         this.subjectLockCoordinator = subjectLockCoordinator;
         this.sourceService = sourceService;
         this.knowledgeBlockService = knowledgeBlockService;
@@ -66,7 +70,7 @@ public class RelationService {
                 relation.targetId(), relation.type())) {
             throw new DomainException("MUTATION_REJECTED", "Relation already exists");
         }
-        RelationView result = view(relationRepository.save(new RelationEntity(
+        RelationView result = view(resourceInsert.insert("relations", new RelationEntity(
                 relationId, userId, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type(), relation.label())));
         publishChange(userId, result, "CREATE");

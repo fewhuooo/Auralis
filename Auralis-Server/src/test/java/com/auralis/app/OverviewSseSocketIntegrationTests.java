@@ -34,7 +34,6 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -138,7 +137,8 @@ class OverviewSseSocketIntegrationTests {
         try (var input = connection.getInputStream()) {
             String body = new String(input.readAllBytes(), StandardCharsets.UTF_8);
             assertThat(connection.getContentType()).startsWith("application/json");
-            assertThat(body).contains("\"schemaVersion\":1", "\"title\":\"A test overview\"");
+            assertThat(body).contains("\"schemaVersion\":2", "\"title\":\"A test overview\"",
+                    "\"outlineMarkdown\":\"## Test outline\"", "\"summaryMarkdown\":\"Summary\"");
         } finally {
             connection.disconnect();
         }
@@ -149,7 +149,7 @@ class OverviewSseSocketIntegrationTests {
         var auth = register("sse-subject-result");
         when(generationService.generateSubject(any(UUID.class), any(OverviewDtos.SubjectOverviewRequest.class),
                 any(), any(), any()))
-                .thenReturn(response());
+                .thenReturn(new OverviewDtos.OverviewResponse(2, "A test overview", null, "Summary"));
 
         rejectSubjectGeneration.set(false);
         try {
@@ -158,7 +158,8 @@ class OverviewSseSocketIntegrationTests {
                     connection.getInputStream(), StandardCharsets.UTF_8))) {
                 assertThat(connection.getContentType()).startsWith("text/event-stream");
                 String event = readTerminalResult(reader, 3);
-                assertThat(event).contains("event:result", "data:", "\"schemaVersion\":1", "\"title\":\"A test overview\"");
+                assertThat(event).contains("event:result", "data:", "\"schemaVersion\":2", "\"title\":\"A test overview\"",
+                        "\"outlineMarkdown\":null", "\"summaryMarkdown\":\"Summary\"");
             } finally {
                 connection.disconnect();
             }
@@ -387,8 +388,8 @@ class OverviewSseSocketIntegrationTests {
         connection.setRequestProperty(HttpHeaders.ACCEPT, accept);
         connection.setRequestProperty("Content-Type", "application/json");
         String requestBody = subject
-                ? "{\"subjectId\":\"" + UUID.randomUUID() + "\",\"mode\":\"ALL\",\"sources\":[{\"sourceId\":\""
-                    + UUID.randomUUID() + "\",\"title\":\"Test source\"}]}"
+                ? "{\"subjectId\":\"" + UUID.randomUUID() + "\",\"mode\":\"SUMMARY\",\"sources\":[{\"sourceId\":\""
+                    + UUID.randomUUID() + "\",\"title\":\"Test source\",\"summaryMarkdown\":\"Source summary\"}]}"
                 : "{\"sourceId\":\"" + UUID.randomUUID() + "\",\"mode\":\"ALL\"}";
         connection.getOutputStream().write(requestBody.getBytes(StandardCharsets.UTF_8));
         assertThat(connection.getResponseCode()).isEqualTo(200);
@@ -444,8 +445,7 @@ class OverviewSseSocketIntegrationTests {
     }
 
     private OverviewDtos.OverviewResponse response() {
-        return new OverviewDtos.OverviewResponse(1, "A test overview", null,
-                new OverviewDtos.OverviewSummary("Summary", List.of("point"), List.of("step")));
+        return new OverviewDtos.OverviewResponse(2, "A test overview", "## Test outline", "Summary");
     }
 
     @TestConfiguration(proxyBeanMethods = false)

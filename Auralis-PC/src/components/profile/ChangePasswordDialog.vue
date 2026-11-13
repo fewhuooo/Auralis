@@ -14,7 +14,7 @@
     <div class="change-password-form">
       <div class="security-tip">
         <IconKey :size="15" :stroke-width="1.8" />
-        <span>建议设置 12 位以上包含字母与数字的高强度密码</span>
+        <span>新密码至少 12 位，按 UTF-8 编码最多 72 字节</span>
       </div>
 
       <div class="modal-form-group">
@@ -35,7 +35,7 @@
           v-model="form.newPassword"
           type="password"
           class="modal-form-input"
-          placeholder="12 至 200 位安全新密码"
+          placeholder="请输入新密码"
           @input="clearError"
         />
       </div>
@@ -138,8 +138,8 @@ const handleSubmit = () => {
     localError.value = '请输入原密码'
     return
   }
-  if (!form.newPassword || form.newPassword.length < 12 || form.newPassword.length > 200) {
-    localError.value = '新密码长度必须在 12 至 200 位之间'
+  if (form.newPassword.length < 12 || new TextEncoder().encode(form.newPassword).byteLength > 72) {
+    localError.value = '新密码至少 12 位，按 UTF-8 编码最多 72 字节'
     return
   }
   if (form.newPassword !== form.confirmPassword) {

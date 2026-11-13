@@ -1,5 +1,6 @@
 package com.auralis.app.source;
 
+import com.auralis.app.shared.domain.CoreResourceInsert;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceType;
@@ -42,6 +43,7 @@ public class SourceService {
     private static final Logger log = LoggerFactory.getLogger(SourceService.class);
 
     private final SourceRepository sourceRepository;
+    private final CoreResourceInsert resourceInsert;
     private final AssetRepository assetRepository;
     private final SubjectLockCoordinator subjectLockCoordinator;
     private final ApplicationEventPublisher eventPublisher;
@@ -50,12 +52,14 @@ public class SourceService {
 
     public SourceService(
             SourceRepository sourceRepository,
+            CoreResourceInsert resourceInsert,
             AssetRepository assetRepository,
             SubjectLockCoordinator subjectLockCoordinator,
             ApplicationEventPublisher eventPublisher,
             ParsedDocumentRepository parsedDocumentRepository,
             ParsedDocumentIngestionPort ingestionJobService) {
         this.sourceRepository = sourceRepository;
+        this.resourceInsert = resourceInsert;
         this.assetRepository = assetRepository;
         this.subjectLockCoordinator = subjectLockCoordinator;
         this.eventPublisher = eventPublisher;
@@ -75,7 +79,7 @@ public class SourceService {
         SourceIngestionStatus initialStatus = data.type() == SourceType.FILE
                 ? SourceIngestionStatus.AWAITING_CLIENT
                 : SourceIngestionStatus.PENDING;
-        SourceEntity entity = sourceRepository.saveAndFlush(new SourceEntity(
+        SourceEntity entity = resourceInsert.insert("sources", new SourceEntity(
                 sourceId, userId, data.type(), command.subjectId(), requiredTitle(command.title()),
                 data.assetId(), data.originUrl(), data.rawText(), command.outline(), initialStatus));
         SourceView result = view(entity);
@@ -282,14 +286,25 @@ public class SourceService {
             requireReadyAsset(userId, entity.getAssetId());
         }
         entity.restore();
-        SourceView result = view(sourceRepository.saveAndFlush(entity));
         SourceIngestionStatus ingestionStatus = entity.getIngestionStatus();
-        if (entity.getType() != SourceType.FILE
-                && (ingestionStatus == SourceIngestionStatus.PENDING
-                        || ingestionStatus == SourceIngestionStatus.PARSING
-                        || ingestionStatus == SourceIngestionStatus.INDEXING)) {
-            ingestionJobService.enqueueServerOwnedSource(userId, id, entity.getIngestionRevision());
+        if (ingestionStatus == SourceIngestionStatus.PENDING
+                || ingestionStatus == SourceIngestionStatus.PARSING
+                || ingestionStatus == SourceIngestionStatus.INDEXING) {
+            UUID revision = entity.getIngestionRevision();
+            if (entity.getType() != SourceType.FILE) {
+                ingestionJobService.enqueueServerOwnedSource(userId, id, revision);
+            } else {
+                var accepted = parsedDocumentRepository.findFirstByUserIdAndSourceIdAndIngestionRevisionAndStatus(
+                        userId, id, revision, ParsedDocumentStatus.ACCEPTED);
+                if (accepted.isPresent()) {
+                    ingestionJobService.resumeParsedDocument(
+                            userId, id, accepted.get().getId(), revision, accepted.get().getGeneration());
+                } else {
+                    entity.requestReingest(true);
+                }
+            }
         }
+        SourceView result = view(sourceRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");
         return result;
     }

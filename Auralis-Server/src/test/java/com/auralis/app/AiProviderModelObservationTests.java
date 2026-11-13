@@ -8,7 +8,7 @@ import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.internal.provider.OpenAiCompatibleProvider;
-import com.auralis.app.ai.internal.provider.SiliconFlowEmbeddingProvider;
+import com.auralis.app.ai.internal.provider.OpenAiCompatibleEmbeddingProvider;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
@@ -69,7 +69,7 @@ class AiProviderModelObservationTests {
             assertThat(identityModel(identity)).isEqualTo("unknown");
         }
 
-        SiliconFlowEmbeddingProvider embeddingProvider = embeddingProvider(
+        OpenAiCompatibleEmbeddingProvider embeddingProvider = embeddingProvider(
                 "{\"model\":\"https://provider.test/embed\",\"data\":[{\"index\":0,\"embedding\":[" + vector
                         + "]}],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":0}}");
         var embedding = embeddingProvider.embed(List.of("sample"), credential());
@@ -96,7 +96,7 @@ class AiProviderModelObservationTests {
     }
 
     @Test
-    void streamingCarriesOnlyResponseIdentityAndKeepsDifferentObservationsVisibleForAggregation() throws Exception {
+    void streamingMergesDifferentResponseIdentitiesIntoTerminalConflict() throws Exception {
         ProviderEndpointPolicy policy = endpointPolicy();
         ProviderHttpTransport transport = new ProviderHttpTransport() {
             @Override
@@ -108,7 +108,7 @@ class AiProviderModelObservationTests {
             public void postStream(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] body,
                                   java.util.function.Consumer<String> lineConsumer) {
                 lineConsumer.accept("data: {\"model\":\"vendor/model-a\",\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}");
-                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}");
+                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"x\"},\"finish_reason\":\"stop\"}]}");
                 lineConsumer.accept("data: {\"model\":\"vendor/model-b\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}");
                 lineConsumer.accept("data: [DONE]");
             }
@@ -117,7 +117,7 @@ class AiProviderModelObservationTests {
                 policy, new ProviderHttpClient(new ObjectMapper(), transport, 4096));
         List<AiProviderChunk> chunks = new ArrayList<>();
 
-        provider.streamInto(request("requested-model"), credential(), chunks::add);
+        provider.streamInto(request("requested-model"), credential(), null, chunks::add);
 
         assertThat(recordComponentNames(AiProviderChunk.class)).contains("modelIdentity");
         assertThat(chunks.stream().filter(chunk -> chunk.content() != null && !chunk.content().isEmpty()).count())
@@ -127,7 +127,7 @@ class AiProviderModelObservationTests {
         assertThat(identityModel(modelIdentity(chunks.getFirst()))).isEqualTo("vendor/model-a");
         assertThat(chunks.stream().map(AiProviderModelObservationTests::modelIdentityUnchecked)
                 .map(AiProviderModelObservationTests::identityStatusUnchecked).toList())
-                .containsExactly("OBSERVED", "MISSING", "OBSERVED", "MISSING");
+                .containsExactly("OBSERVED", "MISSING", "CONFLICT");
     }
 
     @Test
@@ -164,11 +164,11 @@ class AiProviderModelObservationTests {
         return new OpenAiCompatibleProvider(policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
     }
 
-    private SiliconFlowEmbeddingProvider embeddingProvider(String response) {
+    private OpenAiCompatibleEmbeddingProvider embeddingProvider(String response) {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
-        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create(BASE_URL))).thenReturn(ENDPOINT);
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create(BASE_URL))).thenReturn(ENDPOINT);
         ProviderHttpTransport transport = (resolved, path, apiKey, body) -> response.getBytes(StandardCharsets.UTF_8);
-        return new SiliconFlowEmbeddingProvider(policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
+        return new OpenAiCompatibleEmbeddingProvider(policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
     }
 
     private ProviderEndpointPolicy endpointPolicy() {

@@ -67,7 +67,7 @@ test('generic API availability updates the global connection projection', async 
   assert.doesNotMatch(app, /serviceUnavailable:\s*false/)
   assert.match(app, /serviceUnavailable:\s*serviceUnavailable\.value/)
   assert.match(request, /serviceAvailabilityRequestId\s*=\s*beginServiceRequest\(\)/)
-  assert.match(request, /observeServiceAvailable\(\(response\.config as ServiceAvailabilityRequestConfig\)\.serviceAvailabilityRequestId\)/)
+  assert.match(request, /observeServiceAvailable\(config\.serviceAvailabilityRequestId\)/)
   assert.match(request, /observeServiceFailure\(originalRequest\?\.serviceAvailabilityRequestId, error\.response\?\.status, error\.code\)/)
   assert.match(request, /observeServiceFailure\(/)
   assert.match(request, /observeServiceAvailable\(/)

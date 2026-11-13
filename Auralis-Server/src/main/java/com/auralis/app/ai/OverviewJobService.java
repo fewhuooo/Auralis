@@ -3,7 +3,6 @@ package com.auralis.app.ai;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
@@ -18,23 +17,14 @@ public class OverviewJobService {
     private final OverviewJobInvocationJournal invocationJournal;
     private final ObjectMapper objectMapper;
     private final Clock clock;
-    private final OverviewResultService resultService;
 
-    @Autowired
     public OverviewJobService(OverviewJobRepository repository, OverviewGenerationService generationService,
-                              OverviewJobInvocationJournal invocationJournal, ObjectMapper objectMapper, Clock clock,
-                              OverviewResultService resultService) {
+                              OverviewJobInvocationJournal invocationJournal, ObjectMapper objectMapper, Clock clock) {
         this.repository = repository;
         this.generationService = generationService;
         this.invocationJournal = invocationJournal;
         this.objectMapper = objectMapper;
         this.clock = clock;
-        this.resultService = resultService;
-    }
-
-    OverviewJobService(OverviewJobRepository repository, OverviewGenerationService generationService,
-                       OverviewJobInvocationJournal invocationJournal, ObjectMapper objectMapper, Clock clock) {
-        this(repository, generationService, invocationJournal, objectMapper, clock, null);
     }
 
     @Transactional
@@ -42,10 +32,7 @@ public class OverviewJobService {
         validateRequest(request);
         repository.lockActiveUser(userId);
         OverviewJobRepository.Snapshot snapshot = generationService.snapshotForJob(userId, request);
-        String scopeType = request.scope().name();
-        UUID scopeId = request.scope() == OverviewJobDtos.Scope.SOURCE ? request.sourceId() : request.subjectId();
-        OverviewJobRepository.PublicationBaseline baseline = resultService.capturePublicationBaseline(userId, scopeType, scopeId);
-        return view(repository.enqueue(userId, request, snapshot, baseline));
+        return view(repository.enqueue(userId, request, snapshot));
     }
 
     public OverviewJobDtos.JobView get(UUID userId, UUID id) {
@@ -68,7 +55,7 @@ public class OverviewJobService {
         OverviewJobDtos.StartRequest request = request(row);
         requireCurrentSnapshot(userId, request, row);
         try {
-            OverviewDtos.OverviewResponse response = objectMapper.readValue(row.candidateJson(), OverviewDtos.OverviewResponse.class);
+            OverviewDtos.OverviewResponse response = new OverviewDocumentValidator(objectMapper).validateProviderDocument(row.candidateJson());
             return new OverviewJobDtos.Candidate(row.id(), row.version(), response);
         } catch (Exception invalid) {
             throw new DomainException("VALIDATION_FAILED", "Stored Overview job candidate is invalid", null, invalid);
@@ -172,7 +159,7 @@ public class OverviewJobService {
         return new OverviewJobDtos.JobView(row.id(), row.status(), row.version(), OverviewJobDtos.Scope.valueOf(row.scopeType()),
                 request.sourceId(), request.subjectId(), request.sourceIds(), OverviewJobDtos.Mode.valueOf(row.mode()), row.stage(),
                 row.verifiedNodes(), row.totalNodes(), row.deadlineAt(), row.safeErrorCode(), row.createdAt(), row.updatedAt(),
-                row.completedAt(), row.publicationBaseVersion());
+                row.completedAt());
     }
 
     private OverviewJobDtos.StartRequest request(OverviewJobRepository.JobRow row) {

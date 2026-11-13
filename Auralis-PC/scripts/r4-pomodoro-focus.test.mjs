@@ -205,6 +205,81 @@ test('SQLite schema upgrade preserves Overview cache and supports the durable fo
   }
 })
 
+test('a task-specific focus rejection preserves the event and lets the next event upload after service recovery', async (t) => {
+  const originalAdapter = activeFocusAdapter
+  t.after(() => { activeFocusAdapter = originalAdapter })
+  const attempted = []
+  let status = 503
+  activeFocusAdapter = async (config) => {
+    if (config.url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
+    assert.equal(config.url, '/api/focus-sessions')
+    const event = JSON.parse(config.data)
+    attempted.push(event)
+    if (event.taskId) {
+      const error = new Error('Focus upload rejected')
+      error.config = config
+      error.response = {
+        status, headers: {}, config,
+        data: { title: error.message, status, code: status === 404 ? 'RESOURCE_NOT_FOUND' : 'SERVICE_UNAVAILABLE' },
+      }
+      throw error
+    }
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config }
+  }
+
+  setActivePinia(createPinia())
+  const userId = 'focus-recovery-owner'
+  const serverDeviceId = 'focus-recovery-device'
+  const repository = await getFocusSessionRepository(userId, serverDeviceId)
+  const runtime = runtimeModule.createPomodoroRuntime()
+  const linkedEvent = {
+    clientSessionId: '9d46ed84-e1d4-4fc6-88a8-9f14c72fd2a2', taskId: '11111111-1111-4111-8111-111111111111',
+    startedAt: '2026-10-01T00:00:00.000Z', endedAt: '2026-10-01T00:01:00.000Z',
+    durationSeconds: 60, completed: false,
+  }
+  const freeEvent = { ...linkedEvent, clientSessionId: 'ad46ed84-e1d4-4fc6-88a8-9f14c72fd2a2', taskId: null }
+  await repository.finalize(runtime, linkedEvent)
+  await repository.finalize(runtime, freeEvent)
+  useAuthStore().setSession({
+    user: { id: userId, email: 'focus-recovery@example.test' },
+    tokens: { accessToken: 'focus-recovery-token', refreshToken: 'focus-recovery-refresh' },
+    sessionId: 'focus-recovery-session',
+    serverDeviceId,
+  })
+  const pomodoroStore = usePomodoroStore()
+
+  assert.equal(await pomodoroStore.flushPending(), 0)
+  assert.deepEqual(attempted, [linkedEvent])
+  assert.deepEqual(await repository.listPending(), [linkedEvent, freeEvent])
+
+  status = 404
+  assert.equal(await pomodoroStore.flushPending(), 1)
+  assert.deepEqual(attempted, [linkedEvent, linkedEvent, freeEvent])
+  assert.deepEqual(await repository.listPending(), [linkedEvent])
+  assert.deepEqual(pomodoroStore.pendingSessions, [linkedEvent])
+})
+
+test('starting focus works when LAN HTTP exposes no crypto.randomUUID', async (t) => {
+  const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+  const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { getRandomValues } })
+  t.after(() => Object.defineProperty(globalThis, 'crypto', originalCrypto))
+
+  setActivePinia(createPinia())
+  useAuthStore().setSession({
+    user: { id: 'focus-lan-owner', email: 'focus-lan@example.test' },
+    tokens: { accessToken: 'focus-lan-token', refreshToken: 'focus-lan-refresh' },
+    sessionId: 'focus-lan-session',
+    serverDeviceId: 'focus-lan-device',
+  })
+  const pomodoroStore = usePomodoroStore()
+  t.after(() => pomodoroStore.pause())
+  await pomodoroStore.start()
+
+  assert.equal(pomodoroStore.isRunning, true)
+  assert.match(pomodoroStore.runtime.activeSession.clientSessionId, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+})
+
 test('a delayed focus-session 401 after account switch cannot retry the outbox row with the next account', async () => {
   const originalAdapter = activeFocusAdapter
   const originalCreate = useFocusSessionApi.create
@@ -266,8 +341,8 @@ test('a delayed focus-session 401 after account switch cannot retry the outbox r
     pomodoroStore.runtime = { ...pomodoroStore.runtime, runStartedAtMs: Date.now() - 1500 }
     await pomodoroStore.skip()
     assert.equal(pomodoroStore.pendingSessions.length, 1, 'skipping a focus run should create an outbox row')
-    assert.ok(focusCreatePromise, 'the outbox should start an upload')
     await waitForSignal(requestStarted.promise, 'A focus-session upload')
+    assert.ok(focusCreatePromise, 'the outbox should start an upload')
     const firstRequest = requestLog.find((entry) => entry.url === '/api/focus-sessions')
     assert.equal(firstRequest?.authorization, 'Bearer focus-token-a')
 

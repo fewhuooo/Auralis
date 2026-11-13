@@ -1,6 +1,7 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.OverviewGenerationCoordinator;
+import com.auralis.app.ai.OverviewHistoricalFixtures;
 import com.auralis.app.identity.AccountDeletionCleanupService;
 import com.auralis.app.identity.AuthDtos;
 import com.auralis.app.identity.IdentityService;
@@ -84,7 +85,6 @@ class OverviewAccountDeletionM5PostgresIntegrationTests {
         registry.add("auralis.identity.account-deletion-delay-millis", () -> "3600000");
         registry.add("auralis.identity.account-deletion-initial-delay-millis", () -> "3600000");
         registry.add("auralis.ai.overview-jobs-poll-ms", () -> "3600000");
-        registry.add("auralis.ai.overview-publication-poll-ms", () -> "3600000");
     }
 
     private static String taskOwnedPostgresUrl() {
@@ -185,8 +185,7 @@ class OverviewAccountDeletionM5PostgresIntegrationTests {
                 userId, requestId, "SOURCE", scopeId, sourceRevision, HASH_A, HASH_B, HASH_C, "overview-m5-it");
         OverviewGenerationCoordinator.Acquisition generation = coordinator.acquire(request);
         String checkpointJson = "{\"schemaVersion\":1,\"body\":\"synthetic-" + marker + "\"}";
-        coordinator.saveCheckpoint(generation.lease(), "writer_" + marker, HASH_A, HASH_C,
-                "overview-m5-it", 1, checkpointJson);
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, generation.lease(), "writer_" + marker, checkpointJson);
         UUID checkpointId = jdbc.queryForObject(
                 "select id from overview_generation_checkpoints where generation_id=? and step_key=?",
                 UUID.class, generation.generationId(), "writer_" + marker);

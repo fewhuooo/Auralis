@@ -39,17 +39,16 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { lo
 const { createMemoryStorage } = await import('../src/services/localRepository.ts')
 const { OverviewRepository, computeSubjectInputFingerprint } = await import('../src/services/overviewRepository.ts')
 const { computeOverviewManifestFingerprint, OverviewResultsSyncService, runOverviewConflictResolutionOnce } = await import('../src/services/overviewResultsSyncService.ts')
-const { createOutlineProvenanceInputForLinkedSources, createOutlineProvenanceView, filterOutlineSourceRefs } = await import('../src/services/outlineIdentity.ts')
 const { OVERVIEW_INTENT_CREATED_EVENT, subscribeOverviewIntentCreated } = await import('../src/services/overviewSyncWakeup.ts')
 const { ApiProblemError } = await import('../src/api/httpError.ts')
 const syncStoreSource = await readFile(new URL('../src/store/useSyncStore.ts', import.meta.url), 'utf8')
 const fileOutlineUiSource = await readFile(new URL('../src/components/subject/FileOutlineList.vue', import.meta.url), 'utf8')
 const subjectOverviewUiSource = await readFile(new URL('../src/components/subject/SubjectOverviewSection.vue', import.meta.url), 'utf8')
 
-const outline = [{ title: 'Limits', sections: [{ title: 'Sequence limits', summary: 'Definition', sourceIds: ['file-a'], locator: null }] }]
-const summary = { overview: 'Calculus overview', keyPoints: ['Limits'], learningPath: ['Limits', 'Derivatives'] }
+const outlineMarkdown = '## Limits\nSupported content'
+const summaryMarkdown = 'Calculus overview: Limits and derivatives'
 const record = (scopeType = 'FILE', scopeId = 'file-a', revisionKey = 'rev-1', title = 'Local') => ({
-  scopeType, scopeId, revisionKey, schemaVersion: 1, title, outline, summary,
+  scopeType, scopeId, revisionKey, schemaVersion: 2, title, outlineMarkdown, summaryMarkdown,
   outlineGeneratedAt: '2026-09-30T10:00:00.000Z', summaryGeneratedAt: '2026-09-30T10:01:00.000Z',
   inputFingerprint: scopeType === 'SUBJECT' ? 'local-input' : null, status: 'READY',
   errorCode: null, errorDetail: null, updatedAt: '2026-09-30T10:01:00.000Z',
@@ -59,7 +58,7 @@ function fileView(sourceId, revision, options = {}) {
   return {
     id: `remote-${sourceId}`, scopeType: 'SOURCE', sourceId, subjectId: null, ingestionRevision: revision,
     version: options.version ?? 1, outlineVersion: options.outlineVersion ?? 2, summaryVersion: options.summaryVersion ?? 3,
-    schemaVersion: 1, title: options.title ?? 'Remote file', outline, summary,
+    schemaVersion: 2, title: options.title ?? 'Remote file', outlineMarkdown, summaryMarkdown,
     outlineSourceManifest: null, summarySourceManifest: null, outlineInputFingerprint: null, summaryInputFingerprint: null,
     outlineGeneratedAt: '2026-09-30T10:00:00.000Z', summaryGeneratedAt: '2026-09-30T10:01:00.000Z',
     updatedAt: '2026-09-30T10:02:00.000Z',
@@ -69,8 +68,8 @@ function fileView(sourceId, revision, options = {}) {
 function subjectView(subjectId, command, version = 1) {
   return {
     id: `remote-${subjectId}`, scopeType: 'SUBJECT', sourceId: null, subjectId, ingestionRevision: null,
-    version, outlineVersion: version, summaryVersion: version, schemaVersion: 1, title: command.result.title,
-    outline: command.result.outline, summary: command.result.summary,
+    version, outlineVersion: version, summaryVersion: version, schemaVersion: 2, title: command.result.title,
+    outlineMarkdown: command.result.outlineMarkdown, summaryMarkdown: command.result.summaryMarkdown,
     outlineSourceManifest: command.sourceManifest ?? null, summarySourceManifest: command.sourceManifest ?? null,
     outlineInputFingerprint: command.inputFingerprint ?? null, summaryInputFingerprint: command.inputFingerprint ?? null,
     outlineGeneratedAt: command.outlineGeneratedAt, summaryGeneratedAt: command.summaryGeneratedAt,
@@ -135,40 +134,55 @@ function deferred() {
 
 test('partial cache parts merge locally without an upload intent until complete', async () => {
   const repository = new OverviewRepository('partial-user', 'partial-device', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE', response: { schemaVersion: 1, title: 'File', outline, summary: null } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE', response: { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown: null } })
   assert.equal((await repository.listOverviewOutbox()).length, 0)
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 1, title: 'File', outline: null, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 2, title: 'File', outlineMarkdown: null, summaryMarkdown } })
   const queued = await repository.listOverviewOutbox()
   assert.equal(queued.length, 1)
   assert.equal(queued[0].mode, 'SUMMARY')
-  assert.deepEqual(queued[0].result.outline, outline)
-  assert.deepEqual(queued[0].result.summary, summary)
+  assert.deepEqual(queued[0].result.outlineMarkdown, outlineMarkdown)
+  assert.deepEqual(queued[0].result.summaryMarkdown, summaryMarkdown)
+})
+
+test('blank Markdown cannot mutate the saved record or queued writes', async () => {
+  const repository = new OverviewRepository('blank-user', 'blank-device', { storage: createMemoryStorage() })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Original', outlineMarkdown, summaryMarkdown } })
+  const previous = await repository.getFileOverview('file-a', 'rev-1')
+  const pending = await repository.listOverviewOutbox()
+  for (const mode of ['OUTLINE', 'SUMMARY']) {
+    await assert.rejects(() => repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode,
+      response: { schemaVersion: 2, title: 'Invalid edit', outlineMarkdown: mode === 'OUTLINE' ? '   ' : null, summaryMarkdown: mode === 'SUMMARY' ? '\n ' : null } }), /OVERVIEW_(OUTLINE|SUMMARY)_MISSING/)
+    assert.deepEqual(await repository.getFileOverview('file-a', 'rev-1'), previous)
+    assert.deepEqual(await repository.listOverviewOutbox(), pending)
+  }
 })
 
 test('a generation-edit conflict stays local while the ordinary frozen edit intent still synchronizes', async () => {
   const repository = new OverviewRepository('generation-conflict-sync-user', 'device-1', { storage: createMemoryStorage() })
   const api = fakeApi()
   await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL',
-    response: { schemaVersion: 1, title: 'Local', outline, summary } })
+    response: { schemaVersion: 2, title: 'Local', outlineMarkdown, summaryMarkdown } })
   await service(repository,api).reconcile(options())
   assert.equal(api.calls.putFiles.length, 1)
 
   const generationBaseline = await repository.captureGenerationBaseline('FILE','file-a','rev-1','OUTLINE')
-  const localOutline = [{ title: 'Locally edited', sections: [{ title: 'Local section', summary: 'Local edit', sourceIds: ['file-a'], locator: null }] }]
+  const localOutline = '## Locally edited\nSupported content'
   await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-    response: { schemaVersion: 1, title: 'Local edit', outline: localOutline, summary: null } })
+    response: { schemaVersion: 2, title: 'Local edit', outlineMarkdown: localOutline, summaryMarkdown: null } })
   const ordinaryIntent = (await repository.listOverviewOutbox()).find(item => item.scopeType === 'FILE' && item.state === 'PREPARED')
-  const aiOutline = [{ title: 'AI result', sections: [{ title: 'AI section', summary: 'AI', sourceIds: ['file-a'], locator: null }] }]
+  const aiOutline = '## AI result\nSupported content'
   const conflicted = await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-    response: { schemaVersion: 1, title: 'Generated', outline: aiOutline, summary: null }, generationBaseline })
+    response: { schemaVersion: 2, title: 'Generated', outlineMarkdown: aiOutline, summaryMarkdown: null }, generationBaseline })
   assert.equal(conflicted.generationConflicts?.[0]?.clientWriteId, (await repository.listOverviewOutbox()).find(item => item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT')?.clientWriteId)
 
   await service(repository,api).reconcile(options())
   const sent = api.calls.putFiles.slice(1)
   assert.equal(sent.length, 1)
   assert.equal(sent[0][1].clientWriteId, ordinaryIntent?.clientWriteId)
-  assert.deepEqual(sent[0][1].result.outline, localOutline)
-  assert.deepEqual((await repository.getFileOverview('file-a','rev-1'))?.outline, localOutline)
+  assert.deepEqual(sent[0][1].result.outlineMarkdown, localOutline)
+  assert.equal(sent[0][1].summaryGeneratedAt, null)
+  assert.ok(sent[0][1].outlineGeneratedAt)
+  assert.deepEqual((await repository.getFileOverview('file-a','rev-1'))?.outlineMarkdown, localOutline)
   assert.equal((await repository.listOverviewOutbox()).find(item => item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT')?.state, 'CONFLICT')
 })
 
@@ -184,10 +198,10 @@ test('only committed complete local writes wake sync; failures, remote installs 
     const storage = createMemoryStorage()
     const repository = new OverviewRepository('wake-user', 'wake-device', { storage })
     await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-      response: { schemaVersion: 1, title: 'File', outline, summary: null } })
+      response: { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown: null } })
     assert.deepEqual(wakeups, [])
     await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'SUMMARY',
-      response: { schemaVersion: 1, title: 'File', outline: null, summary } })
+      response: { schemaVersion: 2, title: 'File', outlineMarkdown: null, summaryMarkdown } })
     assert.deepEqual(wakeups, ['write'])
     assert.equal(OVERVIEW_INTENT_CREATED_EVENT, 'auralis-overview-intent-created')
     assert.equal(JSON.parse(storage.getItem('auralis:v1:overviews:wake-user:wake-device')).outbox.length, 1,
@@ -206,12 +220,12 @@ test('only committed complete local writes wake sync; failures, remote installs 
       storage: { getItem: () => null, setItem: () => { throw new Error('storage unavailable') } },
     })
     await assert.rejects(() => failingRepository.saveFileOverviewPart({ sourceId: 'file-fail', ingestionRevision: 'rev-1', mode: 'ALL',
-      response: { schemaVersion: 1, title: 'Failed', outline, summary } }), /storage unavailable/)
+      response: { schemaVersion: 2, title: 'Failed', outlineMarkdown, summaryMarkdown } }), /storage unavailable/)
     assert.deepEqual(wakeups, ['write'], 'a failed cache/outbox commit must not wake sync')
 
     const otherOwner = new OverviewRepository('other-user', 'other-device', { storage: createMemoryStorage() })
     await otherOwner.saveFileOverviewPart({ sourceId: 'file-other', ingestionRevision: 'rev-1', mode: 'ALL',
-      response: { schemaVersion: 1, title: 'Other', outline, summary } })
+      response: { schemaVersion: 2, title: 'Other', outlineMarkdown, summaryMarkdown } })
     assert.deepEqual(wakeups, ['write'], 'an event from another owner/device must not wake this scope')
   } finally {
     unsubscribe()
@@ -229,33 +243,9 @@ test('terminal sync error notices are not shown in File and Subject Overview pan
   assert.doesNotMatch(subjectOverviewUiSource, /本机学科总览尚未同步/)
 })
 
-test('a complete legacy browser cache stays local and unready until an explicit identity initialization', async () => {
-  const storage = createMemoryStorage()
-  const repository = new OverviewRepository('legacy-user', 'legacy-device', { storage })
-  storage.setItem('auralis:v1:overviews:legacy-user:legacy-device', JSON.stringify([record()]))
-  const api = fakeApi({ putFile: async (sourceId, command) => fileView(sourceId, command.ingestionRevision, { title: command.result.title, version: 1 }) })
-
-  await service(repository, api).reconcile(options())
-
-  assert.equal(api.calls.getFiles.length, 1)
-  assert.equal(api.calls.putFiles.length, 0, 'an old cache has no trustworthy persistent node identity to initialize remotely')
-  const legacy = await repository.getFileOverview('file-a', 'rev-1')
-  assert.deepEqual(legacy?.outline, outline)
-  assert.deepEqual(legacy?.summary, summary)
-  assert.equal(legacy?.identityReady, false)
-  assert.equal(legacy?.outlineIdentity, null)
-  const [seed] = await repository.listOverviewOutbox()
-  assert.equal(seed?.origin, 'LEGACY_SEED')
-  assert.equal(seed?.state, 'ERROR')
-  assert.equal(seed?.errorCode, 'OVERVIEW_IDENTITY_INITIALIZATION_REQUIRED')
-  assert.equal(seed?.requestBody, null, 'the legacy cache remains visible without freezing a fabricated identity request')
-  assert.equal(typeof seed?.clientWriteId, 'string', 'the blocked seed intent remains available for explicit recovery')
-  assert.equal(await repository.getOverviewSyncState('FILE', 'file-a', 'rev-1'), null)
-})
-
 test('a transport retry replays the exact persisted Overview request and write id', async () => {
   const repository = new OverviewRepository('retry-user', 'retry-device', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Local', outline, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Local', outlineMarkdown, summaryMarkdown } })
   const sent = []
   let writes = 0
   const api = fakeApi({
@@ -279,58 +269,9 @@ test('a transport retry replays the exact persisted Overview request and write i
   assert.equal((await repository.listOverviewOutbox()).length, 0)
 })
 
-test('a frozen pre-identity File request reaches the server unchanged for receipt replay or contract rejection', async () => {
-  for (const decision of ['receipt-replay', 'contract-reject']) {
-    const storage = createMemoryStorage()
-    const repository = new OverviewRepository(`old-receipt-${decision}`, 'device', { storage })
-    const cacheKey = `auralis:v1:overviews:old-receipt-${decision}:device`
-    const clientWriteId = `legacy-frozen-${decision}`
-    const result = { schemaVersion: 1, title: 'Frozen legacy candidate', outline, summary }
-    const frozenRequestBody = {
-      baseVersion: 0, clientWriteId, mode: 'ALL', ingestionRevision: 'rev-1',
-      outlineGeneratedAt: '2026-09-30T10:00:00.000Z', summaryGeneratedAt: '2026-09-30T10:01:00.000Z', result,
-    }
-    const frozenIntent = {
-      clientWriteId, scopeType: 'FILE', scopeId: 'file-a', revisionKey: 'rev-1', mode: 'ALL', origin: 'LOCAL_WRITE',
-      result, inputFingerprint: null, outlineGeneratedAt: frozenRequestBody.outlineGeneratedAt,
-      summaryGeneratedAt: frozenRequestBody.summaryGeneratedAt, state: 'PENDING', requestBody: frozenRequestBody,
-      errorCode: null, createdAt: '2026-09-30T10:02:00.000Z', updatedAt: '2026-09-30T10:02:00.000Z',
-    }
-    const frozenCacheRecord = { ...record('FILE', 'file-a', 'rev-1', 'Frozen legacy candidate'), identityReady: false,
-      outlineIdentity: null, outlineIdentityInput: null, outlineProvenance: null, outlineProvenanceInput: null }
-    storage.setItem(cacheKey, JSON.stringify({ records: [frozenCacheRecord], states: [], outbox: [frozenIntent] }))
-    const frozenBody = JSON.stringify(frozenRequestBody)
-    const sent = []
-    const api = fakeApi({ putFile: async (sourceId, command) => {
-      sent.push(JSON.stringify(command))
-      if (decision === 'contract-reject') {
-        throw new ApiProblemError({ title: 'Missing outline identity', status: 400, code: 'IDENTITY_REQUIRED' })
-      }
-      return fileView(sourceId, command.ingestionRevision, { title: command.result.title, version: 1 })
-    } })
-
-    await service(repository, api).reconcile(options())
-
-    assert.deepEqual(sent, [frozenBody], 'the immutable old-shape body must cross HTTP byte-for-byte')
-    assert.equal(api.calls.getFiles.length, 0, 'the receipt check must be performed by replaying the original PUT')
-    const remaining = (await repository.listOverviewOutbox()).find(item => item.clientWriteId === clientWriteId)
-    if (decision === 'receipt-replay') {
-      assert.equal(remaining, undefined)
-      const adopted = await repository.getFileOverview('file-a', 'rev-1')
-      assert.equal(adopted?.identityReady, false)
-      assert.equal(adopted?.outlineIdentity, null)
-      assert.equal((await repository.getOverviewSyncState('FILE', 'file-a', 'rev-1'))?.version, 1)
-    } else {
-      assert.equal(remaining?.state, 'ERROR')
-      assert.equal(remaining?.errorCode, 'OVERVIEW_SYNC_FAILED')
-      assert.equal(JSON.stringify(remaining?.requestBody), frozenBody)
-    }
-  }
-})
-
 test('a File PUT with failed local ACK retries the same request and does not create a second remote version', async () => {
   const repository = new OverviewRepository('file-ack-user', 'file-ack-device', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File candidate', outline, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'File candidate', outlineMarkdown, summaryMarkdown } })
   const originalComplete = repository.completeOverviewIntent.bind(repository)
   let failCompletion = true
   repository.completeOverviewIntent = async (...args) => {
@@ -372,7 +313,7 @@ test('a Subject PUT with failed local ACK retries the same request and does not 
   const file = await repository.getFileOverview(inputSource.id, inputSource.ingestionRevision)
   const fingerprint = await computeSubjectInputFingerprint([file])
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
-    response: { schemaVersion: 1, title: 'Subject candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'Subject candidate', outlineMarkdown, summaryMarkdown } })
   const originalComplete = repository.completeOverviewIntent.bind(repository)
   let failCompletion = true
   repository.completeOverviewIntent = async (...args) => {
@@ -445,7 +386,7 @@ test('a Subject install queued after deletion cleanup cannot restore its cache',
   const api = fakeApi({
     getFile: async (sourceId, revision) => fileView(sourceId, revision),
     getSubject: async subjectId => subjectView(subjectId, {
-      result: { title: 'Remote Subject', outline, summary }, sourceManifest: null, inputFingerprint: null,
+      result: { title: 'Remote Subject', outlineMarkdown, summaryMarkdown }, sourceManifest: null, inputFingerprint: null,
     }),
   })
   const pending = service(repository, api).reconcile(options([source()], ['subject-a']))
@@ -499,7 +440,7 @@ test('scope deletion tickets isolate owners and only the current ticket can rele
 
 test('an unknown local baseline with an existing remote result preserves the local candidate as a conflict', async () => {
   const repository = new OverviewRepository('conflict-user', 'conflict-device', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Local candidate', outline, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Local candidate', outlineMarkdown, summaryMarkdown } })
   const api = fakeApi({ getFile: async () => fileView('file-a', 'rev-1', { title: 'Remote canonical' }) })
 
   await service(repository, api).reconcile(options())
@@ -514,7 +455,7 @@ test('an unknown local baseline with an existing remote result preserves the loc
 test('a new File candidate stays conflicted until the user explicitly chooses local upload', async () => {
   const repository = new OverviewRepository('file-conflict-candidate-user', 'file-conflict-candidate-device', { storage: createMemoryStorage() })
   await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL',
-    response: { schemaVersion: 1, title: 'Original candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'Original candidate', outlineMarkdown, summaryMarkdown } })
   const sent = []
   let fileGetCount = 0
   const api = fakeApi({
@@ -538,7 +479,7 @@ test('a new File candidate stays conflicted until the user explicitly chooses lo
   assert.equal(original.state, 'CONFLICT')
 
   await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL',
-    response: { schemaVersion: 1, title: 'New local candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'New local candidate', outlineMarkdown, summaryMarkdown } })
   const afterSave = await repository.listOverviewOutbox()
   const candidate = afterSave.find(item => item.clientWriteId !== original.clientWriteId)
   assert.equal(afterSave.find(item => item.clientWriteId === original.clientWriteId)?.state, 'STALE')
@@ -568,7 +509,7 @@ test('a new Subject candidate stays conflicted until the user explicitly chooses
   await sync.reconcile(options([inputSource]))
   const fingerprint = await computeSubjectInputFingerprint([await repository.getFileOverview(inputSource.id, inputSource.ingestionRevision)])
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
-    response: { schemaVersion: 1, title: 'Original subject candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'Original subject candidate', outlineMarkdown, summaryMarkdown } })
   const sent = []
   let subjectGetCount = 0
   api.putSubject = async (subjectId, command) => {
@@ -581,7 +522,7 @@ test('a new Subject candidate stays conflicted until the user explicitly chooses
   api.getSubject = async subjectId => {
     subjectGetCount += 1
     return subjectGetCount === 1 ? null : subjectView(subjectId, {
-      result: { title: 'Remote canonical subject', outline, summary },
+      result: { title: 'Remote canonical subject', outlineMarkdown, summaryMarkdown },
       sourceManifest: null,
       inputFingerprint: null,
     }, 9)
@@ -593,7 +534,7 @@ test('a new Subject candidate stays conflicted until the user explicitly chooses
   assert.equal(original.state, 'CONFLICT')
 
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
-    response: { schemaVersion: 1, title: 'New local subject candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'New local subject candidate', outlineMarkdown, summaryMarkdown } })
   const afterSave = (await repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT')
   const candidate = afterSave.find(item => item.clientWriteId !== original.clientWriteId)
   assert.equal(afterSave.find(item => item.clientWriteId === original.clientWriteId)?.state, 'STALE')
@@ -623,7 +564,7 @@ test('subject conflict refresh reentry is fenced through the failure tail and a 
   await sync.reconcile(options([inputSource]))
   const fingerprint = await computeSubjectInputFingerprint([await repository.getFileOverview(inputSource.id, inputSource.ingestionRevision)])
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
-    response: { schemaVersion: 1, title: 'Local subject candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'Local subject candidate', outlineMarkdown, summaryMarkdown } })
   let subjectWrites = 0
   api.putSubject = async () => {
     subjectWrites += 1
@@ -711,7 +652,7 @@ test('a rejected conflict pass releases only its own key for a later attempt', a
 
 test('a new File result supersedes a terminal HTTP error and uploads without replaying the old request', async () => {
   const repository = new OverviewRepository('file-error-user', 'file-error-device', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Old candidate', outline, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Old candidate', outlineMarkdown, summaryMarkdown } })
   const sent = []
   const api = fakeApi({ putFile: async (sourceId, command) => {
     sent.push(command)
@@ -725,7 +666,7 @@ test('a new File result supersedes a terminal HTTP error and uploads without rep
   assert.equal(oldRequest.state, 'ERROR')
   assert.equal((await repository.getFileOverview('file-a', 'rev-1'))?.syncStatus, 'ERROR')
   await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL',
-    response: { schemaVersion: 1, title: 'New candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'New candidate', outlineMarkdown, summaryMarkdown } })
   const afterSave = await repository.listOverviewOutbox()
   assert.equal(afterSave.find(item => item.clientWriteId === oldRequest.clientWriteId)?.state, 'STALE')
   assert.equal(JSON.stringify(afterSave.find(item => item.clientWriteId === oldRequest.clientWriteId)?.requestBody), oldBody)
@@ -747,7 +688,7 @@ test('a new Subject result supersedes a terminal HTTP error and uploads without 
   const file = await repository.getFileOverview(inputSource.id, inputSource.ingestionRevision)
   const fingerprint = await computeSubjectInputFingerprint([file])
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
-    response: { schemaVersion: 1, title: 'Old candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'Old candidate', outlineMarkdown, summaryMarkdown } })
   const sent = []
   api.putSubject = async (subjectId, command) => {
     sent.push(command)
@@ -762,7 +703,7 @@ test('a new Subject result supersedes a terminal HTTP error and uploads without 
   assert.equal(oldRequest.state, 'ERROR')
   assert.equal((await repository.getSubjectOverview('subject-a'))?.syncStatus, 'ERROR')
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
-    response: { schemaVersion: 1, title: 'New candidate', outline, summary } })
+    response: { schemaVersion: 2, title: 'New candidate', outlineMarkdown, summaryMarkdown } })
   const afterSave = await repository.listOverviewOutbox()
   assert.equal(afterSave.find(item => item.clientWriteId === oldRequest.clientWriteId)?.state, 'STALE')
   assert.equal(JSON.stringify(afterSave.find(item => item.clientWriteId === oldRequest.clientWriteId)?.requestBody), oldBody)
@@ -786,7 +727,7 @@ test('subject upload waits for ACKed file part versions and hashes the canonical
   const fileRecords = await Promise.all(sources.map(item => repository.getFileOverview(item.id, item.ingestionRevision)))
   const localFingerprint = await computeSubjectInputFingerprint(fileRecords)
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: localFingerprint,
-    response: { schemaVersion: 1, title: 'Subject local', outline, summary } })
+    response: { schemaVersion: 2, title: 'Subject local', outlineMarkdown, summaryMarkdown } })
 
   await service(repository, api).reconcile(options(sources, ['subject-a']))
 
@@ -802,54 +743,9 @@ test('subject upload waits for ACKed file part versions and hashes the canonical
   assert.equal((await repository.listOverviewOutbox()).length, 0)
 })
 
-test('Subject PUT omits empty section provenance, filters unlinked refs, and uses source-level provenance for new links', async () => {
-  const repository = new OverviewRepository('subject-provenance-user', 'subject-provenance-device', { storage: createMemoryStorage() })
-  const sources = [source('file-a', 'rev-a'), source('file-b', 'rev-b')]
-  const api = fakeApi({ getFile: async (sourceId, revision) => fileView(sourceId, revision) })
-  const syncService = service(repository, api)
-  await syncService.reconcile(options(sources))
-  const files = await Promise.all(sources.map(item => repository.getFileOverview(item.id, item.ingestionRevision)))
-  const inputFingerprint = await computeSubjectInputFingerprint(files)
-  const canonicalRef = (sourceId, ingestionRevision, chunkId) => ({
-    sourceId, ingestionRevision, chunkId, generation: 'gen-1', charStart: 2, charEnd: 8,
-    contentHash: 'hash', precision: 'CHUNK', parsedDocumentId: 'parsed', parserId: 'parser',
-    locations: [{ blockOrdinal: 0, charStart: 2, charEnd: 8, blockCharStart: 0, blockCharEnd: 12 }],
-  })
-  const refA = canonicalRef('file-a', 'rev-a', 'chunk-a')
-  const refB = canonicalRef('file-b', 'rev-b', 'chunk-b')
-  const sections = [
-    { title: 'New section', summary: null, sourceIds: ['file-a'], locator: null },
-    { title: 'Unlinked section', summary: null, sourceIds: [], locator: null },
-    { title: 'Partially unlinked', summary: null, sourceIds: ['file-b'], locator: null },
-    { title: 'New source association', summary: null, sourceIds: ['file-a', 'file-b'], locator: null },
-  ]
-  const outline = [{ title: 'Chapter', sections }]
-  const outlineProvenance = createOutlineProvenanceView(outline, new Map([
-    ['0.0', []],
-    ['0.1', []],
-    ['0.2', filterOutlineSourceRefs([refA, refB], ['file-b'])],
-    ['0.3', [refA]],
-  ]))
-  const outlineProvenanceInput = createOutlineProvenanceInputForLinkedSources(outlineProvenance,
-    new Map(sections.map((section, index) => [`0.${index}`, section.sourceIds])),
-    new Map([['file-a', 'rev-a'], ['file-b', 'rev-b']]))
-  await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint,
-    response: { schemaVersion: 1, title: 'Subject', outline, summary, outlineProvenance }, outlineProvenanceInput })
-
-  await syncService.reconcile(options(sources, ['subject-a']))
-
-  const command = api.calls.putSubjects[0][1]
-  assert.deepEqual(command.outlineProvenance.sections.map(section => section.path), [[0, 2], [0, 3]])
-  assert.deepEqual(command.outlineProvenance.sections[0].sourceRefs.map(ref => ref.sourceId), ['file-b'])
-  assert.deepEqual(command.outlineProvenance.sections[1].sourceRefs, [
-    { sourceId: 'file-a', ingestionRevision: 'rev-a', chunkId: 'chunk-a', generation: 'gen-1', charStart: 2, charEnd: 8 },
-    { sourceId: 'file-b', ingestionRevision: 'rev-b', chunkId: null, generation: null, charStart: null, charEnd: null },
-  ])
-})
-
 test('source revision changes stale old intents without replaying their content', async () => {
   const repository = new OverviewRepository('revision-user', 'revision-device', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'old-rev', mode: 'ALL', response: { schemaVersion: 1, title: 'Old revision', outline, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'old-rev', mode: 'ALL', response: { schemaVersion: 2, title: 'Old revision', outlineMarkdown, summaryMarkdown } })
   const api = fakeApi()
 
   await service(repository, api).reconcile(options([source('file-a', 'new-rev')]))
@@ -862,7 +758,7 @@ test('source revision changes stale old intents without replaying their content'
 test('Source revision or deletion during an awaited write fences the late response', async () => {
   for (const mutation of ['revision', 'delete']) {
     const repository = new OverviewRepository(`late-${mutation}-user`, `late-${mutation}-device`, { storage: createMemoryStorage() })
-    await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Local', outline, summary } })
+    await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Local', outlineMarkdown, summaryMarkdown } })
     const currentSource = source()
     const dynamicOptions = {
       ...options(),
@@ -908,7 +804,7 @@ test('a Subject membership change during an awaited write fences the late respon
   const file = await repository.getFileOverview('file-a', 'rev-1')
   const inputFingerprint = await computeSubjectInputFingerprint([file])
   await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint,
-    response: { schemaVersion: 1, title: 'Local subject', outline, summary } })
+    response: { schemaVersion: 2, title: 'Local subject', outlineMarkdown, summaryMarkdown } })
 
   await service(repository, api).reconcile(dynamicOptions)
 
@@ -965,7 +861,7 @@ test('1 available and remaining missing subjects trigger 1 batch status call and
     }),
     getSubject: async (id) => {
       if (id === availableId) {
-        return subjectView(id, { result: { title: 'Available Subj', outline, summary } }, 1)
+        return subjectView(id, { result: { title: 'Available Subj', outlineMarkdown, summaryMarkdown } }, 1)
       }
       return null
     },
@@ -1024,7 +920,7 @@ test('AVAILABLE subject with version=0 is recognized as valid and pulled without
         updatedAt: '2026-11-04T12:00:00.000Z',
       }],
     }),
-    getSubject: async (id) => subjectView(id, { result: { title: 'Version Zero Subj', outline, summary } }, 1),
+    getSubject: async (id) => subjectView(id, { result: { title: 'Version Zero Subj', outlineMarkdown, summaryMarkdown } }, 1),
   })
   await service(repository, api).reconcile(options([], [subjectId]))
   assert.equal(api.calls.getSubjectStatuses.length, 1)
@@ -1103,35 +999,29 @@ test('status endpoint returning 404 throws error and does not fallback to getSub
   assert.equal(api.calls.getSubjects.length, 0)
 })
 
-test('local seed/draft is not deleted when remote is MISSING and gets uploaded', async () => {
-  const storage = createMemoryStorage()
-  const repository = new OverviewRepository('batch-seed-missing-user', 'device-1', { storage })
-  const subjectId = 'subj-seed'
-  const localRecord = record('SUBJECT', subjectId, 'subject-v1', 'Local Draft Subject')
-  storage.setItem('auralis:v1:overviews:batch-seed-missing-user:device-1', JSON.stringify([localRecord]))
 
-  const api = fakeApi({
-    getSubjectStatuses: async (ids) => ({
-      items: ids.map(id => ({
-        subjectId: id,
-        status: 'MISSING',
-        version: null,
-        outlineVersion: null,
-        summaryVersion: null,
-        updatedAt: null,
-      })),
-    }),
+test('useOverviewResultsApi.getFile requires a current view with independent part versions', async (t) => {
+  const { useOverviewResultsApi } = await import('../src/api/useOverviewResultsApi.ts')
+  const { default: request } = await import('../src/api/request.ts')
+  const view = fileView('file-a', 'rev-1', { version: 4, outlineVersion: 0, summaryVersion: 2 })
+  const get = t.mock.method(request, 'get', async () => view)
+
+  assert.deepEqual(await useOverviewResultsApi.getFile('file-a', 'rev-1'), {
+    ...view, outlineInputDescriptor: undefined, summaryInputDescriptor: undefined,
   })
-  await service(repository, api).reconcile(options([], [subjectId]))
-  assert.equal(api.calls.getSubjectStatuses.length, 1)
-  assert.equal(api.calls.getSubjects.length, 0, 'must not GET when MISSING')
-  const outbox = await repository.listOverviewOutbox()
-  const [seed] = outbox
-  assert.ok(seed, 'seed intent must be created')
-  assert.equal(seed.scopeId, subjectId)
-  assert.equal(seed.origin, 'LEGACY_SEED')
-  const local = await repository.getSubjectOverview(subjectId)
-  assert.equal(local?.title, 'Local Draft Subject')
+  for (const invalidFields of [
+    { schemaVersion: 1 },
+    { outlineVersion: undefined },
+    { outlineVersion: -1 },
+    { summaryVersion: null },
+    { summaryVersion: 1.5 },
+  ]) {
+    get.mock.mockImplementationOnce(async () => ({ ...view, ...invalidFields }))
+    await assert.rejects(() => useOverviewResultsApi.getFile('file-a', 'rev-1'), /OVERVIEW_RESULT_INVALID/)
+  }
+
+  get.mock.mockImplementationOnce(async () => { throw new ApiProblemError({ title: 'Not Found', status: 404 }) })
+  assert.equal(await useOverviewResultsApi.getFile('file-a', 'rev-1'), null)
 })
 
 test('useOverviewResultsApi.getSubjectStatuses validates request bounds and response contract', async () => {

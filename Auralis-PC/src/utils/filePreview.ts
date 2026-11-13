@@ -24,8 +24,6 @@ type FileLike = {
 export interface FilePreviewSource {
   id: string
   assetId?: string | null
-  name: string
-  fileType: string
 }
 
 const CAPABILITIES: Record<string, FileCapability> = {
@@ -58,7 +56,7 @@ export function getFileExtension(name: string): string {
 }
 
 export function getPreviewSourceIdentity(file: FilePreviewSource): string {
-  return JSON.stringify([file.id, file.assetId, file.fileType, getFileExtension(file.name)])
+  return JSON.stringify([file.id, file.assetId])
 }
 
 export function resolveFileCapability(file: Pick<FileLike, 'name' | 'type'>): FileCapability {

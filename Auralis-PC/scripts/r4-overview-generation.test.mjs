@@ -37,7 +37,7 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { lo
 
 const { OverviewGenerationService } = await import('../src/services/overviewGenerationService.ts')
 const { OverviewRepository } = await import('../src/services/overviewRepository.ts')
-const { validateCanonicalOverviewProvenance, validateOverviewResponse } = await import('../src/api/overviewResponseValidator.ts')
+const { validateGeneratedOverviewResponse } = await import('../src/api/overviewResponseValidator.ts')
 const { classifyOverviewFailure, overviewFailureMessage } = await import('../src/services/overviewFailurePolicy.ts')
 const source = async (relativePath) => readFile(path.resolve(import.meta.dirname, '..', relativePath), 'utf8')
 
@@ -55,13 +55,13 @@ function assertGeneratorCallsiteLiteral(text, marker, literal) {
   assert.match(callsite, new RegExp(`generateReadyFileOverview\\([^)]*,\\s*[^)]*,\\s*['"]${literal}['"]\\)`))
 }
 
-const outline = [{ title: '第一章', sections: [{ title: '第一节', summary: '摘要', sourceIds: ['source-1'], locator: null }] }]
-const summary = { overview: '文件概述', keyPoints: ['重点'], learningPath: ['基础'] }
+const outlineMarkdown = '## 第一章\n- 第一节'
+const summaryMarkdown = '文件概述'
 const response = (mode = 'ALL') => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   title: '文件总览',
-  outline: mode === 'SUMMARY' ? null : outline,
-  summary: mode === 'OUTLINE' ? null : summary,
+  outlineMarkdown: mode === 'SUMMARY' ? null : outlineMarkdown,
+  summaryMarkdown: mode === 'OUTLINE' ? null : summaryMarkdown,
 })
 
 class FakeOverviewRepository {
@@ -73,10 +73,10 @@ class FakeOverviewRepository {
     const key = `${input.sourceId}:${input.ingestionRevision}`
     const previous = this.files.get(key)
     const next = {
-      ...(previous ?? { sourceId: input.sourceId, ingestionRevision: input.ingestionRevision, outline: null, summary: null }),
+      ...(previous ?? { sourceId: input.sourceId, ingestionRevision: input.ingestionRevision, outlineMarkdown: null, summaryMarkdown: null }),
       title: input.response.title,
-      outline: input.mode === 'SUMMARY' ? previous?.outline ?? null : input.response.outline,
-      summary: input.mode === 'OUTLINE' ? previous?.summary ?? null : input.response.summary,
+      outlineMarkdown: input.mode === 'SUMMARY' ? previous?.outlineMarkdown ?? null : input.response.outlineMarkdown,
+      summaryMarkdown: input.mode === 'OUTLINE' ? previous?.summaryMarkdown ?? null : input.response.summaryMarkdown,
       status: 'READY',
     }
     this.files.set(key, next)
@@ -90,8 +90,8 @@ class FakeOverviewRepository {
         sourceId,
         ingestionRevision: revision,
         title: '',
-        outline: null,
-        summary: null,
+        outlineMarkdown: null,
+        summaryMarkdown: null,
         status: 'FAILED',
         errorCode: code,
         errorDetail: detail,
@@ -107,7 +107,19 @@ class FakeOverviewRepository {
     this.subjects.delete(subjectId)
   }
   async getSubjectOverview(subjectId) { return this.subjects.get(subjectId) ?? null }
-  async saveSubjectOverviewPart(input) { this.subjects.set(input.subjectId, { ...input, status: 'READY' }); return this.subjects.get(input.subjectId) }
+  async saveSubjectOverviewPart(input) {
+    const current = this.subjects.get(input.subjectId)
+    const next = {
+      ...(current ?? { subjectId: input.subjectId, outlineMarkdown: null, summaryMarkdown: null }),
+      inputFingerprint: input.inputFingerprint,
+      title: input.response.title,
+      outlineMarkdown: input.mode === 'SUMMARY' ? current?.outlineMarkdown ?? null : input.response.outlineMarkdown,
+      summaryMarkdown: input.mode === 'OUTLINE' ? current?.summaryMarkdown ?? null : input.response.summaryMarkdown,
+      status: 'READY',
+    }
+    this.subjects.set(input.subjectId, next)
+    return next
+  }
   async markSubjectOverviewFailed(subjectId, mode, code, detail) { this.failures.push({ subjectId, mode, code, detail }) }
 }
 
@@ -182,13 +194,13 @@ function readyService(repository, generateSourceOverview) {
 
 test('automatic triggers require a missing cache and never retry failed or partial records', async () => {
   const records = [
-    { sourceId: 'source-1', ingestionRevision: 'rev-1', title: '', outline: null, summary: null,
+    { sourceId: 'source-1', ingestionRevision: 'rev-1', title: '', outlineMarkdown: null, summaryMarkdown: null,
       status: 'FAILED', errorCode: 'MODEL_TIMEOUT', errorDetail: 'safe',
       expectedOutcome: 'SKIPPED_FAILED_REQUIRES_MANUAL_RETRY' },
-    { sourceId: 'source-1', ingestionRevision: 'rev-1', title: '', outline: null, summary: null,
+    { sourceId: 'source-1', ingestionRevision: 'rev-1', title: '', outlineMarkdown: null, summaryMarkdown: null,
       status: 'FAILED', errorCode: 'MODEL_PROVIDER_ERROR', errorDetail: 'safe',
       expectedOutcome: 'SKIPPED_FAILED_REQUIRES_MANUAL_RETRY' },
-    { sourceId: 'source-1', ingestionRevision: 'rev-1', title: '文件总览', outline, summary: null,
+    { sourceId: 'source-1', ingestionRevision: 'rev-1', title: '文件总览', outlineMarkdown, summaryMarkdown: null,
       status: 'READY', errorCode: null, errorDetail: null,
       expectedOutcome: 'PARTIAL_REQUIRES_MANUAL_RETRY' },
   ]
@@ -244,8 +256,8 @@ test('automatic terminal skips return structured results without notifying or re
   assert.deepEqual(notifications, [])
   assert.equal(calls, 0)
   const cached = await repository.getFileOverview('source-1', 'rev-1')
-  assert.deepEqual(cached.outline, outline)
-  assert.equal(cached.summary, null)
+  assert.deepEqual(cached.outlineMarkdown, outlineMarkdown)
+  assert.equal(cached.summaryMarkdown, null)
 })
 
 test('automatic provider failure returns a structured result and does not recursively retry', async () => {
@@ -297,7 +309,7 @@ test('automatic trigger still generates once when the current revision has no ca
 test('manual retry bypasses terminal cache policy and still coalesces duplicate clicks', async () => {
   const repository = new FakeOverviewRepository()
   repository.files.set('source-1:rev-1', {
-    sourceId: 'source-1', ingestionRevision: 'rev-1', title: '', outline: null, summary: null,
+    sourceId: 'source-1', ingestionRevision: 'rev-1', title: '', outlineMarkdown: null, summaryMarkdown: null,
     status: 'FAILED', errorCode: 'MODEL_PROVIDER_ERROR', errorDetail: 'safe',
    })
   const gate = Promise.withResolvers()
@@ -328,8 +340,8 @@ test('manual file regeneration returns a structured skipped result without repla
 
   assert.deepEqual(result, { status: 'SKIPPED', code: 'SOURCE_NOT_READY' })
   const cached = await repository.getFileOverview('source-1', 'rev-1')
-  assert.deepEqual(cached.outline, outline)
-  assert.deepEqual(cached.summary, summary)
+  assert.deepEqual(cached.outlineMarkdown, outlineMarkdown)
+  assert.deepEqual(cached.summaryMarkdown, summaryMarkdown)
   assert.equal(repository.failures.length, 0)
 })
 
@@ -418,8 +430,8 @@ test('manual file regeneration returns FAILED after provider failure and preserv
 
   assert.deepEqual(result, { status: 'FAILED', code: 'MODEL_PROVIDER_ERROR', detail: 'Overview generation failed: MODEL_PROVIDER_ERROR' })
   const cached = await repository.getFileOverview('source-1', 'rev-1')
-  assert.deepEqual(cached.outline, outline)
-  assert.deepEqual(cached.summary, summary)
+  assert.deepEqual(cached.outlineMarkdown, outlineMarkdown)
+  assert.deepEqual(cached.summaryMarkdown, summaryMarkdown)
   assert.equal(repository.failures.at(-1).code, 'MODEL_PROVIDER_ERROR')
 })
 
@@ -477,8 +489,8 @@ test('preserves prior successful file parts and records a bounded safe error whe
   await service.regenerateFileOverview('source-1', 'SUMMARY')
 
   const saved = await repository.getFileOverview('source-1', 'rev-1')
-  assert.deepEqual(saved.outline, outline)
-  assert.deepEqual(saved.summary, summary)
+  assert.deepEqual(saved.outlineMarkdown, outlineMarkdown)
+  assert.deepEqual(saved.summaryMarkdown, summaryMarkdown)
   assert.equal(saved.status, 'READY')
   assert.equal(repository.failures.length, 1)
   assert.match(repository.failures[0].code, /^[A-Z0-9_]{1,64}$/)
@@ -545,9 +557,9 @@ test('subject regeneration submits only local file overviews and stores the succ
     api: { async generateSubjectOverview(request) { calls.push(request); return response('ALL') } },
     repository,
     listLocalFileOverviews: async () => [
-      { sourceId: 'b', ingestionRevision: 'rev-b', title: 'B', status: 'READY', outline, summary },
-      { sourceId: 'a', ingestionRevision: 'rev-a', title: 'A', status: 'READY', outline, summary },
-      { sourceId: 'failed', ingestionRevision: 'rev-f', title: 'F', status: 'FAILED', outline: null, summary: null },
+      { sourceId: 'b', ingestionRevision: 'rev-b', title: 'B', status: 'READY', outlineMarkdown, summaryMarkdown },
+      { sourceId: 'a', ingestionRevision: 'rev-a', title: 'A', status: 'READY', outlineMarkdown, summaryMarkdown },
+      { sourceId: 'failed', ingestionRevision: 'rev-f', title: 'F', status: 'FAILED', outlineMarkdown: null, summaryMarkdown: null },
     ],
   })
 
@@ -572,7 +584,7 @@ test('manual subject regeneration returns STARTED with the request id after savi
     repository,
     requestIdFactory: () => 'subject-request-1',
     listLocalFileOverviews: async () => [
-      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown },
     ],
   })
 
@@ -588,7 +600,7 @@ test('manual subject retry sends the last dispatched request id under the same i
   const requests = []
   let nextId = 0
   let calls = 0
-  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }]
   const service = new OverviewGenerationService({
     api: { async generateSubjectOverview(request, context) {
       requests.push({ request, requestId: context.requestId })
@@ -621,7 +633,7 @@ test('manual subject regeneration returns FAILED and preserves the previous resu
     repository,
     requestIdFactory: () => 'subject-request-2',
     listLocalFileOverviews: async () => [
-      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown },
     ],
   })
 
@@ -629,7 +641,7 @@ test('manual subject regeneration returns FAILED and preserves the previous resu
 
   assert.deepEqual(result, { status: 'FAILED', code: 'MODEL_PROVIDER_ERROR', detail: 'Overview generation failed: MODEL_PROVIDER_ERROR' })
   assert.deepEqual(await repository.getSubjectOverview('subject-1'), {
-    subjectId: 'subject-1', mode: 'ALL', response: response('ALL'), inputFingerprint: 'old-fingerprint', status: 'READY',
+    subjectId: 'subject-1', title: '文件总览', outlineMarkdown, summaryMarkdown, inputFingerprint: 'old-fingerprint', status: 'READY',
   })
   assert.equal(repository.failures.at(-1).code, 'MODEL_PROVIDER_ERROR')
 })
@@ -638,9 +650,9 @@ test('subject regeneration filters local inputs by the requested mode', async ()
   const repository = new FakeOverviewRepository()
   const calls = []
   const files = [
-    { sourceId: 'both', ingestionRevision: 'rev-1', title: 'Both', status: 'READY', outline, summary },
-    { sourceId: 'outline', ingestionRevision: 'rev-2', title: 'Outline', status: 'READY', outline, summary: null },
-    { sourceId: 'summary', ingestionRevision: 'rev-3', title: 'Summary', status: 'READY', outline: null, summary },
+    { sourceId: 'both', ingestionRevision: 'rev-1', title: 'Both', status: 'READY', outlineMarkdown, summaryMarkdown },
+    { sourceId: 'outlineMarkdown', ingestionRevision: 'rev-2', title: 'Outline', status: 'READY', outlineMarkdown, summaryMarkdown: null },
+    { sourceId: 'summaryMarkdown', ingestionRevision: 'rev-3', title: 'Summary', status: 'READY', outlineMarkdown: null, summaryMarkdown },
   ]
   const service = new OverviewGenerationService({
     api: { async generateSubjectOverview(request) { calls.push(request); return response(request.mode) } },
@@ -654,18 +666,18 @@ test('subject regeneration filters local inputs by the requested mode', async ()
 
   assert.deepEqual(calls.map(call => call.sources.map(item => item.sourceId)), [
     ['both'],
-    ['both', 'outline'],
-    ['both', 'summary'],
+    ['both', 'outlineMarkdown'],
+    ['both', 'summaryMarkdown'],
   ])
 })
 
-test('subject regeneration excludes empty outline or summary inputs while preserving mode-specific usable parts', async () => {
+test('subject regeneration excludes empty outlineMarkdown or summaryMarkdown inputs while preserving mode-specific usable parts', async () => {
   const repository = new FakeOverviewRepository()
   const calls = []
   const files = [
-    { sourceId: 'complete', ingestionRevision: 'rev-1', title: 'Complete', status: 'READY', outline, summary },
-    { sourceId: 'empty-outline', ingestionRevision: 'rev-2', title: 'Empty outline', status: 'READY', outline: [], summary },
-    { sourceId: 'empty-summary', ingestionRevision: 'rev-3', title: 'Empty summary', status: 'READY', outline, summary: { overview: '', keyPoints: [], learningPath: [] } },
+    { sourceId: 'complete', ingestionRevision: 'rev-1', title: 'Complete', status: 'READY', outlineMarkdown, summaryMarkdown },
+    { sourceId: 'empty-outlineMarkdown', ingestionRevision: 'rev-2', title: 'Empty outlineMarkdown', status: 'READY', outlineMarkdown: "", summaryMarkdown },
+    { sourceId: 'empty-summaryMarkdown', ingestionRevision: 'rev-3', title: 'Empty summaryMarkdown', status: 'READY', outlineMarkdown, summaryMarkdown: '   ' },
   ]
   const service = new OverviewGenerationService({
     api: { async generateSubjectOverview(request) { calls.push(request); return response(request.mode) } },
@@ -679,11 +691,11 @@ test('subject regeneration excludes empty outline or summary inputs while preser
 
   assert.deepEqual(calls.map(call => call.sources.map(item => item.sourceId)), [
     ['complete'],
-    ['complete', 'empty-summary'],
-    ['complete', 'empty-outline'],
+    ['complete', 'empty-summaryMarkdown'],
+    ['complete', 'empty-outlineMarkdown'],
   ])
-  assert.equal(calls[1].sources.find(item => item.sourceId === 'empty-summary').summary, null)
-  assert.equal(calls[2].sources.find(item => item.sourceId === 'empty-outline').outline, null)
+  assert.equal(calls[1].sources.find(item => item.sourceId === 'empty-summaryMarkdown').summaryMarkdown, null)
+  assert.equal(calls[2].sources.find(item => item.sourceId === 'empty-outlineMarkdown').outlineMarkdown, null)
 })
 
 test('subject regeneration safely preserves the previous result when every local input is unusable', async () => {
@@ -694,8 +706,8 @@ test('subject regeneration safely preserves the previous result when every local
     api: { async generateSubjectOverview(request) { calls.push(request); return response(request.mode) } },
     repository,
     listLocalFileOverviews: async () => [
-      { sourceId: 'empty-outline', ingestionRevision: 'rev-2', title: 'Empty outline', status: 'READY', outline: [], summary },
-      { sourceId: 'empty-summary', ingestionRevision: 'rev-3', title: 'Empty summary', status: 'READY', outline, summary: { overview: '', keyPoints: [], learningPath: [] } },
+      { sourceId: 'empty-outlineMarkdown', ingestionRevision: 'rev-2', title: 'Empty outlineMarkdown', status: 'READY', outlineMarkdown: "", summaryMarkdown },
+      { sourceId: 'empty-summaryMarkdown', ingestionRevision: 'rev-3', title: 'Empty summaryMarkdown', status: 'READY', outlineMarkdown, summaryMarkdown: '   ' },
     ],
   })
 
@@ -704,14 +716,14 @@ test('subject regeneration safely preserves the previous result when every local
   assert.deepEqual(calls, [])
   assert.deepEqual(result, { status: 'SKIPPED', code: 'NO_USABLE_INPUT' })
   assert.deepEqual(await repository.getSubjectOverview('subject-1'), {
-    subjectId: 'subject-1', mode: 'ALL', response: response('ALL'), inputFingerprint: 'old-fingerprint', status: 'READY',
+    subjectId: 'subject-1', title: '文件总览', outlineMarkdown, summaryMarkdown, inputFingerprint: 'old-fingerprint', status: 'READY',
   })
   assert.equal(repository.failures.length, 0)
 })
 
 test('subject regeneration rejects a late response when source revision changes before save', async () => {
   const repository = new FakeOverviewRepository()
-  let files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  let files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }]
   let releaseProvider
   const providerGate = new Promise((resolve) => { releaseProvider = resolve })
   let calls = 0
@@ -740,7 +752,7 @@ test('subject regeneration rejects a late response when source revision changes 
 
 test('subject regeneration rejects a late response when a participating Source is deleted', async () => {
   const repository = new FakeOverviewRepository()
-  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }]
   let currentSource = { id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }
   let releaseProvider
   const providerGate = new Promise((resolve) => { releaseProvider = resolve })
@@ -763,7 +775,7 @@ test('subject regeneration rejects a late response when a participating Source i
 
 test('subject regeneration rejects a late response when a participating Source leaves READY', async () => {
   const repository = new FakeOverviewRepository()
-  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }]
   let currentSource = { id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }
   let releaseProvider
   const providerGate = new Promise((resolve) => { releaseProvider = resolve })
@@ -795,7 +807,7 @@ test('discard aborts an in-flight subject generation that uses the discarded Sou
     api: { async generateSubjectOverview(_request, context) { signal = context.signal; notifyProviderStarted(); await providerGate; return response('ALL') } },
     repository,
     listLocalFileOverviews: async () => [
-      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown },
     ],
   })
   const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
@@ -812,7 +824,7 @@ test('discard aborts an in-flight subject generation that uses the discarded Sou
 
 test('subject generation rechecks the generation fence after the latest fingerprint and before saving', async () => {
   const repository = new FakeOverviewRepository()
-  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }]
   let service
   let listCalls = 0
   const api = { async generateSubjectOverview() { return response('ALL') } }
@@ -846,7 +858,7 @@ test('discard during a subject cache save keeps the discarded cache absent befor
     api: { async generateSubjectOverview() { return response('ALL') } },
     repository,
     listLocalFileOverviews: async () => [
-      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown },
     ],
   })
   const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
@@ -890,7 +902,7 @@ test('superseded subject save cannot compensate by deleting the newer generation
     },
     repository,
     listLocalFileOverviews: async () => [
-      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown },
     ],
   })
   const first = service.regenerateSubjectOverview('subject-1', 'ALL')
@@ -909,102 +921,22 @@ test('superseded subject save cannot compensate by deleting the newer generation
 })
 
 test('overview response validation rejects malformed or mode-inconsistent provider data', () => {
-  assert.deepEqual(validateOverviewResponse(response('ALL'), 'ALL'), response('ALL'))
-  assert.throws(() => validateOverviewResponse({ ...response('ALL'), schemaVersion: 2 }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
-  assert.throws(() => validateOverviewResponse({ ...response('ALL'), outline: 'bad' }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
-  assert.throws(() => validateOverviewResponse(response('SUMMARY'), 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
-  assert.throws(() => validateOverviewResponse(response('OUTLINE'), 'SUMMARY'), /OVERVIEW_RESPONSE_INVALID/)
+  assert.deepEqual(validateGeneratedOverviewResponse(response('ALL'), 'ALL'), response('ALL'))
+  assert.throws(() => validateGeneratedOverviewResponse({ ...response('ALL'), schemaVersion: 1 }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
+  assert.throws(() => validateGeneratedOverviewResponse({ ...response('ALL'), outlineMarkdown: '' }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
+  assert.throws(() => validateGeneratedOverviewResponse(response('SUMMARY'), 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
+  assert.throws(() => validateGeneratedOverviewResponse(response('OUTLINE'), 'SUMMARY'), /OVERVIEW_RESPONSE_INVALID/)
 })
 
 test('overview response validation preserves shape checks without a client-side content-volume ceiling', () => {
   const large = {
     ...response('ALL'),
     title: '标题'.repeat(151),
-    outline: Array.from({ length: 61 }, (_, index) => ({
-      title: `章节${index}`.repeat(151),
-      sections: [{ title: '小节', summary: '正文'.repeat(2001), sourceIds: ['source-1'], locator: null }],
-    })),
-    summary: {
-      overview: '概述'.repeat(2001),
-      keyPoints: Array.from({ length: 101 }, (_, index) => `重点${index}`),
-      learningPath: Array.from({ length: 101 }, (_, index) => `路径${index}`),
-    },
+    outlineMarkdown: '## 章节\n- 小节'.repeat(500),
+    summaryMarkdown: '概述'.repeat(2000),
   }
-  assert.deepEqual(validateOverviewResponse(large, 'ALL'), large)
-  assert.throws(() => validateOverviewResponse({ ...large, outline: 'bad' }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
-})
-
-test('generation provenance input is validated separately and passed to the local save boundary', async () => {
-  const sourceId = '11111111-1111-4111-8111-111111111111'
-  const ingestionRevision = '22222222-2222-4222-8222-222222222222'
-  const chunkId = '33333333-3333-4333-8333-333333333333'
-  const generation = '44444444-4444-4444-8444-444444444444'
-  const generated = {
-    ...response('OUTLINE'),
-    outline: [{ ...outline[0], sections: [{ ...outline[0].sections[0], sourceIds: [sourceId] }] }],
-    outlineProvenance: { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: [{
-      sourceId, ingestionRevision, chunkId, generation, charStart: 0, charEnd: 5,
-    }] }] },
-  }
-  assert.deepEqual(validateOverviewResponse(generated, 'OUTLINE'), generated)
-  assert.throws(() => validateOverviewResponse({ ...generated, outlineProvenance: {
-    ...generated.outlineProvenance, sections: [{ path: [0, 0], sourceRefs: [{
-      sourceId, ingestionRevision, chunkId, generation, charStart: 0,
-    }] }],
-  } }, 'OUTLINE'), /OVERVIEW_RESPONSE_INVALID/)
-  assert.throws(() => validateOverviewResponse({ ...generated, outlineProvenance: {
-    ...generated.outlineProvenance, sections: [{ path: [0, 0], sourceRefs: [{
-      sourceId: 'not-a-uuid', ingestionRevision,
-    }] }],
-  } }, 'OUTLINE'), /OVERVIEW_RESPONSE_INVALID/)
-  assert.throws(() => validateCanonicalOverviewProvenance(generated.outlineProvenance, generated.outline), /OVERVIEW_RESPONSE_INVALID/)
-  const canonical = { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: [{
-    sourceId, ingestionRevision, chunkId: null, generation: null, charStart: null, charEnd: null,
-    contentHash: null, precision: 'SOURCE', parsedDocumentId: null, parserId: null, locations: [],
-  }] }] }
-  assert.deepEqual(validateCanonicalOverviewProvenance(canonical, generated.outline), canonical)
-  const repository = new FakeOverviewRepository()
-  let savedInput
-  repository.saveFileOverviewPart = async input => { savedInput = input }
-  const service = new OverviewGenerationService({
-    api: { async generateSourceOverview() { return generated } }, repository,
-    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
-    requestIdFactory: () => 'request-provenance',
-  })
-  const result = await service.regenerateFileOverview('source-1', 'OUTLINE')
-  assert.equal(result.status, 'STARTED')
-  assert.deepEqual(savedInput.outlineProvenanceInput, generated.outlineProvenance)
-  assert.equal(Object.hasOwn(savedInput.response, 'outlineProvenance'), false)
-})
-
-test('Overview provenance validation accepts nil UUIDs and counts beyond former client caps', () => {
-  const sourceId = '11111111-1111-4111-8111-111111111111'
-  const ingestionRevision = '22222222-2222-4222-8222-222222222222'
-  const chunkId = '33333333-3333-4333-8333-333333333333'
-  const nilGeneration = '00000000-0000-0000-0000-000000000000'
-  const generated = {
-    ...response('OUTLINE'),
-    outline: [{ ...outline[0], sections: [{ ...outline[0].sections[0], sourceIds: [sourceId] }] }],
-    outlineProvenance: { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: [{
-      sourceId, ingestionRevision, chunkId, generation: nilGeneration, charStart: 0, charEnd: 1,
-    }] }] },
-  }
-  assert.equal(validateOverviewResponse(generated, 'OUTLINE').outlineProvenance.sections[0].sourceRefs[0].generation, nilGeneration)
-  assert.throws(() => validateOverviewResponse({ ...generated, outlineProvenance: {
-    schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: [{ sourceId: 'invalid', ingestionRevision }] }],
-  } }, 'OUTLINE'), /OVERVIEW_RESPONSE_INVALID/)
-
-  const canonicalRef = index => ({
-    sourceId, ingestionRevision, chunkId: `33333333-3333-4333-8333-${String(index + 1).padStart(12, '0')}`,
-    generation: nilGeneration, charStart: index * 2, charEnd: index * 2 + 1,
-    contentHash: null, precision: 'CHUNK', parsedDocumentId: null, parserId: null,
-    locations: [{ blockOrdinal: index, pageNumber: null, anchorIndex: null, startLine: null,
-      charStart: index * 2, charEnd: index * 2 + 1, blockCharStart: 0, blockCharEnd: 1 }],
-  })
-  const with101Refs = { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: Array.from({ length: 101 }, (_, index) => canonicalRef(index)) }] }
-  assert.equal(validateCanonicalOverviewProvenance(with101Refs, generated.outline).sections[0].sourceRefs.length, 101)
-  const with501Refs = { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: Array.from({ length: 501 }, (_, index) => canonicalRef(index)) }] }
-  assert.equal(validateCanonicalOverviewProvenance(with501Refs, generated.outline).sections[0].sourceRefs.length, 501)
+  assert.deepEqual(validateGeneratedOverviewResponse(large, 'ALL'), large)
+  assert.throws(() => validateGeneratedOverviewResponse({ ...large, outlineMarkdown: '   ' }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)
 })
 
 test('overview API maps the two authenticated stateless endpoints exactly', async () => {
@@ -1026,15 +958,18 @@ test('overview generation requests carry a per-attempt request id and server sta
   const api = await source('src/api/useOverviewApi.ts')
   const transport = await source('src/api/overviewSse.ts')
   const server = await readFile(path.resolve(import.meta.dirname, '..', '..', 'Auralis-Server/src/main/java/com/auralis/app/ai/OverviewGenerationService.java'), 'utf8')
+  const pipeline = await readFile(path.resolve(import.meta.dirname, '..', '..', 'Auralis-Server/src/main/java/com/auralis/app/ai/OverviewMarkdownPipeline.java'), 'utf8')
   const cors = await readFile(path.resolve(import.meta.dirname, '..', '..', 'Auralis-Server/src/main/java/com/auralis/app/shared/config/WebConfiguration.java'), 'utf8')
   assert.match(transport, /X-Overview-Request-Id/)
   assert.match(cors, /X-Overview-Request-Id/)
   assert.match(api, /randomUUID|uuidv7/i)
   assert.match(api, /context\?\.requestId\s*\?\?\s*overviewRequestId\(\)/)
   assert.match(server, /generationId/)
-  for (const stage of ['MAP', 'REDUCE', 'JSON_PARSE', 'SCHEMA_VALIDATE', 'CACHE_RETURN']) {
-    assert.match(server, new RegExp(stage))
+  assert.match(server, /markdownPipeline\.generate/)
+  for (const stage of ['CLEAN', 'OUTLINE', 'SUMMARY']) {
+    assert.match(pipeline, new RegExp(`Stage\\.${stage}\\b`))
   }
+  assert.match(server, /CACHE_RETURN/)
   assert.match(server, /causeType|causeMessage|exceptionType/)
 })
 
@@ -1074,15 +1009,15 @@ test('runtime and SourceStore trigger file generation after READY and retry on r
   assert.match(runtime, /this\.snapshot\.overviewGeneration\.cancelAll\(\)/)
 })
 
-test('existing Subject and summary Overview Stop controls release only their view-owned handles', async () => {
+test('existing Subject and summaryMarkdown Overview Stop controls release only their view-owned handles', async () => {
   const workspace = await source('src/views/SubjectWorkspace/index.vue')
   const subjectSection = await source('src/components/subject/SubjectOverviewSection.vue')
   const fileList = await source('src/components/subject/FileOutlineList.vue')
-  const summary = await source('src/components/subject/OverviewSummaryView.vue')
+  const summaryMarkdown = await source('src/components/subject/OverviewSummaryView.vue')
   assert.match(workspace, /@stop="stopManualOverview\('subject', subjectId\)"/)
   assert.match(workspace, /@stop="summaryTarget && stopManualOverview\(summaryTarget\.kind, summaryTarget\.id\)"/)
   assert.match(subjectSection, /aria-label="停止学科总览生成"/)
-  assert.match(summary, /aria-label="停止当前总览生成"/)
+  assert.match(summaryMarkdown, /aria-label="停止当前总览生成"/)
   assert.match(fileList, /emit\('regenerate', \{ fileId: file\.id, mode: 'OUTLINE' \}\)/)
 })
 
@@ -1443,10 +1378,10 @@ test('postOverviewSse ignores SSE comment heartbeats and returns terminal valida
   let capturedMethod = ''
   let capturedBody = ''
   const validResult = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '大纲与总结',
-    outline: [{ title: '第一章', sections: [{ title: '第一节', summary: '摘要', sourceIds: ['source-1'], locator: null }] }],
-    summary: null,
+    outlineMarkdown: '## 第一章\n- 第一节',
+    summaryMarkdown: null,
   }
 
   const mockFetch = async (url, options) => {
@@ -1487,10 +1422,10 @@ test('postOverviewSse keeps the new request id and retry parent on its same-requ
   const captured = []
   let dispatchNotifications = 0
   const result = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '大纲',
-    outline: [{ title: '第一章', sections: [{ title: '第一节', summary: '摘要', sourceIds: ['source-1'], locator: null }] }],
-    summary: null,
+    outlineMarkdown: '## 第一章\n- 第一节',
+    summaryMarkdown: null,
   }
   const mockFetch = async (_url, options) => {
     captured.push({ requestId: new Headers(options.headers).get('x-overview-request-id'), body: JSON.parse(options.body) })
@@ -1523,10 +1458,10 @@ test('postOverviewSse keeps the new request id and retry parent on its same-requ
 test('postOverviewSse cancels the response reader after a terminal event', async () => {
   let readerCanceled = false
   const result = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: '总览',
-    outline: [{ title: '第一章', sections: [{ title: '第一节', summary: null, sourceIds: ['source-1'], locator: null }] }],
-    summary: null,
+    outlineMarkdown: '## 第一章\n- 第一节',
+    summaryMarkdown: null,
   }
   const mockFetch = async () => ({
     ok: true,
@@ -1899,8 +1834,8 @@ test('a source revision change aborts only the old revision without changing suc
     sourceId: 'source-1',
     ingestionRevision: 'rev-1',
     title: '现有成果',
-    outline,
-    summary,
+    outlineMarkdown,
+    summaryMarkdown,
     status: 'READY',
   }
   repository.files.set('source-1:rev-1', cached)
@@ -1933,8 +1868,7 @@ test('intentional abort returns SKIPPED/ABORTED without marking FAILED or deleti
     sourceId: 'source-1',
     ingestionRevision: 'rev-1',
     title: '旧版本',
-    outline: outline,
-    summary: summary,
+    outlineMarkdown, summaryMarkdown: summaryMarkdown,
     status: 'READY',
   }
   repository.files.set('source-1:rev-1', existingRecord)
@@ -1978,8 +1912,8 @@ test('newer subject generation aborts previous in-flight subject generation', as
       sourceId: 'source-1',
       ingestionRevision: 'rev-1',
       title: 'Doc',
-      outline,
-      summary,
+      outlineMarkdown,
+      summaryMarkdown,
       status: 'READY',
     }],
   })
@@ -2017,8 +1951,8 @@ test('runtime stop and cancelAll aborts active file and subject generation', asy
       sourceId: 'source-1',
       ingestionRevision: 'rev-1',
       title: 'Doc',
-      outline,
-      summary,
+      outlineMarkdown,
+      summaryMarkdown,
       status: 'READY',
     }],
   })
@@ -2052,7 +1986,7 @@ test('cancellation inside the subject SQL write rolls back cache and outbox with
     const service = new OverviewGenerationService({
       api: { async generateSubjectOverview() { return { ...response('ALL'), title: 'Late subject result' } } },
       repository,
-      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }],
     })
     const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
     await entered
@@ -2159,7 +2093,7 @@ test('a superseded subject SQL save rolls back without deleting either prior or 
         return { ...response('ALL'), title: providerCalls === 1 ? 'Superseded result' : 'Current result' }
       } },
       repository,
-      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }],
     })
     const first = service.regenerateSubjectOverview('subject-1', 'ALL')
     await entered
@@ -2196,7 +2130,7 @@ test('a subject Stop after SQL commit preserves the committed cache and intent',
     const service = new OverviewGenerationService({
       api: { async generateSubjectOverview() { return { ...response('ALL'), title: 'Committed subject result' } } },
       repository,
-      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }],
     })
     const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
     await committed
@@ -2247,7 +2181,7 @@ test('a file Stop after SQL commit keeps the committed cache and intent', async 
   } finally { sql.close() }
 })
 
-test('late file generation preserves a saved local outline edit and offers exact Keep/Use choices without mutating a frozen write', async () => {
+test('late file generation preserves a saved local outlineMarkdown edit and offers exact Keep/Use choices without mutating a frozen write', async () => {
   const sql = new BarrierOverviewSqlite()
   try {
     const repository = new OverviewRepository('generation-edit-conflict-file', 'device-1', { sql })
@@ -2255,14 +2189,14 @@ test('late file generation preserves a saved local outline edit and offers exact
     const initial = (await repository.listOverviewOutbox())[0]
     const frozenBody = { baseVersion: 1, clientWriteId: initial.clientWriteId, mode: 'ALL', ingestionRevision: 'rev-1',
       outlineGeneratedAt: initial.outlineGeneratedAt, summaryGeneratedAt: initial.summaryGeneratedAt,
-      result: { schemaVersion: 1, title: initial.result.title, outline: initial.result.outline, summary: initial.result.summary } }
+      result: { schemaVersion: 2, title: initial.result.title, outlineMarkdown: initial.result.outlineMarkdown, summaryMarkdown: initial.result.summaryMarkdown } }
     await repository.materializeOverviewIntent(initial.clientWriteId, frozenBody)
 
     let startResolve
     const started = new Promise(resolve => { startResolve = resolve })
     let generationResolve
     const generated = new Promise(resolve => { generationResolve = resolve })
-    const aiOutline = [{ title: 'AI chapter', sections: [{ title: 'AI section', summary: 'Generated', sourceIds: ['source-1'], locator: null }] }]
+    const aiOutline = '## AI chapter\n- AI section'
     const service = new OverviewGenerationService({
       api: { async generateSourceOverview() { startResolve(); return generated } },
       repository,
@@ -2270,16 +2204,16 @@ test('late file generation preserves a saved local outline edit and offers exact
     })
     const attempt = service.regenerateFileOverview('source-1', 'OUTLINE')
     await started
-    const localOutline = [{ title: 'My edited chapter', sections: [{ title: 'My edited section', summary: 'Local', sourceIds: ['source-1'], locator: null }] }]
+    const localOutline = '## My edited chapter\n- My edited section'
     await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-      response: { ...response('OUTLINE'), outline: localOutline } })
-    generationResolve({ ...response('OUTLINE'), outline: aiOutline })
+      response: { ...response('OUTLINE'), outlineMarkdown: localOutline } })
+    generationResolve({ ...response('OUTLINE'), outlineMarkdown: aiOutline })
 
     const outcome = await attempt
     assert.equal(outcome.status, 'LOCAL_EDIT_CONFLICT')
     const preserved = await repository.getFileOverview('source-1', 'rev-1')
-    assert.deepEqual(preserved?.outline, localOutline)
-    assert.deepEqual(preserved?.generationConflicts?.[0]?.result.outline, aiOutline)
+    assert.deepEqual(preserved?.outlineMarkdown, localOutline)
+    assert.deepEqual(preserved?.generationConflicts?.[0]?.result.outlineMarkdown, aiOutline)
     const beforeChoice = await repository.listOverviewOutbox()
     const frozenBefore = beforeChoice.find(item => item.clientWriteId === initial.clientWriteId)
     assert.equal(frozenBefore?.state, 'PENDING')
@@ -2287,7 +2221,7 @@ test('late file generation preserves a saved local outline edit and offers exact
 
     const kept = await repository.resolveGenerationEditConflict(outcome.clientWriteId, 'KEEP_LOCAL')
     assert.equal(kept.status, 'KEPT')
-    assert.deepEqual((await repository.getFileOverview('source-1', 'rev-1'))?.outline, localOutline)
+    assert.deepEqual((await repository.getFileOverview('source-1', 'rev-1'))?.outlineMarkdown, localOutline)
     assert.equal((await repository.listOverviewOutbox()).find(item => item.clientWriteId === outcome.clientWriteId)?.state, 'STALE')
   } finally { sql.close() }
 })
@@ -2301,32 +2235,32 @@ test('using a late subject generation requires an unchanged current part and the
     const started = new Promise(resolve => { startResolve = resolve })
     let generationResolve
     const generated = new Promise(resolve => { generationResolve = resolve })
-    const aiOutline = [{ title: 'AI subject chapter', sections: [{ title: 'AI subject section', summary: 'Generated', sourceIds: ['source-1'], locator: null }] }]
+    const aiOutline = '## AI subject chapter\nSupported content'
     const service = new OverviewGenerationService({
       api: { async generateSubjectOverview() { startResolve(); return generated } },
       repository,
-      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outlineMarkdown, summaryMarkdown }],
     })
     const attempt = service.regenerateSubjectOverview('subject-1', 'OUTLINE')
     await started
-    const localOutline = [{ title: 'My subject chapter', sections: [{ title: 'My subject section', summary: 'Local', sourceIds: ['source-1'], locator: null }] }]
+    const localOutline = '## My subject chapter\nSupported content'
     await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'OUTLINE', inputFingerprint: 'subject-fingerprint',
-      response: { ...response('OUTLINE'), outline: localOutline } })
-    generationResolve({ ...response('OUTLINE'), outline: aiOutline })
+      response: { ...response('OUTLINE'), outlineMarkdown: localOutline } })
+    generationResolve({ ...response('OUTLINE'), outlineMarkdown: aiOutline })
     const outcome = await attempt
     assert.equal(outcome.status, 'LOCAL_EDIT_CONFLICT')
-    assert.deepEqual((await repository.getSubjectOverview('subject-1'))?.outline, localOutline)
+    assert.deepEqual((await repository.getSubjectOverview('subject-1'))?.outlineMarkdown, localOutline)
 
-    const latestLocalOutline = [{ title: 'Edited again after conflict', sections: [{ title: 'New local section', summary: 'New local text', sourceIds: ['source-1'], locator: null }] }]
+    const latestLocalOutline = '## Edited again after conflict\nSupported content'
     await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'OUTLINE', inputFingerprint: 'subject-fingerprint',
-      response: { ...response('OUTLINE'), outline: latestLocalOutline } })
+      response: { ...response('OUTLINE'), outlineMarkdown: latestLocalOutline } })
     const changed = await repository.resolveGenerationEditConflict(outcome.clientWriteId, 'USE_AI')
     assert.equal(changed.status, 'CHANGED')
-    assert.deepEqual((await repository.getSubjectOverview('subject-1'))?.outline, latestLocalOutline)
+    assert.deepEqual((await repository.getSubjectOverview('subject-1'))?.outlineMarkdown, latestLocalOutline)
     const resolution = await repository.resolveGenerationEditConflict(outcome.clientWriteId, 'USE_AI')
     assert.equal(resolution.status, 'APPLIED')
     const current = await repository.getSubjectOverview('subject-1')
-    assert.deepEqual(current?.outline, aiOutline)
+    assert.deepEqual(current?.outlineMarkdown, aiOutline)
     const outbox = await repository.listOverviewOutbox()
     assert.equal(outbox.find(item => item.clientWriteId === outcome.clientWriteId)?.state, 'STALE')
     assert.ok(outbox.some(item => item.scopeType === 'SUBJECT' && item.mode === 'OUTLINE'
@@ -2343,10 +2277,10 @@ test('same editable part with only cache acknowledgement metadata changes does n
     await sql.execute("UPDATE ai_overview_cache SET updated_at='2026-10-22T12:34:56.000Z' WHERE user_id=$1 AND device_id=$2 AND scope_type='FILE' AND scope_id='source-1'",
       ['generation-edit-conflict-ack', 'device-1'])
     await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-      response: { ...response('OUTLINE'), title: 'Generated after acknowledgement', outline: structuredClone(outline) }, generationBaseline: baseline })
+      response: { ...response('OUTLINE'), title: 'Generated after acknowledgement', outlineMarkdown }, generationBaseline: baseline })
     assert.equal((await repository.listOverviewOutbox()).filter(item => item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT').length, 0)
     assert.equal((await repository.getFileOverview('source-1', 'rev-1'))?.title, 'Generated after acknowledgement')
-    assert.deepEqual((await repository.getFileOverview('source-1', 'rev-1'))?.outline, outline)
+    assert.deepEqual((await repository.getFileOverview('source-1', 'rev-1'))?.outlineMarkdown, outlineMarkdown)
   } finally { sql.close() }
 })
 
@@ -2356,18 +2290,18 @@ test('cloud CAS conflict and generation edit conflict remain distinct and local 
     const repository = new OverviewRepository('generation-cloud-conflict-coexist', 'device-1', { sql })
     await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: response('ALL') })
     const baseline = await repository.captureGenerationBaseline('FILE','source-1','rev-1','OUTLINE')
-    const localOutline = [{ title: 'Cloud conflict local', sections: [{ title: 'Saved locally', summary: 'Local', sourceIds: ['source-1'], locator: null }] }]
+    const localOutline = '## Cloud conflict local\nSupported content'
     await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-      response: { ...response('OUTLINE'), outline: localOutline } })
+      response: { ...response('OUTLINE'), outlineMarkdown: localOutline } })
     const ordinary = (await repository.listOverviewOutbox()).filter(item => item.state === 'PREPARED').at(-1)
     await repository.setOverviewIntentState(ordinary.clientWriteId,'CONFLICT','OVERVIEW_VERSION_CONFLICT')
-    const aiOutline = [{ title: 'Unpublished AI', sections: [{ title: 'Candidate', summary: 'AI', sourceIds: ['source-1'], locator: null }] }]
+    const aiOutline = '## Unpublished AI\nSupported content'
     await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-      response: { ...response('OUTLINE'), outline: aiOutline }, generationBaseline: baseline })
+      response: { ...response('OUTLINE'), outlineMarkdown: aiOutline }, generationBaseline: baseline })
     let current = await repository.getFileOverview('source-1','rev-1')
     assert.equal(current?.syncStatus, 'CONFLICT')
     assert.equal(current?.syncError, 'OVERVIEW_VERSION_CONFLICT')
-    assert.deepEqual(current?.generationConflicts?.[0]?.result.outline, aiOutline)
+    assert.deepEqual(current?.generationConflicts?.[0]?.result.outlineMarkdown, aiOutline)
 
     await repository.retryOverviewConflictLocally('FILE','source-1','rev-1')
     const outbox = await repository.listOverviewOutbox()
@@ -2375,6 +2309,6 @@ test('cloud CAS conflict and generation edit conflict remain distinct and local 
     assert.equal(candidate?.state, 'CONFLICT')
     assert.notEqual(outbox.find(item => item.clientWriteId === candidate?.clientWriteId)?.errorCode, 'OVERVIEW_VERSION_CONFLICT')
     current = await repository.getFileOverview('source-1','rev-1')
-    assert.deepEqual(current?.generationConflicts?.[0]?.result.outline, aiOutline)
+    assert.deepEqual(current?.generationConflicts?.[0]?.result.outlineMarkdown, aiOutline)
   } finally { sql.close() }
 })

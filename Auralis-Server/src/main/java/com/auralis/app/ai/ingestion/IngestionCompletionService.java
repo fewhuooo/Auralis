@@ -39,6 +39,16 @@ public class IngestionCompletionService {
     }
 
     @Transactional
+    public boolean markIndexing(IngestionClaim claim, java.util.UUID sourceRevision) {
+        if (!sourceService.lockIngestionRevision(claim.userId(), claim.sourceId(), sourceRevision)) {
+            return false;
+        }
+        Optional<IngestionJobEntity> locked = lockOwnedClaim(claim);
+        return locked.isPresent() && jobRevisionMatches(locked.get(), sourceRevision)
+                && sourceService.markIndexingIfRevision(claim.userId(), claim.sourceId(), sourceRevision);
+    }
+
+    @Transactional
     public boolean complete(
             IngestionClaim claim,
             java.util.UUID sourceRevision,

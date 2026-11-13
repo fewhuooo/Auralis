@@ -1,8 +1,30 @@
 # 基础设施与数据服务模块
 
+### 2026-11-12 平台 AI 环境配置
+
+根目录 `.env` 与 `.env.example` 将平台生成与 Embedding 分组。Compose 显式向 backend 传递下方两组变量，应用缺省值均为空。每组以完整的 Base URL、模型和 Key 指定一个 OpenAI 兼容端点。部署时填写方式见[部署指南](../operations/Deployment.md)。本机已用基础 Compose 单独重建 backend。六项配置已注入，旧平台变量已移除。frontend、PostgreSQL 和 MinIO 容器身份与重启次数保持。
+
+### 2026-11-12 本机重部署
+
+当前 backend/frontend 镜像已构建并部署，健康检查与 Web 响应正常；本机数据库重置至 V45、MinIO 清空并完成双账号种子验证。前端 `.dockerignore` 补充 `src-tauri/target-*`，排除旧 Tauri 编译目录，所需 Web 源码与构建配置保持。旧备份删除和 PC 自动启动被工具审批拒绝；运行状态与剩余边界见 Status。
+
+### 2026-11-12 Overview 旧 Writer 容量配置清理
+
+移除退役检查点与 Writer 计划使用的 `AURALIS_AI_OVERVIEW_MAX_CHECKPOINT_CHARS`、`AURALIS_AI_OVERVIEW_MAX_PLAN_CHARS`、`AURALIS_AI_OVERVIEW_MAX_NODE_DESCRIPTOR_CHARS`、`AURALIS_AI_OVERVIEW_MAX_WRITER_NODES_PER_PLAN` 及应用属性、Compose 和环境示例绑定；旧 `overview-publication-poll-ms` 调度入口同步退役。现行请求、模型、响应和正式结果容量限制保持；实际 `.env` 未修改，未部署或重启。
+
+### 2026-11-12 Overview 生成配置替换（源码候选）
+
+新清理、大纲和总结流程不再使用 `AURALIS_AI_OVERVIEW_MAX_RETRIES` 与 `AURALIS_AI_OVERVIEW_OUTPUT_RECOVERY_ENABLED`，其 Spring/Compose/example 绑定随旧生成协议移除。模型输出非法、截断或容量不足明确失败，不回退旧分段、修复或重试路径。下方旧阶段快照中对这两个配置的说明不适用于本轮新生成链。实际 `.env` 未修改，未重启或部署服务。
+
+旧章/节、来源引用及链接结构专属的 11 个限制字段一并移除。当前有效限制继续覆盖完整请求、模型输入输出、响应与正式结果、来源数量，以及仍在使用的任务快照/清单元数据；不以旧章节容量参数限制 Markdown 正文。配置验证与打包完成，完整验证边界见当前状态。
+
+### 2026-11-10 Overview 重写分支配置
+
+详细生成的旧选择器 `AURALIS_AI_OVERVIEW_ADAPTIVE_GENERATION_ENABLED` 从重写分支的应用配置、环境示例和 Compose 移除。该分支的中间构建仅供开发验证，完整链路验收见[分批实施文档](../plans/2026-11-10-overview-dynamic-window-implementation.md)。
+
 ### Chat 调用次数限额（源码候选，未部署）
 
-Compose 与 `.env.example` 独立透传 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS`。模型与 embedding 次数默认 0（不设次数帽），可分别设正数；负数拒绝启动。工具次数默认12并保持现有 attempt 范围。8次 iteration、Provider deadline、Token 预算、并发与窗口额度仍分别生效。重新构建并 recreate backend 后配置进入运行态；本轮未改本机 `.env`，未部署或触发真实 Provider。
+Compose 与 `.env.example` 独立透传 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS`。模型与 embedding 次数默认 0（不设次数帽），可分别设正数；负数拒绝启动。工具次数默认及上限20，保持现有 attempt 范围；模型 iteration 默认及上限12，最后一轮禁止新工具并收尾。应用、Compose 与环境示例均已同步。Provider deadline、Token 预算、并发与窗口额度仍分别生效。重新构建并 recreate backend 后配置进入运行态；本轮未改本机 `.env`，未部署或触发真实 Provider。
 
 ### 2026-10-28 Overview 自动重试配置（源码候选，未部署）
 
@@ -177,18 +199,18 @@ Compose 后端透传 `AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS`，frontend build 
 - `AURALIS_MINIO_ENDPOINT`、`AURALIS_MINIO_PUBLIC_ENDPOINT`、`AURALIS_MINIO_BUCKET`、`AURALIS_MINIO_ACCESS_KEY`、`AURALIS_MINIO_SECRET_KEY`
 - `AURALIS_MINIO_PRESIGN_TTL_SECONDS`
 
-Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` 映射到 `auralis.upload.storage`，并以 `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` 和 `AURALIS_CORS_ALLOWED_ORIGINS` 作为生产必填项。`AURALIS_MINIO_ENDPOINT` 是容器内 Server 访问 MinIO 的地址；`AURALIS_MINIO_PUBLIC_ENDPOINT` 是 Tauri 客户端访问预签名 PUT/GET 的地址，Docker 本地默认分别为 `http://minio:9000` 与 `http://127.0.0.1:9000`。MinIO 使用同一 CORS 白名单允许客户端直传，不能把容器 hostname 作为客户端公网地址。Provider 的用户 BYOK 仍由应用加密保存；服务端 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY` 只作为运行时默认凭据注入后端，不写入数据库或 API。
+Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` 映射到 `auralis.upload.storage`，并以 `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` 和 `AURALIS_CORS_ALLOWED_ORIGINS` 作为生产必填项。`AURALIS_MINIO_ENDPOINT` 是容器内 Server 访问 MinIO 的地址；`AURALIS_MINIO_PUBLIC_ENDPOINT` 是 Tauri 客户端访问预签名 PUT/GET 的地址，Docker 本地默认分别为 `http://minio:9000` 与 `http://127.0.0.1:9000`。MinIO 使用同一 CORS 白名单允许客户端直传，不能把容器 hostname 作为客户端公网地址。用户 BYOK 由应用加密保存。平台两组 API Key 仅用于服务端运行时调用，数据库和 API 响应均不保存这些值。
 
 阶段 5 AI/RAG 配置由 `Auralis-Server` 绑定：
 
 - `AURALIS_AI_ENABLED`：默认 `false`。
 - `AURALIS_AI_ENCRYPTION_KEY`：生产必填，支持 16/24/32 字节原始值或对应 Base64；local/test profile 使用非生产占位值。
-- `AURALIS_AI_DEFAULT_PROVIDER`：默认 `DEEPSEEK`。
+- `AURALIS_AI_GENERATION_BASE_URL`、`AURALIS_AI_GENERATION_MODEL`、`AURALIS_AI_GENERATION_API_KEY` 配置 Chat 和 Overview 的平台生成端点。
+- `AURALIS_AI_GENERATION_CONTEXT_TOKENS` 和 `AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS` 为平台 Overview 声明当前生成模型的上下文窗口与最大输出 token，均默认 `0`。启动时要求两项均为 `0` 或均为正整数，最大输出须小于或等于上下文窗口且不超过 `2147483647`。BYOK Overview 从服务端 `auralis.ai.overview-model-capacities` 匹配自身容量。
+- `AURALIS_AI_EMBEDDING_BASE_URL`、`AURALIS_AI_EMBEDDING_MODEL`、`AURALIS_AI_EMBEDDING_API_KEY` 配置检索与入库的独立平台向量端点，要求每个向量包含 1024 个有限数值。
 - `AURALIS_AI_SHADOW_TOKEN_ESTIMATE_ENABLED`：影子 token 类别估算日志开关，默认 `true`；设为 `false` 可关闭诊断。该项不改变额度计算或 reservation。
-- `AURALIS_AI_OVERVIEW_INPUT_TOKEN_ESTIMATOR_MODE`：Overview completion 输入预算 profile，默认 `legacy-bytes`。`calibrated-category` 仅对精确 DeepSeek official endpoint 与 `deepseek-v4-flash` requested model 启用；其它身份或不支持的输入形态逐字节回退。常规部署保持默认，只有离线 holdout gate 与代码 review 通过后才可显式启用。
+- Overview 输入预算由 `unicode-category-v1` 计量。基础 Compose 和 trace overlay 已移除输入估算模式变量。本机仅重建 backend，容器环境唯一差异为移除旧模式变量，其他服务保持原容器。证据见 `docs/archive/overview-experiments/20261112-unified-budget-deploy/data/report.md`。
 - `AURALIS_AI_OVERVIEW_OUTPUT_RECOVERY_ENABLED`：新增 Overview JSON/截断输出恢复策略的回退开关，默认 `true`；设为 `false` 仅停用该新增策略，保留现行 semantic/no-progress。阶段2 Service 接线与 false 故障回归已通过；唯一只读 review 为 B0/I0/O0，完整 clean test 未通过（114 suites / 659 tests，5 failures / 1 error / 4 skipped，exit 1）。
-- `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY`：可选的服务端默认 Provider key；缺少时仍可由用户 BYOK 覆盖。
-- `AURALIS_AI_*_BASE_URL`、`AURALIS_AI_*_CHAT_MODEL`、`AURALIS_AI_*_EMBEDDING_MODEL`：各默认 Provider 的运行时端点和模型覆盖。
 - `AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS`：Provider 固定地址连接超时，默认 3000ms。
 - `AURALIS_AI_REQUEST_TIMEOUT_MILLIS`：普通聊天非流式/流式及 embedding 的 response/read 超时，默认 10000ms；`AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`：Overview map/reduce 非流式 completion response/read 超时，默认 120000ms，配置边界为 60000–120000ms。
 - `AURALIS_AI_MAX_PROMPT_CHARS`、`AURALIS_AI_MAX_RETRIEVED_CHUNKS`、`AURALIS_AI_INGESTION_MAX_BYTES`。

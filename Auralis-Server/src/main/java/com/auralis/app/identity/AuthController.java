@@ -133,7 +133,7 @@ public class AuthController {
     @GetMapping("/sessions")
     public AuthDtos.SessionListResponse sessions(@AuthenticationPrincipal AuthenticatedUser principal) {
         return new AuthDtos.SessionListResponse(
-                identityService.listSessions(principal.userId(), principal.sessionId()).stream()
+                identityService.listSessions(principal.userId(), principal.serverDeviceId()).stream()
                         .map(AuthDtos.SessionResponse::from)
                         .toList(),
                 null,
@@ -151,6 +151,6 @@ public class AuthController {
     @DeleteMapping("/sessions/others")
     @ResponseStatus(NO_CONTENT)
     public void revokeOtherSessions(@AuthenticationPrincipal AuthenticatedUser principal) {
-        identityService.revokeOtherSessions(principal.userId(), principal.sessionId());
+        identityService.revokeOtherSessions(principal.userId(), principal.serverDeviceId());
     }
 }

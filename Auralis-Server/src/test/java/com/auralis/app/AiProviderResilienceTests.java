@@ -218,31 +218,10 @@ class AiProviderResilienceTests {
     }
 
     @Test
-    void mapsMalformedJsonAndMalformedStreamEventsToProviderError() {
+    void mapsMalformedCompletionResponseToProviderError() {
         OpenAiCompatibleProvider malformedJson = provider((endpoint, path, key, body) ->
                 "{\"choices\":[]}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         assertThatThrownBy(() -> malformedJson.complete(REQUEST, CREDENTIAL))
-                .isInstanceOf(DomainException.class)
-                .extracting(error -> ((DomainException) error).code())
-                .isEqualTo("MODEL_PROVIDER_ERROR");
-
-        OpenAiCompatibleProvider malformedStream = provider(new ProviderHttpTransport() {
-            @Override
-            public byte[] post(ResolvedProviderEndpoint endpoint, String path, String key, byte[] body) {
-                return new byte[0];
-            }
-
-            @Override
-            public void postStream(
-                    ResolvedProviderEndpoint endpoint,
-                    String path,
-                    String key,
-                    byte[] body,
-                    java.util.function.Consumer<String> lineConsumer) {
-                lineConsumer.accept("data: {not-json}");
-            }
-        });
-        assertThatThrownBy(() -> malformedStream.streamInto(REQUEST, CREDENTIAL, chunk -> { }))
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("MODEL_PROVIDER_ERROR");

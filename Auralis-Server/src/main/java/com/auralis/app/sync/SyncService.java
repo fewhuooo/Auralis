@@ -3,6 +3,8 @@ package com.auralis.app.sync;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.relation.RelationService;
+import com.auralis.app.shared.domain.CoreResourceInsert;
+import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.task.TaskService;
@@ -46,7 +48,7 @@ public class SyncService {
 
     public List<SyncDtos.MutationResponse> push(UUID userId, UUID serverDeviceId, List<SyncMutation> mutations) {
         requireDevice(userId, serverDeviceId);
-        return mutations.stream().map(mutation -> mutationProcessor.process(userId, serverDeviceId, mutation)).toList();
+        return mutations.stream().map(mutation -> process(userId, serverDeviceId, mutation)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -71,6 +73,22 @@ public class SyncService {
     @Transactional(readOnly = true)
     public SyncCursor latestCursor(UUID userId) {
         return changeLogService.latestCursor(userId);
+    }
+
+    private SyncDtos.MutationResponse process(UUID userId, UUID serverDeviceId, SyncMutation mutation) {
+        try {
+            return mutationProcessor.process(userId, serverDeviceId, mutation);
+        } catch (CoreResourceInsert.IdCollision exception) {
+            // The failed INSERT has already rolled back. The rejection needs a new transaction.
+            return mutationProcessor.recordRejection(userId, serverDeviceId, mutation, "MUTATION_REJECTED", null);
+        } catch (DomainException exception) {
+            return switch (exception.code()) {
+                case "VALIDATION_FAILED", "RESOURCE_NOT_FOUND", "RESOURCE_DELETED", "RESOURCE_VERSION_CONFLICT",
+                     "MUTATION_REJECTED" -> mutationProcessor.recordRejection(
+                        userId, serverDeviceId, mutation, exception.code(), exception.current());
+                default -> throw exception;
+            };
+        }
     }
 
     private void requireDevice(UUID userId, UUID serverDeviceId) {

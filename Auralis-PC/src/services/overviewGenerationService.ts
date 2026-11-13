@@ -5,7 +5,6 @@ import type {
   OverviewApi,
   OverviewMode,
   OverviewResponse,
-  OutlineProvenanceInput,
   FileOverviewTrigger,
   SubjectOverviewSourceInput,
   SourceOverviewRequest,
@@ -29,9 +28,9 @@ interface OverviewRepositoryLike {
   isScopeFenceTokenCurrent(token: { userId: string; serverDeviceId: string; scopeType: 'FILE' | 'SUBJECT'; scopeId: string; generation: number }): boolean
   getFileOverview(sourceId: string, ingestionRevision: string): Promise<FileOverviewRecord | null>
   captureGenerationBaseline?(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, mode: OverviewMode): Promise<string>
-  saveFileOverviewPart(input: { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse; outlineProvenanceInput?: OutlineProvenanceInput; generationBaseline?: string; isStillCurrent?: () => boolean }): Promise<unknown>
+  saveFileOverviewPart(input: { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse; generationBaseline?: string; isStillCurrent?: () => boolean }): Promise<unknown>
   markFileOverviewFailed(sourceId: string, ingestionRevision: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
-  saveSubjectOverviewPart(input: { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string; outlineProvenanceInput?: OutlineProvenanceInput; generationBaseline?: string; isStillCurrent?: () => boolean }): Promise<unknown>
+  saveSubjectOverviewPart(input: { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string; generationBaseline?: string; isStillCurrent?: () => boolean }): Promise<unknown>
   markSubjectOverviewFailed(subjectId: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
   removeSubjectOverview(subjectId: string): Promise<void>
   removeFileOverviews(sourceId: string): Promise<void>
@@ -143,32 +142,35 @@ function failedResult(error: unknown): Extract<OverviewRegenerationResult, { sta
   }
 }
 
-
-
 function withInstruction<T extends object>(request: T, instruction?: string): T & { instruction?: string } {
   const value = instruction?.trim()
   return value ? { ...request, instruction: value } : request
 }
 
 function isComplete(record: FileOverviewRecord | null): boolean {
-  return Boolean(record?.status === 'READY' && record.outline && record.summary)
+  return Boolean(
+    record?.status === 'READY'
+    && record.schemaVersion === 2
+    && typeof record.outlineMarkdown === 'string' && record.outlineMarkdown.trim().length > 0
+    && typeof record.summaryMarkdown === 'string' && record.summaryMarkdown.trim().length > 0
+  )
 }
 
-export function hasUsableOutline(outline: FileOverviewRecord['outline']): boolean {
-  return Array.isArray(outline) && outline.some((chapter) => Array.isArray(chapter.sections) && chapter.sections.length > 0)
+export function hasUsableOutline(outlineMarkdown: string | null | undefined): boolean {
+  return typeof outlineMarkdown === 'string' && outlineMarkdown.trim().length > 0
 }
 
-export function hasUsableSummary(summary: FileOverviewRecord['summary']): boolean {
-  return Boolean(summary && summary.overview.trim())
+export function hasUsableSummary(summaryMarkdown: string | null | undefined): boolean {
+  return typeof summaryMarkdown === 'string' && summaryMarkdown.trim().length > 0
 }
 
 export function hasUsableOverview(file: FileOverviewRecord): boolean {
-  return hasUsableOutline(file.outline) || hasUsableSummary(file.summary)
+  return hasUsableOutline(file.outlineMarkdown) || hasUsableSummary(file.summaryMarkdown)
 }
 
 export function supportsMode(file: FileOverviewRecord, mode: OverviewMode): boolean {
-  if (mode === 'ALL') return hasUsableOutline(file.outline) && hasUsableSummary(file.summary)
-  return mode === 'OUTLINE' ? hasUsableOutline(file.outline) : hasUsableSummary(file.summary)
+  if (mode === 'ALL') return hasUsableOutline(file.outlineMarkdown) && hasUsableSummary(file.summaryMarkdown)
+  return mode === 'OUTLINE' ? hasUsableOutline(file.outlineMarkdown) : hasUsableSummary(file.summaryMarkdown)
 }
 
 export class OverviewGenerationService {
@@ -390,8 +392,8 @@ export class OverviewGenerationService {
       const sources: SubjectOverviewSourceInput[] = files.map((file) => ({
         sourceId: file.sourceId,
         title: file.title,
-        outline: mode === 'SUMMARY' ? null : file.outline,
-        summary: mode === 'OUTLINE' ? null : file.summary,
+        outlineMarkdown: mode === 'SUMMARY' ? null : file.outlineMarkdown,
+        summaryMarkdown: mode === 'OUTLINE' ? null : file.summaryMarkdown,
       }))
       const retryKey = this.dispatchedRequestKey('SUBJECT', subjectId, JSON.stringify([inputFingerprint, mode, instruction?.trim() ?? '']))
       const previousRequestId = this.dispatchedRequestIds.get(retryKey)
@@ -421,11 +423,16 @@ export class OverviewGenerationService {
       if (!(await this.canCommitSubjectGeneration(subjectId, generation, controller, context.sources))) {
         return skippedResult(this.subjectGenerationSkipCode(subjectId, generation, controller))
       }
-      const { outlineProvenance: outlineProvenanceInput, ...response } = generated
+      const response = generated
       try {
-        const saved = await this.repository.saveSubjectOverviewPart({ subjectId, mode, response, inputFingerprint,
-          ...(outlineProvenanceInput ? { outlineProvenanceInput } : {}), generationBaseline,
-          isStillCurrent: () => this.isSubjectGenerationCurrent(subjectId, generation, controller, context.sources) })
+        const saved = await this.repository.saveSubjectOverviewPart({
+          subjectId,
+          mode,
+          response,
+          inputFingerprint,
+          generationBaseline,
+          isStillCurrent: () => this.isSubjectGenerationCurrent(subjectId, generation, controller, context.sources),
+        })
         const conflict = (saved as { generationConflicts?: Array<{ clientWriteId?: string }> } | null)?.generationConflicts?.[0]
         if (conflict?.clientWriteId) return { status: 'LOCAL_EDIT_CONFLICT', requestId, clientWriteId: conflict.clientWriteId }
       } catch (error) {
@@ -529,13 +536,18 @@ export class OverviewGenerationService {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE' })
           return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
         }
-        const { outlineProvenance: outlineProvenanceInput, ...response } = generated
+        const response = generated
         try {
-          const saved = await this.repository.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode, response,
-            ...(outlineProvenanceInput ? { outlineProvenanceInput } : {}), generationBaseline,
+          const saved = await this.repository.saveFileOverviewPart({
+            sourceId,
+            ingestionRevision: revision,
+            mode,
+            response,
+            generationBaseline,
             isStillCurrent: () => !controller.signal.aborted && !this.blockedSourceIds.has(sourceId)
               && (!this.currentSourceRevisions.has(sourceId) || this.currentSourceRevisions.get(sourceId) === revision)
-              && this.inFlight.get(key)?.controller === controller })
+              && this.inFlight.get(key)?.controller === controller,
+          })
           const conflict = (saved as { generationConflicts?: Array<{ clientWriteId?: string }> } | null)?.generationConflicts?.[0]
           if (conflict?.clientWriteId) return { status: 'LOCAL_EDIT_CONFLICT', requestId, clientWriteId: conflict.clientWriteId }
         } catch (error) {

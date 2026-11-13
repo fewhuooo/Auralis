@@ -10,7 +10,7 @@
 
 ## 全局网络、会话与本地数据
 
-- 2026-10-12 聊天资料检索默认开启：Mobile/Tablet AI Search 的 `/api/ai/messages/stream` 请求已移除 `retrievalEnabled`；无 `ReadingContext` 时服务端按当前用户 owner 范围执行现有检索，显式 `ReadingContext` 仍限定请求范围。协议 24/24、静态与 H5 构建通过；类型检查仍受既有 Review API 类型缺失阻断。真实 Provider 与真机未验收，见[计划](../plans/2026-10-12-rag-always-on.md)。
+- Mobile/Tablet AI Search 调用 `/api/ai/messages/stream`。共享客户端使用生成的 `ReadingContext`，引用 `selectionText` 位于命令顶层。页面首轮省略范围时建立 owner-wide 绑定，服务端搜索受每个 attempt 捕获的 owner/READY 来源快照限制。2026-10-12 接入时协议 24/24、静态与 H5 构建通过，类型检查受既有 Review API 类型缺失阻断。真实 Provider 与真机未验收。见[接入计划](../plans/2026-10-12-rag-always-on.md)。
 
 - 2026-10-11 AI 额度接入：手机/平板现有 Profile 通过共享 `useAiUsage` → `GET /api/ai/usage` 显示本人 UTC 小时/每日窗口，resetAt 在页面按当地时间显示。只保存当前页面内存态，加载/失败不显示模拟值；账号/请求代次围栏拒绝旧响应。AI Search 通过 HTTP/SSE 的安全额度错误字段显示等待提示，仍为显式重试。类型/H5/协议验证与真实设备验收分别记录于 [B 计划](../plans/2026-10-10-ai-usage-guard-b.md)。
 
@@ -29,7 +29,7 @@
 | Login | `POST /api/auth/register`、`login`、`refresh`，`GET /api/auth/me` | 注册密码前置校验至少 12 字符；服务端 fieldErrors 仍只显示通用 toast，尚未逐输入框映射 |
 | Home | Task/Subject/Block Store → Sync push/pull/snapshot | 离线副本优先；只展示真实排期，无任务时保持空态；服务端统计不由首页本地派生值冒充 |
 | Pomodoro | Task Store → Sync；任务选择器只展示真实 pendingTasks，完成专注写入今日 Store 计数 | 后台、锁屏、跨日时间语义仍需真机 |
-| AI Search | `POST /api/ai/conversations`、`POST /api/ai/messages/stream` | 新聊天默认检索，请求不含 `retrievalEnabled`。SSE 支持 chunk 边界、401 单次重试和稳定 clientRequestId；真实 Provider/断流未验收 |
+| AI Search | `POST /api/ai/conversations`、`POST /api/ai/messages/stream` | 首轮省略 `readingContext`，绑定 owner-wide 范围。SSE 支持 chunk 边界、401 单次重试和稳定 requestId。真实 Provider 和断流待验收 |
 | Stats | `GET /api/stats/overview`、`GET /api/stats/weekly` | 已移除随机演示数据；学科分布无对应统计契约时保持空，不伪造 |
 | Timeline | Task Store → Sync | 拖拽保留 sortKey/startTime 映射；真实冲突 UI 待联调 |
 | Review | 仍调用 `GET /api/reviews/due`、`POST /api/reviews/events` | 两条服务端路由已于 2026-10-11 移除；Mobile 页面尚未迁移，复习功能当前不可用（本轮只迁移 PC） |
@@ -45,7 +45,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。Login、AI Searc
 | --- | --- | --- |
 | Dashboard / Stats / Subject Hall / Workspace | Subject、Block、Task、Asset 与 Sync Store；Dashboard/Stats 使用 `GET /api/stats/overview`、`GET /api/stats/weekly`；Workspace 总结与伴读使用当前 Conversation/SSE，不写入固定摘要 | 真实服务、横屏触控与错误态仍需验证 |
 | Pomodoro / Review | Task/Block Store；任务选择器无任务时保持空态；Tablet Review 仍调用 `GET /api/reviews/due`、`POST /api/reviews/events` | 复习路由已于 2026-10-11 移除，Tablet 页面尚未迁移、当前不可用；本轮只迁移 PC |
-| Profile / AI Search | Auth、脱敏 AI settings、Profile 的 `GET /api/ai/usage`、Conversation POST/GET/DELETE/SSE | Tablet Profile 已移除 `ragEnabled` 控件；新聊天默认检索且请求不含 `retrievalEnabled`。新对话先创建服务端 Conversation；历史使用列表/详情消息，删除携带版本；真实 Provider/断流仍待验收 |
+| Profile / AI Search | Auth、脱敏 AI settings、Profile 的 `GET /api/ai/usage`、Conversation POST/GET/DELETE/SSE | Tablet Profile 已移除 `ragEnabled` 控件。AI Search 先创建服务端 Conversation，首轮省略 `readingContext` 绑定 owner-wide 范围。历史使用列表和详情，删除携带版本。真实 Provider 和断流待验收 |
 | Handwriting | `tablet_notes`、NoteDocument、repository、handwriting engine | feature flag 默认关闭；不纳入云同步或当前发布阻断条件 |
 
 ## 启动与生命周期

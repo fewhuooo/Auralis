@@ -174,9 +174,16 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   async function addSubject(name: string, description: string, icon: string): Promise<string> {
+    const trimmedName = name.trim()
+    const normalizedName = trimmedName.toLowerCase()
+    const repo = await repository()
+    const existingSubjects = await repo.list<SubjectView>('SUBJECT', { includeDeleted: false })
+    if (existingSubjects.some((row) => row.value.name?.trim().toLowerCase() === normalizedName)) {
+      throw new Error('SUBJECT_NAME_ALREADY_EXISTS')
+    }
     const payload: SubjectCreateRequest = {
       baseVersion: 0,
-      name: name.trim(),
+      name: trimmedName,
       description: description.trim(),
       iconKey: icon,
     }
@@ -185,7 +192,6 @@ export const useSubjectStore = defineStore('subject', () => {
     const id = uuidv7()
     const now = new Date().toISOString()
     const localView: SubjectView = { ...payload, id, version: 0, createdAt: now, updatedAt: now, deletedAt: undefined }
-    const repo = await repository()
     await repo.commitMutation({
       resourceType: 'SUBJECT', resourceId: id, value: localView, version: 0, deletedAt: null,
       mutation: createStableMutation({

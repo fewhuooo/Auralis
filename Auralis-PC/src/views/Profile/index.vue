@@ -236,7 +236,7 @@
                   @blur="handleInputBlur(item)"
                 />
                 <!-- Status -->
-                <div v-else-if="item.type === 'status'" class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired) }">
+                <div v-else-if="item.type === 'status'" class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired || hasPendingFocusSessions) }">
                   <span class="status-dot-indicator"></span>
                   <span>{{ item.id === 'sync_status' ? syncStatusText : item.value }}</span>
                 </div>
@@ -361,6 +361,7 @@
                   type="text"
                   class="settings-input byok-input"
                   placeholder="如 DEEPSEEK / SILICONFLOW / OpenAI Compatible 服务商"
+                  :disabled="aiSettingsInitializing"
                 />
                 <div class="quick-providers-bar">
                   <span class="quick-preset-label">快速预设:</span>
@@ -370,6 +371,7 @@
                     type="button"
                     class="quick-preset-chip"
                     :class="{ 'is-active': normalizeProvider(customProvider) === qp.provider }"
+                    :disabled="aiSettingsInitializing"
                     @click="applyQuickProvider(qp)"
                   >
                     {{ qp.name }}
@@ -393,7 +395,7 @@
                   />
                   <button
                     class="action-btn byok-detect-btn"
-                    :disabled="detectingModels"
+                    :disabled="detectingModels || aiSettingsBusy"
                     @click="handleDetectModels"
                   >
                     {{ detectingModels ? '检测中...' : '自动检测' }}
@@ -462,18 +464,18 @@
           </div>
 
           <div class="byok-action-footer">
-            <span class="byok-tip">未修改密钥时留空即可</span>
+            <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '保存连接配置后可自动检测模型和测试连接' }}</span>
             <div class="byok-btn-group">
               <button
                 class="action-btn"
-                :disabled="testingConnection"
+                :disabled="testingConnection || aiSettingsBusy"
                 @click="handleTestConnection"
               >
                 {{ testingConnection ? '测试中...' : '测试连接' }}
               </button>
               <button
                 class="action-btn primary"
-                :disabled="aiSettingsLoading"
+                :disabled="aiSettingsBusy"
                 @click="handleSaveAiSettings"
               >
                 {{ aiSettingsLoading ? '保存中...' : '保存 AI 配置' }}
@@ -647,15 +649,16 @@ import {
   listAiModels,
   testAiConnection,
   normalizeProvider,
-  type AiSettingsCommand,
   type AiSettingsView,
   type AiUsageView,
+  type CanonicalAiProvider,
 } from '@/api/aiClient'
-import { useSyncStore } from '@/store/useSyncStore'
+import { isOnline, useSyncStore } from '@/store/useSyncStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useStatsStore } from '@/store/useStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
+import { SyncScopeChangedError } from '@/api/request'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
@@ -666,20 +669,6 @@ import DocumentProcessingCenter from '@/components/documentProcessing/DocumentPr
 import ChangePasswordDialog from '@/components/profile/ChangePasswordDialog.vue'
 
 const settingsStore = useSettingsStore()
-
-const showApiKey = ref(false)
-
-const quickProviders = [
-  { name: 'DeepSeek', provider: 'DEEPSEEK', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
-  { name: 'SiliconFlow', provider: 'SILICONFLOW', model: 'deepseek-ai/DeepSeek-V3', baseUrl: 'https://api.siliconflow.cn/v1' },
-  { name: 'OpenAI 兼容', provider: 'OPENAI_COMPATIBLE', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
-]
-
-const applyQuickProvider = (p: typeof quickProviders[0]) => {
-  customProvider.value = p.provider
-  customChatModel.value = p.model
-  customBaseUrl.value = p.baseUrl
-}
 
 const hourlyUsagePercent = computed(() => {
   if (!aiUsage.value?.hourly?.limitTokens) return 100
@@ -904,10 +893,6 @@ const openPasswordModal = () => {
 
 const submitPasswordChange = async ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) => {
   pwdError.value = ''
-  if (!newPassword || newPassword.length < 12 || newPassword.length > 200) {
-    pwdError.value = '新密码长度必须在 12 至 200 位之间'
-    return
-  }
   pwdSubmitting.value = true
   try {
     const baseVersion = authStore.user?.version ?? 0
@@ -952,7 +937,7 @@ const formatSessionDate = (value?: string) => {
   return Number.isNaN(parsed.getTime()) ? '未知' : parsed.toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-const isCurrentSession = (session: SessionResponse) => Boolean(session.current || session.id === authStore.sessionId)
+const isCurrentSession = (session: SessionResponse) => Boolean(session.current || session.serverDeviceId === authStore.serverDeviceId)
 
 const loadSessions = async () => {
   sessionsLoading.value = true
@@ -972,8 +957,8 @@ const handleRevokeSession = async (session: SessionResponse) => {
   revokingSessionId.value = session.id
   try {
     await useAuthApi.revokeSession(session.id)
-    sessions.value = sessions.value.filter((item) => item.id !== session.id)
-    ElNotification({ title: '设备已下线', message: '该设备已成功下线。', type: 'success', duration: 3000 })
+    sessions.value = sessions.value.filter((item) => item.serverDeviceId !== session.serverDeviceId)
+    ElNotification({ title: '设备会话已撤销', message: '该设备无法续期，已有访问权限将在令牌到期后失效。', type: 'success', duration: 3000 })
   } catch (error) {
     ElNotification({ title: '撤销失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
   } finally {
@@ -986,32 +971,65 @@ const dayMapping: Record<string, string> = {
 }
 
 // === BYOK AI Settings ===
-type AiProvider = NonNullable<AiSettingsCommand['provider']> | (string & {})
+const quickProviders = [
+  { name: 'DeepSeek', provider: 'DEEPSEEK', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
+  { name: 'SiliconFlow', provider: 'SILICONFLOW', model: 'deepseek-ai/DeepSeek-V3', baseUrl: 'https://api.siliconflow.cn/v1' },
+  { name: 'OpenAI 兼容', provider: 'OPENAI_COMPATIBLE', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
+] as const
 
-const customProvider = ref<AiProvider>('DEEPSEEK')
-const customChatModel = ref('deepseek-chat')
+const defaultDeepSeekModel = 'deepseek-chat'
+const customProvider = ref('DEEPSEEK')
+const customChatModel = ref<string>(defaultDeepSeekModel)
 const customBaseUrl = ref('')
 const customApiKey = ref('')
+const showApiKey = ref(false)
 const aiSettingsList = ref<AiSettingsView[]>([])
+const aiSettingsInitializing = ref(true)
 const aiSettingsLoading = ref(false)
+const detectingModels = ref(false)
+const detectedModels = ref<string[]>([])
+const testingConnection = ref(false)
 
+const aiSettingsBusy = computed(() => aiSettingsInitializing.value || aiSettingsLoading.value)
+const canonicalAiProvider = computed(() => normalizeProvider(customProvider.value))
+const currentProviderSetting = computed(() =>
+  aiSettingsList.value.find((item) => item.provider === canonicalAiProvider.value),
+)
+const currentProviderHasKey = computed(() => Boolean(currentProviderSetting.value?.hasApiKey))
+const effectiveAiBaseUrl = computed(() => {
+  const provider = canonicalAiProvider.value
+  return customBaseUrl.value.trim() || (provider === 'OPENAI_COMPATIBLE'
+    ? ''
+    : quickProviders.find((preset) => preset.provider === provider)?.baseUrl || '')
+})
+
+const loadAiProviderForm = (provider: CanonicalAiProvider, preset?: (typeof quickProviders)[number]) => {
+  const saved = currentProviderSetting.value
+  customApiKey.value = ''
+  showApiKey.value = false
+  customBaseUrl.value = saved?.baseUrl ?? preset?.baseUrl ?? ''
+  customChatModel.value = saved?.chatModel ?? preset?.model ?? (provider === 'DEEPSEEK' ? defaultDeepSeekModel : '')
+}
+
+const applyQuickProvider = (preset: (typeof quickProviders)[number]) => {
+  customProvider.value = preset.provider
+  loadAiProviderForm(preset.provider, preset)
+}
+
+watch(canonicalAiProvider, (provider) => loadAiProviderForm(provider), { flush: 'sync' })
+
+let aiConnectionGeneration = 0
 watch(
-  () => normalizeProvider(customProvider.value),
-  (provider, previousProvider) => {
-    if (provider !== previousProvider) {
-      customChatModel.value = ''
-      detectedModels.value = []
-    }
+  [canonicalAiProvider, effectiveAiBaseUrl, customApiKey, currentProviderSetting],
+  () => {
+    aiConnectionGeneration++
+    detectedModels.value = []
+    detectingModels.value = false
   },
   { flush: 'sync' },
 )
 
-const detectingModels = ref(false)
-const detectedModels = ref<string[]>([])
-const testingConnection = ref(false)
-let saveAiSettingsSilently = false
-
-const getAiSettingsValidationError = (provider: ReturnType<typeof normalizeProvider>): string | null => {
+const getAiSettingsValidationError = (provider: CanonicalAiProvider): string | null => {
   if (provider !== 'DEEPSEEK' && !customChatModel.value.trim()) {
     return '当前服务商需要填写明确的聊天模型名称后才能保存。'
   }
@@ -1025,61 +1043,30 @@ const notifyAiSettingsValidationError = (message: string) => {
   ElNotification({ title: 'AI 配置不完整', message, type: 'warning', duration: 3500 })
 }
 
-const ensureAiSettingsSavedForTest = async (): Promise<boolean> => {
-  const canonical = normalizeProvider(customProvider.value)
-  const validationError = getAiSettingsValidationError(canonical)
-  if (validationError) {
-    notifyAiSettingsValidationError(validationError)
-    return false
+const requireSavedAiSettingsForProbe = (chatModel?: string): boolean => {
+  const saved = currentProviderSetting.value
+  if (saved?.hasApiKey && !customApiKey.value.trim() && saved.baseUrl === effectiveAiBaseUrl.value
+    && (chatModel === undefined || saved.chatModel === chatModel)) {
+    return true
   }
-  const saved = aiSettingsList.value.find((item) => item.provider === canonical)
-  const hasNewKey = Boolean(customApiKey.value.trim())
-  const hasBaseUrlChange = (customBaseUrl.value.trim() || '') !== (saved?.baseUrl || '')
-  const hasModelChange = (customChatModel.value.trim() || '') !== (saved?.chatModel || '')
-  const isDirty = !saved || hasNewKey || hasBaseUrlChange || hasModelChange
-
-  if (isDirty) {
-    if (!saved?.hasApiKey && !hasNewKey) {
-      ElNotification({
-        title: '未配置密钥',
-        message: '请先填写 API Key 密钥后再进行连接测试或模型检测',
-        type: 'warning',
-        duration: 3500,
-      })
-      return false
-    }
-    try {
-      saveAiSettingsSilently = true
-      const updated = await handleSaveAiSettings()
-      if (!updated) return false
-    } catch {
-      saveAiSettingsSilently = false
-      return false
-    }
-  }
-  return true
+  ElNotification({
+    title: '请先保存 AI 配置',
+    message: '填写服务商配置后点击「保存 AI 配置」，再进行模型检测或连接测试。',
+    type: 'warning',
+    duration: 3500,
+  })
+  return false
 }
 
 const handleDetectModels = async () => {
-  if (detectingModels.value) return
-  const canonical = normalizeProvider(customProvider.value)
-  const saved = aiSettingsList.value.find((item) => item.provider === canonical)
-  if (!saved?.hasApiKey && !customApiKey.value.trim()) {
-    ElNotification({
-      title: '未配置密钥',
-      message: '模型自动探测需要使用服务商密钥，请先填写并保存配置',
-      type: 'warning',
-      duration: 3500,
-    })
-    return
-  }
-
-  const ok = await ensureAiSettingsSavedForTest()
-  if (!ok) return
+  if (detectingModels.value || aiSettingsBusy.value || !requireSavedAiSettingsForProbe()) return
+  const canonical = canonicalAiProvider.value
+  const generation = aiConnectionGeneration
 
   detectingModels.value = true
   try {
     const res = await listAiModels(canonical)
+    if (generation !== aiConnectionGeneration || res.provider !== canonical) return
     const models = res.models || []
     detectedModels.value = models
     if (!customChatModel.value && models.length > 0) {
@@ -1091,42 +1078,34 @@ const handleDetectModels = async () => {
       type: 'success',
       duration: 3000,
     })
-  } catch (err: any) {
+  } catch (error) {
+    if (generation !== aiConnectionGeneration) return
     ElNotification({
       title: '检测失败',
-      message: err?.problem?.detail || err?.message || '未能获取可用模型列表，请确认 Base URL 与 API Key 是否有效',
+      message: error instanceof Error ? error.message : '未能获取可用模型列表，请确认 Base URL 与 API Key 是否有效',
       type: 'error',
       duration: 4000,
     })
   } finally {
-    detectingModels.value = false
+    if (generation === aiConnectionGeneration) detectingModels.value = false
   }
 }
 
 const handleTestConnection = async () => {
-  if (testingConnection.value) return
-  const canonical = normalizeProvider(customProvider.value)
-  const saved = aiSettingsList.value.find((item) => item.provider === canonical)
-  if (!saved?.hasApiKey && !customApiKey.value.trim()) {
-    ElNotification({
-      title: '未配置密钥',
-      message: '请先填写 API Key 密钥后再进行连接测试',
-      type: 'warning',
-      duration: 3500,
-    })
-    return
-  }
-
-  const ok = await ensureAiSettingsSavedForTest()
-  if (!ok) return
+  if (testingConnection.value || aiSettingsBusy.value) return
+  const canonical = canonicalAiProvider.value
+  const chatModel = customChatModel.value.trim() || (canonical === 'DEEPSEEK' ? defaultDeepSeekModel : '')
+  if (!requireSavedAiSettingsForProbe(chatModel)) return
+  const generation = aiConnectionGeneration
 
   testingConnection.value = true
   try {
     const res = await testAiConnection(canonical)
+    if (generation !== aiConnectionGeneration || res.provider !== canonical) return
     if (res.reachable) {
       ElNotification({
         title: '连接成功',
-        message: `服务商 [${customProvider.value}] 联通正常，聊天模型 ${res.chatModel} 已验证。`,
+        message: `服务商 [${canonical}] 联通正常，聊天模型 ${res.chatModel} 已验证。`,
         type: 'success',
         duration: 3500,
       })
@@ -1138,10 +1117,11 @@ const handleTestConnection = async () => {
         duration: 4000,
       })
     }
-  } catch (err: any) {
+  } catch (error) {
+    if (generation !== aiConnectionGeneration) return
     ElNotification({
       title: '连接测试失败',
-      message: err?.problem?.detail || err?.message || '未能连通目标服务商，请确认端点与密钥是否有效',
+      message: error instanceof Error ? error.message : '未能连通目标服务商，请确认端点与密钥是否有效',
       type: 'error',
       duration: 4500,
     })
@@ -1154,81 +1134,61 @@ const selectDetectedModel = (model: string) => {
   customChatModel.value = model
 }
 
-const currentProviderSetting = computed(() => {
-  const canonical = normalizeProvider(customProvider.value)
-  return aiSettingsList.value.find((item) => item.provider === canonical)
-})
-const currentProviderHasKey = computed(() => Boolean(currentProviderSetting.value?.hasApiKey))
-
 const loadAiSettings = async () => {
   try {
     const list = await getAiSettings()
     aiSettingsList.value = list || []
-    const canonical = normalizeProvider(customProvider.value)
-    const saved = list?.find((item) => item.provider === canonical) || list?.[0]
-    if (saved?.provider) {
-      customProvider.value = saved.provider
-      customBaseUrl.value = saved.baseUrl || ''
-      customChatModel.value = saved.chatModel || (normalizeProvider(saved.provider) === 'DEEPSEEK' ? 'deepseek-chat' : '')
-    } else {
-      customChatModel.value = normalizeProvider(customProvider.value) === 'DEEPSEEK' ? 'deepseek-chat' : ''
-    }
+    if (customChatModel.value !== defaultDeepSeekModel || customBaseUrl.value || customApiKey.value) return
+
+    const saved = currentProviderSetting.value ?? aiSettingsList.value[0]
+    if (saved?.provider) customProvider.value = saved.provider
+    loadAiProviderForm(canonicalAiProvider.value)
   } catch (error) {
     console.error('Failed to load AI settings:', error)
+  } finally {
+    aiSettingsInitializing.value = false
   }
 }
 
 const handleSaveAiSettings = async () => {
-  const silent = saveAiSettingsSilently
-  saveAiSettingsSilently = false
+  if (aiSettingsBusy.value) return
+  const canonical = canonicalAiProvider.value
+  const validationError = getAiSettingsValidationError(canonical)
+  if (validationError) {
+    notifyAiSettingsValidationError(validationError)
+    return
+  }
+  const key = customApiKey.value.trim()
   aiSettingsLoading.value = true
   try {
-    const key = customApiKey.value.trim()
-    const canonical = normalizeProvider(customProvider.value)
-    const configuredChatModel = customChatModel.value.trim()
-    const validationError = getAiSettingsValidationError(canonical)
-    if (validationError) {
-      notifyAiSettingsValidationError(validationError)
-      return
-    }
-    const chatModel = configuredChatModel || 'deepseek-chat'
-    const defaultBaseUrl = canonical === 'DEEPSEEK'
-      ? 'https://api.deepseek.com'
-      : canonical === 'SILICONFLOW'
-        ? 'https://api.siliconflow.cn/v1'
-        : ''
-    const baseUrl = customBaseUrl.value.trim() || defaultBaseUrl
     const updated = await updateAiSettings({
-      provider: canonical as any,
-      baseUrl,
-      chatModel,
+      provider: canonical,
+      baseUrl: effectiveAiBaseUrl.value,
+      chatModel: customChatModel.value.trim() || defaultDeepSeekModel,
       apiKey: key || undefined,
     })
-    customApiKey.value = ''
+    if (canonical === canonicalAiProvider.value && key === customApiKey.value.trim()) customApiKey.value = ''
     const idx = aiSettingsList.value.findIndex((item) => item.provider === canonical)
     if (idx >= 0) {
       aiSettingsList.value[idx] = updated
-    } else {
-      aiSettingsList.value.push(updated)
     }
-    if (!silent) {
-      ElNotification({ title: 'AI 配置已保存', message: `[${customProvider.value}] AI 配置已成功保存。`, type: 'success', duration: 3000 })
-    }
-    return updated
-  } catch (error: any) {
-    ElNotification({ title: '保存失败', message: error?.problem?.detail || (error instanceof Error ? error.message : '请稍后重试'), type: 'error', duration: 3000 })
-    throw error
+    if (idx < 0) aiSettingsList.value.push(updated)
+    ElNotification({ title: 'AI 配置已保存', message: `[${canonical}] AI 配置已成功保存。`, type: 'success', duration: 3000 })
+  } catch (error) {
+    ElNotification({ title: '保存失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
   } finally {
     aiSettingsLoading.value = false
   }
 }
 
 const syncStore = useSyncStore()
+const hasPendingFocusSessions = computed(() => pomodoroStore.pendingSessions.length > 0)
 
 const syncStatusText = computed(() => {
   if (syncStore.isSyncing) return '正在与云端同步...'
   if (syncStore.lastSyncError) return `同步异常 · ${syncStore.lastSyncError}`
   if (syncStore.resetRequired) return '需要重置 · 等待重新同步'
+  if (hasPendingFocusSessions.value) return '有专注记录待上传'
   return '已同步 · 状态正常'
 })
 
@@ -1349,7 +1309,7 @@ const settingGroups = reactive([
     title: '同步与数据',
     desc: '管理多设备增量同步策略、网络环境与传输状态',
     items: [
-      { id: 'sync_status', label: '同步状态', desc: '已与云端保持最新同步', type: 'status', value: '已同步 · 状态正常' },
+      { id: 'sync_status', label: '同步状态', desc: '查看当前设备的同步状态', type: 'status', value: '已同步 · 状态正常' },
       { id: 'auto_sync', label: '自动同步', desc: '在多设备间自动同步学习数据', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
       { id: 'wifi_only', label: '仅 Wi-Fi 同步', desc: '使用移动网络时暂停同步，节省流量', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
       { id: 'sync_now', label: '立即同步', desc: '立即检查并同步最新数据', type: 'action', btnText: '立即同步', variant: 'primary' },
@@ -1463,14 +1423,25 @@ const toggleDiagnosticLog = () => {
 
 const handleAction = async (item: SettingItem) => {
   if (item.id === 'sync_now') {
+    const generation = authStore.loginGeneration
     const orig = item.btnText
     item.btnText = '同步中...'
     try {
+      if (!isOnline()) throw new Error('NETWORK_OFFLINE')
       await syncStore.flushNow()
-      item.btnText = '✓ 同步成功'
+      if (authStore.loginGeneration !== generation) return
+      await pomodoroStore.flushPending()
       await loadStats()
-      ElNotification({ title: '同步成功', message: '所有数据已成功同步至云端', type: 'success', duration: 3000 })
+      if (authStore.loginGeneration !== generation) return
+      if (hasPendingFocusSessions.value) {
+        item.btnText = '部分记录待传'
+        ElNotification({ title: '专注记录待上传', message: '部分专注记录仍保存在此设备，可稍后重试。', type: 'warning', duration: 3000 })
+        return
+      }
+      item.btnText = '✓ 同步成功'
+      ElNotification({ title: '同步成功', message: '本次同步已完成', type: 'success', duration: 3000 })
     } catch (e) {
+      if (authStore.loginGeneration !== generation || e instanceof SyncScopeChangedError) return
       item.btnText = '✕ 同步失败'
       ElNotification({ title: '同步失败', message: '同步遇到错误，请检查网络后重试', type: 'error', duration: 3000 })
     } finally {
@@ -1486,11 +1457,13 @@ const handleInputBlur = (_item: SettingItem) => {
 }
 
 onMounted(async () => {
-  void pomodoroStore.initialize().catch((error) => console.error('Failed to initialize focus sessions:', error))
+  void loadAiSettings()
+  void pomodoroStore.initialize().then(() => {
+    if (hasPendingFocusSessions.value) syncStore.requestBackgroundSync('read')
+  }).catch((error) => console.error('Failed to initialize focus sessions:', error))
   await loadAvatar()
   await loadStats()
   await loadSessions()
-  await loadAiSettings()
 })
 
 watch(() => pomodoroStore.syncRevision, (revision, previous) => {
@@ -1500,6 +1473,7 @@ watch(() => pomodoroStore.syncRevision, (revision, previous) => {
 
 
 const handleLogout = async () => {
+  const generation = authStore.loginGeneration
   try {
     const action = await ElMessageBox.confirm('确定要退出当前设备的登录状态吗？', '退出登录', {
       confirmButtonText: '退出',
@@ -1511,20 +1485,22 @@ const handleLogout = async () => {
     if (error === 'cancel' || error === 'close') return
     console.warn('[Profile] ElMessageBox confirm exception, proceeding with logout:', error)
   }
+  if (authStore.loginGeneration !== generation) return
 
   try {
     await authStore.logout()
+    if (authStore.isAuthenticated) return
     ElNotification({ title: '已退出登录', message: '期待您的再次使用', type: 'success', duration: 2000 })
   } catch (error) {
+    if (error instanceof SyncScopeChangedError || authStore.isAuthenticated) return
     console.warn('[Profile] authStore.logout error, local session cleared:', error)
     ElNotification({ title: '登出异常', message: '无法连接到服务器完成会话清理，本地状态已强制清除', type: 'warning', duration: 3000 })
-  } finally {
-    await router.push('/login').catch(() => {
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        window.location.assign('/login')
-      }
-    })
   }
+  await router.push('/login').catch(() => {
+    if (!authStore.isAuthenticated && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.assign('/login')
+    }
+  })
 }
 
 const handleClearCache = async () => {
@@ -1535,7 +1511,6 @@ const handleClearCache = async () => {
       type: 'info',
     })
     const cacheKeys = [
-      'auralis_chat_messages',
       'auralis_view_cache',
       'auralis_temp_index',
     ]
@@ -1558,15 +1533,6 @@ const handleResetOfflineData = async () => {
         type: 'warning',
       }
     )
-    const offlineKeys = [
-      'auralis_knowledge_blocks',
-      'auralis_task_blocks',
-      'auralis_chat_sessions',
-      'auralis_chat_messages',
-      'auralis_local_mutations',
-      'auralis_sync_metadata',
-    ]
-    offlineKeys.forEach((k) => localStorage.removeItem(k))
     ElNotification({
       title: '离线数据已重置',
       message: '本地离线数据已清空，正在重新同步云端数据...',
@@ -1590,7 +1556,7 @@ const handleResetOfflineData = async () => {
 const handleDeleteAccount = async () => {
   try {
     const { value: inputPwd } = await ElMessageBox.prompt(
-      '注销账户将永久停用并清理您在云端和本地的所有个人数据，此操作不可逆。请输入您的登录密码以确认注销：',
+      '确认注销后，本机会退出登录，服务端会停用账户并在后台清理云端数据。本机保存的业务数据会保留。请输入登录密码确认注销。',
       '注销账户确认',
       {
         confirmButtonText: '确认注销',
@@ -1701,6 +1667,7 @@ onMounted(() => {
   max-width: 480px;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: none;
   background: var(--color-bg-primary, #F7F2EB);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
@@ -1720,6 +1687,8 @@ onMounted(() => {
 }
 .studio-left > * {
   flex-shrink: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* 2.1 用户基本资料卡 (User Profile Card) */
@@ -2094,6 +2063,8 @@ onMounted(() => {
   border-radius: 18px;
   padding: 16px 18px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
+  box-sizing: border-box;
+  max-width: 100%;
 }
 .studio-left :deep(.processing-center h3) {
   font-size: 13.5px;
@@ -2356,6 +2327,7 @@ onMounted(() => {
   min-width: 0;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: none;
   background: var(--color-bg-primary, #F7F2EB);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));

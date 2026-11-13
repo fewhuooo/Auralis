@@ -1,5 +1,99 @@
 # PC 前端模块
 
+### 2026-11-12 文件与学科大纲 Markdown 排版与层级样式重构（源码与生产构建通过）
+
+针对学科工作区二级大纲抽屉中文件大纲（`FileOutlineList.vue`）和学科总览大纲（`SubjectOverviewSection.vue`）Markdown 结构缺乏视觉节奏、H1 字体过大粗暴、章节议题（H2）无段落间隔与标记、列表条目无圆点引导等排版丑陋问题，完成符合 Auralis Zen Minimalist 审美体系的排版样式重构：
+- **容器与呼吸空间**：`.file-outline__markdown` 与 `.subject-outline-markdown` 内边距统一调整为 `10px 12px 14px`，行高设为 `1.6`，补齐 `word-break: break-word;`；
+- **文档主题标题 (`h1`)**：规范字号为 `13.5px`，字重 `700`，行高 `1.45`，搭配底部中性发丝边框 `border-bottom: 1px solid var(--border-subtle)` 与前置 5px Zen Sage 柔和圆点徽标；
+- **主要议题模块 (`h2`)**：规范字号为 `12px`，字重 `650`，顶部赋予 `13px` 明确外边距建立视觉分段；左侧内嵌 `3px × 11px` 的 Zen Sage 垂直药丸胶囊微晶指示条（`::before`），第一项或紧随 H1 的首个议题自动收窄为 `margin-top: 4px`；
+- **小节与次要层级 (`h3`, `h4`)**：H3 设为 `11.5px`，搭配方形微晶点；H4-H6 紧凑微型排版；
+- **要点列表与列表项 (`ul`, `ol`, `li`)**：去除原生粗糙点阵，外层 `display: flex; flex-direction: column; gap: 5px;`；列表项 `li` 设为 `11.5px`，左侧预留 `14px` 缩进并内嵌 `4.5px` 浅草绿柔和微圆点（`opacity: 0.65`），悬浮时轻微微动（`transform: scale(1.15)`）；支持嵌套列表与嵌套空心环；有序列表自动绑定 CSS counter 优雅编号；
+- **排版细节与暗色模式**：对行内 `code`、`blockquote`、`hr` 补充 Zen Minimalist 规范，暗色模式（`html.dark`）下自动映射柔和灰阶与微光底色；
+- **冲突预览与构建闭环**：清除历史残留的重复属性与旧未闭合标签，`SubjectOverviewSection.vue` 完整对齐 `outlineMarkdown`/`summaryMarkdown` v2 契约；`npm run type-check` exit 0，`npm run build` exit 0，定向测试 154/154 全部通过。
+
+### 2026-11-12 个人中心文件解析进度卡片截断与溢出修复
+
+修复了个人中心左侧数据透视面板中文件解析进度卡片（`DocumentProcessingCenter.vue`）横向溢出问题：
+- 在 `DocumentProcessingCenter.vue` 中为 `.processing-list` 约束网格单列轨道 `grid-template-columns: minmax(0, 1fr); width: 100%; min-width: 0;`；
+- `.processing-item` 显式设置 `box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;`；
+- `.processing-item-meta > span` 与 `.processing-error` 统一收窄并支持省略截断 `flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`；为 `<strong>` 增加 `:title` 原生 Tooltip；
+- 在 `Profile/index.vue` 的 `.studio-left` 与 `.studio-right` 补齐 `overflow-x: hidden;`，并对 `.studio-left > *` 设定 `max-width: 100%; box-sizing: border-box;`，确保在任何视口或窄屏断点（320px–480px）下右侧操作按钮和状态药丸徽标完整可见。
+
+### 2026-11-12 Overview 旧协议残留清理
+
+正式结果响应仅接受 v2 Markdown 契约，`outlineVersion/summaryVersion` 必须分别提供非负整数，不再从总版本补值或将旧 v1 成功响应适配为缺失。HTTP 404 仍表示缺失；409 中的旧行真实版本元数据继续用于显式替换，不能当作内容显示。
+
+缓存查询仅投影现行 Markdown 列，历史 JSON 列和旧行保留。旧格式拒读、旧 outbox 停用、当前 v2 本地结果补传、编辑及删除围栏保持。移除无运行调用的 `CandidateInput` 类型与请求字段；新生成、渲染及同步行为保持。
+
+### 2026-11-12 Overview Markdown 接入（源码、定向验证与构建完成）
+
+Overview 内容采用 `schemaVersion=2` 的 `outlineMarkdown`、`summaryMarkdown`。生成分项允许另一项 null；正式完整结果两项均为非空文本。两项复用现有 Markdown 渲染，大纲编排入口改为直接编辑 Markdown；移除旧章/节结构及 provenance 调用，不自动把旧结构转成新内容。Antigravity 完成主要接入，主 Agent 接手验证收尾。
+
+生成/保存保留取消、加载缓存、编辑保护、来源修订和冲突流程。旧服务器 v1 内容 GET 缺失，重新生成 ALL 后可能收到仅含 `{version,schemaVersion}` 的冲突元数据；保存真实版本，保留草稿，由用户明确重试本地内容，不渲染元数据或无限以 baseVersion=0 重试。分项 PUT 只携带更新分项的生成时间；持久化前拒绝空白 Markdown。
+
+SQLite schema 升至 14，为缓存追加 Markdown 列并保留旧行；旧格式内容与 outbox 不转成新结果。只读审查发现的三项已修复关闭，最终测试/构建状态见当前状态；未进行真实 Tauri、双账号或端到端同步验收。
+
+### 2026-11-11 解析上传 receipt 类型收窄
+
+`ParsedDocumentUploadCoordinator.validateReceipt` 在既有 v1 receipt 校验成功后，以类型断言保证 `sourceAssetSha256` 为字符串，随后构造符合现行必填 SHA-256 契约的上传申请。
+
+### 2026-11-11 文件预览失败的手动重试
+
+学科工作区和资料库使用的 bare 文件预览，在带资产 ID 的文件加载失败时，于错误区域提供现有风格的「重试」按钮，复用 `loadPreview` 及原有请求隔离。加载期间不重复发起重试；不主动轮询或自动重试。错误文案仅在实际提供下载入口时建议下载。现有阅读器、分页和正常预览样式保持，错误区提示文字的样式选择器限定直接子元素，避免影响按钮内部文字。
+
+### 2026-11-11 全局搜索与知识详情复制
+
+- `SearchPalette` 的关键词变化立即使上一轮搜索失效，防抖及本地读取期间不接受旧结果的回车或点击。清空、关闭及后续查询取消旧请求的提交资格，迟到读取不覆盖当前结果；输入法组合期间的回车不触发导航。
+- `KnowledgeBlockViewDialog` 自行完成复制：优先调用 Clipboard API，不可用或拒绝时尝试临时文本框复制，结束后恢复焦点及正文选区。只有实际成功才显示成功反馈；两条路径均失败时使用现有消息提示手动复制。父页面无需处理复制事件，本轮未修改 Timeline 的既有绑定。
+- 两个组件模板和 CSS 保持；本轮无 API、数据结构或同步字段变化。
+
+### 2026-11-11 学科创建与资料编辑、加载修复
+
+- `useSubjectStore.addSubject` 在当前账号的本地活跃学科投影中检查名称，去掉首尾空白并忽略大小写；重名时在写入投影和 outbox 前拒绝。学科大厅使用现有通知提示更换名称，保留表单，不导航。检查范围为本机已知学科，不处理历史创建拒绝记录。
+- 资料库知识块详情使用独立编辑副本，后台刷新保留已编辑标题、正文及原版本，未编辑字段跟随投影。远端版本变化后保存旧草稿提示冲突，显式重新打开条目读取最新内容；删除投影关闭详情。`updateBlock` 使用仓储现有活动资源与版本原子检查，避免旧详情覆盖墓碑或较新版本。
+- 学科工作区进入和切换时，Chat 初始化与本地资料读取同时启动，缓存文件、知识块无需等待 Chat 返回。初始化期间点击文件复用该请求，后续会话处理重新核对页面、学科及切换代次；当前学科初始化返回的会话 ID 与活动会话一致后才允许发送、快问、重试和活动提交。初始化失败保留输入，可通过现有新会话操作恢复；成功初始化不重复启动。布局与样式保持，发送按钮仅补充就绪禁用条件。
+
+### 2026-11-11 任务编辑、删除与连续排期
+
+- 资料管理的任务详情使用独立编辑副本。同步和资料列表刷新时合并未编辑字段，保留当前任务未保存的改动。显式保存写回 Task Store，切换条目或任务被删除时清理旧编辑副本。详情顶部的“删除任务”使用现有确认弹框及 Task Store 软删除流程，适用于未排期和已完成任务。
+- 取消排期尚未结算时，拖回周视图日列仍从当天首个符合时长、冲突和截止条件的槽位开始，使用现有 `SCHEDULE_INSERTION` 排在取消命令之后。其他周列拖放沿用单 Task 更新。
+- 取消排期对应的 `TASK/UPDATE` 收到与源任务匹配的 `REJECTED / RESOURCE_NOT_FOUND` 空 `current` 时，从快照恢复受影响任务（含软删除记录），结算队首及撤回未发送的后继排期，再继续增量下拉。快照不可用或缺少受影响任务时，按原 mutation ID 重试。
+
+### 2026-11-11 未核对复习从计划入口继续
+
+`SubjectReviewPane` 的计划复习候选包含普通到期卡片及现有 Store 可恢复的未核对初选，按知识块去重计数，继续沿用 Store 中待核对优先、普通到期互斥的队列规则。结束本轮或重新读取持久化状态后，未核对卡片仍能从原复习入口进入 REVIEW_CHECK，沿用原 reviewId，不重复提交初选。确认或纠正后退出待核对集合，既有到期计算、每组题量和自测抽样保持。页面仅调整候选筛选、计数和对应说明，CSS 保持。
+
+### 2026-11-11 资料导入、处理状态与手动恢复
+
+- 复查补充：原生文件选择器读取 File 后清空 input 值，选择器与拖放混用时再次选择同一文件仍触发更新，提交最后一次选择并保留自定义标题。已登记任务在 Runner 自动重试期间复用原文件；Runner 返回后、上传前移除解析输入映射，临时文件清理仍沿用既有调度生命周期；runtime 停止或切换 scope 时清理并替换输入集合，旧调度不能回填当前集合。
+- `FileRegisterDialog` 换选文件时更新默认标题，用户自定义标题保留；Asset 页拖放的首个文件直接传入登记弹窗。上传始终使用原始 File，Source 单独保存标题。`useAssetStore` 和 `FilePreview` 使用本地资产记录或 download-url 响应的 `originalName/mimeType` 取得实际输入；预览请求以资产身份隔离，修改标题不改变格式。非草稿解析 runtime 也从 Asset 取得输入。历史已错误保存的原文件名不会自动重写。
+- `LocalParsedDocumentCoordinator` 的解析重试与仓储状态机对齐。网络暂停由持久化状态识别，scheduler、启动、同步与联网恢复均不自动继续；草稿与已登记任务由处理中心的明确继续操作恢复，已有 receipt 保留上传进度。解析超时等非网络可重试错误沿用既有策略。
+- `DocumentProcessingCenter` 在本地 READY 后展示仍未 READY 的服务端 Source，保留索引状态、失败重试入口和轮询。草稿的网络暂停沿用现有行与按钮样式提供继续操作。此次未更改样式。
+- 自动验证、审查和真实客户端验收边界见 [当前状态](../current/Status.md)。
+
+### 2026-11-11 Chat 会话隔离与断流状态恢复
+
+`useChatStore` 的加载/创建、学科会话前置查询及映射写回、流回调、轮询与取消响应提交均核对本地操作世代、登录世代和用户/会话身份。新会话或重新加载使旧操作失效，迟到错误和 finally 不清理新状态。
+
+新会话创建失败且原操作仍有效时，Store 为原活动 run 恢复状态轮询，UNKNOWN 保留显式恢复。工作区恢复同一登录、同一学科且仍选中的原会话就绪标记并提示失败；保留输入，迟到失败不能恢复其他学科或账号的会话。
+
+断流后只查询原 run：RUNNING 保持占槽并继续轮询，UNKNOWN 停止轮询并暴露显式恢复，终态重新读取历史并按服务端 userMessageId/currentReplyMessageId 恢复 run/attempt 关联，保留失败后的重试能力。最多 220 次查询、1.5 秒间隔覆盖正常 300 秒 attempt；到限保留真实 active/停止状态并提示尚未确认，不伪造终态，不自动调用 Provider。原始命令快照重发保持。
+
+类型检查通过；首批 53/53，审查修正后的受影响套件 13/13，其余 41 项未重复运行。源码、真实 Store 的受控传输/虚拟时钟回归及唯一只读审查完成；浏览器/Tauri 与真实服务时序待验收。
+
+### 2026-11-11 Chat 首帧前断线的原命令重发
+
+`useChatStore.runCommand` 首次派发时在消息内保存实际命令的独立内存快照。没有 `runId` 的重试复用该快照，保留相同 request ID、readingContext 的省略或存在、引用文本和活动 submission ID/答案，不再根据当前会话或 requestOptions 重建命令。已有 run ID 仍调用现有 attempt 重试接口。既无 run ID 又无快照时，在改变消息状态或清理回复前明确拒绝重发；快照不新增持久化格式。
+
+类型检查与定向 41/41 通过，含真实 Store/Controller 与受控 fetch 的连续重发、元数据变化、首次范围、活动提交及既有 run 重试验证。未做真实服务端首帧丢失联调，具体证据见当前状态。
+
+### 2026-11-11 PC 受保护请求的登录隔离
+
+- 普通和 AI Axios 客户端在调用时记录 Auth Store 的本地登录世代，在附加凭据、交给传输 adapter、处理响应和 401 重放前复核。退出后重新登录同一账号也会使旧世代失效。旧请求以 `SYNC_SCOPE_CHANGED` 结束，迟到结果不会作为当前会话的业务响应返回。
+- 普通请求、同步请求和 SSE 刷新调用共享当前登录世代的一次在途刷新。Auth Store 的 `sessionId` 是本次登录稳定的本地票据标识，`serverSessionId` 随 token pair 原子轮换。持久化的 `auralis_auth_session.sessionId` 保存当前服务端 sid，应用重启时以此初始化本地标识。
+- Chat 发送与重试的原生 SSE 在调用时绑定登录世代，派发、401 刷新与事件投递前均复核。业务请求最多重放一次。刷新失败时，当前失败世代的普通/同步 Axios 与 Chat SSE 共用一次登录导航。
+- 登录、注册、显式刷新和健康检查保留公开入口。登出使用发起世代的 access token，沿用单次发送。个人空间将确认、清理、结果通知和登录页导航绑定到发起登出的登录世代。
+
 ### 2026-11-05 Chat 会话级资料读取范围绑定与生命周期治理（PC Handoff 完成，定向验证通过，待部署）
 
 - **会话资料读取范围状态感知与生命周期（Reading Scope Lifecycle）**：
@@ -33,8 +127,8 @@
     - `retrievalMode === 'SUBJECT'`：严格输出 `currentSourceId: null` 与 `sourceIds: []`（杜绝遗漏或传错导致服务端 `VALIDATION_FAILED` 拒绝）；
     - `retrievalMode === 'AUTO'`：输出 `currentSourceId: options.sourceId || null` 与 `sourceIds: []`；
     - `retrievalMode === 'SELECTED_SOURCES'`：输出 `currentSourceId: null` 与 `sourceIds: options.sourceIds`；
-    - `selectionText` 截断守卫保留至前 4000 字符；
-  - 在 `useChatStore` 的 `sendMessage` 与 `retryPendingMessage` 统一接入 `buildReadingContext`，`SubjectWorkspace` 默认提问直接以 `SUBJECT` 模式发送，保留显式选择资料时的窄范围模式。
+    - `selectionText` 截断至前 4000 字符，在命令顶层发送。会话范围继承时仍可独立携带本轮引用。
+  - `useChatStore.sendMessage` 使用 `buildReadingContext` 构造首发范围；无 run ID 的 `retryPendingMessage` 复用首次命令快照。`SubjectWorkspace` 默认提问直接以 `SUBJECT` 模式发送，保留显式选择资料时的窄范围模式。
 - **Chat UNKNOWN 显式恢复与状态机门禁（Chat UNKNOWN Recovery PC Handoff）**：
   - 在 `src/api/aiClient.ts` 中接入 `recoverChatRunAttempt(conversationId, runId, attemptId)`，对应 `POST /api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover`；
   - **显式用户操作与反自循环守卫**：
@@ -211,7 +305,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 - 生产 UI、Store 与 API 未变。两脚本首轮106项104 passed/2 failed、exit 1；最终 affected-only 2/2、exit 0；未重跑整批。唯一只读 reviewer B0/I0/O0。没有 GUI/真实服务验收。
 ### 2026-10-22 Overview 当前流程（M4 新交互撤回；保留本机编辑冲突保护）
 
-- 当前 PC 使用原 Overview 入口、SSE 自动生成与既有同步/冲突流程。M4 新增的 job selector、preview/publish/adopt、formal section reader 和 candidateInput 接线已按用户决定撤回，不是后续 PC 待办。Server 的 durable jobs、candidateInput、publication、preview/section API 继续存在，但当前 PC 不消费。
+- 当时 PC 已撤回 M4 新增的 job selector、preview/publish/adopt、formal section reader 和 candidateInput 接线。2026-11-12 后端进一步移除 candidateInput、publication、preview/section 旧接口；现行 Markdown 入口见本文件顶部。
 - 只保留生成期间本机编辑保护：对比目标 part 内容与 identity/provenance 输入签名；若生成中发生编辑，保留本机 cache 与冻结 mutation，将 AI 结果留在现有 outbox 为 `OVERVIEW_GENERATION_EDIT_CONFLICT`，不发送 PUT。原冲突位置提供显式保留本机/采用 AI 操作，后者沿原 save/CAS/outbox。跨 tab browser fallback 共用 owner/device Web Lock；不可用时拒绝写入，SQLite 路径不变。唯一 reviewer delta B0/I0；回退后 noEmit、cache/sync/deletion、generation 检查分批通过或保留失败，详见当前状态和 D 盘结案报告。
 
 ### 2026-10-22 Overview M4 native jobs 与显式候选采纳（回退前实现与验收历史；未部署）
@@ -439,6 +533,13 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 - Antigravity MCP 实际提供 API/helper/types 与初始测试；service、runtime、Source 修订取消、三处停止控件及 SQL 提交 guard 由 Luna 补齐，未把委派 exit 0 当作需求验收。逐文件守卫最终应用 15 个任务文件，未应用依赖、生成声明或构建产物。命令、完整差分和未覆盖 GUI 边界见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
 - 审查补修新增 repository 的可选同步操作 guard，仅在实际写队列/事务提交前核对取消、代际和修订。SQL 取消回滚本操作 cache/outbox，browser 单键写前同步检查；不在事务中发 Source 网络请求，不再取消后删除整个 Subject 缓存。最终同步 guard 通过并进入 COMMIT 为提交边界，之后 Stop 不撤销已提交成果。真实 SQLite 屏障 RED 2/2，最终 Overview 72/72、cache 14/14、sync 22/22、runtime 20/20 通过；该补修使任务源/测试共 15 个，当前类型与 Vite 构建另有新鲜通过证据。
 
+### 2026-11-11 PC 复习补传与待核对恢复
+
+- 本地确认、纠正及服务端 ACK 的命令审计分别使用初选评分与 `AGAIN`。ACK 同时更新正式历史和独立云端锚点，后继继续沿真实回执补传。
+- 同学科、同正文的标题等元信息更新后，重新加载的复习状态显示当前 KB 修订。未固化的请求在核对完整云端状态及历史后绑定当前修订。已固化的请求保持原 ID 与载荷，按服务端原回执和当前完整历史结算，旧请求遭拒绝或历史另有变化时进入显式冲突。进行中的临时轮次继续检查开始时捕获的 KB 版本。
+- 移科保留调度、学习和掌握状态。原学科未确认的选择保留审计并失效，旧待同步意图保留给显式冲突处理。新学科在当前 KB 修订上产生的首次学习仍可凭完整空历史补传。
+- 常规组优先恢复可核对的初选。恢复项只占一个队列位置，核对后继续下一卡或结束本组。
+
 ### 2026-10-11 复习迁移到生命周期接口
 
 - PC 复习页只从本地正式状态和 `/api/reviews/lifecycle/history` 恢复复习，不再请求 `/api/reviews/due`、`/api/reviews/events` 或旧 `/api/reviews/history`；新提交仅走生命周期命令。
@@ -633,7 +734,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 
 - `useSyncStore` 将周期固定到发起时的 userId、serverDeviceId、sessionId 和同步代际；身份变化同步失效旧票据。新会话可以独立 flush，旧周期的返回、错误和 finally 不能覆盖当前游标、同步状态或投影事件。
 - `useSyncApi` 把内部票据传到 Axios；`request` 在附加凭据、响应处理、401 刷新和重试前核验票据。普通 Axios/SSE 与核心同步按同一会话合并刷新，不同会话分开；刷新提交和失败处理也核验会话，避免迟到 A 结果更新或清除 B 的凭据。代际覆盖 A→B→A；正常同会话 token rotation 可继续使用。
-- `syncCycle` 在 push/pull/snapshot 和持久化边界检查票据；失效时释放 A 尚未结算的 inflight，保留待同步内容及幂等 ID。Repository 始终绑定原 owner/device，不能以新账号身份发送旧 mutation。
+- `syncCycle` 在 push/pull/snapshot 和持久化边界检查票据；失效时普通未确认命令保持 `inflight`，排期仍按原释放流程保留载荷及幂等 ID。Repository 始终绑定发起时的 owner/device。
 - `useAssetStore.upload` 固定发起账号的 AssetRepository 与 LocalRepository。切换期间完成的文件和 PENDING 同步任务仍归 A，可在 A 后续同步；不能进入 B 的 ASSET 投影、assets、pendingUploads、错误或进度回调。
 - 上传队列通过既有 `options.api` 注入捕获会话的 `createUploadIntent` / `completeUpload` wrapper，后台首次创建队列同样固定票据；请求派发前或返回 401 后切换账号，旧请求不能使用新凭据或触发新会话刷新。
 - 当前会话刷新失败（包括缺失 refresh token）会进入重新认证并导航登录；导航资格在清理前捕获、执行前再核验失败会话，只执行一次。清理 A 后、错误返回前登录 B，不会清除 B 或将 B 导航登录。
@@ -837,8 +938,11 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 ### 2026-09-25 AI 聊天 Provider 配置
 
 - 个人空间只提交 Provider、公网 HTTPS Base URL、聊天模型和可选 API Key；不再保存或提交用户 Embedding 模型。通用兼容服务须明确填写 Base URL 和聊天模型，DeepSeek 与 SiliconFlow 留空 Base URL 时使用各自默认地址。
-- “自动检测”仍是可选的 `/models` 辅助；“测试连接”在保存当前配置后调用服务端聊天测试，并依据返回的 `chatModel` 展示结果，不以模型列表数量判断连通。
-- PC 定向测试和类型检查已通过；真实服务商与 GUI 尚待验收。
+- 首次读取设置时允许录入地址、模型和密钥，保留用户已编辑的草稿。服务商选择、保存及探测在读取结束后可用。
+- 切换 Provider 时清空 API Key 输入，加载目标已保存的 Base URL 与聊天模型。目标尚未配置时，快捷预设填入对应默认值。
+- 仅点击“保存 AI 配置”提交设置。自动检测读取已保存的 Provider、Base URL 与密钥，允许继续编辑聊天模型。测试连接使用已保存的聊天模型，并依据服务端返回的 `chatModel` 展示结果。用于探测的配置有未保存修改时提示先保存。
+- Provider、Base URL、密钥输入或当前已保存配置变化时清空模型候选。先前请求的响应不会恢复候选或填入聊天模型。
+- 最新验证和验收情况见[当前状态](../current/Status.md)。
 
 ### 2026-09-25 顶栏头像真实映射与右上角在线状态点移除
 
@@ -876,7 +980,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 - **账户资料（3 类）真实服务端流转**：
   - **昵称**：`saveNickname()` 接入 `useAuthApi.updateProfile`（`PUT /api/auth/me`），携带当前 `baseVersion` 与 `displayName`，处理 409 `RESOURCE_VERSION_CONFLICT` 并同步更新 store 与本地视图；
   - **头像**：接入 `useAuthApi.getAvatarBlob`（`GET /api/auth/me/avatar`）在挂载时动态读取真实图片 Blob 并转为安全的 ObjectURL；上传接入 `useAuthApi.uploadAvatar`（`POST /api/auth/me/avatar`），客户端校验 PNG/JPEG 且 ≤5MB；重置接入 `useAuthApi.resetAvatar`（`DELETE /api/auth/me/avatar`）；彻底废弃本地 localStorage 存储头像数据；
-  - **改密**：客户端密码校验升级为 12~200 位，接入 `useAuthApi.changePassword`（`PUT /api/auth/password`），传递 `baseVersion`、`currentPassword` 与 `newPassword`，密码更新后提示会话撤销边界并刷新版本。
+  - **改密**：新密码至少 12 个 UTF-16 代码单元、最多 72 个 UTF-8 字节。`useAuthApi.changePassword`（`PUT /api/auth/password`）传递 `baseVersion`、`currentPassword` 与 `newPassword`；原密码不匹配在表单内提示，Bearer 失效仍走刷新。密码更新后提示会话撤销边界并刷新版本。
 - **AI 设置（3 类）服务端规范化与真实探测测试**：
   - **Provider 归一化**：在 `aiClient.ts` 中提供 `normalizeProvider`，将自由输入与通用兼容端点映射为服务端支持的 `OPENAI_COMPATIBLE`，识别 DeepSeek 和 SiliconFlow，保持界面友好名称展示；
   - **模型自动检测**：`handleDetectModels()` 接入 `listAiModels`（`GET /api/ai/settings/{provider}/models`），从已加密保存的云端 BYOK 获取真实 `/models` 列表并渲染模型托盘；未配置时给出明确引导，彻底消除硬编码 mock；
@@ -1233,7 +1337,6 @@ Auralis-PC/
 | Store | 主要职责 |
 | --- | --- |
 | `useAuthStore.ts` | token、用户与会话 |
-| `useBlockStore.ts` | 旧知识块兼容 facade；正式页面使用 `useKnowledgeStore` |
 | `useTaskStore.ts` | Task typed API、user/device repository、排期、状态和 mutation |
 | `useSubjectStore.ts` | 学科列表和当前学科 |
 | `useSourceStore.ts` | Source 分页、资料目录、关联 Asset 元数据、软删除和 Source mutation；`activeSourceFiles` 按当前工作区焦点 `subjectId` 投影，空学科也会在后续本地 hydration 中保持为空 |
@@ -1255,7 +1358,7 @@ Auralis-PC/
 | `api/request.ts` | base URL、Authorization、401 单飞刷新；不读取或发送浏览器 BYOK key/header |
 | `api/aiClient.ts` | AI 设置、会话、带单次 401 刷新且复用同一请求 ID 的 SSE 消息流；Suggestions 暂不在 PC 端暴露 |
 | `api/useAuthApi.ts` | 登录、注册、刷新、会话列表与撤销 |
-| `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
+| `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url。`uploadAsset` 接收 options 对象 |
 | `api/useSourceApi.ts` | Source typed CRUD/reingest，以及 ParsedDocument upload-intent/complete |
 | `api/useStatsApi.ts` | 用户概览/周统计与独立个人专注字段；学科聚合及 7 / 30 天本地日趋势 |
 | `api/useReviewApi.ts` | 到期队列、完整学科 states 分页、不可变评分与单块历史；新调用支持会话票据 |
@@ -1265,6 +1368,8 @@ Auralis-PC/
 Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件登记的本地优先副本也保留上传完成时的 `asset.sizeBytes`，避免 Source 同步完成前短暂显示 `0.0 MB`。文件预览仍通过 Asset download-url 获取短期签名地址。
 
 2026-09-04 起，Subject、Source、KnowledgeBlock、Task 的常规创建、更新和删除均走 `commitMutation()`：资源投影与 immutable outbox 在同一端侧提交中持久化成功后，才更新 Pinia/UI 并调用 `requestBackgroundSync('write')`。Store 列表只 hydration 本地投影，随后请求 cursor 同步，绝不自行调用领域列表 API 或在 loading 中等待网络。同步器以 `pending → inflight → applied/conflict/error` 结算指定 mutation；同资源有未解决本地写入时，push 回包、pull 和 snapshot 不覆盖其投影。FILE 的 Asset 二进制直传/complete、认证、ReviewEvent、AI/SSE、文件下载仍需要网络；用户点击“立即同步”以及启动 FILE 解析前确认 Source 已同步是仅有的 `flushNow()` 显式等待边界。
+
+普通命令首次领取后固定 ID、版本及业务载荷，应用重启和响应丢失均可原样重放。资源队首在端侧事务内结算，重复回执不会再次写投影。若用户在上传期间继续编辑，本机保留新内容，未领取的后继凭本机前驱回执承接版本。下一批由现有 Store 单次同步循环派发，远端实际版本分歧仍按现行冲突处理。[本地队列与历史行边界](../contracts/Database.md#pc-本地优先同步本地-schema-v62026-09-04)
 | `api/useSyncApi.ts` | push/pull 同步 |
 | `api/e2ee.ts` | 端到端加密辅助 |
 | `api/tauri.ts` | Tauri 环境和本地能力封装 |
@@ -1290,17 +1395,20 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 | `services/localDatabaseRuntime.ts` | 单个应用生命周期内的 SQLite 初始化 Promise 与按用户/设备范围缓存的 repository |
 | `services/localSqlQueue.ts` | 进程内 SQL 命令串行化 adapter，避免 SQL 插件 pool 中的并发写入竞争 |
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
-| `services/localDb.ts` | SQLite 单次初始化、WAL/busy timeout 配置与尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
+| `services/localDb.ts` | SQLite 单次初始化、WAL 和 busy timeout、串行访问，以及当前账号/设备仓储的入口 |
+| `main.ts` / `DesktopDatabaseStartup.vue` | 桌面端先初始化共享 SQLite，成功后才加载路由并挂载应用，失败时显示启动错误与重试入口 |
+
+桌面端在打开 `auralis.db`、初始化连接池及完成 schema 检查后才加载登录或业务页面。SQLite 初始化异常传回启动页，初始化失败期间同步、文档处理和原生资产整理均不会启动。点击重试重新初始化同一个数据库，成功后原生资产整理继续读取当前用户和设备的 SQLite 索引。PC Web 继续使用自身的 localStorage 存储。
 
 时间轴中的已完成排期任务保留其原 `scheduledAt` 槽位，并处于固定状态：Store 拒绝移动、替换和取消排期，Timeline/Dashboard 不提供相应拖放或取消入口；将任务恢复为未完成后才可再次调整。本地加载仅接受 API 领域状态 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`；弃用的展示态缓存（例如 `completed`）不再转换或兼容，而是忽略并由后续在线刷新按现行契约重建。
 
-R4 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone、v6 outbox 状态与 reset 保留未解决写入。Tauri 路径在应用生命周期只加载、建表和迁移一次，所有 SQL 插件命令经单一队列串行执行；同步 snapshot 通过 Rust `replace_local_resource_snapshot` 在同一 SQLite 连接的显式事务中完成，并启用 WAL 与 5 秒 `busy_timeout`。同步 Store 以共享 cursor cycle 和 500ms 合并调度处理启动、实时、联网、读写请求；push/pull 完成后只发布本地投影变化，领域 Store 重新 hydration 本地库。`DocumentProcessingRuntime` 仅在启动 FILE 处理前 `flushNow()`，确认本地 SOURCE 已为 `synced`。`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
+R4 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone、v6 outbox 状态与 reset 保留未解决写入。Tauri 路径在应用生命周期只加载、建表和迁移一次，所有 SQL 插件命令经单一队列串行执行；同步 snapshot 通过 Rust `replace_local_resource_snapshot` 在同一 SQLite 连接的显式事务中完成，并启用 WAL 与 5 秒 `busy_timeout`。同步 Store 以共享 cursor cycle 和 500ms 合并调度处理启动、实时、联网、读写请求；push/pull 完成后只发布本地投影变化，领域 Store 重新 hydration 本地库。`DocumentProcessingRuntime` 仅在启动 FILE 处理前 `flushNow()`，确认本地 SOURCE 已为 `synced`。`localDb.ts` 初始化只建立和升级现行 v13 schema。已存在的旧表、列和值原样保留，旧 CRUD 和旧建表路径已移除。浏览器原全局业务键及 `legacy_unassigned` 备份保留。Profile 的缓存清理只删除 `auralis_view_cache` 和 `auralis_temp_index` 两个临时界面键，离线重置通过 Sync Store 使用当前账号的现行仓储。知识块读写与导出使用 `useKnowledgeStore`。
 
 ## C4/C5 文档处理与上传边界
 
 C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `ParsedDocumentUploadCoordinator`；Rust 通过 `document_upload_put` 对 cache 做解密流式 PUT，PC 只传 phase/receipt，不接触正文或持久化签名 URL。C5 `SourceJobScheduler` 已接入 FILE Source：Source Store 只对服务端 `AWAITING_CLIENT + ingestionRevision` 调度，优先复用当前上传会话的 File，没有本地输入时通过 AssetStore 的 owner-scoped download adapter 获取临时输入；每次处理核对 Asset SHA，旧 revision 的 job 被 supersede，TEXT/URL 不进入该队列。恢复批次隔离每个 Source 的失败，单个读取/调度异常只返回该项 `FAILED_LOCAL`，不会阻断后续 `AWAITING_CLIENT` 文件。Profile 的手动开始入口会先触发同步，并确认本地 `SOURCE` 为 `synced` 后才调用 scheduler；仍在同步、冲突或失败时显示相应提示，避免把服务端不存在的 Source 交给解析器。删除 FILE Source 时 Store 先完成 Source tombstone 与 DELETE outbox，再同步移除当前 `sources/activeSourceFiles` 投影；同步 push/pull 与 scheduler 对运行中 parser、当前用户/设备任务行、内存输入和加密 cache 的清理均转为不阻塞界面的 best-effort 操作。删除竞争只会使调度返回 `SOURCE_DELETED`，不会重建任务。Subject Store 随后重算其本地 Source 投影，因此学科文件计数与 Profile 进度中心同步消失。Tauri `default` capability 显式授予 `sql:allow-execute`，使用户/设备隔离的 SQLite job repository 可以创建与更新可恢复任务，而非退回浏览器 localStorage。PDF 本地适配器与 File Viewer PDF renderer 统一从根级精确 `pdfjs-dist@5.4.624` 解析，lockfile 不保留 renderer 的嵌套 PDF.js 副本，避免同一 Tauri WebView 的 worker API 混用；OCR 结束在 `finally` 释放其 PDF.js document，预览签名 URL 下载以最新请求标记提交，过期请求不能覆盖当前选中文件。scheduler 在本地 job 创建和调度结束后只刷新 `useDocumentProcessingStore`，Source 投影继续由既有同步事件刷新，避免 `loadSources -> schedule -> onJobChanged` 递归。Office bridge 先收集锚点再读取 chunks；纯图片 Office 若 renderer 没有可靠页数会明确返回 `DOCUMENT_FILE_TYPE_UNSUPPORTED`。OCR warmup 通过 sidecar 协议实际初始化模型，Rust 仅在诊断日志记录有界 stderr/进程状态，公开错误码保持不变。前端 runtime 仍提前检查加密状态，但 Rust `document_package_begin` 是新 cache 的最终安全边界：仅在 OS keyring 明确返回 `NoEntry` 时创建 `auralis/master_key`，其他 credential-manager 错误会原样报告为 keyring 访问失败；已有 cache 的读取、上传与清理只读取既有密钥，绝不以新密钥覆盖历史密文。
 
-2026-09-26 Issue 6：`useDocumentProcessingStore.start()` 与 `resumePending()` 也经 `SourceJobScheduler` 按 Source 调度；恢复时只提交 `PAUSED_NETWORK`、`QUEUED`、`EXTRACTING`、`OCR_RUNNING` job 对应的 Source。Store 不再把 UI/重启恢复入口直接交给 `DocumentJobRunner`；runner 继续负责解析执行、列举、暂停和取消，retry 已由 scheduler 处理。
+2026-09-26 Issue 6：`useDocumentProcessingStore.start()` 与 `resumePending()` 也经 `SourceJobScheduler` 按 Source 调度；自动恢复只提交 `QUEUED`、`EXTRACTING`、`OCR_RUNNING` job 对应的 Source；`PAUSED_NETWORK` 只由用户点击继续恢复。Store 不再把 UI/重启恢复入口直接交给 `DocumentJobRunner`；runner 继续负责解析执行、列举、暂停和取消，retry 已由 scheduler 处理。
 
 2026-09-07 复核补充：PPTX `runtime.ts` 在 parser 创建阶段直接读取 OOXML 的 `presentation.xml`/relationships，使用真实 slide 数量和文本块，不再依赖 File Viewer 的空 `pageCount`，legacy OLE `.ppt` 不作为 `.pptx` 兼容输入。Tauri invoke wrapper 保留 Rust 返回的字符串及结构化 message/error/code 诊断。Rust sidecar 在应用 cache 下维护专属 PyInstaller TEMP/TMP 目录，启动前只清理确认已停止的受管 sidecar 遗留直属 `_MEI*`；parsed-document PUT 的 `NETWORK_OFFLINE:*` 诊断会被归一化并进入可恢复 `PAUSED_NETWORK`，已完成加密 package 的续传不重新读取原始 Asset。用户从 `PAUSED_NETWORK` 继续时，带 receipt 的任务经 `QUEUED -> UPLOADING` 直接进入上传，不重跑 OCR、download 或 hash；无 receipt 的 queued 任务仍进入解析路径。
 
@@ -1310,21 +1418,22 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 
 2026-09-05 上传与解析入口恢复：`src-tauri/Cargo.toml` 的 keyring 3 显式启用 `windows-native`，保留 `auralis/master_key`；`filePreview.ts` 的 upload accept list 仅为 PDF、DOC、DOCX、PPT、PPTX，图片/文本能力仍可预览但拒绝 upload intent，`canPreviewFile()` 与上传能力解耦，SubjectWorkspace 弹层显示支持格式；Profile `DocumentProcessingCenter` 将 `AWAITING_CLIENT` 详情写成等待桌面端开始处理，服务端 `VALIDATING/PARSING/INDEXING` 分别显示真实阶段，状态映射集中在 `documentProcessingStatus.ts` 并由纯函数直接测试；`DocumentProcessingDot` 复用共享 Source detail 映射，未知/undefined phase 不虚构服务端处理中状态，`READY` 显示“处理完成”。新增 Windows-only Rust keyring 跨新 Entry 写入/读取/清理测试；本机 `cargo test` 的真实 Credential Manager 写入因 `NoStorageAccess(Error(1312))` 失败，不能视为持久化已验收。Stats focused 测试覆盖六个 `Instant` 查询参数及 UUID/order 保留。PC focused file-preview 27/27、processing UI 1/1、runtime static 9/9、Stats 3/3 通过；真实 Tauri Credential Manager、File Viewer/上传、Server complete/indexing 与 GUI 状态仍需验收。
 
-本地 schema v5 的任务行持久化完整 `DocumentCacheReceipt` 元数据，以便应用重启后从 `PACKAGING/UPLOADING/PAUSED_NETWORK` 续传，不重复 OCR 或 package；签名 URL、headers、原始文件路径不进入 SQLite/localStorage。`services/documentProcessing/runtime.ts` 已由 App 在 Tauri 登录后组装并启动：复用全局隐藏 `BackgroundParserHost`，连接 PDF.js/Office bridge、Tauri OCR、Rust package/cache、ParsedDocument upload coordinator、用户/设备 job repository 和 Source scheduler；启动时先 flush 一次本地同步队列，随后加载 Source；sync/online 事件会重新加载 Source 并恢复 pending jobs，登出时解绑。服务端 complete 接受后删除加密 cache，下载 adapter 的临时输入由 scheduler 清理；实际 Tauri 私有目录、MinIO/Server 联调和 GUI 任务中心仍待人工验收。
+本地 schema v5 的任务行持久化完整 `DocumentCacheReceipt` 元数据，以便应用重启后从 `PACKAGING/UPLOADING/PAUSED_NETWORK` 续传，不重复 OCR 或 package；签名 URL、headers、原始文件路径不进入 SQLite/localStorage。`services/documentProcessing/runtime.ts` 已由 App 在 Tauri 登录后组装并启动：复用全局隐藏 `BackgroundParserHost`，连接 PDF.js/Office bridge、Tauri OCR、Rust package/cache、ParsedDocument upload coordinator、用户/设备 job repository 和 Source scheduler；启动时先 flush 一次本地同步队列，随后加载 Source；sync/online 事件会重新加载 Source 并恢复未暂停的 pending jobs；网络暂停等待用户点击继续，登出时解绑。服务端 complete 接受后删除加密 cache，下载 adapter 的临时输入由 scheduler 清理；实际 Tauri 私有目录、MinIO/Server 联调和 GUI 任务中心仍待人工验收。
 
 ## 页面职责
 
 - Dashboard：日程任务、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。右侧采用上下双卡片分区：上半部为「日程任务」（按时间先后顺序纯线性展示，不作时间轴槽位网格展示、不可拖拽调整时间，支持完成勾选与移出日程），下半部为「待办清单」（纯列表展示，移除拖动手柄，支持直接勾选完成）。待办条目在窄宽下优先保留任务名称，过长的学科徽标允许收缩并以省略号显示。复杂时间轴编排与半小时网格拖拽完全交由 `/timeline`（排期副驾）页面负责。Task 卡片外观统一由 Sage/design 语义 CSS 令牌派生，不依赖 Task 数据颜色。
 - SubjectHall：学科卡片、搜索、创建、编辑、删除和进入工作区；编辑表单保留服务端 `version` 并以 `baseVersion` 提交，确保名称、描述和图标修改可以保存；Subject 没有持久化颜色字段，Dashboard 与 Timeline 统一使用 `#7D9372` 全局主题色；新用户注册后没有自动学科时展示真实空状态，历史遗留“未分类”学科也可正常删除。
 - SubjectWorkspace：文件、知识、任务、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。登记文件必须先选择文件、名称和归档学科，上传期间显示包含文件名、文件大小、三步指示节点和流光渐变的高级进度卡片并防重复提交；直传或 Source 创建失败会在弹层保留可重试状态并显示通知，成功后立即保存到本地并更新当前学科文件列表，后续同步不阻塞操作；抽屉顶部显示内嵌导入进度条，并在文件列表行显示解析状态徽标。文件选择器与拖拽入口共用 `src/utils/filePreview.ts` 的能力注册表，Excel/未知格式和超过 50 MB 的文件在创建 upload intent 前拦截；文件栏只显示真实 Source 文件，文件行删除操作默认悬停显示、键盘 focus-visible 保持可见，确认后通过 Subject Store 执行 Source 软删除并重算文件计数；本地仍有 `SOURCE/CREATE` outbox 时排队有序删除，知识块作为独立的总结/知识表面；删除取消、未登录、版本冲突、资源不存在和服务端异常均给出明确提示；选中文件后由 `FilePreview` 直接承载签名 URL、下载、加载/失败状态，当前优先使用自托管 File Viewer 渲染 DOC/DOCX、PPT/PPTX、PDF、图片及文本；较早的下载响应不得覆盖新选文件。学科页保持一个统一预览面板：现有文件名顶栏承载缩放与旋转，页码/总页数和前后页在预览底部独立占位；搜索、打印、下载、HTML 导出和主题切换不进入预览工具栏。
-- PC 阅读辅助当前已接入 `READING_SESSION` 生命周期、`readingContext` 当前 Source 检索与同学科确定性升级；未 READY 文件的 AI 操作只提示前往 `/profile` 查看解析进度。文件行通过 `DocumentProcessingDot` 与轻量状态微标签显示所有非 READY 状态（失败保留红色静态点与解析失败标签）；Profile 的 `DocumentProcessingCenter` 同时展示本地任务阶段和本地任务已经完成、但服务端仍为 `VALIDATING/PARSING/INDEXING` 的 Source 阶段，后者会低频刷新 Source 至 `READY`。未挂载 Tauri runner 时该中心明确说明“仅可在 Auralis 桌面端运行”，不把不可用误显示为暂无任务。Tauri runtime 的前置检查会在无可恢复加密 cache 时初始化原生 `auralis/master_key`；若 job 仍有 cache 或 receipt 而密钥缺失，则停止并报告恢复需要。无论前端生命周期是否已完成，Rust `document_package_begin` 都会在新建 package 时再次确保密钥存在；读取既有 cache 不会生成新密钥。预览原生选中文本最多 4000 字，可执行解释/追问或打开 `KnowledgeBlockEditor`，知识块只有确认后才写入当前 subject/source。
+- PC 阅读辅助使用协议 1 会话。学科工作区在首条成功准入时绑定当前学科、当前文件或手选资料，后续提问继承范围。更换资料范围需开启新会话。未 READY 文件的 AI 操作提示前往 `/profile` 查看解析进度。文件行通过 `DocumentProcessingDot` 与轻量状态微标签显示所有非 READY 状态（失败保留红色静态点与解析失败标签）；Profile 的 `DocumentProcessingCenter` 同时展示本地任务阶段和本地任务已经完成、但服务端仍为 `VALIDATING/PARSING/INDEXING` 的 Source 阶段，后者会低频刷新 Source 至 `READY`。未挂载 Tauri runner 时该中心明确说明“仅可在 Auralis 桌面端运行”，不把不可用误显示为暂无任务。Tauri runtime 的前置检查会在无可恢复加密 cache 时初始化原生 `auralis/master_key`；若 job 仍有 cache 或 receipt 而密钥缺失，则停止并报告恢复需要。无论前端生命周期是否已完成，Rust `document_package_begin` 都会在新建 package 时再次确保密钥存在；读取既有 cache 不会生成新密钥。预览原生选中文本最多 4000 字，可执行解释/追问或打开 `KnowledgeBlockEditor`，知识块只有确认后才写入当前 subject/source。
 - 左侧原“学科大纲”入口已改为“总览”，现有 header 中 `AI 梳理` 按钮和圆形“+”顺序、位置以及三栏宽度保持不变。“学科总览”默认折叠且只在用户点击后生成；下面按文件直接展开本地大纲，每个文件的“总结”入口把中栏从文件预览切换为本地总结。文件完成 READY 处理后后台请求一次 `ALL` 文件总览，结果按 user/device/source revision 写入本地 schema v7；失败保留旧大纲/总结；知识总览不再展示侵入性的“本机总览尚未同步”技术性提示条，大纲等待态带有旋转指示。学科总览只组合当前学科已有本地文件结果，不上传新的原文，不进入 Sync。File Viewer 仅代表代码与构建已接入，DOC/DOCX 真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收；预览顶部/底部栏使用轻微投影和实体按钮，缩放与旋转各自放入同款简单圆角控制组，缩放显示为 `− / 倍率 / ＋`，旋转显示为左旋线条图标、角度、右旋线条图标，文档上下安全留白收窄为约 12–16px。宿主不再叠加会遮挡正文的“正在渲染文档”遮罩，首次宽度适配只持续到用户第一次交互；`FilePreview` 与 renderer 仅在组件 ref 尚未建立时暂存动作，基础 Vue 组件通过 `withFullViewerOptions` 接入 full preset，缩放调用 `zoomIn`/`zoomOut`/`resetZoom`，PDF/图片旋转走 `applyViewState`，图片 renderer 自带旋转栏隐藏，不支持视图旋转的 Office renderer 才使用外层回退。学习文件列表行不显示装饰性文件类型图案，直接从文件名开始布局。若真实文件兼容性不达标，保持 `FilePreview` 合约不变并替换为服务端转 PDF 渲染器。
 - File Viewer 交互补充：不以 `load-complete` 作为执行硬门禁；同时避开 `@file-viewer/vue3-full@2.3.2` 包装组件在 Vue 父级 ref 上丢失公开方法的问题，改由 `@file-viewer/vue3@2.3.0` 基础组件承载相同 full 配置。Chrome 合成图片已验证缩放尺寸和 90° 旋转发生实际变化；真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收。
 - Asset：上传、处理状态和资料组织；首屏并行读取 Subject、Source、KnowledgeBlock 与 Task 的本地 Store 投影，任一项读取失败仍构建其余本地树并关闭 loading。各 Store 随后独立刷新云端结果、通过其 repository cache 写回本地；资产页监听四类投影及文档处理任务并重建树，不重新显示 loading。文件树节点（全部文件与各学科文件）由 Source 的实际 `ingestionStatus` 与 `useDocumentProcessingStore` 本地任务真实驱动，按已就绪（READY）、解析失败（FAILED）、待本机处理（AWAITING_CLIENT）及处理中（PARSING/INDEXING/VALIDATING/PENDING 等）渲染对应的状态圆点、详情徽标及悬浮说明，不再硬编码固定为“正常”。资产树的“全部任务”和各学科任务目录均来自 `useTaskStore` 的当前用户任务，不注入静态演示任务。任务按 `未排期`、`未完成`、`已完成` 三个并列分组，截止时间存在时按截止时间排序；任务完成切换回写 Task API/repository。任务编辑器不再提供认知负荷按钮，改为 30 分钟步进的预计用时，并可保存标题、备注、截止日期和时长。`/asset?focus=unassigned-tasks` 会展开并聚焦“未排期”。真实 Source 文件以 `FilePreview` 为唯一预览实现，TreeNode 透传 Source 的 `id`、`assetId`、`name` 和 `fileType`；旧 `PdfViewer`、首页 PDF 伴读入口和 Asset 的 `filePath`/Markdown 预览分支均不保留。
 - Asset 关系星图使用真实 Subject、Source 和 KnowledgeBlock 投影。Source 连接所属 Subject；KnowledgeBlock 的 `sourceFileId` 指向同学科现存 Source 时连接该 Source，否则连接所属 Subject，不补造关系。力导向计算包含对称节点互斥、按关系类型设目标长度的弹簧吸引、弱重力与速度阻尼；节点初始位置由稳定 ID 决定，初始 RAF 在收敛或 180 帧上限后停止。同范围数据刷新保留存活节点坐标与相机，切换全局/学科范围时重新适配视图。画布使用 ResizeObserver 与设备像素比绘制，提供适配视图、指针中心滚轮缩放、平移及任意节点拖动。鼠标、触控和触控笔共用 Pointer Events 与指针捕获；超过移动阈值后暂停初始模拟，被拖节点保持在指针坐标，关联邻居实时通过弹簧力响应并重画连线，每段响应最多 36 帧并在收敛时提前停止，释放后最多运行 30 帧低强度松弛。用户摆放在同范围更新中保留。点击文件节点选择树中 Source 并在中栏显示 `FilePreview`；点击知识块节点在中栏显示对应编辑器，通过 Dashboard 的 `open-block-detail` 事件打开详情。拖动或 pointercancel 不触发预览。
 - Dashboard/Timeline：排期和任务时间管理，排期队列展示无 `scheduledAt` 且未完成/未取消的所有活跃任务，截止时间（`dueAt`）用于提醒、排序及新排期完整结束上限；拖放、按天排期、换位与顺延必须保证每个新安排完整结束于各自截止时刻或之前，无截止不限制。Task Store 以认证态的 `serverDeviceId` 访问用户隔离的本地 repository；首次加载先渲染本地任务，后台 Sync read 更新 Store，读取失败时保留当前投影。Dashboard 切日调用 `setSelectedDay` 重建内存槽位；Timeline 切日保留现有 `await taskStore.loadLocalTasks()` 本地重读，不能清空已有任务。按槽排期和同日改期在进入写队列前捕获具体本地日期，提交窗口与来源校验使用该日期，等待期间切日不会改变已发起落点。周视图日期列传入完整 `dateKey`，按天入口支持活动的已有排期任务改日，沿用完整冲突、过去时间与截止校验。Timeline 重挂载从 Store 的完整选中日期初始化标题与日期栏，和任务槽位保持一致。Timeline 页面支持单任务与换位拖拽、半小时网格槽位渲染；Dashboard 首页看盘采用轻量线性卡片列表，无网格槽位，不作为可拖拽调时，按开始时间升序排列。启动 fetch 和运行中分钟级检查会执行到期转换：有 `scheduledAt` 的任务在 `scheduledAt + durationMinutes` 结束时刻到达后更新为完成并保留排期；无 `scheduledAt` 的 TODO/IN_PROGRESS 活动任务在有效 `dueAt <= now` 时自动完成并保留真实截止时间，DONE/CANCELLED、空或无效截止时间不产生完成写入；卡片继续通过 due-badge 展示截止日期。自动检查在 TASK 投影刷新时也会执行，应用关闭期间到期的任务在下次启动补处理。转换失败保留原数据并记录错误。首页和独立时间轴统一展示当前/所选日期所在的完整自然周（周日至周六），避免只保存 `dayCode` 时跨周解析到下一周。首页日期格在日数字上方显示 `Sun` 至 `Sat` 英文星期缩写，选中日期使用固定约 `36px × 36px` 圆形绿色背景，顶栏以“时间轴 · X月”显示月份。日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记；已排期任务拖动到新槽位时以目标槽位覆盖旧 `scheduledAt`。时间轴“导入任务”进入资产库未排期分组。普通任务更新、按天排期和取消排期通过 `useTaskStore` 写入本地 repository/outbox 并在后台同步；按槽插入与标题交换由 `useTaskStore` 在本地计算后一次保存所有受影响 Task 和单条稳定 ID 排期命令，在线与离线使用同一条 Sync 路径；断网时保留本地投影等待重放，服务端拒绝或版本冲突时按返回的 Task 数组恢复投影并提示用户。2026-10-07 放置与交换修复：按天择槽覆盖 22:30；交换发 API 前校验双方实际新起点位于 08:00–22:30，紧邻 compact 以原共同窗口的本地日期为边界；越界保留整组数据。在线响应原子合并保护较新版本与墓碑，投影重读当前 Repository；专项 127/127、PC 542/542，类型/静态/构建和唯一只读审查通过；真实环境验收及完整证据见现行实施记录。
 - Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
-- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和本机今日专注数据；实际秒数排除暂停与休息，中断保存耗时但不增加完成轮次，自然结束才增加一次。使用时间戳与持久状态恢复，路由切换不重置。最终事件使用稳定 session ID 离线上传；Profile 学习时长/轮次读取服务端全设备历史专注聚合，未 ACK 的本机事件不盲目叠加到服务器总量。任务选择器与时间轴联动，只显示已排期任务，并提供「自由学习」。
+- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和本机今日专注数据；实际秒数排除暂停与休息，中断保存耗时但不增加完成轮次，自然结束才增加一次。使用时间戳与持久状态恢复，路由切换不重置。新会话使用稳定 UUID，普通局域网 HTTP 下使用现有 UUIDv7 工具。任务选择器与时间轴联动，提供已排期任务和「自由学习」；运行与暂停时显示本轮已绑定的任务或自由学习。
+- 专注记录完成时尝试上传，后台核心同步结束后补传待发事件。进入 Profile 时若有待发事件则请求后台同步；「立即同步」等待核心同步后补传专注，再刷新服务端全设备聚合。单条业务拒绝保留原事件并继续处理其他记录；服务暂不可用或连接中断时停止本次尝试，等待现有同步触发重试。未 ACK 的本机事件只计入本机历史，Profile 显示待上传状态。
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。
 

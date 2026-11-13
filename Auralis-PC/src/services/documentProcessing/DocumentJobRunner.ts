@@ -131,9 +131,6 @@ export class DocumentJobRunner {
   async resumePending(): Promise<void> {
     const jobs = await this.repository.list()
     for (const job of jobs) {
-      if (job.phase === 'PAUSED_NETWORK') {
-        await this.repository.transition(job.jobId, 'QUEUED', { attempt: job.attempt })
-      }
       if (['QUEUED', 'EXTRACTING', 'OCR_RUNNING'].includes(job.phase)) {
         await this.start(job.jobId)
       }
@@ -149,7 +146,7 @@ export class DocumentJobRunner {
     if (!job || job.phase === 'PAUSED_NETWORK' || job.phase === 'READY') return
     await this.repository.transition(jobId, 'PAUSED_NETWORK', {
       errorCode: 'NETWORK_OFFLINE',
-      errorDetail: 'Processing paused until network connectivity returns',
+      errorDetail: 'Processing paused. Select Continue when the network is available.',
     })
   }
 

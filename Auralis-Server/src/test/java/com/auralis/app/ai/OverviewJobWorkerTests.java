@@ -2,7 +2,6 @@ package com.auralis.app.ai;
 
 import com.auralis.app.shared.config.AuralisProperties;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.UUID;
 import java.util.concurrent.Executor;
@@ -30,8 +29,6 @@ class OverviewJobWorkerTests {
         Executor executor = Runnable::run;
         OverviewJobWorker worker = new OverviewJobWorker(service, repository, properties,
                 executor, mock(ScheduledExecutorService.class));
-        ReflectionTestUtils.setField(worker, "adaptiveEnabled", true);
-
         worker.poll();
 
         verify(service).claim(any(UUID.class), eq(300_000L), eq(0L));
@@ -51,8 +48,6 @@ class OverviewJobWorkerTests {
         when(service.claim(any(UUID.class), eq(300_000L), eq(180_000L))).thenReturn(null);
         OverviewJobWorker worker = new OverviewJobWorker(service, repository, properties,
                 Runnable::run, mock(ScheduledExecutorService.class));
-        ReflectionTestUtils.setField(worker, "adaptiveEnabled", true);
-
         worker.poll();
 
         verify(service).claim(any(UUID.class), eq(300_000L), eq(180_000L));

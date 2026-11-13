@@ -1,6 +1,5 @@
 package com.auralis.app.ai;
 
-import java.util.List;
 import java.util.function.Consumer;
 
 public interface AiProviderPort {
@@ -42,34 +41,9 @@ public interface AiProviderPort {
         return response;
     }
 
-    default List<AiProviderChunk> stream(AiProviderRequest request, AiCredential credential) {
-        AiProviderResponse response = complete(request, credential);
-        return List.of(new AiProviderChunk(response.content(), true, response.usage(), response.modelIdentity()));
-    }
-
-    /**
-     * Streams provider chunks directly to the caller. The list-returning method remains as a
-     * compatibility fallback for simple providers and test doubles.
-     */
-    default void streamInto(
-            AiProviderRequest request,
-            AiCredential credential,
-            Consumer<AiProviderChunk> sink) {
-        List<AiProviderChunk> chunks = stream(request, credential);
-        if (chunks != null) {
-            chunks.forEach(sink);
-        }
-    }
-
     /** Chat-aware streaming entry point. Providers should bind cancellation to the active transport reader. */
     default void streamInto(AiProviderRequest request, AiCredential credential,
                             AiProviderCallCancellation cancellation, Consumer<AiProviderChunk> sink) {
-        if (cancellation != null && cancellation.isCancelled()) {
-            throw new AiStreamAbortException("Provider call was cancelled");
-        }
-        streamInto(request, credential, sink);
-        if (cancellation != null && cancellation.isCancelled()) {
-            throw new AiStreamAbortException("Provider call was cancelled");
-        }
+        throw new UnsupportedOperationException("Provider does not support streaming");
     }
 }

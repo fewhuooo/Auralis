@@ -733,7 +733,10 @@ export const updateWindowTheme = async (isDark: boolean): Promise<void> => {
 }
 
 export const isTauriEnvironment = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  return typeof window !== 'undefined' && Boolean(
+    ('__TAURI_INTERNALS__' in window && window.__TAURI_INTERNALS__)
+    || ('__TAURI__' in window && window.__TAURI__),
+  )
 }
 
 export const minimizeWindow = async (): Promise<void> => {

@@ -110,9 +110,9 @@
           <div class="outline-header-left">
             <h3 class="drawer-title">总览</h3>
             <transition name="hint-capsule-fade">
-              <div v-if="isOutlineComposer" class="outline-header-hint-capsule" title="可拖拽章节与小节调整顺序，点击文字直接修改">
+              <div v-if="isOutlineComposer" class="outline-header-hint-capsule" title="编辑大纲 Markdown 内容">
                 <span class="hint-dot"></span>
-                <span class="hint-text">拖拽排序 · 点击修改</span>
+                <span class="hint-text">Markdown 编辑</span>
               </div>
             </transition>
           </div>
@@ -131,7 +131,6 @@
         <div v-if="isOutlineComposer" class="outline-composer">
           <div class="subject-overview-wrapper">
             <article class="file-outline subject-overview is-editing">
-              <!-- 统一卡片头部 -->
               <header class="file-outline__header subject-overview__header">
                 <div class="file-outline__name subject-overview__name" style="cursor: default;">
                   <IconBook :size="13" :stroke-width="1.6" class="subject-icon" />
@@ -141,294 +140,68 @@
                   <button
                     type="button"
                     class="composer-capsule-btn is-primary"
-                    :disabled="isSavingOutline"
+                    :disabled="isSavingSubjectOutline"
                     title="保存大纲修改"
                     @click="saveCurrentOutline"
                   >
-                    <IconCheck v-if="!isSavingOutline" :size="10.5" :stroke-width="2.2" />
+                    <IconCheck v-if="!isSavingSubjectOutline" :size="10.5" :stroke-width="2.2" />
                     <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
-                    <span>{{ isSavingOutline ? '保存中' : '保存' }}</span>
+                    <span>{{ isSavingSubjectOutline ? '保存中' : '保存' }}</span>
                   </button>
                 </span>
               </header>
-
-              <!-- 卡片内容主体 -->
               <div class="subject-overview__body">
-                <ol class="file-outline__chapters composer-chapter-list">
-                  <li
-                    v-for="(chapter, chapterIndex) in subjectOutline"
-                    :key="chapter.id"
-                    class="composer-chapter-item"
-                    draggable="true"
-                    @dragstart="startChapterDrag(chapterIndex)"
-                    @dragover.prevent
-                    @drop="handleChapterDrop(chapterIndex)"
-                  >
-                    <!-- 章节标题：统一非编辑态左侧绿色胶囊微条与排版 -->
-                    <strong class="chapter-header composer-chapter-header">
-                      <span class="composer-drag-handle" title="拖拽调整章节顺序">
-                        <IconGripVertical :size="12" :stroke-width="1.8" />
-                      </span>
-                      <input
-                        v-model="chapter.title"
-                        class="composer-inline-title"
-                        placeholder="章节名称"
-                      />
-                      <button
-                        type="button"
-                        class="composer-del-btn"
-                        title="删除章节"
-                        @click.stop="deleteChapter(chapterIndex)"
-                      >
-                        <IconTrash :size="12" :stroke-width="1.8" />
-                      </button>
-                    </strong>
-
-                    <!-- 小节列表：统一非编辑态 4px 微圆点与极简导轨 -->
-                    <div class="composer-sections-wrap">
-                      <div
-                        v-for="(section, sectionIndex) in chapter.sections"
-                        :key="section.id"
-                        class="subject-outline__section composer-section-item"
-                        draggable="true"
-                        @dragstart.stop="startSectionDrag(chapterIndex, sectionIndex)"
-                        @dragover.prevent
-                        @drop.stop="handleSectionDrop(chapterIndex, sectionIndex)"
-                      >
-                        <span class="composer-drag-handle composer-section-grip" title="拖拽调整小节顺序">
-                          <IconGripVertical :size="11" :stroke-width="1.8" />
-                        </span>
-
-                        <div class="composer-section-main">
-                          <input
-                            v-model="section.title"
-                            class="composer-inline-section"
-                            placeholder="小节名称"
-                          />
-                          <span
-                            v-for="sId in (section.sourceIds?.length ? section.sourceIds : (section.fileId ? [section.fileId] : []))"
-                            :key="sId"
-                            class="composer-file-tag"
-                            :title="fileById(sId)?.name"
-                          >
-                            <IconFileText :size="10.5" :stroke-width="1.6" />
-                            <span class="composer-file-name">{{ fileById(sId)?.name || '关联文件' }}</span>
-                            <button
-                              type="button"
-                              class="composer-unlink-icon"
-                              title="解除关联"
-                              @click.stop="unlinkFile(chapterIndex, sectionIndex, sId)"
-                            >
-                              <IconX :size="10" :stroke-width="2" />
-                            </button>
-                          </span>
-                        </div>
-
-                        <div class="composer-item-actions">
-                          <el-popover placement="bottom-end" trigger="click" width="280" popper-class="zen-popover zen-action-popover" :hide-after="0">
-                            <template #reference>
-                              <button type="button" class="composer-action-btn" title="选择关联文件" @click.stop>
-                                <IconLink :size="12" :stroke-width="1.8" />
-                              </button>
-                            </template>
-                            <div style="margin-bottom: 8px; font-size: 12px; font-weight: 650; color: var(--text-primary);">选择关联文件</div>
-                            <div class="subject-capsule-grid" v-if="activeSourceFiles.length">
-                              <div
-                                v-for="file in activeSourceFiles"
-                                :key="file.id"
-                                class="subject-capsule-item"
-                                @click="handleLinkFile(chapterIndex, sectionIndex, file.id)"
-                              >
-                                <span class="subj-capsule-icon">📄</span>
-                                <span class="subj-capsule-name">{{ file.name }}</span>
-                              </div>
-                            </div>
-                            <div v-else style="padding: 10px 0; text-align: center; color: var(--text-muted); font-size: 11.5px;">
-                              暂无学习文件，请先导入
-                            </div>
-                          </el-popover>
-                          <button
-                            type="button"
-                            class="composer-action-btn"
-                            title="删除小节"
-                            @click.stop="deleteSection(chapterIndex, sectionIndex)"
-                          >
-                            <IconX :size="12" :stroke-width="2" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- 极简内联添加小节 -->
-                      <div class="composer-add-section-row">
-                        <span class="composer-add-dot">＋</span>
-                        <input
-                          v-model="chapterDrafts[chapter.id]"
-                          class="composer-add-input"
-                          placeholder="添加小节 (按 Enter 确认)"
-                          @keyup.enter="addSection(chapter.id)"
-                        />
-                      </div>
-                    </div>
-                  </li>
-                </ol>
-
-                <!-- 添加新章节 -->
-                <div class="composer-add-chapter-row">
-                  <input
-                    v-model="chapterDraft"
-                    class="composer-add-chapter-input"
-                    placeholder="＋ 添加新章节 (按 Enter 确认)"
-                    @keyup.enter="addChapter"
-                  />
-                </div>
+                <textarea
+                  v-model="subjectOutlineDraft"
+                  class="composer-markdown-editor"
+                  placeholder="编辑学科大纲 Markdown..."
+                  rows="6"
+                />
               </div>
             </article>
-          </div>
 
-          <!-- 分文件大纲编辑列表：在编辑态下每个文件大纲均可独立编辑、拖拽与保存 -->
-          <div class="file-outline-composer-list">
-            <div
+            <article
               v-for="file in activeSourceFiles"
-              :key="file.id"
-              class="file-overview-wrapper"
+              :key="'draft-' + file.id"
+              class="file-outline is-editing"
             >
-              <article class="file-outline file-overview is-editing" :class="{ 'is-selected': file.id === selectedFileId }">
-                <!-- 文件大纲头部 -->
-                <header class="file-outline__header">
+              <header class="file-outline__header">
+                <button
+                  type="button"
+                  class="overview-collapse-btn"
+                  :title="fileCardCollapsed[file.id] ? '展开文件大纲' : '收起文件大纲'"
+                  @click="fileCardCollapsed[file.id] = !fileCardCollapsed[file.id]"
+                >
+                  <IconChevronDown v-if="!fileCardCollapsed[file.id]" :size="13" :stroke-width="2" />
+                  <IconChevronRight v-else :size="13" :stroke-width="2" />
+                </button>
+                <button type="button" class="file-outline__name" :title="`查看并编辑 ${file.name}`" @click="selectFile(file.id)">
+                  <IconFileText :size="13" :stroke-width="1.6" class="subject-icon" />
+                  <span class="subject-overview-title">{{ file.name }}</span>
+                </button>
+                <span class="file-outline__actions">
                   <button
                     type="button"
-                    class="overview-collapse-btn"
-                    :title="fileCardCollapsed[file.id] ? '展开文件大纲' : '收起文件大纲'"
-                    @click="fileCardCollapsed[file.id] = !fileCardCollapsed[file.id]"
+                    class="composer-capsule-btn is-primary"
+                    :disabled="savingFileIds.has(file.id)"
+                    :title="`保存《${file.name}》大纲修改`"
+                    @click="saveFileOutline(file.id)"
                   >
-                    <IconChevronDown v-if="!fileCardCollapsed[file.id]" :size="13" :stroke-width="2" />
-                    <IconChevronRight v-else :size="13" :stroke-width="2" />
+                    <IconCheck v-if="!savingFileIds.has(file.id)" :size="10.5" :stroke-width="2.2" />
+                    <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
+                    <span>{{ savingFileIds.has(file.id) ? '保存中' : '保存' }}</span>
                   </button>
-                  <button type="button" class="file-outline__name" :title="`查看并编辑 ${file.name}`" @click="selectFile(file.id)">
-                    <IconFileText :size="13" :stroke-width="1.6" class="subject-icon" />
-                    <span class="subject-overview-title">{{ file.name }}</span>
-                  </button>
-                  <span class="file-outline__actions">
-                    <button
-                      type="button"
-                      class="composer-capsule-btn is-primary"
-                      :disabled="savingFileIds.has(file.id)"
-                      :title="`保存《${file.name}》大纲修改`"
-                      @click="saveFileOutline(file.id)"
-                    >
-                      <IconCheck v-if="!savingFileIds.has(file.id)" :size="10.5" :stroke-width="2.2" />
-                      <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
-                      <span>{{ savingFileIds.has(file.id) ? '保存中' : '保存' }}</span>
-                    </button>
-                  </span>
-                </header>
-
-                <!-- 文件大纲内容主体 -->
-                <div v-show="!fileCardCollapsed[file.id]" class="subject-overview__body">
-                  <!-- 暂无大纲时的初始创建引导 -->
-                  <div v-if="!fileOutlineDrafts[file.id]?.length" class="composer-file-empty-box">
-                    <span class="empty-hint">该文件暂无大纲内容</span>
-                    <button
-                      type="button"
-                      class="composer-capsule-btn"
-                      @click="createInitialFileOutline(file.id)"
-                    >
-                      ＋ 创建初始大纲
-                    </button>
-                  </div>
-
-                  <!-- 章节与小节列表 -->
-                  <ol v-else class="file-outline__chapters composer-chapter-list">
-                    <li
-                      v-for="(chapter, chapterIndex) in fileOutlineDrafts[file.id]"
-                      :key="chapter.id"
-                      class="composer-chapter-item"
-                      draggable="true"
-                      @dragstart="startFileChapterDrag(file.id, chapterIndex)"
-                      @dragover.prevent
-                      @drop="handleFileChapterDrop(file.id, chapterIndex)"
-                    >
-                      <!-- 章节标题行 -->
-                      <strong class="chapter-header composer-chapter-header">
-                        <span class="composer-drag-handle" title="拖拽调整章节顺序">
-                          <IconGripVertical :size="12" :stroke-width="1.8" />
-                        </span>
-                        <input
-                          v-model="chapter.title"
-                          class="composer-inline-title"
-                          placeholder="章节名称"
-                        />
-                        <button
-                          type="button"
-                          class="composer-del-btn"
-                          title="删除章节"
-                          @click.stop="deleteFileChapter(file.id, chapterIndex)"
-                        >
-                          <IconTrash :size="12" :stroke-width="1.8" />
-                        </button>
-                      </strong>
-
-                      <!-- 小节列表 -->
-                      <div class="composer-sections-wrap">
-                        <div
-                          v-for="(section, sectionIndex) in chapter.sections"
-                          :key="section.id"
-                          class="subject-outline__section composer-section-item"
-                          draggable="true"
-                          @dragstart.stop="startFileSectionDrag(file.id, chapterIndex, sectionIndex)"
-                          @dragover.prevent
-                          @drop.stop="handleFileSectionDrop(file.id, chapterIndex, sectionIndex)"
-                        >
-                          <span class="composer-drag-handle composer-section-grip" title="拖拽调整小节顺序">
-                            <IconGripVertical :size="11" :stroke-width="1.8" />
-                          </span>
-
-                          <div class="composer-section-main">
-                            <input
-                              v-model="section.title"
-                              class="composer-inline-section"
-                              placeholder="小节名称"
-                            />
-                          </div>
-
-                          <div class="composer-item-actions">
-                            <button
-                              type="button"
-                              class="composer-action-btn"
-                              title="删除小节"
-                              @click.stop="deleteFileSection(file.id, chapterIndex, sectionIndex)"
-                            >
-                              <IconX :size="12" :stroke-width="2" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <!-- 内联添加小节 -->
-                        <div class="composer-add-section-row">
-                          <span class="composer-add-dot">＋</span>
-                          <input
-                            v-model="fileSectionDrafts[`${file.id}-${chapter.id}`]"
-                            class="composer-add-input"
-                            placeholder="添加小节 (按 Enter 确认)"
-                            @keyup.enter="addFileSection(file.id, chapter.id, chapterIndex)"
-                          />
-                        </div>
-                      </div>
-                    </li>
-                  </ol>
-
-                  <!-- 添加新章节 -->
-                  <div v-if="fileOutlineDrafts[file.id]?.length" class="composer-add-chapter-row">
-                    <input
-                      v-model="fileChapterDrafts[file.id]"
-                      class="composer-add-chapter-input"
-                      placeholder="＋ 添加新章节 (按 Enter 确认)"
-                      @keyup.enter="addFileChapter(file.id)"
-                    />
-                  </div>
-                </div>
-              </article>
-            </div>
+                </span>
+              </header>
+              <div v-show="!fileCardCollapsed[file.id]" class="subject-overview__body">
+                <textarea
+                  v-model="fileOutlineDrafts[file.id]"
+                  class="composer-markdown-editor"
+                  :placeholder="`编辑《${file.name}》大纲 Markdown...`"
+                  rows="5"
+                />
+              </div>
+            </article>
             <div v-if="!activeSourceFiles.length" class="drawer-empty" style="padding: 18px 0;">
               <span>暂无学习文件</span>
             </div>
@@ -455,7 +228,6 @@
             :selected-file-id="selectedFileId"
             @select-file="selectFile"
             @select-summary="openFileSummary"
-            @select-outline-node="openOverviewLocator"
             @regenerate="regenerateFileOverview"
             @stop-regeneration="stopManualOverview('file', $event)"
             @resolve-sync-conflict="resolveFileOverviewConflict"
@@ -537,7 +309,7 @@
             key="summary-view"
             :title="summaryTarget.title"
             :kind="summaryTarget.kind"
-            :summary="summaryTarget.record?.summary || null"
+            :summary-markdown="summaryTarget.record?.summaryMarkdown || null"
             :is-generating="summaryTarget.isGenerating"
             :is-stale="summaryTarget.isStale"
             :error="summaryTarget.error"
@@ -1048,7 +820,7 @@
           <button
             class="ai-send-btn"
             :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
-            :disabled="(!isAiStreaming && (!chatInput.trim() && !quotedSelection)) || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession"
+            :disabled="!canUseWorkspaceChat || (!isAiStreaming && (!chatInput.trim() && !quotedSelection)) || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
             :title="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
             :aria-label="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
@@ -1135,7 +907,6 @@ import {
   IconList,
   IconLayoutGrid,
   IconX,
-  IconLink,
   IconArrowBackUp,
   IconArrowForwardUp,
   IconChevronLeft,
@@ -1152,7 +923,6 @@ import {
   IconMessageCircle,
   IconBook,
   IconCheck,
-  IconGripVertical,
   IconTrash,
   IconHistory,
   IconChartBar,
@@ -1196,9 +966,8 @@ import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
 import { OverviewResultsSyncService, runOverviewConflictResolutionOnce } from '@/services/overviewResultsSyncService'
 import { subscribeOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
-import type { CanonicalSourceRefView, FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
-import { createOutlineIdentityInput, createOutlineProvenanceInput, createOutlineProvenanceInputForLinkedSources,
-  createOutlineProvenanceView, filterOutlineSourceRefs, shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
+import type { FileOverviewRecord, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
+import { shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -1440,8 +1209,8 @@ const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.v
   return {
     id: file.id,
     name: file.name,
-    outline: record?.outline ?? null,
-    summary: record?.summary ?? null,
+    outlineMarkdown: record?.outlineMarkdown ?? null,
+    summaryMarkdown: record?.summaryMarkdown ?? null,
     status: record?.status ?? (file.ingestionStatus === 'READY' ? 'PENDING' : undefined),
     error: fileOverviewManualErrors.value[file.id]
       || (record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null),
@@ -1783,9 +1552,6 @@ const closeSummary = () => {
   centerView.value = selectedFileId.value ? 'preview' : 'overview'
 }
 
-const openOverviewLocator = async ({ fileId }: { fileId: string }) => {
-  await selectFile(fileId)
-}
 
 const regenerateFileOverview = async ({ fileId, mode }: { fileId: string; mode: 'OUTLINE' | 'ALL' }) => {
   const launchSubjectId = subjectId.value
@@ -1841,7 +1607,6 @@ const selectFile = async (id: string) => {
     return
   }
   ++currentSubjectSwitchGen
-  const targetSubjectId = subjectId.value
   selectedFileId.value = id
   selectedSummaryScope.value = null
   centerView.value = 'preview'
@@ -1849,8 +1614,8 @@ const selectFile = async (id: string) => {
   if (file && !isScopeLocked.value) {
     selectedAiSourceIds.value = [id]
     aiReferenceScope.value = 'AUTO'
-    if (!chatStore.activeSession) {
-      await chatStore.startSubjectConversation(targetSubjectId, activeSubject.value?.name || file.name).catch(() => undefined)
+    if (!chatStore.activeSession && !chatSessionInitialization) {
+      await startFreshChatSession(file.name)
     }
   }
 }
@@ -1901,110 +1666,30 @@ const handlePreviewPageChange = (page: number, total: number) => {
   previewPageCount.value = Math.max(1, total)
 }
 
-// ===== Subject outline (visual prototype; not persisted) =====
-interface OutlineSection {
-  id: string
-  nodeId?: string | null
-  sourceRefs?: CanonicalSourceRefView[]
-  title: string
-  fileId?: string
-  sourceIds?: string[]
-  summary?: string | null
-  locator?: OverviewLocator | null
-}
-interface OutlineChapter { id: string; nodeId?: string | null; title: string; sections: OutlineSection[] }
+// ===== 大纲 Markdown 编辑草稿与状态 =====
 const isOutlineComposer = ref(false)
-const chapterDraft = ref('')
-const chapterDrafts = ref<Record<string, string>>({})
-const chapterDragIndex = ref<number | null>(null)
-const sectionDrag = ref<{ chapterIndex: number; sectionIndex: number } | null>(null)
-const subjectOutline = ref<OutlineChapter[]>([])
-const isSavingOutline = ref(false)
+const subjectOutlineDraft = ref('')
+const subjectOutlineBaseline = ref('')
+const isSavingSubjectOutline = ref(false)
 
-// ===== 各文件大纲编辑草稿与状态 =====
-interface FileDraftSection {
-  id: string
-  nodeId?: string | null
-  sourceRefs?: CanonicalSourceRefView[]
-  title: string
-  locator?: OverviewLocator | null
-  summary?: string | null
-}
-interface FileDraftChapter {
-  id: string
-  nodeId?: string | null
-  title: string
-  sections: FileDraftSection[]
-}
-
-const fileOutlineDrafts = ref<Record<string, FileDraftChapter[]>>({})
+const fileOutlineDrafts = ref<Record<string, string>>({})
+const fileDraftBaselines = ref<Record<string, string>>({})
 const fileDraftOutlineGeneratedAt = ref<Record<string, string | null>>({})
-const fileDraftBaselineFingerprint = ref<Record<string, string>>({})
 const savingFileIds = ref<Set<string>>(new Set())
-const fileSectionDrafts = ref<Record<string, string>>({})
-const fileChapterDrafts = ref<Record<string, string>>({})
 const fileCardCollapsed = ref<Record<string, boolean>>({})
 
-const draggingFileChapter = ref<{ fileId: string; index: number } | null>(null)
-const draggingFileSection = ref<{ fileId: string; chapterIndex: number; sectionIndex: number } | null>(null)
-
-const overviewNodeId = (record: SubjectOverviewRecord | FileOverviewRecord | null | undefined, path: number[]): string | null => {
-  const inputNode = record?.outlineIdentityInput?.nodes.find(node => node.path.join('.') === path.join('.'))
-  if (inputNode) return inputNode.nodeId
-  return record?.identityReady
-    ? record.outlineIdentity?.nodes.find(node => node.path.join('.') === path.join('.'))?.nodeId ?? null
-    : null
-}
-const overviewSectionRefs = (record: SubjectOverviewRecord | FileOverviewRecord | null | undefined, path: number[]): CanonicalSourceRefView[] => {
-  const key = path.join('.')
-  return record?.outlineProvenance?.sections.find(section => section.path.join('.') === key)?.sourceRefs
-    ?? record?.outlineIdentity?.nodes.find(node => node.path.join('.') === key)?.sourceRefs
-    ?? []
-}
-
-const fileOutlineDraftFingerprint = (draft: FileDraftChapter[] | undefined): string => JSON.stringify((draft ?? []).map(chapter => ({
-  nodeId: chapter.nodeId ?? null,
-  title: chapter.title,
-  sections: chapter.sections.map(section => ({
-    nodeId: section.nodeId ?? null,
-    sourceRefs: section.sourceRefs ?? [],
-    title: section.title,
-    locator: section.locator ?? null,
-    summary: section.summary ?? null,
-  })),
-})))
-
-const fileOutlineDraftHasUnsavedChanges = (fileId: string): boolean => {
-  const baseline = fileDraftBaselineFingerprint.value[fileId]
-  if (baseline === undefined) return Boolean(fileOutlineDrafts.value[fileId]?.length)
-  return baseline !== fileOutlineDraftFingerprint(fileOutlineDrafts.value[fileId])
-}
+const subjectOutlineHasUnsavedChanges = (): boolean => subjectOutlineDraft.value !== subjectOutlineBaseline.value
+const fileOutlineDraftHasUnsavedChanges = (fileId: string): boolean =>
+  (fileOutlineDrafts.value[fileId] ?? '') !== (fileDraftBaselines.value[fileId] ?? '')
 
 const initFileOutlineDraft = (fileId: string, force = false) => {
-  const currentDraft = fileOutlineDrafts.value[fileId]
-  if (!force && currentDraft && currentDraft.length > 0) return
-
-  const item = fileOverviewItems.value.find(i => i.id === fileId)
-  const outline = item?.outline || fileOverviewRecords.value[fileId]?.outline
   const record = fileOverviewRecords.value[fileId]
-  if (Array.isArray(outline) && outline.length > 0) {
-    fileOutlineDrafts.value[fileId] = outline.map((chap, cIdx) => ({
-      id: `fchap-${fileId}-${cIdx}-${Date.now()}`,
-      nodeId: overviewNodeId(record, [cIdx]),
-      title: chap.title || `第 ${cIdx + 1} 章`,
-      sections: (chap.sections || []).map((sec, sIdx) => ({
-        id: `fsec-${fileId}-${cIdx}-${sIdx}-${Date.now()}`,
-        nodeId: overviewNodeId(record, [cIdx, sIdx]),
-        sourceRefs: overviewSectionRefs(record, [cIdx, sIdx]),
-        title: sec.title || `第 ${sIdx + 1} 节`,
-        locator: sec.locator ?? null,
-        summary: sec.summary ?? null
-      }))
-    }))
-  } else if (!currentDraft) {
-    fileOutlineDrafts.value[fileId] = []
-  }
-  fileDraftBaselineFingerprint.value[fileId] = fileOutlineDraftFingerprint(fileOutlineDrafts.value[fileId])
+  const currentDraft = fileOutlineDrafts.value[fileId]
+  if (!force && currentDraft !== undefined && fileOutlineDraftHasUnsavedChanges(fileId)) return
+
+  const remote = record?.outlineMarkdown ?? ''
+  fileOutlineDrafts.value[fileId] = remote
+  fileDraftBaselines.value[fileId] = remote
   fileDraftOutlineGeneratedAt.value[fileId] = record?.outlineGeneratedAt ?? null
 }
 
@@ -2015,34 +1700,10 @@ const initAllFileOutlineDrafts = (force = false) => {
 }
 
 const initSubjectOutlineFromExisting = (force = false) => {
-  // 1. 如果学科总览已包含章节大纲，优先载入真正的学科综合大纲
-  const subjectChapList = subjectOverviewRecord.value?.outline
-  if (Array.isArray(subjectChapList) && subjectChapList.length > 0) {
-    subjectOutline.value = subjectChapList.map((chap, i) => ({
-      id: `chap-${i}-${Date.now()}`,
-      nodeId: overviewNodeId(subjectOverviewRecord.value, [i]),
-      title: chap.title || `第 ${i + 1} 章`,
-      sections: (chap.sections || []).map((sec, j) => ({
-        id: `sec-${i}-${j}-${Date.now()}`,
-        nodeId: overviewNodeId(subjectOverviewRecord.value, [i, j]),
-        sourceRefs: overviewSectionRefs(subjectOverviewRecord.value, [i, j]),
-        title: sec.title || `第 ${j + 1} 节`,
-        fileId: sec.sourceIds?.[0] || '',
-        sourceIds: Array.isArray(sec.sourceIds) ? [...sec.sourceIds] : (sec.sourceIds ? [sec.sourceIds] : []),
-        summary: sec.summary ?? null,
-        locator: sec.locator ?? null
-      }))
-    }))
-    return
-  }
-
-  // 2. 如果学科总览尚未生成综合大纲，保持学科大纲独立，初始化默认起始章节供用户编排学科大纲
-  // 不从单一或部分文件大纲中自动填充，分文件大纲在下方各卡片独立展示与编排
-  if (force || !subjectOutline.value.length) {
-    subjectOutline.value = [
-      { id: `chapter-${Date.now()}`, nodeId: null, title: '第一章 · 新建章节', sections: [] }
-    ]
-  }
+  if (!force && subjectOutlineHasUnsavedChanges()) return
+  const remote = subjectOverviewRecord.value?.outlineMarkdown ?? ''
+  subjectOutlineDraft.value = remote
+  subjectOutlineBaseline.value = remote
 }
 
 watch(isOutlineComposer, (val) => {
@@ -2052,8 +1713,8 @@ watch(isOutlineComposer, (val) => {
   }
 })
 
-watch(() => subjectOverviewRecord.value?.outline, (newOutline) => {
-  if (isOutlineComposer.value && newOutline && newOutline.length > 0) {
+watch(() => subjectOverviewRecord.value?.outlineMarkdown, (newOutline) => {
+  if (isOutlineComposer.value && newOutline !== undefined) {
     initSubjectOutlineFromExisting()
   }
 })
@@ -2061,7 +1722,6 @@ watch(() => subjectOverviewRecord.value?.outline, (newOutline) => {
 watch(fileOverviewItems, (items) => {
   if (isOutlineComposer.value) {
     for (const item of items) {
-      const draft = fileOutlineDrafts.value[item.id]
       const generatedAt = fileOverviewRecords.value[item.id]?.outlineGeneratedAt ?? null
       const previousGeneratedAt = fileDraftOutlineGeneratedAt.value[item.id]
       if (previousGeneratedAt !== undefined && previousGeneratedAt !== generatedAt) {
@@ -2070,7 +1730,7 @@ watch(fileOverviewItems, (items) => {
         } else {
           fileDraftOutlineGeneratedAt.value[item.id] = generatedAt
         }
-      } else if ((!draft || draft.length === 0) && item.outline && item.outline.length > 0) {
+      } else if (fileOutlineDrafts.value[item.id] === undefined && item.outlineMarkdown) {
         if (!fileOutlineDraftHasUnsavedChanges(item.id)) initFileOutlineDraft(item.id, true)
       } else {
         fileDraftOutlineGeneratedAt.value[item.id] = generatedAt
@@ -2089,141 +1749,51 @@ watch(activeSourceFiles, async () => {
 }, { deep: true })
 
 const saveCurrentOutline = async () => {
-  if (!subjectId.value || !overviewRepository || isSavingOutline.value) return
-  if (!subjectOutline.value.length) return
+  if (!subjectId.value || !overviewRepository || isSavingSubjectOutline.value) return
+  const outlineMarkdown = subjectOutlineDraft.value.trim()
+  if (!outlineMarkdown) {
+    ElMessage.warning('大纲内容不能为空')
+    return
+  }
   const targetSubjectId = subjectId.value
-  isSavingOutline.value = true
+  isSavingSubjectOutline.value = true
   try {
-    const formattedOutline: OverviewChapter[] = subjectOutline.value.map(chap => ({
-      title: chap.title.trim() || '未命名章节',
-      sections: chap.sections.map(sec => {
-        const sourceIds = Array.isArray(sec.sourceIds) && sec.sourceIds.length > 0
-          ? sec.sourceIds.filter(Boolean)
-          : (sec.fileId ? [sec.fileId] : [])
-        return {
-          title: sec.title.trim() || '未命名小节',
-          summary: sec.summary ?? null,
-          sourceIds,
-          locator: sec.locator ?? null
-        }
-      })
-    }))
-
-    const nodeIdsByPath = new Map<string, string | null>()
-    const refsByPath = new Map<string, CanonicalSourceRefView[]>()
-    const sourceIdsByPath = new Map<string, string[]>()
-    subjectOutline.value.forEach((chapter, chapterIndex) => {
-      nodeIdsByPath.set(String(chapterIndex), chapter.nodeId ?? null)
-      chapter.sections.forEach((section, sectionIndex) => {
-        const key = `${chapterIndex}.${sectionIndex}`
-        nodeIdsByPath.set(key, section.nodeId ?? null)
-        const linkedSourceIds = formattedOutline[chapterIndex].sections[sectionIndex].sourceIds
-        sourceIdsByPath.set(key, linkedSourceIds)
-        refsByPath.set(key, filterOutlineSourceRefs(section.sourceRefs ?? [], linkedSourceIds))
-      })
-    })
-    const outlineIdentityInput = createOutlineIdentityInput(formattedOutline, nodeIdsByPath)
-    const outlineProvenance = createOutlineProvenanceView(formattedOutline, refsByPath)
-    const ingestionRevisionsBySourceId = new Map(activeSourceFiles.value
-      .filter(file => Boolean(file.ingestionRevision))
-      .map(file => [file.id, file.ingestionRevision as string] as const))
-
     const fingerprint = subjectOverviewRecord.value?.inputFingerprint || 'manual-edit'
     const record = await overviewRepository.saveSubjectOverviewPart({
       subjectId: targetSubjectId,
       mode: 'OUTLINE',
       response: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         title: subjectOverviewRecord.value?.title || '学科总览',
-        outline: formattedOutline,
-        summary: subjectOverviewRecord.value?.summary || null,
-        outlineProvenance,
+        outlineMarkdown,
+        summaryMarkdown: subjectOverviewRecord.value?.summaryMarkdown || null,
       },
       inputFingerprint: fingerprint,
-      outlineIdentityInput,
-      outlineProvenanceInput: createOutlineProvenanceInputForLinkedSources(outlineProvenance, sourceIdsByPath, ingestionRevisionsBySourceId),
     })
-    // 检查保存返回后当前学科是否仍为目标学科，若已切换学科则不更新当前页面的 state 与提示，防止旧学科大纲污染新学科
     if (subjectId.value !== targetSubjectId) return
     subjectOverviewRecord.value = record
+    subjectOutlineBaseline.value = subjectOutlineDraft.value
     ElMessage.success('大纲已成功保存')
   } catch (err) {
     if (subjectId.value !== targetSubjectId) return
     console.error('保存大纲失败:', err)
     ElMessage.error('保存大纲失败，请重试')
   } finally {
-    isSavingOutline.value = false
+    isSavingSubjectOutline.value = false
   }
 }
-const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id === id)
-const addChapter = () => {
-  const title = chapterDraft.value.trim()
-  if (!title) return
-  subjectOutline.value.push({ id: `chapter-${Date.now()}`, nodeId: null, title, sections: [] })
-  chapterDraft.value = ''
-}
-const addSection = (chapterId: string) => {
-  const title = chapterDrafts.value[chapterId]?.trim()
-  if (!title) return
-  const chapter = subjectOutline.value.find(item => item.id === chapterId)
-  if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, nodeId: null, sourceRefs: [], title, sourceIds: [], summary: null, locator: null })
-  chapterDrafts.value[chapterId] = ''
-}
-const deleteChapter = (chapterIndex: number) => {
-  subjectOutline.value.splice(chapterIndex, 1)
-}
-const deleteSection = (chapterIndex: number, sectionIndex: number) => {
-  subjectOutline.value[chapterIndex].sections.splice(sectionIndex, 1)
-}
-const startChapterDrag = (index: number) => { chapterDragIndex.value = index }
-const handleChapterDrop = (target: number) => {
-  const source = chapterDragIndex.value
-  if (source === null || source === target) return
-  const [chapter] = subjectOutline.value.splice(source, 1)
-  subjectOutline.value.splice(target, 0, chapter)
-  chapterDragIndex.value = null
-}
-const startSectionDrag = (chapterIndex: number, sectionIndex: number) => { sectionDrag.value = { chapterIndex, sectionIndex } }
-const handleSectionDrop = (chapterIndex: number, target: number) => {
-  const source = sectionDrag.value
-  if (!source || source.chapterIndex !== chapterIndex || source.sectionIndex === target) return
-  const sections = subjectOutline.value[chapterIndex].sections
-  const [section] = sections.splice(source.sectionIndex, 1)
-  sections.splice(target, 0, section)
-  sectionDrag.value = null
-}
 
-// ===== 各文件大纲操作与保存逻辑 =====
 const saveFileOutline = async (fileId: string) => {
   const file = activeSourceFiles.value.find(f => f.id === fileId)
   if (!file || !overviewRepository) return
 
-  const drafts = fileOutlineDrafts.value[fileId] || []
+  const outlineMarkdown = (fileOutlineDrafts.value[fileId] ?? '').trim()
+  if (!outlineMarkdown) {
+    ElMessage.warning('大纲内容不能为空')
+    return
+  }
   savingFileIds.value.add(fileId)
   try {
-    const formattedOutline: OverviewChapter[] = drafts.map(chap => ({
-      title: chap.title.trim() || '未命名章节',
-      sections: chap.sections.map(sec => ({
-        title: sec.title.trim() || '未命名小节',
-        summary: sec.summary ?? null,
-        sourceIds: [fileId],
-        locator: sec.locator ?? null
-      }))
-    }))
-
-    const nodeIdsByPath = new Map<string, string | null>()
-    const refsByPath = new Map<string, CanonicalSourceRefView[]>()
-    drafts.forEach((chapter, chapterIndex) => {
-      nodeIdsByPath.set(String(chapterIndex), chapter.nodeId ?? null)
-      chapter.sections.forEach((section, sectionIndex) => {
-        const key = `${chapterIndex}.${sectionIndex}`
-        nodeIdsByPath.set(key, section.nodeId ?? null)
-        refsByPath.set(key, filterOutlineSourceRefs(section.sourceRefs ?? [], [fileId]))
-      })
-    })
-    const outlineIdentityInput = createOutlineIdentityInput(formattedOutline, nodeIdsByPath)
-    const outlineProvenance = createOutlineProvenanceView(formattedOutline, refsByPath)
-
     const existingRecord = fileOverviewRecords.value[fileId]
     const revision = file.ingestionRevision || existingRecord?.ingestionRevision || 'manual-edit'
 
@@ -2232,21 +1802,18 @@ const saveFileOutline = async (fileId: string) => {
       ingestionRevision: revision,
       mode: 'OUTLINE',
       response: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         title: existingRecord?.title || file.name,
-        outline: formattedOutline,
-        summary: existingRecord?.summary || null,
-        outlineProvenance,
+        outlineMarkdown,
+        summaryMarkdown: existingRecord?.summaryMarkdown || null,
       },
-      outlineIdentityInput,
-      outlineProvenanceInput: createOutlineProvenanceInput(outlineProvenance),
     })
 
     fileOverviewRecords.value = {
       ...fileOverviewRecords.value,
-      [fileId]: updatedRecord
+      [fileId]: updatedRecord,
     }
-    fileDraftBaselineFingerprint.value[fileId] = fileOutlineDraftFingerprint(fileOutlineDrafts.value[fileId])
+    fileDraftBaselines.value[fileId] = fileOutlineDrafts.value[fileId] ?? ''
     fileDraftOutlineGeneratedAt.value[fileId] = updatedRecord.outlineGeneratedAt
 
     ElMessage.success(`《${file.name}》大纲已保存`)
@@ -2256,122 +1823,6 @@ const saveFileOutline = async (fileId: string) => {
   } finally {
     savingFileIds.value.delete(fileId)
   }
-}
-
-const createInitialFileOutline = (fileId: string) => {
-  fileDraftBaselineFingerprint.value[fileId] = fileOutlineDraftFingerprint([])
-  fileOutlineDrafts.value[fileId] = [
-    {
-      id: `fchap-${fileId}-0-${Date.now()}`,
-      nodeId: null,
-      title: '第一章 · 新建章节',
-      sections: []
-    }
-  ]
-}
-
-const addFileChapter = (fileId: string) => {
-  const title = (fileChapterDrafts.value[fileId] || '').trim()
-  if (!title) return
-  if (!fileOutlineDrafts.value[fileId]) {
-    fileOutlineDrafts.value[fileId] = []
-  }
-  fileOutlineDrafts.value[fileId].push({
-    id: `fchap-${fileId}-${Date.now()}`,
-    nodeId: null,
-    title,
-    sections: []
-  })
-  fileChapterDrafts.value[fileId] = ''
-}
-
-const deleteFileChapter = (fileId: string, chapterIndex: number) => {
-  fileOutlineDrafts.value[fileId]?.splice(chapterIndex, 1)
-}
-
-const addFileSection = (fileId: string, chapterId: string, chapterIndex: number) => {
-  const draftKey = `${fileId}-${chapterId}`
-  const title = (fileSectionDrafts.value[draftKey] || '').trim()
-  if (!title) return
-  const chapter = fileOutlineDrafts.value[fileId]?.[chapterIndex]
-  if (!chapter) return
-  chapter.sections.push({
-    id: `fsec-${fileId}-${chapterId}-${Date.now()}`,
-    nodeId: null,
-    sourceRefs: [],
-    title
-  })
-  fileSectionDrafts.value[draftKey] = ''
-}
-
-const deleteFileSection = (fileId: string, chapterIndex: number, sectionIndex: number) => {
-  fileOutlineDrafts.value[fileId]?.[chapterIndex]?.sections?.splice(sectionIndex, 1)
-}
-
-const startFileChapterDrag = (fileId: string, chapterIndex: number) => {
-  draggingFileChapter.value = { fileId, index: chapterIndex }
-}
-
-const handleFileChapterDrop = (fileId: string, targetIndex: number) => {
-  if (!draggingFileChapter.value || draggingFileChapter.value.fileId !== fileId) return
-  const src = draggingFileChapter.value.index
-  if (src === targetIndex) return
-  const list = fileOutlineDrafts.value[fileId]
-  if (!list) return
-  const [item] = list.splice(src, 1)
-  list.splice(targetIndex, 0, item)
-  draggingFileChapter.value = null
-}
-
-const startFileSectionDrag = (fileId: string, chapterIndex: number, sectionIndex: number) => {
-  draggingFileSection.value = { fileId, chapterIndex, sectionIndex }
-}
-
-const handleFileSectionDrop = (fileId: string, targetChapterIndex: number, targetSectionIndex: number) => {
-  if (!draggingFileSection.value || draggingFileSection.value.fileId !== fileId) return
-  const { chapterIndex: srcChap, sectionIndex: srcSec } = draggingFileSection.value
-  const list = fileOutlineDrafts.value[fileId]
-  if (!list) return
-  const srcChapter = list[srcChap]
-  const targetChapter = list[targetChapterIndex]
-  if (!srcChapter || !targetChapter) return
-  const [sec] = srcChapter.sections.splice(srcSec, 1)
-  targetChapter.sections.splice(targetSectionIndex, 0, sec)
-  draggingFileSection.value = null
-}
-
-const handleLinkFile = (chapterIndex: number, sectionIndex: number, fileId: string) => {
-  if (fileId) {
-    const section = subjectOutline.value[chapterIndex]?.sections?.[sectionIndex]
-    if (section) {
-      section.fileId = fileId
-      if (!section.sourceIds) section.sourceIds = []
-      if (!section.sourceIds.includes(fileId)) {
-        section.sourceIds.push(fileId)
-      }
-      section.sourceRefs = filterOutlineSourceRefs(section.sourceRefs ?? [], section.sourceIds)
-      ElMessage.success('已关联文件')
-    }
-  }
-  document.body.click() // close popover
-}
-
-const unlinkFile = (chapterIndex: number, sectionIndex: number, targetFileId?: string) => {
-  const section = subjectOutline.value[chapterIndex]?.sections?.[sectionIndex]
-  if (!section) return
-  if (targetFileId) {
-    if (Array.isArray(section.sourceIds)) {
-      section.sourceIds = section.sourceIds.filter(id => id !== targetFileId)
-    }
-    if (section.fileId === targetFileId) {
-      section.fileId = section.sourceIds?.[0] || ''
-    }
-  } else {
-    delete section.fileId
-    section.sourceIds = []
-  }
-  section.sourceRefs = filterOutlineSourceRefs(section.sourceRefs ?? [], section.sourceIds ?? [])
-  ElMessage.success('已解除关联')
 }
 
 const handleOutlineAi = async () => {
@@ -2675,6 +2126,7 @@ const presetQuestions: PresetQuestionItem[] = [
 ]
 
 const sendPreset = (q: string) => {
+  if (!canUseWorkspaceChat.value) return
   chatInput.value = q
   sendChat()
 }
@@ -3260,6 +2712,7 @@ watch([streamingReasoning, streamingTools, streamingContent, () => streamingPart
 })
 
 const sendChat = async () => {
+  if (!canUseWorkspaceChat.value) return
   const msg = chatInput.value.trim()
   const selectionToSend = quotedSelection.value ? quotedSelection.value.slice(0, 4000) : undefined
   if ((!msg && !selectionToSend) || isAiStreaming.value) return
@@ -3294,6 +2747,7 @@ const sendChat = async () => {
 }
 
 const retryChat = async () => {
+  if (!canUseWorkspaceChat.value) return
   const pending = pendingChatMessage.value
   if (!pending || isAiStreaming.value) return
   isAutoScrollLocked.value = false
@@ -3308,7 +2762,7 @@ const retryChat = async () => {
 }
 
 const handleRetryAssistantMessage = (msgId: string) => {
-  if (isAiStreaming.value) return
+  if (!canUseWorkspaceChat.value || isAiStreaming.value) return
   isAutoScrollLocked.value = false
   try {
     void chatStore.retryPendingMessage(msgId)
@@ -3320,6 +2774,7 @@ const handleRetryAssistantMessage = (msgId: string) => {
 }
 
 const handleRecoverUnknown = async () => {
+  if (!canUseWorkspaceChat.value) return
   try {
     const ok = await chatStore.recoverUnknownAttempt()
     if (ok) {
@@ -3337,9 +2792,12 @@ const handleRecoverUnknown = async () => {
   }
 }
 
-const clearChat = () => { void chatStore.startNewSubjectConversation(subjectId.value, activeSubject.value?.name || '学科对话') }
+const clearChat = () => {
+  if (!chatSessionInitialization) void startFreshChatSession('学科对话', true)
+}
 
 const submitChatActivity = async (questionId: string, answer: import('@/types/chatContent').ChatActivityAnswer) => {
+  if (!canUseWorkspaceChat.value) return
   const block = storedChatMessages.value.flatMap((message) => message.parts)
     .find((part): part is Extract<import('@/types/chatContent').ChatContentPart, { kind: 'block' }> => part.kind === 'block' && part.questionId === questionId)
   if (!block) return
@@ -3442,7 +2900,7 @@ const goToProcessingCenter = () => {
   router.push('/profile')
 }
 const sendSelectionQuestion = async (prompt: string) => {
-  if (!selectedText.value || isAiStreaming.value) return
+  if (!canUseWorkspaceChat.value || !selectedText.value || isAiStreaming.value) return
   if (showProcessingRequired.value) {
     showNotReadyDialog.value = true
     return
@@ -3457,6 +2915,7 @@ const sendSelectionQuestion = async (prompt: string) => {
 }
 const explainSelection = () => { void sendSelectionQuestion('请解释我选中的内容，并指出其中的关键概念。') }
 const askSelection = () => {
+  if (!canUseWorkspaceChat.value) return
   chatInput.value = '请围绕我选中的内容继续讲解：'
   void sendSelectionQuestion(chatInput.value)
   chatInput.value = ''
@@ -3487,9 +2946,39 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
 }
 
 // ===== Lifecycle =====
-const startFreshChatSession = async () => {
-  if (subjectId.value) await chatStore.startSubjectConversation(subjectId.value, activeSubject.value?.name || '学科对话')
-  else await chatStore.startNewSession()
+let chatSessionInitialization: Promise<string | undefined> | null = null
+const workspaceChatSession = ref<{ subjectId: string; sessionId: string } | null>(null)
+const canUseWorkspaceChat = computed(() => workspaceChatSession.value !== null
+  && workspaceChatSession.value.subjectId === subjectId.value
+  && workspaceChatSession.value.sessionId === chatStore.activeSession?.id)
+
+const startFreshChatSession = (fallbackTitle = '学科对话', createNew = false) => {
+  const id = subjectId.value
+  const loginGeneration = authStore.loginGeneration
+  const previousSession = workspaceChatSession.value
+  workspaceChatSession.value = null
+  const title = activeSubject.value?.name || fallbackTitle
+  const pending = (id
+    ? (createNew ? chatStore.startNewSubjectConversation(id, title) : chatStore.startSubjectConversation(id, title))
+    : chatStore.startNewSession()
+  ).catch((error) => {
+    if (chatSessionInitialization !== pending || !isComponentMounted || subjectId.value !== id
+      || authStore.loginGeneration !== loginGeneration) return undefined
+    if (previousSession?.subjectId === id && previousSession.sessionId === chatStore.activeSession?.id) {
+      workspaceChatSession.value = previousSession
+    }
+    ElNotification({ title: '对话初始化失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error' })
+    return undefined
+  })
+  chatSessionInitialization = pending
+  void pending.then(sessionId => {
+    if (chatSessionInitialization !== pending) return
+    chatSessionInitialization = null
+    if (isComponentMounted && subjectId.value === id && authStore.loginGeneration === loginGeneration && sessionId) {
+      workspaceChatSession.value = { subjectId: id, sessionId }
+    }
+  })
+  return pending
 }
 
 let processingRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -3546,11 +3035,7 @@ onMounted(async () => {
   isComponentMounted = true
   startProcessingRefresh()
   const mountGen = ++currentSubjectSwitchGen
-  try {
-    await startFreshChatSession()
-  } catch {
-    // The workspace remains usable when chat is unavailable.
-  }
+  const chatInitialization = startFreshChatSession()
   const id = subjectId.value
   if (id) {
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
@@ -3573,7 +3058,11 @@ onMounted(async () => {
       selectedAiSourceIds.value = [firstFile.id]
       selectedFileId.value = firstFile.id
       centerView.value = 'preview'
-      await chatStore.startSubjectConversation(id, activeSubject.value?.name || firstFile.name).catch(() => undefined)
+      const sessionId = await chatInitialization
+      if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
+      if (!sessionId && !chatStore.activeSession && !chatSessionInitialization) {
+        await startFreshChatSession(firstFile.name)
+      }
     } else {
       centerView.value = 'overview'
       aiReferenceScope.value = 'SUBJECT'
@@ -3594,14 +3083,11 @@ watch(subjectId, async (newId) => {
     selectedAiSourceIds.value = []
     aiReferenceScope.value = 'SUBJECT'
     sourceStore.clearActiveSourceFiles()
-    subjectOutline.value = []
+    subjectOutlineDraft.value = ''
+    subjectOutlineBaseline.value = ''
     fileOutlineDrafts.value = {}
-    fileDraftBaselineFingerprint.value = {}
+    fileDraftBaselines.value = {}
     fileDraftOutlineGeneratedAt.value = {}
-    chapterDraft.value = ''
-    chapterDrafts.value = {}
-    fileSectionDrafts.value = {}
-    fileChapterDrafts.value = {}
     selectedSummaryScope.value = null
     subjectOverviewRecord.value = null
     fileOverviewRecords.value = {}
@@ -3613,11 +3099,7 @@ watch(subjectId, async (newId) => {
 
     subjectStore.setActiveSubject(newId)
 
-    try {
-      await startFreshChatSession()
-    } catch {
-      // Keep the workspace usable when a fresh chat session cannot be created.
-    }
+    const chatInitialization = startFreshChatSession()
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
 
     await subjectStore.loadSourceFiles(newId)
@@ -3644,8 +3126,10 @@ watch(subjectId, async (newId) => {
       selectedAiSourceIds.value = [firstFile.id]
       selectedFileId.value = firstFile.id
       centerView.value = 'preview'
-      if (!chatStore.activeSession) {
-        await chatStore.startSubjectConversation(newId, activeSubject.value?.name || firstFile.name).catch(() => undefined)
+      const sessionId = await chatInitialization
+      if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
+      if (!sessionId && !chatStore.activeSession && !chatSessionInitialization) {
+        await startFreshChatSession(firstFile.name)
       }
     } else {
       selectedFileId.value = null
@@ -5968,6 +5452,24 @@ html.dark .ai-input-wrapper {
     box-shadow: 0 0 14px rgba(125, 147, 114, 0.55), 0 0 2px rgba(125, 147, 114, 0.5);
     border-color: rgba(125, 147, 114, 0.65);
   }
+}
+.composer-markdown-editor {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1.6;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-modifier-hover);
+  color: var(--text-primary);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.composer-markdown-editor:focus {
+  outline: none;
+  border-color: var(--color-primary-accent);
 }
 .outline-composer, .outline-overview-list { padding: 0 0 14px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
 .outline-composer::-webkit-scrollbar, .outline-overview-list::-webkit-scrollbar { display: none; }

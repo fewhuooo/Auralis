@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
+import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { useSyncApi } from '@/api/useSyncApi'
 import { completeUpload, createUploadIntent, uploadToObjectStorage } from '@/api/useAssetApi'
 import { getLocalRepository, getLocalAssetRepository, getOverviewRepository } from '@/services/localDb'
@@ -83,7 +84,18 @@ export const useSyncStore = defineStore('sync', () => {
   let cyclePromiseKey: symbol | null = null
   let syncRequestedKey: symbol | null = null
   let syncRequested = false
-  const scheduler = createSyncScheduler({ delayMs: 500, run: async () => flushNow() })
+  const scheduler = createSyncScheduler({
+    delayMs: 500,
+    run: async () => {
+      const scope = activeSyncScope
+      await flushNow()
+      if (!scope?.isCurrent()) return
+      // A focus record can reference a task just pushed by the core cycle.
+      void usePomodoroStore().flushPending().catch((error) => {
+        if (scope.isCurrent()) console.warn('[useSyncStore] Focus session sync deferred', error)
+      })
+    },
+  })
 
   let assetQueuePromise: Promise<LocalAssetSyncQueue> | null = null
   let assetQueuePromiseToken: object | null = null
@@ -392,15 +404,16 @@ export const useSyncStore = defineStore('sync', () => {
       // A previous failure remains visible until this complete cycle succeeds.
       lastSyncError.value = null
       lastSyncErrorCode.value = null
-      // A settled schedule unlocks the next persisted intention. Drain without
-      // requiring another mouse drop or network event; PROCESSING/failure does
-      // not request another cycle.
-      if (result.scheduleApplied > 0) {
-        const pending = await repositoryForSync.listPending('TASK')
+      // A terminal receipt can unlock another persisted intention. Drain through the existing single flight.
+      if (result.scheduleApplied > 0 || result.ordinarySettled > 0) {
+        const pending = await repositoryForSync.listPending()
         requireCurrentSyncScope(scope)
-        if (pending.some((mutation) => mutation.mutationType === 'SCHEDULE_INSERTION'
-          || mutation.mutationType === 'SCHEDULE_SWAP'
-          || mutation.mutationType === 'SCHEDULE_UNSCHEDULE')) {
+        if (pending.some((mutation) => {
+          const isSchedule = mutation.mutationType === 'SCHEDULE_INSERTION'
+            || mutation.mutationType === 'SCHEDULE_SWAP'
+            || mutation.mutationType === 'SCHEDULE_UNSCHEDULE'
+          return isSchedule ? result.scheduleApplied > 0 : result.ordinarySettled > 0
+        })) {
           syncRequestedKey = scope.key
           syncRequested = true
         }
@@ -497,8 +510,6 @@ export const useSyncStore = defineStore('sync', () => {
     await flushNow()
   }
 
-  const initE2EE = async (): Promise<void> => {}
-
   return {
     cursor,
     resetRequired,
@@ -516,6 +527,5 @@ export const useSyncStore = defineStore('sync', () => {
     pullChanges,
     pushChanges,
     resetOfflineData,
-    initE2EE,
   }
 })

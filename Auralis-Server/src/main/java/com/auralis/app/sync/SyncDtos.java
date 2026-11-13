@@ -3,6 +3,7 @@ package com.auralis.app.sync;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -33,6 +34,8 @@ public final class SyncDtos {
             @NotNull UUID resourceId,
             @NotNull SyncMutationType mutationType,
             @Min(0) long baseVersion,
+            @Schema(implementation = Object.class, types = {"object", "null"}, additionalProperties = Schema.AdditionalPropertiesValue.TRUE,
+                    description = "Fields of the command selected by resourceType and mutationType.")
             JsonNode payload) {
         SyncMutation toMutation() {
             return new SyncMutation(clientMutationId, resourceType, resourceId, mutationType, baseVersion, payload);
@@ -74,7 +77,9 @@ public final class SyncDtos {
             SyncChangeMutationType mutationType,
             long version,
             Instant deletedAt,
-            JsonNode payload,
+            @Schema(implementation = Object.class, types = {"object", "null"}, additionalProperties = Schema.AdditionalPropertiesValue.TRUE,
+                    description = "Resource view selected by resourceType.")
+            Object payload,
             Instant createdAt) {
         static ChangeResponse from(ChangeLogEntry entry, ObjectMapper objectMapper) {
             JsonNode payload;

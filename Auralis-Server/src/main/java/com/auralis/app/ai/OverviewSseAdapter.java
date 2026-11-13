@@ -357,7 +357,7 @@ public final class OverviewSseAdapter {
             case "MODEL_UNAVAILABLE", "SERVICE_UNAVAILABLE" -> 503;
             case "RATE_LIMITED" -> 429;
             case "MODEL_PROVIDER_ERROR", "OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE", "OVERVIEW_PROMPT_BUDGET_EXCEEDED",
-                    "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED", "OVERVIEW_RECOVERY_EXHAUSTED", "OVERVIEW_REDUCE_NO_PROGRESS" -> 502;
+                    "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED", "OVERVIEW_RECOVERY_EXHAUSTED" -> 502;
             case "MUTATION_REJECTED", "RESOURCE_VERSION_CONFLICT" -> 409;
             default -> 500;
         };
@@ -376,8 +376,7 @@ public final class OverviewSseAdapter {
             case "RESOURCE_NOT_FOUND", "RESOURCE_DELETED" -> "Requested resource is unavailable";
             case "MUTATION_REJECTED", "RESOURCE_VERSION_CONFLICT" -> "Requested resource changed";
             case "OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE", "OVERVIEW_PROMPT_BUDGET_EXCEEDED",
-                    "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED", "OVERVIEW_RECOVERY_EXHAUSTED",
-                    "OVERVIEW_REDUCE_NO_PROGRESS" -> "Overview could not be generated";
+                    "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED", "OVERVIEW_RECOVERY_EXHAUSTED" -> "Overview could not be generated";
             default -> "Overview generation failed";
         };
     }

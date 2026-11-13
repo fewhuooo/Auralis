@@ -200,7 +200,7 @@ async function syncUnknownCloudFollowupChain(fixture, { injectExternalReviewBefo
       action,
       occurredAt: response.occurredAt,
       reviewId: request.reviewId ?? response.effectiveReview?.reviewId ?? null,
-      rating: request.rating ?? null,
+      rating: action === 'REVIEW_CONFIRMED' ? response.effectiveReview.selectedRating : request.rating ?? null,
       durationSeconds: request.durationSeconds ?? null,
       baseVersion: request.baseVersion,
       knowledgeBlockVersion: request.knowledgeBlockVersion,
@@ -583,6 +583,8 @@ test('an unknown absent history syncs its own learning, early GOOD, and early HA
     const acknowledged = await reviewRepository.getReviewRecord(fixture.userId, fixture.deviceId, fixture.block.id)
     assert.deepEqual(acknowledged.canonicalAnchor.commands.map(command => command.clientCommandId),
       chain.intents.map(intent => intent.clientCommandId))
+    assert.deepEqual(acknowledged.canonicalAnchor.commands, server.commands,
+      'confirmation ACK has the same rating as lifecycle history even when the request has no rating')
   }
 })
 
@@ -869,7 +871,7 @@ test('an existing version-zero ReviewState binds first learning to the actual po
         assert.equal(mutations[0].clientMutationId, 'existing-state-body-core-update')
         return { results: [{
           clientMutationId: 'existing-state-body-core-update', decision: 'APPLIED',
-          resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id, mutationType: 'UPDATE',
           current: { ...updatedBlock, version: 9 },
         }], serverCursor: 'existing-state-body-after-core-ack' }
       },
@@ -1481,7 +1483,7 @@ test('body changes archive pending review intents and a parent tombstone blocks 
     'a deleted parent subject cannot receive a new local review command')
 })
 
-test('a subject-only KB move preserves mastery and surfaces a stale pending selection', async () => {
+test('a subject-only KB move preserves mastery and keeps the obsolete selection in the conflict audit', async () => {
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   const { LocalReviewService } = await import('../src/services/localReviewService.ts')
   const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
@@ -1532,8 +1534,11 @@ test('a subject-only KB move preserves mastery and surfaces a stale pending sele
   assert.equal(masteredAfterMove.stableSuccessCount, 3)
   assert.equal(masteredAfterMove.dueAt, dueAt)
   assert.equal(masteredAfterMove.nextReviewStage, null)
-  assert.equal(pendingAfterMove.pendingReviewId, selected.effectiveReview.reviewId,
-    'an unconfirmed selection must remain visible after a scope move')
+  assert.equal(pendingAfterMove.pendingReviewId, null, 'the old selection cannot be resumed in the new subject')
+  assert.equal(pendingAfterMove.lastReviewId, null)
+  const movedRecord = await reviewRepository.getReviewRecord(userId, deviceId, pending.id)
+  assert.equal(movedRecord.effectiveReviews[0].reviewId, selected.effectiveReview.reviewId)
+  assert.equal(movedRecord.effectiveReviews[0].resolution, 'SUPERSEDED')
   const pendingIntent = await reviewRepository.getIntent('localstorage', userId, deviceId, 'move-pending-select')
   assert.equal(pendingIntent.status, 'conflict',
     'a frozen command against the old KB version is surfaced for explicit cloud resolution, not silently orphaned')
@@ -2041,7 +2046,7 @@ test('ReviewSync imports every local subject block and keeps failed history visi
   }
 })
 
-test('network failure and a failed local ACK commit retry the same immutable review request', async () => {
+test('a lost review receipt and failed local ACK retry the same request after a title edit', async () => {
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   const { LocalReviewService } = await import('../src/services/localReviewService.ts')
   const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
@@ -2067,15 +2072,14 @@ test('network failure and a failed local ACK commit retry the same immutable rev
   const selected = await localReview.executeCommand(
     userId, deviceId, block.id, 'retry-command', 'REVIEW_SELECTED', 'HARD', occurredAt, 0, contentHash, {
       clientCommandId: 'retry-command', knowledgeBlockId: block.id, knowledgeBlockVersion: 4,
-      baseVersion: 0, contentHash, occurredAt, expectedStateAbsent: true, rating: 'HARD', reviewId: 'retry-review-id',
+      baseVersion: 0, contentHash, occurredAt, expectedStateAbsent: true, rating: 'HARD', reviewId: 'retry-review-id', durationSeconds: 0,
     },
   )
   const key = `auralis:v2:${userId}:${deviceId}:review-store`
   const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, selectReview: useReviewApi.selectReview, setItem: testStorage.setItem }
   const requests = []
-  useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
-    knowledgeBlockId, knowledgeBlockVersion: 4, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
-  })
+  let history = { knowledgeBlockId: block.id, knowledgeBlockVersion: 4, protocolVersion: 2, state: null, commands: [], effectiveReviews: [] }
+  useReviewApi.getLifecycleHistory = async () => structuredClone(history)
   useReviewApi.selectReview = async (request) => {
     requests.push(JSON.parse(JSON.stringify(request)))
     if (requests.length === 1) throw { status: 503, message: 'server unavailable' }
@@ -2098,8 +2102,25 @@ test('network failure and a failed local ACK commit retry the same immutable rev
     await sync.syncAllPending(userId, deviceId)
     pending = await new ReviewRepository('localstorage', repository).getPendingIntents(userId, deviceId, block.id)
     assert.equal(pending[0].status, 'inflight', 'a successful HTTP response with failed local ACK remains retryable')
-    await sync.syncAllPending(userId, deviceId)
-    assert.equal((await new ReviewRepository('localstorage', repository).getPendingIntents(userId, deviceId, block.id)).length, 0)
+    await repository.upsert('KNOWLEDGE_BLOCK', block.id, { ...block, title: 'Renamed during retry' }, { version: 5, syncStatus: 'synced' })
+    history = {
+      ...history,
+      knowledgeBlockVersion: 5,
+      state: { ...selected.state, knowledgeBlockVersion: 5 },
+      commands: [{
+        commandId: 'retry-server-command', clientCommandId: requests[0].clientCommandId, action: 'REVIEW_SELECTED',
+        occurredAt, reviewId: requests[0].reviewId, rating: 'HARD', durationSeconds: 0, baseVersion: 0, knowledgeBlockVersion: 4,
+      }],
+      effectiveReviews: [selected.effectiveReview],
+    }
+    const result = await sync.syncAllPending(userId, deviceId)
+    assert.equal(result.syncedCommandCount, 1)
+    assert.equal(result.conflictCount, 0)
+    const reviewRepository = new ReviewRepository('localstorage', repository)
+    assert.equal((await reviewRepository.getPendingIntents(userId, deviceId, block.id)).length, 0)
+    const record = await reviewRepository.getReviewRecord(userId, deviceId, block.id)
+    assert.equal(record.state.knowledgeBlockVersion, 5)
+    assert.equal(record.canonicalAnchor.knowledgeBlockVersion, 4)
     assert.equal(requests.length, 3)
     assert.deepEqual(requests[1], requests[0])
     assert.deepEqual(requests[2], requests[0])
@@ -2391,8 +2412,7 @@ test('a late receipt after a KB moves subjects cannot restore or acknowledge the
     assert.equal(projected.mastered, true)
     assert.equal(projected.stableSuccessCount, 3)
     assert.equal(projected.dueAt, '2026-11-01T00:00:00.000Z')
-    assert.equal(projected.pendingReviewId, prepared.effectiveReview.reviewId,
-      'a moved selection remains visible for explicit resolution')
+    assert.equal(projected.pendingReviewId, null, 'the old selection remains in the audit after the move')
     const adoptedScopeRecord = await new ReviewRepository('localstorage', repository).getReviewRecord(userId, deviceId, block.id)
     assert.equal(adoptedScopeRecord.subjectId, newSubjectId)
 
@@ -2404,7 +2424,9 @@ test('a late receipt after a KB moves subjects cannot restore or acknowledge the
     const currentRecord = await reviewRepository.getReviewRecord(userId, deviceId, block.id)
     assert.equal(currentRecord.subjectId, newSubjectId)
     assert.equal(currentRecord.state.needsLearning, false)
-    assert.equal(currentRecord.state.pendingReviewId, prepared.effectiveReview.reviewId)
+    assert.equal(currentRecord.state.pendingReviewId, null, 'a late ACK cannot reactivate the obsolete selection')
+    assert.equal(currentRecord.effectiveReviews[0].reviewId, prepared.effectiveReview.reviewId)
+    assert.equal(currentRecord.effectiveReviews[0].resolution, 'SUPERSEDED')
     const persisted = JSON.parse(testStorage.getItem(`auralis:v2:${userId}:${deviceId}:review-store`))
     assert.equal(persisted.intents.find(intent => intent.clientCommandId === frozenRequest.clientCommandId).status, 'conflict')
 
@@ -3210,7 +3232,7 @@ test('unprepared first learning after multiple local body edits binds to the act
           assert.equal(mutations[0].payload.content, 'body C')
           return { results: [{
             clientMutationId: mutations[0].clientMutationId, decision: 'APPLIED',
-            resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+            resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id, mutationType: 'UPDATE',
             current: { ...bodyC, version: 9 },
           }], serverCursor: 'body-rebase-after-core-ack' }
         },
@@ -3357,8 +3379,8 @@ test('an external lifecycle command after a body edit prevents automatic request
       baseVersion: projected.version, contentHash: bodyHash, occurredAt: '2026-10-09T08:00:00.000000Z',
       expectedStateAbsent: false,
     }, subjectId)
-  for (const mutation of await repository.listUnresolved('KNOWLEDGE_BLOCK')) {
-    await repository.settleMutation({ clientMutationId: mutation.clientMutationId, status: 'applied' })
+  for (const mutation of await repository.claimPending(200)) {
+    await repository.settleMutation({ ...mutation, status: 'applied' })
   }
 
   const invalidatedRemoteState = {
@@ -3460,7 +3482,7 @@ test('an unprepared review intent binds to the actual KB version returned by cor
         assert.equal(mutations[0].clientMutationId, 'review-metadata-core-update')
         return { results: [{
           clientMutationId: 'review-metadata-core-update', decision: 'APPLIED',
-          resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id, mutationType: 'UPDATE',
           current: { ...renamedBlock, version: 9 },
         }], serverCursor: 'review-metadata-after-push' }
       },
@@ -3474,11 +3496,14 @@ test('an unprepared review intent binds to the actual KB version returned by cor
   assert.equal((await repository.read('KNOWLEDGE_BLOCK', block.id)).version, 9,
     'LocalRepository applies the actual core ACK version before review preparation')
   assert.equal((await repository.listUnresolved('KNOWLEDGE_BLOCK')).length, 0)
+  assert.equal((await localReview.getKnowledgeBlockState(userId, deviceId, block.id)).knowledgeBlockVersion, 9)
+  assert.equal((await reviewRepository.getReviewRecord(userId, deviceId, block.id)).canonicalAnchor.knowledgeBlockVersion, 2,
+    'display revision does not rewrite the independent history anchor')
 
   const remoteHistory = {
     ...initialHistory,
     knowledgeBlockVersion: 9,
-    state: { ...state },
+    state: { ...state, knowledgeBlockVersion: 9 },
   }
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,

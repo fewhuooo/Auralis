@@ -14,7 +14,7 @@ test('Asset view removes demo tasks and uses real tasks', async () => {
   assert.match(assetSource, /:disabled="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\)"/)
   assert.match(assetSource, /:title="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\) \? '任务时段已结束，完成状态不可取消'/)
   assert.match(assetSource, /const previousDone = task\.done[\s\S]*?catch \(err\)[\s\S]*?task\.done = previousDone/, 'A failed status write must restore the tree checkmark')
-  assert.match(assetTreeRebuilder, /const selectedId = selected\.value\?\.id[\s\S]*?rootNodes\.value = newRoots[\s\S]*?selected\.value = findTreeNode\(newRoots, selectedId\)/, 'Selected tasks must refresh after local and sync projections rebuild the tree')
+  assert.match(assetTreeRebuilder, /rootNodes\.value = newRoots[\s\S]*?findTreeNode\(newRoots, selection\.id\)[\s\S]*?Object\.assign\(selection, refreshed/, 'Selected tasks must refresh after local and sync projections rebuild the tree')
   assert.match(assetSource, /未排期/, 'Must expose an unassigned task group')
   assert.match(assetSource, /未完成/, 'Must expose an incomplete task group')
   assert.match(assetSource, /已完成/, 'Must expose a completed task group')

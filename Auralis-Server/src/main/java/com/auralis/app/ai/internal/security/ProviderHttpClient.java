@@ -338,15 +338,6 @@ public class ProviderHttpClient {
             String path,
             String apiKey,
             Object body,
-            Consumer<String> lineConsumer) throws IOException {
-        postStream(endpoint, path, apiKey, body, lineConsumer, null);
-    }
-
-    public void postStream(
-            ResolvedProviderEndpoint endpoint,
-            String path,
-            String apiKey,
-            Object body,
             Consumer<String> lineConsumer,
             AiProviderCallCancellation cancellation) throws IOException {
         if (endpoint == null || path == null || !path.startsWith("/")

@@ -35,9 +35,6 @@ public class AiCredentialEntity {
     @Column(name = "chat_model", length = 240)
     private String chatModel;
 
-    @Column(name = "embedding_model", length = 240)
-    private String embeddingModel;
-
     @Column(name = "api_key_ciphertext", columnDefinition = "TEXT")
     private String encryptedApiKey;
 
@@ -59,14 +56,12 @@ public class AiCredentialEntity {
             AiProviderType provider,
             String baseUrl,
             String chatModel,
-            String embeddingModel,
             String encryptedApiKey) {
         this.id = id;
         this.userId = userId;
         this.provider = provider;
         this.baseUrl = baseUrl;
         this.chatModel = chatModel;
-        this.embeddingModel = embeddingModel;
         this.encryptedApiKey = encryptedApiKey;
     }
 
@@ -90,17 +85,9 @@ public class AiCredentialEntity {
     public AiProviderType getProvider() { return provider; }
     public String getBaseUrl() { return baseUrl; }
     public String getChatModel() { return chatModel; }
-    public String getEmbeddingModel() { return embeddingModel; }
     public String getEncryptedApiKey() { return encryptedApiKey; }
     public int getKeyVersion() { return keyVersion; }
     public Instant getUpdatedAt() { return updatedAt; }
-
-    public void update(String baseUrl, String chatModel, String embeddingModel, String encryptedApiKey) {
-        this.baseUrl = baseUrl;
-        this.chatModel = chatModel;
-        this.embeddingModel = embeddingModel;
-        this.encryptedApiKey = encryptedApiKey;
-    }
 
     public void updateChatSettings(String baseUrl, String chatModel, String encryptedApiKey) {
         this.baseUrl = baseUrl;

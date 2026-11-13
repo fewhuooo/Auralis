@@ -31,6 +31,9 @@ const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
 const { getLocalRepository } = await import('../src/services/localDb.ts')
+const { DocumentProcessingJobRepository } = await import('../src/services/localRepository.ts')
+const { DocumentJobRunner } = await import('../src/services/documentProcessing/DocumentJobRunner.ts')
+const { SourceJobScheduler } = await import('../src/services/documentProcessing/sourceJobScheduler.ts')
 const { DocumentProcessingRuntime } = await import('../src/services/documentProcessing/runtime.ts')
 
 function sourceModel(id, ingestionStatus) {
@@ -318,6 +321,76 @@ test('refreshLocalProjection keeps the newer auth scope during a real repository
 
   assert.deepEqual(sourceStore.sources.map((source) => source.id), ['visible-b'])
   authStore.clearSession()
+})
+
+test('runtime parser reopens the same PDF after a retryable package error and the scheduler releases the input', async () => {
+  const content = 'BT /F1 12 Tf 40 180 Td (Auralis document retry test) Tj ET\n'
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+  ]
+  let pdf = '%PDF-1.4\n'
+  const offsets = objects.map((object, index) => {
+    const offset = pdf.length
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+    return String(offset).padStart(10, '0') + ' 00000 n \n'
+  })
+  const xref = pdf.length
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  const file = new File([pdf], 'retry.pdf', { type: 'application/pdf' })
+  const storage = new Map()
+  const repository = new DocumentProcessingJobRepository('retry-user', 'retry-device', {
+    storage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+  })
+  const runtime = new DocumentProcessingRuntime()
+  const parserInputs = runtime.parserInputs
+  const sourceAssetSha256 = 'c'.repeat(64)
+  const parsedText = []
+  const runner = new DocumentJobRunner({
+    repository,
+    parserFactory: (job) => runtime.createParser(job, parserInputs),
+    packager: {
+      begin: async () => 'retry-package',
+      append: async (_packageId, block) => {
+        parsedText.push(block.text)
+        if (parsedText.length === 1) throw new Error('CACHE_WRITE_FAILED')
+      },
+      finish: async () => ({
+        cacheId: 'retry-cache', envelopeVersion: 1, chunkCount: 1, encryptedBytes: 64,
+        plainTextSha256: 'a'.repeat(64), payloadSha256: 'b'.repeat(64), payloadBytes: 32,
+        payloadFormat: 'parsed-document-v1', sourceAssetSha256, parserId: 'auralis-document-parser',
+        parserVersion: '1.0.0', normalizationVersion: 'nfkc-lf-trim', ocrModelVersion: null,
+      }),
+    },
+  })
+  const scheduler = new SourceJobScheduler({
+    repository,
+    sourceApi: { get: async () => ({ ...sourceModel('retry-source', 'AWAITING_CLIENT'), assetId: 'retry-asset' }) },
+    upload: {
+      upload: async (jobId) => {
+        assert.equal(parserInputs.has(jobId), false)
+        await repository.transition(jobId, 'UPLOADING')
+        await repository.transition(jobId, 'SERVER_VALIDATING')
+        await repository.transition(jobId, 'SERVER_INDEXING')
+        await repository.transition(jobId, 'READY')
+        return { status: 'READY' }
+      },
+    },
+    downloadAsset: async () => ({ file }),
+    hashFile: async () => sourceAssetSha256,
+    prepareInput: async (job, _source, input) => { parserInputs.set(job.jobId, input) },
+    runJob: (jobId, metadata) => runner.start(jobId, metadata),
+    discardPreparedInput: (jobId) => { parserInputs.delete(jobId) },
+    idFactory: () => 'retry-job',
+  })
+
+  assert.deepEqual(await scheduler.schedule('retry-source'), { status: 'READY', jobId: 'retry-job' })
+  assert.deepEqual(parsedText, ['Auralis document retry test', 'Auralis document retry test'])
+  assert.equal((await repository.get('retry-job')).attempt, 1)
+  assert.equal(parserInputs.size, 0)
 })
 
 test('Tauri document runtime composes the durable repository, parser, package, upload and scheduler', async () => {

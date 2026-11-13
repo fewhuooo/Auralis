@@ -4,6 +4,7 @@ import com.auralis.app.identity.AccountDeletionCleanupService;
 import com.auralis.app.identity.IdentityException;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.ai.OverviewGenerationCoordinator;
+import com.auralis.app.ai.OverviewHistoricalFixtures;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -177,8 +178,7 @@ class AccountDeletionCleanupPostgresIntegrationTests {
         var generationRequest = new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SUBJECT",
                 UUID.randomUUID(), null, HASH_A, HASH_B, HASH_C, "overview-v1");
         var generation = overviewGenerationCoordinator.acquire(generationRequest);
-        overviewGenerationCoordinator.saveCheckpoint(generation.lease(), "MAP:1", HASH_A, HASH_C,
-                "overview-v1", 1, "{\"schemaVersion\":1,\"title\":\"private map\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(appJdbc, generation.lease(), "MAP:1", "{\"schemaVersion\":1,\"title\":\"private map\"}");
 
         var response = identityService.requestAccountDeletion(userId, password);
 

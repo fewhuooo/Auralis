@@ -805,7 +805,7 @@ public class ChatRuntimePersistenceService {
             ChatConversationScope conversationScope) {
         try { return mapper.writeValueAsString(Map.of("action", command.action(),
                 "readingContext", conversationScope == null ? "" : conversationScope.toReadingContext(),
-                "selectionText", command.effectiveSelectionText() == null ? "" : command.effectiveSelectionText(),
+                "selectionText", command.selectionText() == null ? "" : command.selectionText(),
                 "executionProfile", Map.of("provider", executionProfile.provider().name(),
                         "chatModel", executionProfile.chatModel(), "endpointHash", executionProfile.endpointHash()))); }
         catch (Exception e) { throw new IllegalStateException("Unable to persist Chat request context", e); }

@@ -1,5 +1,86 @@
 # Auralis 当前问题与审查登记
 
+### 2026-11-13 Overview 超长输入容量与质量验证
+
+整篇超限原本在派发前返回容量错误。现行源码可按模型容量进入多批流程，原任务额度和硬期限仍限制可完成的文档规模。审查发现大纲能容纳的单行可能超过总结容量，已修正为保留行号的连续片段并补回归。小窗口实验证明流程可衔接，已观察到的少量背景残留、局部解释外推和适用范围泛化保留为质量观察项。整本长文和桌面业务仍待验收。
+
+2026-11-13 桌面学科总览点击后，SSE 请求在预检阶段返回 `MODEL_UNAVAILABLE`，因此没有进入生成。原因是直接入口的预检与生成方法仍拒绝 ALL 和 OUTLINE。已移除这两处模式限制并完成本机后端部署，待桌面复测。
+
+学科后台作业仍有既有输入问题：执行时用来源 ID 构造空 Markdown，随后被学科生成的输入校验拒绝。后台作业的输入修复独立于本次直接入口修复。
+
+### 2026-11-12 大纲 Markdown 视觉呈现粗糙与构建错误关闭
+
+- **问题现象**：文件大纲抽屉中渲染的 Markdown 内容视觉呈现欠佳：H1 采用浏览器默认超大字号和纯黑生硬加粗；H2 章节议题缺乏段落间隔与醒目视觉锚点；要点列表项缺失引导圆点且行距逼仄，整篇大纲呈现为无序扁平的文本墙；且组件中残留历史未闭合标签导致生产打包中断。
+- **定位与根因**：
+  1. `.file-outline__markdown` 与 `.subject-outline-markdown` 此前仅配置了简单的 `font-size: 12px; line-height: 1.6;`，未通过 Vue SFC `:deep()` 为 Markdown 生成的 `h1`、`h2`、`h3`、`ul`、`ol`、`li`、`code`、`blockquote` 声明层级排版规范；
+  2. 历史合并在组件中遗留了未闭合标签（重复 `<el-popover>`、重复 `<button>` 及多余 `@click` 属性），在 Vite 模板编译期间触发语法报错。
+- **修复与闭环**：
+  1. 在 `FileOutlineList.vue` 与 `SubjectOverviewSection.vue` 中补齐完备的 Zen Minimalist 视觉令牌样式规则（H1 13.5px 伴随 5px Zen Sage 圆点徽标与发丝分割线；H2 12px 伴随 3×11px 垂直微晶胶囊指示条与 13px 段前节奏；列表项 14px 缩进并嵌入 4.5px 浅草绿柔和微圆点及 hover 微动效果）；
+  2. 彻底清理模板重复标签与语法错误，完整对齐 v2 契约；
+  3. 类型检查 `npm run type-check` exit 0；全量生产打包 `npm run build` exit 0；154 项定向自动化测试全部通过。
+
+
+### 2026-11-12 Overview 大纲归并后的条目密度
+
+归并版隔离试验中，教材 PDF 有 6 个二级标题、18 条，编译课件 PPT 有 5 个二级标题、19 条。两份仍分别有 5 个、4 个议题超过提示词中的两条，PDF 部分条目枚举较密，PPT 将课件编译定义收窄成高级语言到低级语言。本机后端已部署归并版，正式成稿待复验。
+
+### 2026-11-12 Overview 总结详略与段落
+
+同一清理原文和大纲下，D 轮的教材 PDF 总结为 3295 字符，补充核心机制解释，部分段落仍密集枚举；编译课件 PPT 总结为 1055 字符，以五条列表展开编译过程，最长正文段从 289 缩至 174 字符。各为单次独立模型试验。本机后端已部署 D 轮提示词。正式入口生成和手册中教师团队成员例外仍待复验。
+
+### 2026-11-12 Overview 输入预算按 Unicode 分类
+
+现行源码用通用分类估算覆盖不同 Provider 和模型，复杂内容的局部按 UTF-8 字节计量。历史 16 条有实报用量的请求均未出现低估，离线复算覆盖 PDF 和 PPT 各三阶段。两类预算都是启发式。生产 Pipeline/Planner 隔离调用真实模型，两份样本共六阶段正常结束。新版部署后，PDF、PPT 各一次正式生成、保存、回读通过，生产 Gateway 六阶段均已结算，无残留预留。正式 trace 未启用，未留存供应商原始结束原因，PPT CLEAN 的账本时间差不可用于计时。桌面 GUI 尚未走查。证据见 `docs/archive/overview-experiments/20261112-unified-budget-formal/data/report.md`。
+
+用户随后生成的手册与计划书各三阶段均已结算。学生操作手册 v3 总结保留了企业命题组与成果转化组的不同入口，也保留了红旅排除产业命题赛道的规则，但将产业赛道的学籍校验写为无例外，漏掉原文表单提示的「除教师团队成员」。两份大纲部分主题超过两条。只读审阅未改成稿。证据见 `docs/archive/overview-experiments/20261112-docx-manual-review/data/report.md`。
+
+### 2026-11-12 Overview 每阶段按模型最大输出预留
+
+旧实现在 CLEAN、OUTLINE 和 SUMMARY 都按模型最大输出预留，曾使 PDF 在任务额度内无法准入，并造成并行请求占用小时额度。现行源码按各阶段的输入规模与输出结构计算预算，任务余额不足最低值时在派发前返回既有额度错误。公式为启发式。66 项定向测试和两份冻结样本离线复算通过。部署版正式回放两份资料成功，六阶段实际输出均低于预留，最高占 14.8%。两份总结均落在软目标范围，部分大纲主题仍超过两条。证据见 `docs/archive/overview-experiments/20261112-output-budget/data/report.md` 和 `docs/archive/overview-experiments/20261112-unified-budget-formal/data/report.md`。
+
+### 2026-11-12 并行 Overview 触发个人小时额度
+
+香港 15:20 的 PPTX 在 CLEAN 派发前返回 `AI_HOURLY_QUOTA_EXCEEDED`。同账号并行 PDF 尚占 454073 token 预留，已结算 139271，PPTX 需 414236，剩余 406656，差 7580。失败 PPTX 账本确认无派发；PDF 已成功结束。证据见 `docs/archive/overview-experiments/20261112-prompts/data/diagnosis/report.md`。
+
+按用户要求，本机提高个人小时、个人日和全局日额度为 500 万、2000 万、2000 万 token，原镜像重建 backend 后已核对运行配置。等待用户重新生成验证。证据见 `docs/archive/overview-experiments/20261112-quota-increase/data/report.md`。
+
+### 2026-11-12 Overview 在模型派发前返回 503
+
+PDF 与 PPT 两项正式 Overview 请求曾在模型派发前返回 `MODEL_UNAVAILABLE`。平台模型为 `deepseek-flash`，旧容量识别只接受硬编码的模型 ID。改为读取平台声明的上下文窗口与最大输出 token 后，定向 113/113、打包和本机部署通过，两份正式生成和保存回读均已完成。证据见 `docs/archive/overview-experiments/20261112-env-capacity/data/report.md`。
+
+容量修复后的首轮 PDF 请求因 CLEAN 预留 525416 tokens 超过本机单任务额度 524288，在模型派发前返回 `AI_TASK_BUDGET_EXCEEDED`。本机额度临时调到 1048576 后，原 PDF 单次复测成功。证据见 `docs/archive/overview-experiments/20261112-task-quota/data/report.md`。
+
+两份正式成稿仍有内容质量问题。PPT 大纲由 935 增至 2507 个 UTF-16 单元，总结将课件中独立的 10.0 优化例和 60.0 目标代码例串为同一例。PDF 新大纲 14163 个 UTF-16 单元，长于总结的 13272，逐节保留大量定义、细节、例子与年份。PDF 成稿保持原文第 1 章范围。大纲与总结提示词已按试验结果更新并部署，正式成稿待用户重新生成验收。部署证据见 `docs/archive/overview-experiments/20261112-prompts/data/report.md`。原文核对见 `docs/archive/overview-experiments/20261112-pdf-ppt-capacity-retest/data/report.md` 与 `docs/archive/overview-experiments/20261112-pdf-budget-retest/data/report.md`。
+
+### 2026-11-12 平台 AI 端点配置验收
+
+升级需为平台生成与 Embedding 各填写完整三项。向量端点须为入库与检索提供同一模型的 1024 维向量。本机 backend 已重建并通过健康检查，六项新变量与 `.env` 一致。真实 `/chat/completions`、`/embeddings`、资料入库及检索尚待验收。部署证据见 `D:/Temp/auralis-platform-ai-20261112/deploy-report.md`。用户个人配置继续按原槽位保存与管理，新生成优先读取 `OPENAI_COMPATIBLE` 槽位。
+
+升级前通过命名平台 Provider 建立的 Chat run 和 Overview 作业仍绑定原生成配置。原配置无法解析或校验失败时，重新发起生成可使用新端点。
+
+隔离环境的相关 199 项全部通过，打包 exit 0。全量剩余的失败是 `OverviewIdentityPostgresIntegrationTests` 与 `TaskColorRemovalMigrationTests` 的旧迁移版本预期，以及 `AiFeaturePolicyParityTests` 的 Chat 调用上限旧断言。两项私有 trace replay 未提供数据而跳过。证据见 `D:/Temp/auralis-platform-ai-20261112/report.md`。
+
+### 2026-11-12 环境配置可读性整理
+
+供应商字段与额度混排、实际 `.env` 残留旧 adaptive 开关已整理。所有保留的有效赋值与整理前逐行相同，完整 Compose 解析仅少退役环境键；没有修改实际接口或密钥。注释明确同供应商 BYOK 优先、embedding 独立及环境修改的生效方式。本轮仅验证配置等价与可解析，不作为 DeepSeek 真实请求或部署验收。证据见 `D:/Temp/auralis-env-organize-20261112/report.md`。
+
+### 2026-11-12 个人中心文件解析进度卡片截断与溢出问题关闭
+
+- **问题现象**：在个人中心（`Profile/index.vue`）左侧面板的文件解析进度列表中，长文件名（如包含30+中英文字符的创新大赛项目计划书）未能在父级卡片内有效收敛，导致卡片向右大幅撑破 `.studio-left` 边界；右侧的状态胶囊徽标（如“等待桌面端处理”仅露“等待桌”）与操作按钮（如“开始本机处理”仅露“开始”）被父级面板裁切，无法完整展示和正常点击。
+- **定位与根因**：
+  1. `.processing-list` 采用 `display: grid` 但未显式声明列轨道尺寸约束（默认为 auto 轨道），子项 `.processing-item` 亦无 `box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;` 守卫，导致 CSS Grid 按照子元素 max-content 撑开卡片；
+  2. `.processing-item-meta` 下普通状态 `<span>` 未设置省略与弹性截断保护（此前仅对 `.processing-error` 设置了 min-width: 0），长状态文本亦会产生向右推挤；
+  3. `.studio-left` 仅声明了 `overflow-y: auto`，未显式声明 `overflow-x: hidden`，导致超出其 `max-width: 480px`（或窄屏 `min-width: 380px`）的内容向右溢出并触发隐式水平裁剪。
+- **修复与闭环**：
+  1. 在 `DocumentProcessingCenter.vue` 中为 `.processing-list` 显式设置 `grid-template-columns: minmax(0, 1fr); width: 100%; min-width: 0;`；
+  2. 为 `.processing-item` 增加 `box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;`；
+  3. 为 `.processing-item-meta > span` 与 `.processing-error` 统一补充 `flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`；为 `<strong>` 增加 `:title` 原生 Tooltip；
+  4. 在 `Profile/index.vue` 中为 `.studio-left` 与 `.studio-right` 补齐 `overflow-x: hidden;`，并对 `.studio-left > *` 设定 `max-width: 100%; box-sizing: border-box;`。
+- **验证与审查**：
+  1. `npm run type-check` exit 0；
+  2. `npm run build` exit 0（全量生产打包成功）；
+  3. 定向测试套件 `scripts/r4-document-processing-ui.test.mjs` 16/16 全部通过；`r4-profile-live-links.test.mjs` 与 `r4-profile-logout.test.mjs` 15/15 全部通过。未执行桌面端 GUI 人工走查。
+
 ### 2026-11-10 PC 知识总览与大纲重新生成视觉反馈失效问题关闭
 
 - **问题现象**：在学科工作区左侧总览抽屉中点击“重新生成大纲”或“重新生成全部”时，页面完全无视觉变化，操作弹窗未自动收起，卡片上既有大纲保持静态呈现，无加载旋转动画或提示条，造成“按下去没反应、但后端控制台却在正常执行生成”的交互假死体验。

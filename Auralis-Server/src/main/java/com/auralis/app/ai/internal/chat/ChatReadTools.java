@@ -2,10 +2,6 @@ package com.auralis.app.ai.internal.chat;
 
 import com.auralis.app.ai.AiProviderToolDefinition;
 import com.auralis.app.ai.EmbeddingResult;
-import com.auralis.app.ai.AiProviderType;
-import com.auralis.app.ai.OverviewDtos.OverviewChapter;
-import com.auralis.app.ai.OverviewDtos.OverviewSection;
-import com.auralis.app.ai.OverviewDtos.OverviewSummary;
 import com.auralis.app.ai.OverviewResultService;
 import com.auralis.app.ai.OverviewResultView;
 import com.auralis.app.ai.usage.AiCredentialSource;
@@ -118,7 +114,7 @@ public final class ChatReadTools {
         List<CatalogSource> catalog = allowed.stream()
                 .map(source -> new CatalogSource(source.id(), source.title(), source.ingestionRevision()))
                 .toList();
-        return new ReadScope(userId, subjectId, requested, Map.copyOf(revisions), catalog);
+        return new ReadScope(userId, subjectId, Map.copyOf(revisions), catalog);
     }
 
     public String execute(ReadScope scope, AiTaskScope taskScope, String name, String argumentsJson) {
@@ -147,20 +143,16 @@ public final class ChatReadTools {
 
     private String search(ReadScope scope, AiTaskScope taskScope, String query, JsonNode args) {
         scope.validateCurrent();
-        List<UUID> sourceIds = optionalSourceIds(scope, args);
+        List<UUID> sourceIds = searchSourceIds(scope, args);
+        if (sourceIds.isEmpty()) return "{\"evidence\":[]}";
         AiSettingsService.ResolvedSettings embedding = settings.resolveServerManagedEmbedding();
-        EmbeddingResult embedded = taskScope.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
+        EmbeddingResult embedded = taskScope.embed(AiStage.RETRIEVAL_EMBEDDING, embedding.provider(),
                 embedding.credential().model(), List.of(query), embedding.credential(), embedding.source()).value();
         if (embedded == null || embedded.vectors().isEmpty()) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "Search did not return an embedding");
         }
-        ReadingContext context = scope.readingContext;
-        List<Citation> evidence = sourceIds == null
-                ? context == null
-                        ? retrieval.retrieve(scope.userId, embedded.vectors().getFirst(), 5)
-                        : retrieval.retrieve(scope.userId, embedded.vectors().getFirst(), 5, context, query)
-                : retrieval.retrieveWithinSources(scope.userId, embedded.vectors().getFirst(), 5, sourceIds,
-                        scope.subjectId, query);
+        List<Citation> evidence = retrieval.retrieveWithinSources(
+                scope.userId, embedded.vectors().getFirst(), 5, sourceIds, scope.subjectId, query);
         scope.validateSources(evidence.stream().map(Citation::sourceId).distinct().toList());
         List<Map<String, Object>> output = evidence.stream().map(citation -> Map.<String, Object>of(
                 "sourceId", citation.sourceId().toString(), "chunkId", citation.chunkId().toString(),
@@ -170,13 +162,13 @@ public final class ChatReadTools {
         catch (Exception exception) { throw new IllegalStateException("Unable to serialize evidence result", exception); }
     }
 
-    private List<UUID> optionalSourceIds(ReadScope scope, JsonNode args) {
+    private List<UUID> searchSourceIds(ReadScope scope, JsonNode args) {
         if (args.properties().stream().anyMatch(entry -> !entry.getKey().equals("query")
                 && !entry.getKey().equals("sourceIds"))) {
             throw new DomainException("CHAT_TOOL_ARGUMENT_INVALID", "Tool arguments are invalid");
         }
         JsonNode value = args.get("sourceIds");
-        if (value == null) return null;
+        if (value == null) return scope.catalog.stream().map(CatalogSource::id).toList();
         if (!value.isArray() || value.size() == 0 || value.size() > 100) {
             throw new DomainException("CHAT_TOOL_ARGUMENT_INVALID", "Tool arguments are invalid");
         }
@@ -228,7 +220,8 @@ public final class ChatReadTools {
         if (requestedVersion > 0 && requestedVersion != overview.version()) {
             return json(overviewUnavailable(sourceId, source.ingestionRevision(), "STALE"));
         }
-        String markdown = overviewMarkdown(overview.title(), overview.outline(), overview.summary());
+        String markdown = "# " + overview.title() + "\n\n" + overview.summaryMarkdown()
+                + "\n\n" + overview.outlineMarkdown();
         int total = markdown.codePointCount(0, markdown.length());
         int start = (int) Math.min(offset, total);
         int end = (int) Math.min(total, (long) start + requestedLimit);
@@ -298,23 +291,6 @@ public final class ChatReadTools {
         return result;
     }
 
-    private String overviewMarkdown(String title, List<OverviewChapter> outline, OverviewSummary summary) {
-        StringBuilder markdown = new StringBuilder("# ").append(Objects.toString(title, "Untitled"))
-                .append("\n\n## Summary\n\n").append(Objects.toString(summary.overview(), ""));
-        markdown.append("\n\n### Key points");
-        summary.keyPoints().forEach(point -> markdown.append("\n- ").append(Objects.toString(point, "")));
-        markdown.append("\n\n### Learning path");
-        summary.learningPath().forEach(point -> markdown.append("\n- ").append(Objects.toString(point, "")));
-        markdown.append("\n\n## Outline");
-        outline.forEach(chapter -> {
-            markdown.append("\n\n### ").append(Objects.toString(chapter.title(), ""));
-            chapter.sections().forEach(section -> markdown.append("\n- **")
-                    .append(Objects.toString(section.title(), "")).append("**: ")
-                    .append(Objects.toString(section.summary(), "")));
-        });
-        return markdown.toString();
-    }
-
     private String listSources(ReadScope scope, JsonNode args) {
         long offset = optionalInteger(args, "offset", 0);
         long requestedLimit = optionalInteger(args, "limit", MAX_SOURCE_PAGE_SIZE);
@@ -377,12 +353,10 @@ public final class ChatReadTools {
     public final class ReadScope {
         private final UUID userId;
         private final UUID subjectId;
-        private final ReadingContext readingContext;
         private final Map<UUID, UUID> revisions;
         private final List<CatalogSource> catalog;
-        private ReadScope(UUID userId, UUID subjectId, ReadingContext context, Map<UUID, UUID> revisions,
-                List<CatalogSource> catalog) {
-            this.userId = userId; this.subjectId = subjectId; this.readingContext = context;
+        private ReadScope(UUID userId, UUID subjectId, Map<UUID, UUID> revisions, List<CatalogSource> catalog) {
+            this.userId = userId; this.subjectId = subjectId;
             this.revisions = revisions; this.catalog = catalog;
         }
         public void validateCurrent() { validateSources(revisions.keySet().stream().sorted().toList()); }

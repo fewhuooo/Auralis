@@ -9,6 +9,7 @@ import { ApiProblemError } from '../../api/httpError.ts'
 import type { SourceView } from '@/api/useSourceApi'
 import type { DocumentProcessingJob, CreateDocumentProcessingJobInput } from '@/types/documentProcessing'
 import { validatedDocumentCacheId } from './cacheSafety.ts'
+import { isNetworkFailure } from './checkpointPolicy.ts'
 import type { LocalSourceDraftService } from '@/services/localSourceDraftService'
 import type { LocalParsedDocumentRepository } from '@/services/localParsedDocumentRepository'
 import type { LocalAssetRepository } from '@/services/localAssetRepository'
@@ -90,6 +91,12 @@ export interface SourceScheduleResult {
   reason?: string
 }
 
+interface SourceScheduleOptions {
+  revalidateNotFound?: boolean
+  retryJobId?: string
+  resumePausedDraft?: boolean
+}
+
 const TERMINAL_PHASES = new Set<DocumentProcessingJob['phase']>(['READY', 'FAILED_LOCAL', 'FAILED_SERVER'])
 const UPLOAD_PHASES = new Set<DocumentProcessingJob['phase']>(['PACKAGING', 'UPLOADING', 'SERVER_VALIDATING', 'SERVER_INDEXING'])
 const DOCUMENT_JOB_TRANSITIONS_LOCAL_FAILURES = new Set<DocumentProcessingJob['phase']>([
@@ -108,11 +115,6 @@ function sameSha(left: string | null | undefined, right: string | null | undefin
 
 function isUploadPhase(phase: DocumentProcessingJob['phase']): boolean {
   return UPLOAD_PHASES.has(phase)
-}
-
-function isNetworkFailure(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return /NETWORK|OFFLINE|TIMEOUT|Failed to fetch|fetch failed/i.test(message)
 }
 
 function isSourceNotFound(error: unknown): boolean {
@@ -177,14 +179,16 @@ export class SourceJobScheduler {
     this.idFactory = options.idFactory ?? randomJobId
   }
 
-  async schedule(sourceId: string, options: { revalidateNotFound?: boolean } = {}): Promise<SourceScheduleResult> {
-    if (options.revalidateNotFound) {
+  async schedule(sourceId: string, options: SourceScheduleOptions = {}): Promise<SourceScheduleResult> {
+    if (options.revalidateNotFound || options.retryJobId || options.resumePausedDraft) {
       let running = this.active.get(sourceId)
       while (running) {
         await running.catch(() => undefined)
         if (this.active.get(sourceId) === running) await Promise.resolve()
         running = this.active.get(sourceId)
       }
+    }
+    if (options.revalidateNotFound) {
       if (this.discardedSources.has(sourceId) && !this.sourceNotFoundSources.has(sourceId)) {
         return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
       }
@@ -197,7 +201,7 @@ export class SourceJobScheduler {
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     const running = this.active.get(sourceId)
     if (running) return running
-    const task = this.process(sourceId)
+    const task = this.process(sourceId, options)
     this.active.set(sourceId, task)
     try {
       return await task
@@ -217,12 +221,11 @@ export class SourceJobScheduler {
     if (!job || !['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(job.phase)) {
       return { status: job?.phase === 'READY' ? 'READY' : 'SKIPPED', jobId, reason: 'JOB_NOT_RETRYABLE' }
     }
-    await this.repository.transition(jobId, 'QUEUED', {
-      attempt: 0,
-      errorCode: null,
-      errorDetail: null,
-    })
-    return this.schedule(job.sourceId)
+    return this.schedule(job.sourceId, { retryJobId: jobId })
+  }
+
+  async resumePausedDraft(sourceId: string): Promise<SourceScheduleResult> {
+    return this.schedule(sourceId, { resumePausedDraft: true })
   }
 
   async resume(sourceIds: string[]): Promise<SourceScheduleResult[]> {
@@ -284,44 +287,46 @@ export class SourceJobScheduler {
     await this.notifyJobChanged()
   }
 
-  private async process(sourceId: string): Promise<SourceScheduleResult> {
+  private async process(sourceId: string, options: SourceScheduleOptions): Promise<SourceScheduleResult> {
     if (this.sourceNotFoundSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
 
-    // 1. Check for offline local source draft
     const localDraft = this.localDraftService ? await this.localDraftService.getDraft(sourceId) : null
-    if (localDraft && localDraft.state === 'DRAFT' && !localDraft.serverIngestionRevision) {
-      if (this.localParsedCoordinator) {
-        const assetFile = this.localAssetRepo ? await this.localAssetRepo.getAssetFile(localDraft.localAssetId) : null
-        const sha256 = assetFile?.sha256 ?? ''
-        const sizeBytes = assetFile?.sizeBytes
-        const originalName = assetFile?.originalName ?? localDraft.title
-        const mimeType = assetFile?.mimeType
+    if (localDraft?.state === 'DELETED') return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+    const draftRecord = localDraft
+      ? await this.localParsedRepo?.get(localDraft.localSourceId, localDraft.localContentRevision)
+      : null
+    const isUnregisteredDraft = localDraft?.state === 'DRAFT' && !localDraft.serverIngestionRevision
+    const isPausedDraftParse = draftRecord?.phase === 'PAUSED_NETWORK' && !draftRecord.localReceipt
+    if (isPausedDraftParse && !options.resumePausedDraft) {
+      return { status: 'PAUSED_NETWORK', jobId: draftRecord.localCacheId ?? undefined }
+    }
+    if (options.resumePausedDraft && !isPausedDraftParse) return { status: 'SKIPPED', reason: 'JOB_NOT_RETRYABLE' }
+    if (localDraft && this.localParsedCoordinator && (isUnregisteredDraft || isPausedDraftParse)) {
+      const assetFile = await this.localAssetRepo?.getAssetFile(localDraft.localAssetId)
+      const localRecord = await this.localParsedCoordinator.coordinate({
+        localSourceId: localDraft.localSourceId,
+        localContentRevision: localDraft.localContentRevision,
+        localAssetId: localDraft.localAssetId,
+        sourceAssetSha256: assetFile?.sha256 ?? '',
+        originalName: assetFile?.originalName,
+        mimeType: assetFile?.mimeType,
+        sizeBytes: assetFile?.sizeBytes,
+      }, options.resumePausedDraft)
 
-        const localRecord = await this.localParsedCoordinator.coordinate({
-          localSourceId: localDraft.localSourceId,
-          localContentRevision: localDraft.localContentRevision,
-          localAssetId: localDraft.localAssetId,
-          sourceAssetSha256: sha256,
-          originalName,
-          mimeType,
-          sizeBytes,
-        })
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
 
-        if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
-
-        if (localRecord.phase === 'WAITING_SERVER_REVISION' || localRecord.phase === 'LOCAL_PARSED_READY') {
-          return { status: 'WAITING_SERVER_REVISION', jobId: localRecord.localCacheId ?? undefined }
-        }
-        if (localRecord.phase === 'PAUSED_NETWORK') {
-          return { status: 'PAUSED_NETWORK', jobId: localRecord.localCacheId ?? undefined }
-        }
-        if (localRecord.phase === 'FAILED_LOCAL') {
-          return {
-            status: 'FAILED_LOCAL',
-            jobId: localRecord.localCacheId ?? undefined,
-            reason: localRecord.safeErrorCode ?? undefined,
-          }
+      if (isUnregisteredDraft && (localRecord.phase === 'WAITING_SERVER_REVISION' || localRecord.phase === 'LOCAL_PARSED_READY')) {
+        return { status: 'WAITING_SERVER_REVISION', jobId: localRecord.localCacheId ?? undefined }
+      }
+      if (localRecord.phase === 'PAUSED_NETWORK') {
+        return { status: 'PAUSED_NETWORK', jobId: localRecord.localCacheId ?? undefined }
+      }
+      if (localRecord.phase === 'FAILED_LOCAL') {
+        return {
+          status: 'FAILED_LOCAL',
+          jobId: localRecord.localCacheId ?? undefined,
+          reason: localRecord.safeErrorCode ?? undefined,
         }
       }
     }
@@ -331,9 +336,16 @@ export class SourceJobScheduler {
       source = await this.sourceApi.get(sourceId)
     } catch (error) {
       if (!isSourceNotFound(error)) {
-        if (isNetworkFailure(error) && localDraft) {
-          const localRecord = this.localParsedRepo
-            ? await this.localParsedRepo.get(localDraft.localSourceId, localDraft.localContentRevision)
+        if (isNetworkFailure(error)) {
+          const jobs = (await this.repository.list()).filter((job) =>
+            job.sourceId === sourceId && !TERMINAL_PHASES.has(job.phase))
+          if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+          for (const job of jobs) {
+            await this.pauseJobForNetwork(job, 'Source lookup interrupted by a network failure')
+          }
+          if (jobs.length) return { status: 'PAUSED_NETWORK', jobId: jobs[0]?.jobId }
+          const localRecord = localDraft
+            ? await this.localParsedRepo?.get(localDraft.localSourceId, localDraft.localContentRevision)
             : null
           if (localRecord?.phase === 'WAITING_SERVER_REVISION' || localRecord?.phase === 'LOCAL_PARSED_READY') {
             return { status: 'WAITING_SERVER_REVISION', jobId: localRecord.localCacheId ?? undefined }
@@ -352,6 +364,18 @@ export class SourceJobScheduler {
     const jobs = await this.repository.list()
     await this.supersedeStaleJobs(jobs, sourceId, source.ingestionRevision)
     let job = jobs.find((candidate) => candidate.sourceId === sourceId && candidate.ingestionRevision === source.ingestionRevision)
+    if (options.retryJobId && job?.jobId !== options.retryJobId) {
+      return { status: 'SKIPPED', jobId: options.retryJobId, reason: 'JOB_NOT_RETRYABLE' }
+    }
+    const authoritativeSourceId = source.id ?? sourceId
+    const authoritativeIngestionRevision = source.ingestionRevision
+    let localRecord = this.localParsedRepo
+      ? ((localDraft ? await this.localParsedRepo.get(sourceId, localDraft.localContentRevision) : null)
+        ?? (await this.localParsedRepo.getByServerRevision(authoritativeSourceId, authoritativeIngestionRevision)))
+      : null
+    if (!options.retryJobId && (job?.phase === 'PAUSED_NETWORK' || localRecord?.phase === 'PAUSED_NETWORK')) {
+      return { status: 'PAUSED_NETWORK', jobId: job?.jobId ?? localRecord?.localCacheId ?? undefined }
+    }
 
     if (!job) {
       if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
@@ -379,6 +403,13 @@ export class SourceJobScheduler {
         if (current) await this.markCleanupFailure(current, error)
       }
       return { status: 'SKIPPED', jobId: job.jobId, reason: 'ALREADY_READY' }
+    }
+    if (options.retryJobId && ['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(job.phase)) {
+      job = await this.repository.transition(job.jobId, 'QUEUED', {
+        attempt: 0,
+        errorCode: null,
+        errorDetail: null,
+      })
     }
     if (job.phase === 'FAILED_LOCAL' || job.phase === 'FAILED_SERVER') return { status: job.phase, jobId: job.jobId }
 
@@ -414,25 +445,6 @@ export class SourceJobScheduler {
         return { status: 'FAILED_LOCAL', jobId: job.jobId, reason }
       }
     }
-
-    // A paused extraction job needs a fresh input and a queued transition. A
-    // paused upload keeps its encrypted receipt, so resume directly at the
-    // upload boundary instead of re-running the parser.
-    if (job.phase === 'PAUSED_NETWORK') {
-      job = await this.repository.transition(job.jobId, job.payloadReceipt ? 'UPLOADING' : 'QUEUED', {
-        errorCode: null,
-        errorDetail: null,
-      })
-    }
-
-    const authoritativeSourceId = source.id ?? sourceId
-    const authoritativeIngestionRevision = source.ingestionRevision!
-
-    // Check if we have a local parsed record that can be rebound to server revision
-    let localRecord = this.localParsedRepo
-      ? ((localDraft?.localContentRevision ? await this.localParsedRepo.get(sourceId, localDraft.localContentRevision) : null)
-        ?? (await this.localParsedRepo.getByServerRevision(authoritativeSourceId, authoritativeIngestionRevision)))
-      : null
 
     if (
       localRecord
@@ -521,7 +533,7 @@ export class SourceJobScheduler {
             localRecord.localSourceId,
             localRecord.localContentRevision,
             'PAUSED_NETWORK',
-            { safeErrorCode: 'NETWORK_OFFLINE', safeErrorDetail: String(uploadError) },
+            { safeErrorCode: 'NETWORK_OFFLINE', safeErrorDetail: 'Upload interrupted by a network failure' },
           ).catch(() => undefined)
         }
         throw uploadError
@@ -580,12 +592,13 @@ export class SourceJobScheduler {
           return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_MISMATCH' }
         }
         if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
-        await this.prepareInput(job, source, input.file)
-        if (this.discardedSources.has(sourceId)) {
+        try {
+          await this.prepareInput(job, source, input.file)
+          if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+          await this.runJob(job.jobId, { sourceAssetSha256: assetSha256 })
+        } finally {
           await this.discardPreparedInput?.(job.jobId)
-          return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
         }
-        await this.runJob(job.jobId, { sourceAssetSha256: assetSha256 })
         const packaged = await this.repository.get(job.jobId)
         if (!packaged) {
           if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
@@ -618,11 +631,8 @@ export class SourceJobScheduler {
       if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
       const current = await this.repository.get(job.jobId)
       if (current?.phase === 'PAUSED_NETWORK') return { status: 'PAUSED_NETWORK', jobId: job.jobId }
-      if (current && isNetworkFailure(error) && current.phase === 'QUEUED') {
-        await this.repository.transition(job.jobId, 'PAUSED_NETWORK', {
-          errorCode: 'NETWORK_OFFLINE',
-          errorDetail: 'Source download paused until network connectivity returns',
-        })
+      if (current && isNetworkFailure(error) && !TERMINAL_PHASES.has(current.phase)) {
+        await this.pauseJobForNetwork(current, 'Source processing interrupted by a network failure')
         return { status: 'PAUSED_NETWORK', jobId: job.jobId }
       }
       if (current && !TERMINAL_PHASES.has(current.phase)) await this.failJob(current, 'DOCUMENT_SOURCE_PROCESSING_FAILED', error instanceof Error ? error.message : String(error))
@@ -631,6 +641,11 @@ export class SourceJobScheduler {
       const current = await this.repository.get(job.jobId)
       if (current?.phase !== 'PAUSED_NETWORK') await input?.cleanup?.()
     }
+  }
+
+  private async pauseJobForNetwork(job: DocumentProcessingJob, errorDetail: string): Promise<void> {
+    if (job.phase === 'PAUSED_NETWORK') return
+    await this.repository.transition(job.jobId, 'PAUSED_NETWORK', { errorCode: 'NETWORK_OFFLINE', errorDetail })
   }
 
   private async resolveInput(assetId: string, source: SourceView): Promise<SourceInput> {

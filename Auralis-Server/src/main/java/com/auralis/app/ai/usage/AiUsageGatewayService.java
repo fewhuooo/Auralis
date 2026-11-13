@@ -239,7 +239,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             AiProviderPort port = providers.require(provider);
             OverviewModelBudget overviewCapability = isOverviewCompletion(stage)
                     && isOverviewFeature(task.feature())
-                    ? requireOverviewCapability(provider, credential.baseUrl(), request.model()) : null;
+                    ? requireOverviewCapability(provider, credential.baseUrl(), request.model(), source) : null;
             AiProviderRequest bounded = boundedRequest(stage, provider, credential.baseUrl(), request, role,
                     overviewCapability);
             boolean overview = bounded.overviewCapacityRequest();
@@ -247,9 +247,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             AiInputTokenEstimator.Estimate admissionEstimate = null;
             long inputTokens;
             if (overview) {
-                AiInputTokenEstimator.Profile estimatorProfile = AiInputTokenEstimator.resolve(provider,
-                        credential.baseUrl(), bounded.model(), ai.overviewInputTokenEstimatorMode());
-                admissionEstimate = estimatorProfile.estimate(bounded.messages());
+                admissionEstimate = AiInputTokenEstimator.estimateOverview(bounded);
                 inputTokens = admissionEstimate.inputTokens();
                 enforceOverviewContext(overviewCapability, bounded, inputTokens);
                 enforceOverviewConfiguredCaps(bounded, inputTokens);
@@ -259,7 +257,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             List<String> contents = bounded.messages().stream().map(AiProviderRequest.Message::content).toList();
             AiTokenShadowEstimator.Estimate shadow = shadowEstimator.estimate(contents,
                     Math.multiplyExact(COMPLETION_MESSAGE_FRAMING_TOKENS, bounded.messages().size()));
-            logEffectiveModel(provider, bounded.model(), credential.baseUrl(), stage, bounded.structuredJson());
+            logEffectiveModel(provider, bounded.model(), credential.baseUrl(), source, stage, bounded.structuredJson());
             return invoke(stage, provider, bounded.model(), source, role, inputTokens, bounded.maxTokens(),
                     () -> providerIo.execute(status -> port.complete(bounded, credential,
                             binding == null ? responseTimeoutMillis : binding.responseTimeoutMillis(responseTimeoutMillis),
@@ -302,7 +300,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                     .filter(Objects::nonNull).toList();
             AiTokenShadowEstimator.Estimate shadow = shadowEstimator.estimate(contents,
                     Math.multiplyExact(COMPLETION_MESSAGE_FRAMING_TOKENS, bounded.messages().size()));
-            logEffectiveModel(provider, bounded.model(), credential.baseUrl(), stage, bounded.structuredJson());
+            logEffectiveModel(provider, bounded.model(), credential.baseUrl(), source, stage, bounded.structuredJson());
             AtomicReference<AiTokenUsage> rawUsage = new AtomicReference<>();
             AtomicReference<AiProviderModelIdentity> modelIdentity = new AtomicReference<>(
                     AiProviderModelIdentity.missing());
@@ -470,9 +468,8 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         }
 
         private void logEffectiveModel(AiProviderType provider, String model, String baseUrl,
-                                       AiStage stage, boolean structuredJson) {
-            OverviewModelBudget capability = OverviewModelBudget.resolve(
-                    provider, baseUrl, model, ai.overviewModelCapacities());
+                                       AiCredentialSource source, AiStage stage, boolean structuredJson) {
+            OverviewModelBudget capability = OverviewModelBudget.resolve(provider, baseUrl, model, source, ai);
             String context = capability.contextWindowTokens().isPresent()
                     ? Long.toString(capability.contextWindowTokens().getAsLong()) : "unknown";
             String output = capability.maxOutputTokens().isPresent()
@@ -593,9 +590,8 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         }
 
         private OverviewModelBudget requireOverviewCapability(AiProviderType provider, String endpoint,
-                                                              String model) {
-            OverviewModelBudget capability = OverviewModelBudget.resolve(
-                    provider, endpoint, model, ai.overviewModelCapacities());
+                                                              String model, AiCredentialSource source) {
+            OverviewModelBudget capability = OverviewModelBudget.resolve(provider, endpoint, model, source, ai);
             if (!capability.isTrusted()) {
                 throw new DomainException("MODEL_UNAVAILABLE",
                         "Overview model capacity is not configured for this provider endpoint and exact model");

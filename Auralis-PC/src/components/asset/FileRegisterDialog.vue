@@ -137,6 +137,7 @@ const props = withDefaults(
     acceptedExtensions?: readonly string[] | string[]
     subjects?: FileRegisterSubjectItem[]
     defaultSubjectId?: string
+    initialFile?: File | null
     isUploading?: boolean
     uploadProgress?: number
     uploadStage?: string
@@ -262,19 +263,6 @@ const resetForm = () => {
   }
 }
 
-watch(
-  () => props.modelValue,
-  (visible, prevVisible) => {
-    if (visible && !prevVisible) {
-      resetForm()
-    } else if (!visible) {
-      stopProgressAnimation()
-      displayProgress.value = 0
-    }
-  },
-  { immediate: true }
-)
-
 const triggerFileInput = () => {
   if (props.isUploading) return
   fileInputRef.value?.click()
@@ -283,6 +271,7 @@ const triggerFileInput = () => {
 const handleFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
   const file = target.files?.[0]
+  target.value = ''
   if (file) {
     applyFile(file)
   }
@@ -298,14 +287,28 @@ const handleFileDrop = (e: DragEvent) => {
 }
 
 const applyFile = (file: File) => {
-  selectedFile.value = file
-  if (!fileName.value.trim() || fileName.value === file.name) {
+  if (!fileName.value.trim() || fileName.value === selectedFile.value?.name) {
     fileName.value = file.name
   }
+  selectedFile.value = file
   if (!selectedSubjectId.value && resolvedSubjects.value.length > 0) {
     selectedSubjectId.value = resolvedSubjects.value[0].id
   }
 }
+
+watch(
+  () => props.modelValue,
+  (visible, prevVisible) => {
+    if (visible && !prevVisible) {
+      resetForm()
+      if (props.initialFile) applyFile(props.initialFile)
+    } else if (!visible) {
+      stopProgressAnimation()
+      displayProgress.value = 0
+    }
+  },
+  { immediate: true }
+)
 
 const handleModelValueUpdate = (val: boolean) => {
   if (!val && props.isUploading) return

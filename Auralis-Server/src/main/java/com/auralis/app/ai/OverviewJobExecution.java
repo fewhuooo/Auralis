@@ -3,16 +3,12 @@ package com.auralis.app.ai;
 import com.auralis.app.ai.OverviewJobDtos.Stage;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public final class OverviewJobExecution {
     private final OverviewJobRepository repository;
     private final OverviewJobInvocationJournal invocationJournal;
     private final OverviewJobRepository.JobLease lease;
     private final OverviewCancellation cancellation;
-    private final AtomicInteger verified = new AtomicInteger();
-    private volatile Integer total;
 
     public OverviewJobExecution(OverviewJobRepository repository, OverviewJobInvocationJournal invocationJournal,
                                 OverviewJobRepository.JobLease lease, OverviewCancellation cancellation) {
@@ -45,18 +41,7 @@ public final class OverviewJobExecution {
     }
 
     public void stage(Stage stage) {
-        repository.updateProgress(lease, stage, verified.get(), total);
-    }
-
-    public void plan(List<OverviewExecutionJournal.Node> nodes) {
-        total = nodes.size();
-        verified.set((int) nodes.stream().filter(node -> "VERIFIED".equals(node.state())).count());
-        repository.updateProgress(lease, Stage.WRITING, verified.get(), total);
-    }
-
-    public void nodeVerified() {
-        int count = verified.incrementAndGet();
-        repository.updateProgress(lease, Stage.WRITING, count, total);
+        repository.updateProgress(lease, stage, 0, null);
     }
 
     public boolean pauseRequested() {

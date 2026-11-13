@@ -105,7 +105,7 @@ function isHexSha256(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value)
 }
 
-function validateReceipt(receipt: DocumentCacheReceipt): void {
+function validateReceipt(receipt: DocumentCacheReceipt): asserts receipt is DocumentCacheReceipt & { sourceAssetSha256: string } {
   if (!receipt.cacheId.trim() || receipt.payloadBytes <= 0 || !isHexSha256(receipt.payloadSha256)
     || !isDocumentCacheReceiptV1(receipt)) {
     throw new Error('DOCUMENT_UPLOAD_RECEIPT_INVALID')
@@ -291,8 +291,7 @@ export class ParsedDocumentUploadCoordinator {
   }
 
   private async pauseOrFail(jobId: string, error: unknown, stage: 'upload' | 'complete'): Promise<void> {
-    const code = errorCode(error)
-    if (isNetworkFailure(error) || code === 'DOCUMENT_UPLOAD_RETRYABLE') {
+    if (isNetworkFailure(error)) {
       await this.repository.transition(jobId, 'PAUSED_NETWORK', {
         errorCode: 'NETWORK_OFFLINE',
         errorDetail: parsedDocumentUploadFailureDetail(error, stage),

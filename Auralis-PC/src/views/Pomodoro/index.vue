@@ -4,7 +4,7 @@
       
       <!-- Left Column: Timer Core (Enlarged proportion ~64%) -->
       <div class="left-column">
-        <TimerCore :task-id="selectedTask.isFreeStudy ? null : selectedTask.id" />
+        <TimerCore :task-id="displayedTask.isFreeStudy ? null : displayedTask.id" />
       </div>
 
       <!-- Right Column: Stats & Details (~36%) -->
@@ -14,13 +14,14 @@
         <div class="panel-card top-card">
           <div class="card-header">
             <span class="card-title">当前专注</span>
-            <p class="card-sub-hint">选择要专注的任务，或开启自由专注</p>
+            <p class="card-sub-hint">{{ activeSession ? '本轮专注结束后可重新选择任务' : '选择要专注的任务，或开启自由专注' }}</p>
           </div>
 
           <div class="task-selector-wrap">
             <el-select
-              v-model="currentTaskId"
+              :model-value="displayedTask.id"
               @change="onTaskChange"
+              :disabled="Boolean(activeSession)"
               placeholder="选择专注任务"
               size="large"
               class="task-selector zen-select"
@@ -28,7 +29,7 @@
               :teleported="false"
             >
               <el-option
-                v-for="task in availableTasks"
+                v-for="task in activeSession ? [displayedTask] : availableTasks"
                 :key="task.id"
                 :label="task.name"
                 :value="task.id"
@@ -44,12 +45,13 @@
           </div>
 
           <!-- Active Focus Mini Banner (Clean Typography, No Icons) -->
-          <div class="active-focus-banner" :class="{ 'is-free': selectedTask.isFreeStudy }">
+          <div class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
             <div class="banner-info">
-              <div class="banner-title">{{ selectedTask.name }}</div>
+              <div class="banner-title">{{ displayedTask.name }}</div>
               <div class="banner-meta-row">
-                <span class="banner-status-tag">{{ selectedTask.isFreeStudy ? '自由模式' : '已排期' }}</span>
-                <span class="banner-desc">{{ selectedTask.isFreeStudy ? '自主掌握心流节奏 · 自由专注' : `排期时间：${selectedTask.timeStr}` }}</span>
+                <span class="banner-status-tag">{{ displayedTask.isFreeStudy ? '自由模式' : displayedTask.timeStr ? '已排期' : '关联任务' }}</span>
+                <span v-if="displayedTask.isFreeStudy" class="banner-desc">自主掌握心流节奏 · 自由专注</span>
+                <span v-else-if="displayedTask.timeStr" class="banner-desc">排期时间：{{ displayedTask.timeStr }}</span>
               </div>
             </div>
           </div>
@@ -128,13 +130,13 @@ function formatScheduledTime(scheduledAt?: string): string {
 // 仅获取在时间轴上的任务（有 scheduledAt，未完成且未取消）
 const timelineTasks = computed(() => {
   return taskStore.allTasks
-    .filter((t: any) => Boolean(t.scheduledAt) && t.status !== 'completed' && t.status !== 'cancelled')
-    .sort((a: any, b: any) => {
+    .filter((t) => Boolean(t.scheduledAt) && t.status !== 'completed' && t.status !== 'cancelled')
+    .sort((a, b) => {
       const timeA = Date.parse(a.scheduledAt || '') || 0
       const timeB = Date.parse(b.scheduledAt || '') || 0
       return timeA - timeB
     })
-    .map((t: any) => ({
+    .map((t) => ({
       id: t.id,
       name: t.title || t.name || '未命名任务',
       scheduledAt: t.scheduledAt,
@@ -152,6 +154,21 @@ const availableTasks = computed(() => {
 const selectedTask = computed(() => {
   if (currentTaskId.value === 'free-study') return FREE_STUDY_TASK
   return availableTasks.value.find((t) => t.id === currentTaskId.value) || FREE_STUDY_TASK
+})
+
+const activeSession = computed(() => pomodoroStore.runtime.activeSession)
+const displayedTask = computed(() => {
+  const session = activeSession.value
+  if (!session) return selectedTask.value
+  if (session.taskId === null) return FREE_STUDY_TASK
+
+  const task = taskStore.allTasks.find((item) => item.id === session.taskId)
+  return {
+    id: session.taskId,
+    name: task ? task.title || task.name || '未命名任务' : '关联任务暂不可见',
+    timeStr: formatScheduledTime(task?.scheduledAt),
+    isFreeStudy: false,
+  }
 })
 
 const completedToday = computed(() => {

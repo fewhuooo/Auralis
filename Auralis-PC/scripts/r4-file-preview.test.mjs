@@ -70,7 +70,7 @@ test('FilePreview can render preview-only image, text, and CSV sources', () => {
   }
 })
 
-test('preview source identity ignores a display-name rename while tracking asset and renderer changes', async () => {
+test('preview source identity ignores a display title while tracking replacement assets', async () => {
   const filePreview = await import('../src/utils/filePreview.ts')
   const getPreviewSourceIdentity = filePreview.getPreviewSourceIdentity
   assert.equal(typeof getPreviewSourceIdentity, 'function', 'Must expose a stable source identity for preview reloads')
@@ -78,18 +78,18 @@ test('preview source identity ignores a display-name rename while tracking asset
   const original = { id: 'source-1', assetId: 'asset-1', fileType: 'application/pdf', name: 'Before.pdf' }
   assert.equal(
     getPreviewSourceIdentity(original),
-    getPreviewSourceIdentity({ ...original, name: 'After.pdf' }),
-    'Changing only the displayed filename must not fetch the same asset again',
+    getPreviewSourceIdentity({ ...original, name: 'After' }),
+    'Removing the title extension must not fetch the same asset again',
   )
   assert.notEqual(
     getPreviewSourceIdentity(original),
     getPreviewSourceIdentity({ ...original, assetId: 'asset-2' }),
     'Replacing the underlying asset must reload the preview',
   )
-  assert.notEqual(
+  assert.equal(
     getPreviewSourceIdentity(original),
     getPreviewSourceIdentity({ ...original, name: 'Before.docx' }),
-    'Changing the extension must reload so the renderer stays correct',
+    'The extension in a display title does not change the underlying file format',
   )
 
   const component = fs.readFileSync(path.resolve('src/components/FilePreview.vue'), 'utf8')
@@ -130,7 +130,7 @@ test('FilePreview owns the shared loading and signed-url lifecycle', () => {
   const filePreviewPath = path.resolve('src/components/FilePreview.vue')
   const source = fs.readFileSync(filePreviewPath, 'utf8')
   assert.match(source, /FileViewerRenderer/)
-  assert.match(source, /downloadUrl/)
+  assert.match(source, /downloadAssetInfo/)
   assert.match(source, /isLoading/)
   assert.match(source, /preview-error/)
   assert.match(source, /PreviewRequestGate/)
@@ -163,7 +163,7 @@ test('FilePreview resolves owner-scoped local bytes before signed-url fallback a
   const filePreviewPath = path.resolve('src/components/FilePreview.vue')
   const source = fs.readFileSync(filePreviewPath, 'utf8')
 
-  assert.match(source, /assetStore\.resolveLocalFile\(file\.assetId/)
+  assert.match(source, /assetStore\.resolveLocalFile\(assetId\)/)
   assert.match(source, /URL\.createObjectURL\(localFile\)/)
   assert.match(source, /URL\.revokeObjectURL\(/)
   assert.match(source, /activeLocalCleanup/)

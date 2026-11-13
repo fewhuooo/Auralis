@@ -58,8 +58,8 @@ public record AuralisProperties(
     public record Ai(
             boolean enabled,
             String encryptionKey,
-            String defaultProvider,
-            @Valid Defaults defaults,
+            @Valid GenerationEndpoint generation,
+            @Valid ModelEndpoint embedding,
             @Positive long providerConnectTimeoutMillis,
             @Positive long requestTimeoutMillis,
             @Min(60_000) long overviewResponseTimeoutMillis,
@@ -80,12 +80,8 @@ public record AuralisProperties(
             @Positive int ingestionMaxAttempts,
             @Valid Limits limits,
             boolean shadowTokenEstimateEnabled,
-            boolean overviewOutputRecoveryEnabled,
-            @Pattern(regexp = "legacy-bytes|calibrated-category|mimo-byte-category-candidate")
-            String overviewInputTokenEstimatorMode,
             @Valid List<@Valid OverviewModelCapacity> overviewModelCapacities,
-            @Valid OverviewLimits overviewLimits,
-            @Min(0) int overviewMaxRetries) {
+            @Valid OverviewLimits overviewLimits) {
 
         @ConstructorBinding
         public Ai {
@@ -102,7 +98,7 @@ public record AuralisProperties(
             }
         }
 
-        public Ai(boolean enabled, String encryptionKey, String defaultProvider, Defaults defaults,
+        public Ai(boolean enabled, String encryptionKey, GenerationEndpoint generation, ModelEndpoint embedding,
                   long providerConnectTimeoutMillis, long requestTimeoutMillis,
                   long overviewResponseTimeoutMillis, long overviewTaskTimeoutMillis,
                   int maxPromptChars, int maxRetrievedChunks, long ingestionMaxBytes,
@@ -111,17 +107,17 @@ public record AuralisProperties(
                   long providerMaxResponseBytes, List<String> allowedProviderHosts,
                   boolean ingestionWorkerEnabled, long ingestionPollDelayMillis,
                   long ingestionLeaseMillis, int ingestionMaxAttempts, Limits limits) {
-            this(enabled, encryptionKey, defaultProvider, defaults, providerConnectTimeoutMillis,
+            this(enabled, encryptionKey, generation, embedding, providerConnectTimeoutMillis,
                     requestTimeoutMillis, overviewResponseTimeoutMillis, overviewTaskTimeoutMillis,
                     maxPromptChars, maxRetrievedChunks, ingestionMaxBytes, ingestionEmbeddingBatchMaxItems,
                     ingestionEmbeddingBatchMaxUtf8Bytes, urlConnectTimeoutMillis, urlReadTimeoutMillis,
                     urlMaxRedirects, providerMaxResponseBytes, allowedProviderHosts, ingestionWorkerEnabled,
                     ingestionPollDelayMillis, ingestionLeaseMillis, ingestionMaxAttempts, limits,
-                    true, true, "legacy-bytes", List.of(), OverviewLimits.withoutAdditionalCaps(), 3);
+                    true, List.of(), OverviewLimits.withoutAdditionalCaps());
         }
 
-        /** Convenience fixture constructor with the default estimator mode and no custom model capacities. */
-        public Ai(boolean enabled, String encryptionKey, String defaultProvider, Defaults defaults,
+        /** Convenience fixture constructor with no custom model capacities. */
+        public Ai(boolean enabled, String encryptionKey, GenerationEndpoint generation, ModelEndpoint embedding,
                   long providerConnectTimeoutMillis, long requestTimeoutMillis,
                   long overviewResponseTimeoutMillis, long overviewTaskTimeoutMillis,
                   int maxPromptChars, int maxRetrievedChunks, long ingestionMaxBytes,
@@ -130,15 +126,15 @@ public record AuralisProperties(
                   long providerMaxResponseBytes, List<String> allowedProviderHosts,
                   boolean ingestionWorkerEnabled, long ingestionPollDelayMillis,
                   long ingestionLeaseMillis, int ingestionMaxAttempts, Limits limits,
-                  boolean shadowTokenEstimateEnabled, boolean overviewOutputRecoveryEnabled) {
-            this(enabled, encryptionKey, defaultProvider, defaults, providerConnectTimeoutMillis,
+                  boolean shadowTokenEstimateEnabled) {
+            this(enabled, encryptionKey, generation, embedding, providerConnectTimeoutMillis,
                     requestTimeoutMillis, overviewResponseTimeoutMillis, overviewTaskTimeoutMillis,
                     maxPromptChars, maxRetrievedChunks, ingestionMaxBytes, ingestionEmbeddingBatchMaxItems,
                     ingestionEmbeddingBatchMaxUtf8Bytes, urlConnectTimeoutMillis, urlReadTimeoutMillis,
                     urlMaxRedirects, providerMaxResponseBytes, allowedProviderHosts, ingestionWorkerEnabled,
                     ingestionPollDelayMillis, ingestionLeaseMillis, ingestionMaxAttempts, limits,
-                    shadowTokenEstimateEnabled, overviewOutputRecoveryEnabled, "legacy-bytes", List.of(),
-                    OverviewLimits.withoutAdditionalCaps(), 3);
+                    shadowTokenEstimateEnabled, List.of(),
+                    OverviewLimits.withoutAdditionalCaps());
         }
     }
 
@@ -170,34 +166,14 @@ public record AuralisProperties(
             @Min(0) long maxOutputTokens,
             @Min(0) long maxResponseBytes,
             @Min(0) long maxResultChars,
-            @Min(0) long maxCheckpointChars,
-            @Min(0) long maxPlanChars,
-            @Min(0) long maxNodeDescriptorChars,
-            @Min(0) int maxChapters,
-            @Min(0) int maxSections,
-            @Min(0) long maxProseChars,
-            @Min(0) int maxGuideItems,
-            @Min(0) int maxSourceIdsPerSection,
-            @Min(0) int maxProvenanceSections,
-            @Min(0) int maxProvenanceRefsPerSection,
-            @Min(0) long maxProvenanceRefs,
-            @Min(0) long maxProvenanceLocations,
-            @Min(0) int maxWriterNodesPerPlan,
             @Min(0) long maxInputSnapshotChars,
             @Min(0) long maxSourceManifestChars,
             @Min(0) long maxJobRequestChars,
             @Min(0) int maxSources,
-            @Min(0) int maxTitleChars,
-            @Min(0) long maxIdentityChars,
-            @Min(0) int maxProvenanceLocationsPerRef) {
+            @Min(0) int maxTitleChars) {
 
         public static OverviewLimits withoutAdditionalCaps() {
-            return new OverviewLimits(0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0);
+            return new OverviewLimits(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 
@@ -230,24 +206,29 @@ public record AuralisProperties(
         }
     }
 
-    public record Defaults(
-            @Valid Provider deepseek,
-            @Valid Provider openaiCompatible,
-            @Valid Provider siliconflow) {
-    }
+    public record GenerationEndpoint(String baseUrl, String model, String apiKey,
+                                     long contextTokens, long maxOutputTokens) {
 
-    public record Provider(
-            String baseUrl,
-            String chatModel,
-            String embeddingModel,
-            String apiKey) {
+        public GenerationEndpoint {
+            if ((contextTokens != 0 || maxOutputTokens != 0)
+                    && (contextTokens <= 0 || maxOutputTokens <= 0
+                    || maxOutputTokens > contextTokens || maxOutputTokens > Integer.MAX_VALUE)) {
+                throw new IllegalArgumentException("Platform generation token capacity is invalid");
+            }
+        }
 
         @Override
         public String toString() {
-            return "Provider[baseUrl=" + baseUrl
-                    + ", chatModel=" + chatModel
-                    + ", embeddingModel=" + embeddingModel
-                    + ", apiKey=<redacted>]";
+            return "GenerationEndpoint[baseUrl=" + baseUrl + ", model=" + model + ", apiKey=<redacted>"
+                    + ", contextTokens=" + contextTokens + ", maxOutputTokens=" + maxOutputTokens + "]";
+        }
+    }
+
+    public record ModelEndpoint(String baseUrl, String model, String apiKey) {
+
+        @Override
+        public String toString() {
+            return "ModelEndpoint[baseUrl=" + baseUrl + ", model=" + model + ", apiKey=<redacted>]";
         }
     }
 }

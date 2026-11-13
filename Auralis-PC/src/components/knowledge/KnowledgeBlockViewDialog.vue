@@ -184,19 +184,52 @@ const goToSubject = () => {
   })
 }
 
-const handleCopy = () => {
+const handleCopy = async () => {
   const text = rawContent.value
   if (!text) return
-  if (navigator?.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).then(() => {
-      copied.value = true
-      ElMessage.success('已复制知识块内容')
-      setTimeout(() => { copied.value = false }, 2000)
-    }).catch(() => {
-      emit('copy', text)
-    })
-  } else {
-    emit('copy', text)
+  if (!(await copyContent(text))) {
+    copied.value = false
+    ElMessage.error('复制知识块内容失败，请手动复制')
+    return
+  }
+  copied.value = true
+  ElMessage.success('已复制知识块内容')
+  setTimeout(() => { copied.value = false }, 2000)
+}
+
+const copyContent = async (text: string) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Try document copy when the Clipboard API rejects the write.
+  }
+
+  const previousFocus = document.activeElement
+  const selection = document.getSelection()
+  const ranges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    : []
+  const field = document.createElement('textarea')
+  field.value = text
+  field.readOnly = true
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.append(field)
+  try {
+    field.select()
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    field.remove()
+    if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true })
+    if (selection && ranges.length) {
+      selection.removeAllRanges()
+      ranges.forEach(range => selection.addRange(range))
+    }
   }
 }
 </script>

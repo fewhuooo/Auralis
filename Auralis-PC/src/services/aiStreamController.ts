@@ -1,4 +1,6 @@
 import type { Protocol1MessageCommand } from '../api/aiClient.ts'
+import { SyncScopeChangedError } from '../api/request.ts'
+import { useAuthStore } from '../store/useAuthStore.ts'
 import type { ChatStreamEnvelope } from '../types/chatProtocol.ts'
 import { createChatStreamState, reduceChatStreamEvent, type ChatStreamState } from './aiStreamReducer.ts'
 
@@ -11,7 +13,10 @@ async function defaultStreamSource(
   input: Protocol1MessageCommand,
   signal: AbortSignal
 ): Promise<AsyncIterable<ChatStreamEnvelope>> {
+  const authStore = useAuthStore()
+  const generation = authStore.loginGeneration
   const { streamAiMessage } = await import('../api/aiClient.ts')
+  if (authStore.loginGeneration !== generation) throw new SyncScopeChangedError()
   return streamAiMessage(input, signal)
 }
 

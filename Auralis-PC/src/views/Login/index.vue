@@ -70,7 +70,7 @@
               <el-input
                 v-model="form.password" 
                 type="password" 
-                placeholder="密码" 
+                :placeholder="isLogin ? '密码' : '密码至少 12 位，UTF-8 最多 72 字节'"
                 size="large"
                 show-password
                 class="minimal-input"

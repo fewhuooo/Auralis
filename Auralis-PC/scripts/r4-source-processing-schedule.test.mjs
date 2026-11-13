@@ -217,14 +217,38 @@ test('non-404 Source lookup errors preserve the job and reject', async () => {
     errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }])
   const sourceError = new ApiProblemError({
-    title: 'Internal error', status: 503, detail: 'Service unavailable', code: 'INTERNAL_ERROR',
+    title: 'Internal error', status: 503, detail: 'Upstream network timeout', code: 'INTERNAL_ERROR',
   })
   const { scheduler, calls } = schedulerHarness({ repository, sourceError })
 
   await assert.rejects(() => scheduler.schedule('source-1'), sourceError)
 
-  assert.equal((await repository.list()).length, 1)
+  assert.equal((await repository.get('server-error-job')).phase, 'QUEUED')
   assert.equal(calls.sourceGet, 1)
+})
+
+test('a failed Source lookup without a network response pauses existing packaged work and preserves its receipt', async () => {
+  const repository = new DocumentProcessingJobRepository('user-1', 'device-1', { storage: createMemoryStorage() })
+  const job = await repository.create({ jobId: 'lookup-network-job', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+  await repository.transition(job.jobId, 'EXTRACTING')
+  await repository.transition(job.jobId, 'PACKAGING', { payloadCacheId: receipt.cacheId, payloadReceipt: receipt })
+  let offline = true
+  const { scheduler, calls } = schedulerHarness({
+    repository,
+    sourceApiGet: () => {
+      if (offline) throw new ApiProblemError({ title: 'Request failed', status: 0, detail: 'Network Error' })
+      return source()
+    },
+    uploadOverride: realRepositoryUpload(repository),
+  })
+
+  assert.equal((await scheduler.schedule('source-1')).status, 'PAUSED_NETWORK')
+  assert.deepEqual((await repository.get(job.jobId)).payloadReceipt, receipt)
+  offline = false
+  assert.equal((await scheduler.resume(['source-1']))[0].status, 'PAUSED_NETWORK')
+  assert.equal((await scheduler.retry(job.jobId)).status, 'READY')
+  assert.equal(calls.run, 0)
+  assert.equal(calls.hash, 0)
 })
 
 test('FILE source creates a job immediately, runs local input, and uploads with the verified asset SHA', async () => {
@@ -395,14 +419,16 @@ test('later READY scheduling retries cleanup and clears cache metadata', async (
   assert.equal(harness.calls.run, 0)
 })
 
-test('paused extraction requeues before parsing and paused upload resumes from its durable receipt', async () => {
+test('automatic scheduling leaves extraction and upload paused until an explicit retry', async () => {
   const extractionRepository = createRepository([{
     jobId: 'paused-extraction', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
     phase: 'PAUSED_NETWORK', attempt: 0, checkpoint: { pageNumber: 1, blockOrdinal: 0 }, payloadCacheId: null, payloadReceipt: null,
     errorCode: 'NETWORK_OFFLINE', errorDetail: 'offline', createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }])
   const extraction = schedulerHarness({ repository: extractionRepository })
-  const extractionResult = await extraction.scheduler.schedule('source-1')
+  assert.equal((await extraction.scheduler.schedule('source-1')).status, 'PAUSED_NETWORK')
+  assert.equal(extraction.calls.run, 0)
+  const extractionResult = await extraction.scheduler.retry('paused-extraction')
   assert.equal(extractionResult.status, 'READY')
   assert.equal(extraction.calls.run, 1)
 
@@ -418,7 +444,9 @@ test('paused extraction requeues before parsing and paused upload resumes from i
     downloadAsset: async () => { throw new Error('UPLOAD_RESUME_SHOULD_NOT_DOWNLOAD') },
     onUpload: () => { uploadPhase = uploadRepository.jobs.get('paused-upload').phase },
   })
-  const uploadResult = await upload.scheduler.schedule('source-1')
+  assert.equal((await upload.scheduler.resume(['source-1']))[0].status, 'PAUSED_NETWORK')
+  assert.equal(uploadPhase, undefined)
+  const uploadResult = await upload.scheduler.retry('paused-upload')
   assert.equal(uploadResult.status, 'READY')
   assert.equal(upload.calls.run, 0)
   assert.equal(upload.calls.hash, 0)

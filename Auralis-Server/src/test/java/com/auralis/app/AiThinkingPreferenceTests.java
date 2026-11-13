@@ -54,6 +54,8 @@ class AiThinkingPreferenceTests {
             assertThinking(AiProviderType.DEEPSEEK, DEEPSEEK, null, false, structured, true);
             assertThinking(AiProviderType.DEEPSEEK, DEEPSEEK, "true", true, structured, false);
             assertThinking(AiProviderType.DEEPSEEK, DEEPSEEK, "true", true, structured, true);
+            assertThinking(AiProviderType.OPENAI_COMPATIBLE, DEEPSEEK, null, false, structured, false);
+            assertThinking(AiProviderType.OPENAI_COMPATIBLE, DEEPSEEK, "true", true, structured, true);
         }
     }
 
@@ -61,6 +63,7 @@ class AiThinkingPreferenceTests {
     void unknownAndLookalikeHostsDoNotReceiveMiMoThinkingField() {
         for (String baseUrl : List.of(
                 "https://api.provider.test/v1",
+                "https://api.deepseek.com.attacker.test/v1",
                 "https://api.xiaomimimo.com.attacker.test/v1",
                 "https://xiaomimimo.com/v1")) {
             var credential = new AiCredential(baseUrl, "key");
@@ -124,7 +127,7 @@ class AiThinkingPreferenceTests {
             public void postStream(ResolvedProviderEndpoint endpoint, String path, String key, byte[] body,
                                    java.util.function.Consumer<String> lineConsumer) {
                 captured.set(parse(body));
-                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}");
+                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
                 lineConsumer.accept("data: [DONE]");
             }
         };
@@ -155,14 +158,14 @@ class AiThinkingPreferenceTests {
             var request = new AiProviderRequest("test-model",
                     List.of(new AiProviderRequest.Message(AiMessageRole.USER, "hello")), 0.1, 128, structured);
             if (streamOnly) {
-                provider.streamInto(request, credential, new ArrayList<AiProviderChunk>()::add);
+                provider.streamInto(request, credential, null, new ArrayList<AiProviderChunk>()::add);
             } else {
                 provider.complete(request, credential);
             }
 
             JsonNode wireBody = captured.get();
             if (providerType == AiProviderType.DEEPSEEK
-                    || "api.xiaomimimo.com".equalsIgnoreCase(URI.create(credential.baseUrl()).getHost())) {
+                    || DEEPSEEK.equals(credential) || MIMO.equals(credential)) {
                 assertThat(wireBody.path("thinking").path("type").asText())
                         .isEqualTo(expectedEnabled ? "enabled" : "disabled");
             } else {

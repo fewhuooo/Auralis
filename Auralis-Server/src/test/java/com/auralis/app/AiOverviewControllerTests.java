@@ -5,6 +5,7 @@ import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewGenerationService;
+import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewTaskDeadline;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,20 +76,16 @@ class AiOverviewControllerTests {
     }
 
     @Test
-    void rejectsSubjectRequestsWithMoreThanOneHundredSourceInputs() throws Exception {
+    void rejectsSubjectRequestsWithNoSourceInputs() throws Exception {
         var auth = identityService.register(
                 "osc-" + UUID.randomUUID() + "@example.com",
                 "correct horse battery staple", "overview-subject-controller",
                 new DeviceCommand("overview-subject-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
-        String source = "{\"sourceId\":\"00000000-0000-0000-0000-000000000001\","
-                + "title\":\"Source\",\"outline\":[],\"summary\":null}";
-
         mockMvc.perform(post("/api/ai/subject-overviews")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"subjectId\":\"00000000-0000-0000-0000-000000000001\","
-                                + "\"mode\":\"SUMMARY\",\"sources\":[" + String.join(",",
-                                java.util.Collections.nCopies(101, source)) + "]}"))
+                                + "\"mode\":\"SUMMARY\",\"sources\":[]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
@@ -102,12 +99,10 @@ class AiOverviewControllerTests {
         UUID subjectId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         String requestId = "controller-json-" + UUID.randomUUID();
-        var expected = new OverviewDtos.OverviewResponse(1, "Subject overview",
-                List.of(new OverviewDtos.OverviewChapter("Chapter 1", List.of(
-                        new OverviewDtos.OverviewSection("Section 1", "Section summary",
-                                List.of(sourceId.toString()), new OverviewDtos.OverviewLocator(4, "block-1"))))),
-                new OverviewDtos.OverviewSummary("Overview summary", List.of("Key point"), List.of("Learning step")));
-        when(generationService.generateSubject(eq(auth.user().id()), any(OverviewDtos.SubjectOverviewRequest.class),
+        var expected = new OverviewDtos.OverviewResponse(2, "Subject overview", null, "## Overview summary");
+        var request = new OverviewDtos.SubjectOverviewRequest(subjectId, OverviewMode.SUMMARY, null,
+                List.of(new OverviewDtos.SubjectOverviewSourceInput(sourceId, "Source", null, "Source summary")));
+        when(generationService.generateSubject(eq(auth.user().id()), eq(request),
                 eq(requestId), isNull(), any(OverviewTaskDeadline.class))).thenReturn(expected);
 
         mockMvc.perform(post("/api/ai/subject-overviews")
@@ -115,16 +110,16 @@ class AiOverviewControllerTests {
                         .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                         .header("X-Overview-Request-Id", requestId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"subjectId\":\"" + subjectId + "\",\"mode\":\"ALL\",\"sources\":[{"
-                                + "\"sourceId\":\"" + sourceId + "\",\"title\":\"Source\",\"outline\":[],\"summary\":null}]}"))
+                        .content("{\"subjectId\":\"" + subjectId + "\",\"mode\":\"SUMMARY\",\"sources\":[{"
+                                + "\"sourceId\":\"" + sourceId + "\",\"title\":\"Source\",\"summaryMarkdown\":\"Source summary\"}]}"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.schemaVersion").value(1))
+                .andExpect(jsonPath("$.schemaVersion").value(2))
                 .andExpect(jsonPath("$.title").value("Subject overview"))
-                .andExpect(jsonPath("$.outline[0].sections[0].sourceIds[0]").value(sourceId.toString()))
-                .andExpect(jsonPath("$.summary.learningPath[0]").value("Learning step"));
+                .andExpect(jsonPath("$.outlineMarkdown").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.summaryMarkdown").value("## Overview summary"));
 
-        verify(generationService).generateSubject(eq(auth.user().id()), any(OverviewDtos.SubjectOverviewRequest.class),
+        verify(generationService).generateSubject(eq(auth.user().id()), eq(request),
                 eq(requestId), isNull(), any(OverviewTaskDeadline.class));
     }
 
@@ -140,8 +135,8 @@ class AiOverviewControllerTests {
                         .header(HttpHeaders.ACCEPT, "image/png")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"subjectId\":\"" + UUID.randomUUID()
-                                + "\",\"mode\":\"ALL\",\"sources\":[{\"sourceId\":\""
-                                + UUID.randomUUID() + "\",\"title\":\"Source\",\"outline\":[],\"summary\":null}] }"))
+                                + "\",\"mode\":\"SUMMARY\",\"sources\":[{\"sourceId\":\""
+                                + UUID.randomUUID() + "\",\"title\":\"Source\",\"summaryMarkdown\":\"Source summary\"}] }"))
                 .andExpect(status().isNotAcceptable())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("NOT_ACCEPTABLE"));

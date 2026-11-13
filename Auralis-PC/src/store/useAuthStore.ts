@@ -1,5 +1,5 @@
 import { defineStore, type PiniaPluginContext } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   useAuthApi,
   type AuthResult,
@@ -36,12 +36,19 @@ export const useAuthStore = defineStore(
   'auth',
   () => {
     const user = ref<UserView | null>(null)
-    const tokens = ref<TokenPair | null>(null)
+    const credentials = ref<{ tokens: TokenPair | null; sessionId: string | null }>({ tokens: null, sessionId: null })
+    const tokens = computed({
+      get: () => credentials.value.tokens,
+      set: (tokens: TokenPair | null) => { credentials.value = { ...credentials.value, tokens } },
+    })
+    const serverSessionId = computed(() => credentials.value.sessionId)
+    // Local request tickets keep the same session ID throughout a login.
     const sessionId = ref<string | null>(null)
     const serverDeviceId = ref<string | null>(null)
     const isHydrated = ref<boolean>(true)
     const showAuthModal = ref(false)
     const authStatus = ref<AuthSessionStatus>('anonymous')
+    const loginGeneration = ref(Symbol('auth-session'))
     const reauthenticationReason = ref<string | null>(null)
     const avatarUrl = ref<string>('')
     let currentAvatarBlobUrl: string | null = null
@@ -105,18 +112,25 @@ export const useAuthStore = defineStore(
     ))
     const requiresReauthentication = computed(() => authStatus.value === 'reauthentication-required')
 
+    watch(
+      [() => user.value?.id, serverDeviceId, sessionId, authStatus, () => Boolean(tokens.value?.accessToken)],
+      () => { loginGeneration.value = Symbol('auth-session') },
+      { flush: 'sync' },
+    )
+
     function setSession(result: AuthResult | null | undefined): void {
       if (!result || !result.user || !result.tokens || !result.sessionId || !result.serverDeviceId) {
         clearSession()
         return
       }
+      loginGeneration.value = Symbol('auth-session')
       invalidateAvatarRequest()
       if (currentAvatarUserId && currentAvatarUserId !== result.user.id) {
         clearAvatarDisplay()
       }
       user.value = result.user ?? null
-      tokens.value = result.tokens ?? null
-      sessionId.value = result.sessionId ?? null
+      applyRefresh(result.tokens, result.sessionId)
+      sessionId.value = result.sessionId
       serverDeviceId.value = result.serverDeviceId ?? null
       authStatus.value = 'authenticated'
       reauthenticationReason.value = null
@@ -124,15 +138,15 @@ export const useAuthStore = defineStore(
       void loadAvatar()
     }
 
-    function setTokens(tokenPair: TokenPair | null | undefined): void {
-      tokens.value = tokenPair ?? null
+    function applyRefresh(tokens: TokenPair, sessionId: string): void {
+      credentials.value = { tokens, sessionId }
     }
 
     function clearSession(): void {
       const currentUserId = user.value?.id
       invalidateAvatarRequest()
       user.value = null
-      tokens.value = null
+      credentials.value = { tokens: null, sessionId: null }
       sessionId.value = null
       serverDeviceId.value = null
       authStatus.value = 'anonymous'
@@ -145,7 +159,7 @@ export const useAuthStore = defineStore(
     function requireReauthentication(reason = '登录会话已失效，请重新登录。'): void {
       invalidateAvatarRequest()
       user.value = null
-      tokens.value = null
+      credentials.value = { tokens: null, sessionId: null }
       sessionId.value = null
       serverDeviceId.value = null
       authStatus.value = 'reauthentication-required'
@@ -184,6 +198,7 @@ export const useAuthStore = defineStore(
     }
 
     async function logout(): Promise<void> {
+      const generation = loginGeneration.value
       try {
         if (tokens.value?.accessToken) {
           await useAuthApi.logout()
@@ -191,7 +206,7 @@ export const useAuthStore = defineStore(
       } catch (error) {
         throw error // Re-throw so the UI can provide feedback
       } finally {
-        clearSession()
+        if (loginGeneration.value === generation) clearSession()
       }
     }
 
@@ -319,8 +334,10 @@ export const useAuthStore = defineStore(
 
     return {
       user,
+      credentials,
       tokens,
       sessionId,
+      serverSessionId,
       serverDeviceId,
       isHydrated,
       token,
@@ -329,10 +346,11 @@ export const useAuthStore = defineStore(
       isAuthenticated,
       showAuthModal,
       authStatus,
+      loginGeneration,
       requiresReauthentication,
       reauthenticationReason,
       setSession,
-      setTokens,
+      applyRefresh,
       clearSession,
       requireReauthentication,
       login,
@@ -349,21 +367,31 @@ export const useAuthStore = defineStore(
   {
     persist: {
       key: 'auralis_auth_session',
-      pick: ['user', 'tokens', 'sessionId', 'serverDeviceId'],
+      pick: ['user', 'credentials', 'serverDeviceId'],
+      serializer: {
+        serialize: ({ user, credentials, serverDeviceId }) => JSON.stringify({
+          user, tokens: credentials.tokens, sessionId: credentials.sessionId, serverDeviceId,
+        }),
+        deserialize: (value) => {
+          const { user, tokens, sessionId, serverDeviceId } = JSON.parse(value) as AuthResult
+          return { user, credentials: { tokens, sessionId }, serverDeviceId }
+        },
+      },
       afterHydrate: (ctx: PiniaPluginContext) => {
         const store = ctx.store as unknown as {
           user: UserView | null
-          tokens: TokenPair | null
+          credentials: { tokens: TokenPair | null; sessionId: string | null }
           sessionId: string | null
           serverDeviceId: string | null
           authStatus: AuthSessionStatus
           reauthenticationReason: string | null
           isHydrated: boolean
+          loadAvatar(): Promise<string>
         }
         const wasReauthenticationRequired = store.authStatus === 'reauthentication-required'
-        if (!isValidSession(store.user, store.tokens) || !store.sessionId || !store.serverDeviceId) {
+        if (!isValidSession(store.user, store.credentials.tokens) || !store.credentials.sessionId || !store.serverDeviceId) {
           store.user = null
-          store.tokens = null
+          store.credentials = { tokens: null, sessionId: null }
           store.sessionId = null
           store.serverDeviceId = null
           store.authStatus = wasReauthenticationRequired ? 'reauthentication-required' : 'anonymous'
@@ -371,9 +399,10 @@ export const useAuthStore = defineStore(
             ? (store.reauthenticationReason || '登录会话已失效，请重新登录。')
             : null
         } else {
+          store.sessionId = store.credentials.sessionId
           store.authStatus = 'authenticated'
           store.reauthenticationReason = null
-          void (ctx.store as any).loadAvatar?.()
+          void store.loadAvatar()
         }
         store.isHydrated = true
       },

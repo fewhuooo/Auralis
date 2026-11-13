@@ -21,7 +21,6 @@ export async function resolve(specifier, context, nextResolve) {
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
 const { classifyClientError, SafeClientError } = await import('../src/services/clientErrorPolicy.ts')
-const { AiStreamController } = await import('../src/services/aiStreamController.ts')
 const { createPinia, setActivePinia } = await import('pinia')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useChatStore } = await import('../src/store/useChatStore.ts')
@@ -58,32 +57,7 @@ test('safe client errors remain stable when classifyClientError is called a seco
   }
 })
 
-test('SSE message.error never becomes a raw UI Error.message', async () => {
-  const controller = new AiStreamController(async function* () {
-    yield { event: 'message.error', data: { code: 'MODEL_PROVIDER_ERROR', message: 'provider secret' } }
-  })
-  await assert.rejects(
-    controller.run({ content: 'hello' }),
-    (error) => error instanceof SafeClientError
-      && error.code === 'AI_PROVIDER_ERROR'
-      && error.message === 'AI 请求失败，请重试'
-      && !error.message.includes('provider secret'),
-  )
-})
-
-test('chat retry reuses the same clientRequestId for the same logical request', async () => {
-  const seen = []
-  const controller = new AiStreamController(async function* (input) {
-    seen.push(input.clientRequestId)
-    yield { event: 'message.completed', data: { content: 'ok' } }
-  })
-  const input = { conversationId: 'conversation-1', content: 'retry me', clientRequestId: 'request-1' }
-  await controller.run(input)
-  await controller.run(input)
-  assert.deepEqual(seen, ['request-1', 'request-1'])
-})
-
-test('chat Store retry dispatches the existing pending message without appending another user message', async () => {
+function activeChatFixture() {
   globalThis.localStorage = new MemoryStorage()
   setActivePinia(createPinia())
   const auth = useAuthStore()
@@ -98,41 +72,80 @@ test('chat Store retry dispatches the existing pending message without appending
   chat.sessions.push({
     id: sessionId,
     remoteId: 'remote-chat-retry',
-    creationRequestId: 'creation-request',
     title: '重试会话',
     version: 1,
-    localOnly: false,
-    purpose: 'GENERAL',
+    chatProtocolVersion: 1,
+    chatSupported: true,
+    chatScopeState: 'UNBOUND',
   })
   chat.activeSessionId = sessionId
-  chat.messages.push({
-    id: 'pending-user',
-    conversationId: sessionId,
-    clientRequestId: 'client-retry-1',
-    role: 'USER',
-    status: 'PENDING',
-    content: 'retry me',
-    createdAt: new Date().toISOString(),
-    citations: [],
+  return chat
+}
+
+function chatResponse(command, events) {
+  const stream = events.map(({ event, payload }, index) => {
+    const envelope = {
+      protocolVersion: 1,
+      conversationId: command.conversationId,
+      requestId: command.requestId,
+      runId: 'run-1',
+      attemptId: 'attempt-1',
+      userMessageId: 'user-message',
+      replyMessageId: 'assistant-message',
+      sequence: index + 1,
+      event,
+      payload,
+    }
+    return 'event: ' + event + '\ndata: ' + JSON.stringify(envelope) + '\n\n'
   })
+  return new Response(stream.join(''), { headers: { 'content-type': 'text/event-stream' } })
+}
+
+test('a protocol-1 run failure projects safe error text to the chat UI', async (t) => {
+  const chat = activeChatFixture()
+  t.mock.method(globalThis, 'fetch', async (_url, init) =>
+    chatResponse(JSON.parse(init.body), [
+      { event: 'run.started', payload: {} },
+      { event: 'run.failed', payload: { safeErrorCode: 'CHAT_RUN_FAILED', message: 'provider secret' } },
+    ]),
+  )
+
+  await chat.sendMessage('hello')
+  assert.equal(chat.lastErrorCode, 'CHAT_RUN_FAILED')
+  assert.equal(chat.lastError, 'AI 请求生成失败，请重试。')
+  assert.equal(chat.pendingMessage?.status, 'FAILED')
+})
+
+test('retry before run admission resends the same turn without appending another user message', async (t) => {
+  const chat = activeChatFixture()
   const requests = []
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = async (_url, init) => {
-    requests.push(JSON.parse(init.body))
-    return new Response('event: message.completed\ndata: {"content":"ok"}\n\n', {
-      status: 200,
-      headers: { 'content-type': 'text/event-stream' },
-    })
-  }
-  try {
-    await chat.sendMessage('retry me', { pendingRequestId: 'client-retry-1' })
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-  assert.equal(requests.length, 1)
-  assert.equal(requests[0].clientRequestId, 'client-retry-1')
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    assert.match(String(url), /\/api\/ai\/messages\/stream$/)
+    const command = JSON.parse(init.body)
+    requests.push(command)
+    if (requests.length === 1) throw new TypeError('Failed to fetch')
+    return chatResponse(command, [
+      { event: 'run.started', payload: {} },
+      { event: 'text.delta', payload: { text: 'ok', publicTextDelta: 'ok' } },
+      { event: 'run.completed', payload: {} },
+    ])
+  })
+
+  await assert.rejects(chat.sendMessage('retry me', {
+    subjectId: 'subject-1', retrievalMode: 'SUBJECT', selectionText: 'selected excerpt',
+  }))
+  const pending = chat.pendingMessage
+  assert.ok(pending)
+  assert.equal(pending.runId, undefined)
+  await chat.retryPendingMessage(pending.id)
+
+  assert.equal(requests.length, 2)
+  assert.equal(requests[0].protocolVersion, 1)
+  assert.ok(requests[0].requestId)
+  assert.equal(requests[0].selectionText, 'selected excerpt')
+  assert.deepEqual(requests[1], requests[0])
   assert.equal(chat.messages.filter((message) => message.role === 'USER').length, 1)
-  assert.equal(chat.messages.find((message) => message.id === 'pending-user').status, 'COMPLETED')
+  assert.equal(chat.messages.find((message) => message.id === pending.id)?.status, 'COMPLETED')
   assert.equal(chat.messages.find((message) => message.role === 'ASSISTANT')?.content, 'ok')
 })
 

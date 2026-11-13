@@ -167,6 +167,13 @@ public class IngestionJobEntity {
         updatedAt = now;
     }
 
+    public void releaseClaim() {
+        if (status == IngestionJobStatus.PARSING || status == IngestionJobStatus.INDEXING) {
+            status = IngestionJobStatus.PENDING;
+            leaseUntil = null;
+        }
+    }
+
     public boolean renewLease(int claimedAttempt, Instant now, Instant newLeaseUntil) {
         if (!ownsClaim(claimedAttempt, now) || newLeaseUntil == null || !newLeaseUntil.isAfter(now)) {
             return false;

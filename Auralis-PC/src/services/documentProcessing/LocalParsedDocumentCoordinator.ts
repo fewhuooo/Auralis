@@ -88,12 +88,12 @@ export class LocalParsedDocumentCoordinator {
     this.maxAutomaticRetries = options.maxAutomaticRetries ?? MAX_AUTOMATIC_RETRIES
   }
 
-  async coordinate(input: CoordinateLocalParseInput): Promise<LocalParsedDocumentRecord> {
+  async coordinate(input: CoordinateLocalParseInput, resumePaused = false): Promise<LocalParsedDocumentRecord> {
     const key = `${input.localSourceId}:${input.localContentRevision}`
     const running = this.active.get(key)
     if (running) return running
 
-    const task = this.process(input)
+    const task = this.process(input, resumePaused)
     this.active.set(key, task)
     try {
       return await task
@@ -134,7 +134,7 @@ export class LocalParsedDocumentCoordinator {
       && (receipt.ocrModelVersion ?? null) === (record.ocrModelVersion ?? null)
   }
 
-  private async process(input: CoordinateLocalParseInput): Promise<LocalParsedDocumentRecord> {
+  private async process(input: CoordinateLocalParseInput, resumePaused: boolean): Promise<LocalParsedDocumentRecord> {
     this.assertNotCancelled(input.localSourceId)
 
     let record = await this.repository.get(input.localSourceId, input.localContentRevision)
@@ -174,6 +174,18 @@ export class LocalParsedDocumentCoordinator {
       return record
     }
 
+    if (record.phase === 'PAUSED_NETWORK') {
+      if (!resumePaused || record.localReceipt) return record
+      record = await this.repository.updatePhase(record.localSourceId, record.localContentRevision, 'QUEUED', {
+        attempt: 0,
+        checkpointPage: 0,
+        checkpointOrdinal: 0,
+        checkpointJson: null,
+        safeErrorCode: null,
+        safeErrorDetail: null,
+      })
+    }
+
     let retries = record.attempt
 
     while (true) {
@@ -181,7 +193,7 @@ export class LocalParsedDocumentCoordinator {
       try {
         this.assertNotCancelled(input.localSourceId)
 
-        if (record.phase === 'QUEUED' || record.phase === 'PAUSED_NETWORK') {
+        if (record.phase === 'QUEUED') {
           record = await this.repository.updatePhase(
             record.localSourceId,
             record.localContentRevision,
@@ -361,6 +373,9 @@ export class LocalParsedDocumentCoordinator {
             'QUEUED',
             {
               attempt: retries,
+              checkpointPage: 0,
+              checkpointOrdinal: 0,
+              checkpointJson: null,
               safeErrorCode: errorCode(error),
               safeErrorDetail: 'Automatic retry scheduled',
             },

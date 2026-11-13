@@ -194,7 +194,7 @@ test('packaging jobs resume through the upload coordinator instead of re-running
   assert.equal((await repository.get('job-1')).phase, phases.PACKAGING)
 })
 
-test('network failure pauses and explicit resume requeues the job', async () => {
+test('network failure stays paused when the runner scans for pending jobs', async () => {
   const repository = new FakeRepository()
   const runner = new DocumentJobRunner({
     repository,
@@ -207,6 +207,7 @@ test('network failure pauses and explicit resume requeues the job', async () => 
   await runner.start('job-1', packageMetadata())
   assert.equal((await repository.get('job-1')).phase, phases.PAUSED_NETWORK)
   await runner.pauseForNetwork('job-1')
+  await runner.resumePending()
   assert.equal((await repository.get('job-1')).phase, phases.PAUSED_NETWORK)
 })
 

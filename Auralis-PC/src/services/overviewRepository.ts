@@ -2,18 +2,16 @@ import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/lo
 import { OVERVIEW_INTENT_CREATED_EVENT, notifyOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
 import type {
   FileFingerprintInput, FileOverviewRecord, OverviewCacheRecord, OverviewMode, OverviewOutboxRecord,
-  OutlineIdentityInput, OutlineProvenanceInput, OverviewResponse, OverviewResultCommand, OverviewSyncState, SubjectOverviewRecord,
+  OverviewResponse, OverviewResultCommand, OverviewSyncState, SubjectOverviewRecord,
 } from '@/types/overview'
-import { createOutlineIdentityInput, createOutlineProvenanceInput } from './outlineIdentity.ts'
 
 interface StorageLike { getItem(key: string): string | null; setItem(key: string, value: string): void }
 interface Options { sql?: LocalSqlDatabase; storage?: StorageLike; schemaReady?: Promise<void>; now?: () => string }
 interface Row {
-  scope_type: 'FILE' | 'SUBJECT'; scope_id: string; revision_key: string; title: string
-  outline_json: string | null; summary_json: string | null; outline_generated_at: string | null
-  outline_identity_json: string | null; outline_identity_input_json: string | null
-  outline_provenance_json: string | null; outline_provenance_input_json: string | null; identity_ready: number | null
-  summary_generated_at: string | null; input_fingerprint: string | null; status: 'READY' | 'FAILED'
+  scope_type: 'FILE' | 'SUBJECT'; scope_id: string; revision_key: string; schema_version: number; title: string
+  outline_markdown: string | null; summary_markdown: string | null
+  outline_generated_at: string | null; summary_generated_at: string | null
+  input_fingerprint: string | null; status: 'READY' | 'FAILED'
   error_code: string | null; error_detail: string | null; updated_at: string
 }
 interface OutboxRow {
@@ -27,8 +25,22 @@ interface BrowserState {
   states: OverviewSyncState[]
   outbox: OverviewOutboxRecord[]
 }
-export interface SaveFileOverviewPartInput { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse; outlineIdentityInput?: OutlineIdentityInput; outlineProvenanceInput?: OutlineProvenanceInput; generationBaseline?: string; isStillCurrent?: () => boolean }
-export interface SaveSubjectOverviewPartInput { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string; outlineIdentityInput?: OutlineIdentityInput; outlineProvenanceInput?: OutlineProvenanceInput; generationBaseline?: string; isStillCurrent?: () => boolean }
+export interface SaveFileOverviewPartInput {
+  sourceId: string
+  ingestionRevision: string
+  mode: OverviewMode
+  response: OverviewResponse
+  generationBaseline?: string
+  isStillCurrent?: () => boolean
+}
+export interface SaveSubjectOverviewPartInput {
+  subjectId: string
+  mode: OverviewMode
+  response: OverviewResponse
+  inputFingerprint: string
+  generationBaseline?: string
+  isStillCurrent?: () => boolean
+}
 export type OverviewScopeType = 'FILE' | 'SUBJECT'
 export interface OverviewScopeFenceToken {
   userId: string
@@ -97,28 +109,15 @@ const parse = <T>(value: string | null): T | null => {
   try { return JSON.parse(value) as T } catch { throw new Error('OVERVIEW_CACHE_CORRUPT') }
 }
 const nullableString = (value: unknown): value is string | null => value === null || typeof value === 'string'
-const stringList = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string')
-const validLocator = (value: unknown): boolean => value === null || Boolean(value && typeof value === 'object'
-  && ((value as Record<string, unknown>).page === null || (Number.isInteger((value as Record<string, unknown>).page) && Number((value as Record<string, unknown>).page) > 0))
-  && nullableString((value as Record<string, unknown>).blockId))
-const validOutline = (value: unknown): value is OverviewCacheRecord['outline'] => value === null || (Array.isArray(value) && value.every(chapter => Boolean(chapter && typeof chapter === 'object'
-  && typeof chapter.title === 'string' && Array.isArray(chapter.sections) && chapter.sections.every((section: unknown) => Boolean(section && typeof section === 'object'
-    && typeof (section as Record<string, unknown>).title === 'string'
-    && nullableString((section as Record<string, unknown>).summary)
-    && stringList((section as Record<string, unknown>).sourceIds)
-    && validLocator((section as Record<string, unknown>).locator))))))
-const validSummary = (value: unknown): value is OverviewCacheRecord['summary'] => value === null || Boolean(value && typeof value === 'object'
-  && typeof (value as Record<string, unknown>).overview === 'string'
-  && stringList((value as Record<string, unknown>).keyPoints)
-  && stringList((value as Record<string, unknown>).learningPath))
+
 const validCacheRecord = (value: unknown): value is OverviewCacheRecord => Boolean(value && typeof value === 'object'
   && ['FILE', 'SUBJECT'].includes(String((value as Record<string, unknown>).scopeType))
   && typeof (value as Record<string, unknown>).scopeId === 'string' && String((value as Record<string, unknown>).scopeId).trim()
   && typeof (value as Record<string, unknown>).revisionKey === 'string' && String((value as Record<string, unknown>).revisionKey).trim()
-  && (value as Record<string, unknown>).schemaVersion === 1
+  && (value as Record<string, unknown>).schemaVersion === 2
   && typeof (value as Record<string, unknown>).title === 'string'
-  && validOutline((value as Record<string, unknown>).outline)
-  && validSummary((value as Record<string, unknown>).summary)
+  && nullableString((value as Record<string, unknown>).outlineMarkdown)
+  && nullableString((value as Record<string, unknown>).summaryMarkdown)
   && nullableString((value as Record<string, unknown>).outlineGeneratedAt)
   && nullableString((value as Record<string, unknown>).summaryGeneratedAt)
   && nullableString((value as Record<string, unknown>).inputFingerprint)
@@ -126,16 +125,7 @@ const validCacheRecord = (value: unknown): value is OverviewCacheRecord => Boole
   && nullableString((value as Record<string, unknown>).errorCode)
   && nullableString((value as Record<string, unknown>).errorDetail)
   && typeof (value as Record<string, unknown>).updatedAt === 'string')
-function normalizeCacheRecord(record: OverviewCacheRecord): OverviewCacheRecord {
-  return {
-    ...record,
-    identityReady: record.identityReady === true && Boolean(record.outlineIdentity),
-    outlineIdentity: record.outlineIdentity ?? null,
-    outlineIdentityInput: record.outlineIdentityInput ?? null,
-    outlineProvenance: record.outlineProvenance ?? null,
-    outlineProvenanceInput: record.outlineProvenanceInput ?? null,
-  }
-}
+
 const requireValue = (value: string, code: string): string => {
   const normalized = value.trim()
   if (!normalized) throw new Error(code)
@@ -148,6 +138,7 @@ const requireFileRevision = (value: string): string => {
 }
 const safeErrorCode = (value: string): string => /^[A-Z0-9_]{1,64}$/.test(value) ? value : 'OVERVIEW_GENERATION_FAILED'
 const safeErrorDetail = (value: string): string => value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 500)
+
 const canonicalize = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`
   if (value && typeof value === 'object') {
@@ -169,19 +160,17 @@ function newWriteId(): string {
 }
 
 function isComplete(record: OverviewCacheRecord): boolean {
-  return record.status === 'READY' && Array.isArray(record.outline) && record.outline.length > 0
-    && Boolean(record.summary && record.summary.overview.trim())
+  return record.status === 'READY'
+    && record.schemaVersion === 2
+    && typeof record.outlineMarkdown === 'string' && record.outlineMarkdown.trim().length > 0
+    && typeof record.summaryMarkdown === 'string' && record.summaryMarkdown.trim().length > 0
 }
 
 function editablePartBaseline(record: OverviewCacheRecord | null, mode: OverviewMode): string {
-  if (!record) return 'null'
+  if (!record || record.schemaVersion !== 2) return 'null'
   return canonicalize({
-    ...(mode !== 'SUMMARY' ? {
-      outline: record.outline,
-      outlineIdentityInput: record.outlineIdentityInput ?? null,
-      outlineProvenanceInput: record.outlineProvenanceInput ?? null,
-    } : {}),
-    ...(mode !== 'OUTLINE' ? { summary: record.summary } : {}),
+    ...(mode !== 'SUMMARY' ? { outlineMarkdown: record.outlineMarkdown } : {}),
+    ...(mode !== 'OUTLINE' ? { summaryMarkdown: record.summaryMarkdown } : {}),
   })
 }
 
@@ -232,26 +221,40 @@ function validOutbox(value: unknown): value is OverviewOutboxRecord {
 
 export async function computeSubjectInputFingerprint(files: FileFingerprintInput[]): Promise<string> {
   const normalized = [...files].sort((a, b) => a.sourceId.localeCompare(b.sourceId))
-    .map(({ sourceId, ingestionRevision, outline, summary }) => ({ sourceId, ingestionRevision, outline, summary }))
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalize(normalized)))
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+    .map(({ sourceId, ingestionRevision, outlineMarkdown, summaryMarkdown }) => ({ sourceId, ingestionRevision, outlineMarkdown, summaryMarkdown }))
+  const subtle = globalThis.crypto?.subtle
+  if (subtle) {
+    const digest = await subtle.digest('SHA-256', new TextEncoder().encode(canonicalize(normalized)))
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  }
+  let hash = 0
+  const str = canonicalize(normalized)
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i)
+    hash |= 0
+  }
+  return `hash-${Math.abs(hash).toString(16)}`
 }
 
-function fromRow(row: Row): OverviewCacheRecord {
-  const outline = parse<unknown>(row.outline_json)
-  const summary = parse<unknown>(row.summary_json)
-  const outlineIdentity = parse<OverviewCacheRecord['outlineIdentity']>(row.outline_identity_json)
-  const outlineIdentityInput = parse<OverviewCacheRecord['outlineIdentityInput']>(row.outline_identity_input_json)
-  const outlineProvenance = parse<OverviewCacheRecord['outlineProvenance']>(row.outline_provenance_json)
-  const outlineProvenanceInput = parse<OverviewCacheRecord['outlineProvenanceInput']>(row.outline_provenance_input_json)
-  if (!validOutline(outline) || !validSummary(summary)) throw new Error('OVERVIEW_CACHE_CORRUPT')
-  return { scopeType: row.scope_type, scopeId: row.scope_id, revisionKey: row.revision_key, schemaVersion: 1,
-    title: row.title, outline, summary,
-    identityReady: Number(row.identity_ready ?? 0) === 1 && Boolean(outlineIdentity), outlineIdentity,
-    outlineIdentityInput, outlineProvenance, outlineProvenanceInput,
-    outlineGeneratedAt: row.outline_generated_at, summaryGeneratedAt: row.summary_generated_at,
-    inputFingerprint: row.input_fingerprint, status: row.status, errorCode: row.error_code,
-    errorDetail: row.error_detail, updatedAt: row.updated_at }
+function fromRow(row: Row): OverviewCacheRecord | null {
+  // Legacy v1 rows are retained in DB, but not returned as valid v2 content
+  if (row.schema_version !== 2) return null
+  return {
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    revisionKey: row.revision_key,
+    schemaVersion: 2,
+    title: row.title,
+    outlineMarkdown: row.outline_markdown ?? null,
+    summaryMarkdown: row.summary_markdown ?? null,
+    outlineGeneratedAt: row.outline_generated_at,
+    summaryGeneratedAt: row.summary_generated_at,
+    inputFingerprint: row.input_fingerprint,
+    status: row.status,
+    errorCode: row.error_code,
+    errorDetail: row.error_detail,
+    updatedAt: row.updated_at,
+  }
 }
 
 export class OverviewRepository {
@@ -300,43 +303,45 @@ export class OverviewRepository {
     return token.userId === this.userId && token.serverDeviceId === this.serverDeviceId && tokenAllowsScopeWrite(token)
   }
 
-  private captureAndValidateToken(scopeType: OverviewScopeType, scopeId: string, token?: OverviewScopeFenceToken): OverviewScopeFenceToken {
-    const captured = token ?? this.captureScopeFenceToken(scopeType,scopeId)
-    if (captured.scopeType !== scopeType || captured.scopeId !== scopeId
-      || captured.userId !== this.userId || captured.serverDeviceId !== this.serverDeviceId) throw new Error('OVERVIEW_SCOPE_CHANGED')
-    return captured
+  private captureAndValidateToken(scopeType: OverviewScopeType, scopeId: string, expected?: OverviewScopeFenceToken): OverviewScopeFenceToken {
+    const token = this.captureScopeFenceToken(scopeType,scopeId)
+    if (!tokenAllowsScopeWrite(token)) throw SCOPE_FENCE_REJECTED
+    if (expected && (expected.userId !== token.userId || expected.serverDeviceId !== token.serverDeviceId
+      || expected.scopeType !== token.scopeType || expected.scopeId !== token.scopeId || expected.generation !== token.generation)) {
+      throw SCOPE_FENCE_REJECTED
+    }
+    return token
   }
 
   private async ensureSql(): Promise<void> {
     if (!this.sql) return
-    if (!this.sqlReady) this.sqlReady = this.schemaReady ?? createVersionedLocalSchema(this.sql)
+    if (!this.sqlReady) {
+      this.sqlReady = (this.schemaReady ?? createVersionedLocalSchema(this.sql)).then(() => undefined)
+    }
     await this.sqlReady
   }
+
   private readBrowserState(): BrowserState {
     const raw = this.storage.getItem(this.namespace)
-    if (raw === null) return { records: [], states: [], outbox: [] }
+    if (!raw) return { records: [], states: [], outbox: [] }
     try {
-      const parsed = JSON.parse(raw)
-      // Before local schema v11 the browser fallback stored only the cache array.
-      if (Array.isArray(parsed)) {
-        if (!parsed.every(validCacheRecord)) throw new Error('OVERVIEW_CACHE_CORRUPT')
-        return { records: parsed.map(normalizeCacheRecord), states: [], outbox: [] }
-      }
-      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.records) || !parsed.records.every(validCacheRecord)
-        || !Array.isArray(parsed.states) || !parsed.states.every(validSyncState)
-        || !Array.isArray(parsed.outbox) || !parsed.outbox.every(validOutbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
-      const state = parsed as BrowserState
-      state.records = state.records.map(normalizeCacheRecord)
+      const state = JSON.parse(raw) as BrowserState
+      if (!Array.isArray(state.records) || !Array.isArray(state.states) || !Array.isArray(state.outbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
+      // Ignore legacy v1 records from cache
+      state.records = state.records.filter(r => r && (r.schemaVersion as unknown) === 2 && validCacheRecord(r))
+      if (!state.states.every(validSyncState) || !state.outbox.every(validOutbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
       return state
     } catch { throw new Error('OVERVIEW_CACHE_CORRUPT') }
   }
+
   private writeBrowserState(state: BrowserState): void { this.storage.setItem(this.namespace, JSON.stringify(state)) }
+
   private async get(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, database?: LocalSqlDatabase): Promise<OverviewCacheRecord | null> {
     if (this.sql) {
       if (!database) await this.ensureSql()
-      const rows = await (database ?? this.sql).select<Row>(`SELECT scope_type,scope_id,revision_key,title,outline_json,summary_json,
-        outline_generated_at,summary_generated_at,outline_identity_json,outline_identity_input_json,
-        outline_provenance_json,outline_provenance_input_json,identity_ready,input_fingerprint,status,error_code,error_detail,updated_at
+      const rows = await (database ?? this.sql).select<Row>(`SELECT scope_type,scope_id,revision_key,schema_version,title,
+        outline_markdown,summary_markdown,outline_generated_at,summary_generated_at,
+        input_fingerprint,status,error_code,error_detail,updated_at
         FROM ai_overview_cache WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4 AND revision_key=$5`,
       [this.userId, this.serverDeviceId, scopeType, scopeId, revisionKey])
       return rows[0] ? fromRow(rows[0]) : null
@@ -344,12 +349,13 @@ export class OverviewRepository {
     const found = this.readBrowserState().records.find(item => item.scopeType === scopeType && item.scopeId === scopeId && item.revisionKey === revisionKey)
     return found ? clone(found) : null
   }
+
   private async getLatest(scopeType: 'FILE' | 'SUBJECT', scopeId: string, database?: LocalSqlDatabase): Promise<OverviewCacheRecord | null> {
     if (this.sql) {
       if (!database) await this.ensureSql()
-      const rows = await (database ?? this.sql).select<Row>(`SELECT scope_type,scope_id,revision_key,title,outline_json,summary_json,
-        outline_generated_at,summary_generated_at,outline_identity_json,outline_identity_input_json,
-        outline_provenance_json,outline_provenance_input_json,identity_ready,input_fingerprint,status,error_code,error_detail,updated_at
+      const rows = await (database ?? this.sql).select<Row>(`SELECT scope_type,scope_id,revision_key,schema_version,title,
+        outline_markdown,summary_markdown,outline_generated_at,summary_generated_at,
+        input_fingerprint,status,error_code,error_detail,updated_at
         FROM ai_overview_cache WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4
         ORDER BY updated_at DESC LIMIT 1`,
       [this.userId, this.serverDeviceId, scopeType, scopeId])
@@ -360,6 +366,7 @@ export class OverviewRepository {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
     return found ? clone(found) : null
   }
+
   private serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.sql ? (sqlWriteQueues.get(this.sql) ?? Promise.resolve()) : (browserWriteQueues.get(this.namespace) ?? Promise.resolve())
     const run = this.sql ? operation : () => this.withBrowserWriteLock(operation)
@@ -369,6 +376,7 @@ export class OverviewRepository {
     else browserWriteQueues.set(this.namespace, settled)
     return result
   }
+
   private withBrowserWriteLock<T>(operation: () => Promise<T>): Promise<T> {
     const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
     if (!locks || typeof locks.request !== 'function') {
@@ -379,6 +387,7 @@ export class OverviewRepository {
     }
     return locks.request(`${this.namespace}:overview-state`, { mode: 'exclusive' }, operation)
   }
+
   private async transaction<T>(operation: (database?: LocalSqlDatabase) => Promise<T>): Promise<T> {
     if (!this.sql) return operation()
     await this.ensureSql()
@@ -393,50 +402,46 @@ export class OverviewRepository {
       throw error
     }
   }
+
   private merge(current: OverviewCacheRecord | null, scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string,
-    mode: OverviewMode, response: OverviewResponse, inputFingerprint: string | null,
-    identityInput?: OutlineIdentityInput, provenanceInput?: OutlineProvenanceInput): OverviewCacheRecord {
+    mode: OverviewMode, response: OverviewResponse, inputFingerprint: string | null): OverviewCacheRecord {
     const now = this.now(), replaceOutline = mode !== 'SUMMARY', replaceSummary = mode !== 'OUTLINE'
-    if (replaceOutline && response.outline == null) throw new Error('OVERVIEW_OUTLINE_MISSING')
-    if (replaceSummary && response.summary == null) throw new Error('OVERVIEW_SUMMARY_MISSING')
-    return { scopeType, scopeId, revisionKey, schemaVersion: 1, title: response.title,
-      outline: replaceOutline ? response.outline : current?.outline ?? null,
-      summary: replaceSummary ? response.summary : current?.summary ?? null,
-      identityReady: replaceOutline ? false : current?.identityReady ?? false,
-      outlineIdentity: replaceOutline ? null : current?.outlineIdentity ?? null,
-      outlineIdentityInput: replaceOutline ? identityInput ?? createOutlineIdentityInput(response.outline ?? []) : current?.outlineIdentityInput ?? null,
-      outlineProvenance: replaceOutline ? response.outlineProvenance ?? null : current?.outlineProvenance ?? null,
-      outlineProvenanceInput: replaceOutline
-        ? provenanceInput ?? createOutlineProvenanceInput(response.outlineProvenance) ?? null
-        : current?.outlineProvenanceInput ?? null,
+    if (replaceOutline && (response.outlineMarkdown == null || response.outlineMarkdown.trim().length === 0)) throw new Error('OVERVIEW_OUTLINE_MISSING')
+    if (replaceSummary && (response.summaryMarkdown == null || response.summaryMarkdown.trim().length === 0)) throw new Error('OVERVIEW_SUMMARY_MISSING')
+    return {
+      scopeType,
+      scopeId,
+      revisionKey,
+      schemaVersion: 2,
+      title: response.title,
+      outlineMarkdown: replaceOutline ? response.outlineMarkdown : current?.outlineMarkdown ?? null,
+      summaryMarkdown: replaceSummary ? response.summaryMarkdown : current?.summaryMarkdown ?? null,
       outlineGeneratedAt: replaceOutline ? now : current?.outlineGeneratedAt ?? null,
       summaryGeneratedAt: replaceSummary ? now : current?.summaryGeneratedAt ?? null,
       inputFingerprint: inputFingerprint ?? current?.inputFingerprint ?? null,
-      status: 'READY', errorCode: null, errorDetail: null, updatedAt: now }
+      status: 'READY',
+      errorCode: null,
+      errorDetail: null,
+      updatedAt: now,
+    }
   }
+
   private async persist(record: OverviewCacheRecord, database?: LocalSqlDatabase): Promise<void> {
     if (this.sql) {
       if (!database) await this.ensureSql()
       await (database ?? this.sql).execute(`INSERT INTO ai_overview_cache
-        (user_id,device_id,scope_type,scope_id,revision_key,schema_version,title,outline_json,summary_json,
-         outline_generated_at,summary_generated_at,outline_identity_json,outline_identity_input_json,
-         outline_provenance_json,outline_provenance_input_json,identity_ready,
+        (user_id,device_id,scope_type,scope_id,revision_key,schema_version,title,
+         outline_markdown,summary_markdown,outline_generated_at,summary_generated_at,
          input_fingerprint,status,error_code,error_detail,updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
         ON CONFLICT(user_id,device_id,scope_type,scope_id,revision_key) DO UPDATE SET
-        schema_version=excluded.schema_version,title=excluded.title,outline_json=excluded.outline_json,
-        summary_json=excluded.summary_json,outline_generated_at=excluded.outline_generated_at,
+        schema_version=excluded.schema_version,title=excluded.title,
+        outline_markdown=excluded.outline_markdown,summary_markdown=excluded.summary_markdown,
+        outline_generated_at=excluded.outline_generated_at,
         summary_generated_at=excluded.summary_generated_at,input_fingerprint=excluded.input_fingerprint,
-        outline_identity_json=excluded.outline_identity_json,outline_identity_input_json=excluded.outline_identity_input_json,
-        outline_provenance_json=excluded.outline_provenance_json,outline_provenance_input_json=excluded.outline_provenance_input_json,
-        identity_ready=excluded.identity_ready,
         status=excluded.status,error_code=excluded.error_code,error_detail=excluded.error_detail,updated_at=excluded.updated_at`,
-      [this.userId,this.serverDeviceId,record.scopeType,record.scopeId,record.revisionKey,1,record.title,
-        record.outline ? JSON.stringify(record.outline) : null,record.summary ? JSON.stringify(record.summary) : null,
-        record.outlineGeneratedAt,record.summaryGeneratedAt,record.outlineIdentity ? JSON.stringify(record.outlineIdentity) : null,
-        record.outlineIdentityInput ? JSON.stringify(record.outlineIdentityInput) : null,
-        record.outlineProvenance ? JSON.stringify(record.outlineProvenance) : null,
-        record.outlineProvenanceInput ? JSON.stringify(record.outlineProvenanceInput) : null,record.identityReady ? 1 : 0,
+      [this.userId,this.serverDeviceId,record.scopeType,record.scopeId,record.revisionKey,2,record.title,
+        record.outlineMarkdown,record.summaryMarkdown,record.outlineGeneratedAt,record.summaryGeneratedAt,
         record.inputFingerprint,record.status,record.errorCode,record.errorDetail,record.updatedAt])
       return
     }
@@ -444,38 +449,49 @@ export class OverviewRepository {
     if (index < 0) state.records.push(record); else state.records[index] = record
     this.writeBrowserState(state)
   }
+
   private makeIntent(record: OverviewCacheRecord, mode: OverviewMode, origin: OverviewOutboxRecord['origin']): OverviewOutboxRecord {
     const now = this.now()
     return {
-      clientWriteId: newWriteId(), scopeType: record.scopeType, scopeId: record.scopeId,
-      revisionKey: record.revisionKey, mode, origin,
-      result: { schemaVersion: 1, title: record.title, outline: record.outline, summary: record.summary },
-      outlineIdentityInput: mode === 'SUMMARY' ? null : record.outlineIdentityInput
-        ?? (record.identityReady && record.outlineIdentity
-          ? { schemaVersion: 1, nodes: record.outlineIdentity.nodes.map(node => ({ path: [...node.path], nodeId: node.nodeId })) }
-          : origin === 'LEGACY_SEED' ? null : createOutlineIdentityInput(record.outline ?? [])),
-      outlineProvenanceInput: mode === 'SUMMARY' ? null : record.outlineProvenanceInput
-        ?? createOutlineProvenanceInput(record.outlineProvenance) ?? null,
+      clientWriteId: newWriteId(),
+      scopeType: record.scopeType,
+      scopeId: record.scopeId,
+      revisionKey: record.revisionKey,
+      mode,
+      origin,
+      result: {
+        schemaVersion: 2,
+        title: record.title,
+        outlineMarkdown: record.outlineMarkdown,
+        summaryMarkdown: record.summaryMarkdown,
+      },
       inputFingerprint: record.inputFingerprint,
-      outlineGeneratedAt: record.outlineGeneratedAt, summaryGeneratedAt: record.summaryGeneratedAt,
-      state: 'PREPARED', requestBody: null, errorCode: null, createdAt: now, updatedAt: now,
+      outlineGeneratedAt: record.outlineGeneratedAt,
+      summaryGeneratedAt: record.summaryGeneratedAt,
+      state: 'PREPARED',
+      requestBody: null,
+      errorCode: null,
+      createdAt: now,
+      updatedAt: now,
     }
   }
+
   private makeGenerationConflictIntent(record: OverviewCacheRecord, mode: OverviewMode, response: OverviewResponse,
     generationBaseline: string, inputFingerprint: string | null): OverviewOutboxRecord {
     const intent = this.makeIntent(record,mode,'LOCAL_WRITE')
-    intent.result = { schemaVersion: 1, title: response.title,
-      outline: mode === 'SUMMARY' ? null : response.outline,
-      summary: mode === 'OUTLINE' ? null : response.summary,
-      ...(mode === 'SUMMARY' ? {} : { outlineProvenance: response.outlineProvenance ?? null }) }
-    intent.outlineIdentityInput = mode === 'SUMMARY' ? null : record.outlineIdentityInput ?? null
-    intent.outlineProvenanceInput = mode === 'SUMMARY' ? null : record.outlineProvenanceInput ?? null
+    intent.result = {
+      schemaVersion: 2,
+      title: response.title,
+      outlineMarkdown: mode === 'SUMMARY' ? null : response.outlineMarkdown,
+      summaryMarkdown: mode === 'OUTLINE' ? null : response.summaryMarkdown,
+    }
     intent.inputFingerprint = inputFingerprint
     intent.generationBaseline = generationBaseline
     intent.state = 'CONFLICT'
     intent.errorCode = GENERATION_EDIT_CONFLICT
     return intent
   }
+
   private async insertOutbox(intent: OverviewOutboxRecord, database?: LocalSqlDatabase): Promise<void> {
     if (this.sql) {
       if (!database) await this.ensureSql()
@@ -490,6 +506,7 @@ export class OverviewRepository {
     state.outbox.push(clone(intent))
     this.writeBrowserState(state)
   }
+
   private async persistSuccessful(record: OverviewCacheRecord, mode: OverviewMode, database?: LocalSqlDatabase, isStillCurrent?: () => boolean): Promise<boolean> {
     const complete = isComplete(record)
     if (this.sql) {
@@ -514,7 +531,6 @@ export class OverviewRepository {
     const state = this.readBrowserState()
     const index = state.records.findIndex(item => item.scopeType === record.scopeType && item.scopeId === record.scopeId && item.revisionKey === record.revisionKey)
     if (index < 0) state.records.push(record); else state.records[index] = record
-    // localStorage has one atomic key, so successful cache content and its intent commit together.
     if (complete) {
       const requiresConflictResolution = state.outbox.some(item => item.scopeType === record.scopeType && item.scopeId === record.scopeId
         && item.revisionKey === record.revisionKey && item.state === 'CONFLICT' && !isGenerationEditConflict(item))
@@ -532,6 +548,7 @@ export class OverviewRepository {
     this.writeBrowserState(state)
     return complete
   }
+
   private async staleSupersededIntents(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, database?: LocalSqlDatabase): Promise<void> {
     const intents = await this.getOutboxForScope(scopeType,scopeId,revisionKey,database)
     for (const item of intents) if (!isGenerationEditConflict(item) && (item.state === 'CONFLICT' || item.state === 'ERROR')) {
@@ -547,77 +564,79 @@ export class OverviewRepository {
       }
     }
   }
+
   private async getOutboxForScope(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, database?: LocalSqlDatabase): Promise<OverviewOutboxRecord[]> {
     if (this.sql) {
       if (!database) await this.ensureSql()
       const rows = await (database ?? this.sql).select<OutboxRow>(`SELECT client_write_id,scope_type,scope_id,revision_key,state,intent_json,request_json,error_code,created_at,updated_at
         FROM overview_sync_outbox WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4 AND revision_key=$5
-        ORDER BY created_at,client_write_id`, [this.userId,this.serverDeviceId,scopeType,scopeId,revisionKey])
+        ORDER BY created_at ASC`,[this.userId,this.serverDeviceId,scopeType,scopeId,revisionKey])
       return rows.map(outboxFromRow)
     }
-    return this.readBrowserState().outbox.filter(item => item.scopeType === scopeType && item.scopeId === scopeId && item.revisionKey === revisionKey)
-      .sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.clientWriteId.localeCompare(b.clientWriteId)).map(clone)
+    return this.readBrowserState().outbox.filter(item => item.scopeType === scopeType && item.scopeId === scopeId && item.revisionKey === revisionKey).map(clone)
   }
-  private async saveSyncState(state: OverviewSyncState, database?: LocalSqlDatabase): Promise<void> {
-    if (this.sql) {
-      if (!database) await this.ensureSql()
-      await (database ?? this.sql).execute(`INSERT INTO overview_sync_states
-        (user_id,device_id,scope_type,scope_id,revision_key,state_json,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT(user_id,device_id,scope_type,scope_id,revision_key) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at`,
-      [this.userId,this.serverDeviceId,state.scopeType,state.scopeId,state.revisionKey,JSON.stringify(state),state.updatedAt])
-      return
-    }
-    const browser = this.readBrowserState(), index = browser.states.findIndex(item => item.scopeType === state.scopeType && item.scopeId === state.scopeId && item.revisionKey === state.revisionKey)
-    if (index < 0) browser.states.push(state); else browser.states[index] = state
-    this.writeBrowserState(browser)
-  }
+
   private async hydrateSyncStatus(record: OverviewCacheRecord): Promise<OverviewCacheRecord> {
-    const outbox = await this.getOutboxForScope(record.scopeType, record.scopeId, record.revisionKey)
-    const generationConflicts = [...outbox].filter(item => item.state === 'CONFLICT' && isGenerationEditConflict(item))
-      .map(item => ({ clientWriteId: item.clientWriteId, mode: item.mode, result: item.result }))
-    const active = [...outbox].reverse().find(item => item.state !== 'STALE' && !isGenerationEditConflict(item))
-    if (active?.state === 'CONFLICT') return { ...record, syncStatus: 'CONFLICT', syncError: active.errorCode, generationConflicts }
-    if (active?.state === 'ERROR') return { ...record, syncStatus: 'ERROR', syncError: active.errorCode, generationConflicts }
-    if (active) return { ...record, syncStatus: 'PENDING', syncError: null, generationConflicts }
-    const state = await this.getOverviewSyncState(record.scopeType, record.scopeId, record.revisionKey)
-    return { ...record, syncStatus: state ? 'SYNCED' : 'LOCAL', syncError: null, generationConflicts }
+    const intents = await this.getOutboxForScope(record.scopeType, record.scopeId, record.revisionKey)
+    const active = intents.filter(item => item.state !== 'STALE' && !isGenerationEditConflict(item))
+    const syncState = await this.getOverviewSyncState(record.scopeType, record.scopeId, record.revisionKey)
+    let syncStatus: OverviewCacheRecord['syncStatus'] = syncState ? 'SYNCED' : 'LOCAL'
+    let syncError: string | null = null
+    const error = active.find(item => item.state === 'ERROR')
+    const conflict = active.find(item => item.state === 'CONFLICT')
+    if (conflict) { syncStatus = 'CONFLICT'; syncError = conflict.errorCode }
+    else if (error) { syncStatus = 'ERROR'; syncError = error.errorCode }
+    else if (active.some(item => item.state === 'PENDING' || item.state === 'INFLIGHT' || item.state === 'PREPARED')) syncStatus = 'PENDING'
+    const generationConflicts = intents.filter(isGenerationEditConflict).map(item => ({
+      clientWriteId: item.clientWriteId,
+      mode: item.mode,
+      result: item.result,
+    }))
+    return {
+      ...record,
+      syncStatus,
+      syncError,
+      ...(generationConflicts.length ? { generationConflicts } : {}),
+    }
   }
+
   async listCachedOverviews(scopeType?: 'FILE' | 'SUBJECT'): Promise<OverviewCacheRecord[]> {
     if (this.sql) {
       await this.ensureSql()
-      const rows = await this.sql.select<Row>(`SELECT scope_type,scope_id,revision_key,title,outline_json,summary_json,
-        outline_generated_at,summary_generated_at,outline_identity_json,outline_identity_input_json,
-        outline_provenance_json,outline_provenance_input_json,identity_ready,input_fingerprint,status,error_code,error_detail,updated_at
+      const rows = await this.sql.select<Row>(`SELECT scope_type,scope_id,revision_key,schema_version,title,
+        outline_markdown,summary_markdown,outline_generated_at,summary_generated_at,
+        input_fingerprint,status,error_code,error_detail,updated_at
         FROM ai_overview_cache WHERE user_id=$1 AND device_id=$2 ${scopeType ? 'AND scope_type=$3' : ''}`,
       scopeType ? [this.userId,this.serverDeviceId,scopeType] : [this.userId,this.serverDeviceId])
-      return rows.map(fromRow)
+      const records = rows.map(fromRow).filter((r): r is OverviewCacheRecord => r !== null)
+      return Promise.all(records.map(record => this.hydrateSyncStatus(record)))
     }
-    return this.readBrowserState().records.filter(record => !scopeType || record.scopeType === scopeType).map(clone)
+    const state = this.readBrowserState()
+    const records = state.records.filter(item => !scopeType || item.scopeType === scopeType)
+    return Promise.all(records.map(record => this.hydrateSyncStatus(clone(record))))
   }
+
   async listOverviewOutbox(): Promise<OverviewOutboxRecord[]> {
     if (this.sql) {
       await this.ensureSql()
       const rows = await this.sql.select<OutboxRow>(`SELECT client_write_id,scope_type,scope_id,revision_key,state,intent_json,request_json,error_code,created_at,updated_at
-        FROM overview_sync_outbox WHERE user_id=$1 AND device_id=$2 ORDER BY CASE scope_type WHEN 'FILE' THEN 0 ELSE 1 END,created_at,client_write_id`,
-      [this.userId,this.serverDeviceId])
+        FROM overview_sync_outbox WHERE user_id=$1 AND device_id=$2 ORDER BY created_at ASC`,[this.userId,this.serverDeviceId])
       return rows.map(outboxFromRow)
     }
-    return this.readBrowserState().outbox.slice().sort((a,b) => (a.scopeType === b.scopeType ? 0 : a.scopeType === 'FILE' ? -1 : 1)
-      || a.createdAt.localeCompare(b.createdAt) || a.clientWriteId.localeCompare(b.clientWriteId)).map(clone)
+    return this.readBrowserState().outbox.map(clone)
   }
-  async getOverviewSyncState(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, database?: LocalSqlDatabase): Promise<OverviewSyncState | null> {
+
+  async getOverviewSyncState(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string): Promise<OverviewSyncState | null> {
     if (this.sql) {
       await this.ensureSql()
-      const rows = await (database ?? this.sql).select<StateRow>(`SELECT state_json FROM overview_sync_states
-        WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4 AND revision_key=$5`,
-      [this.userId,this.serverDeviceId,scopeType,scopeId,revisionKey])
-      const parsed = rows[0] ? parse<unknown>(rows[0].state_json) : null
-      if (parsed !== null && !validSyncState(parsed)) throw new Error('OVERVIEW_SYNC_STATE_CORRUPT')
-      return parsed
+      const rows = await this.sql.select<StateRow>(`SELECT state_json FROM overview_sync_states
+        WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4 AND revision_key=$5`,[this.userId,this.serverDeviceId,scopeType,scopeId,revisionKey])
+      return rows[0] ? parse<OverviewSyncState>(rows[0].state_json) : null
     }
     const found = this.readBrowserState().states.find(item => item.scopeType === scopeType && item.scopeId === scopeId && item.revisionKey === revisionKey)
     return found ? clone(found) : null
   }
+
   async clearOverviewSyncState(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string,
     expectedToken?: OverviewScopeFenceToken): Promise<boolean> {
     const token = this.captureAndValidateToken(scopeType,scopeId,expectedToken)
@@ -626,7 +645,6 @@ export class OverviewRepository {
       try { return await this.transaction(async database => {
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       if (this.sql) {
-        await this.ensureSql()
         await (database ?? this.sql).execute(`DELETE FROM overview_sync_states WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4 AND revision_key=$5`,
           [this.userId,this.serverDeviceId,scopeType,scopeId,revisionKey])
       } else {
@@ -640,6 +658,7 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
     })
   }
+
   async enqueueLegacySeed(record: OverviewCacheRecord): Promise<OverviewOutboxRecord | null> {
     if (!isComplete(record)) return null
     const token = this.captureScopeFenceToken(record.scopeType,record.scopeId)
@@ -657,6 +676,7 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return null; throw error }
     })
   }
+
   async materializeOverviewIntent(clientWriteId: string, requestBody: OverviewResultCommand): Promise<OverviewOutboxRecord | null> {
     return this.serializeWrite(() => this.transaction(async database => {
       const rows = this.sql
@@ -682,6 +702,7 @@ export class OverviewRepository {
       return next
     }).catch(error => { if (error === SCOPE_FENCE_REJECTED) return null; throw error }))
   }
+
   async setOverviewIntentState(clientWriteId: string, nextState: OverviewOutboxRecord['state'], errorCode: string | null = null): Promise<void> {
     await this.serializeWrite(async () => {
       try { await this.transaction(async database => {
@@ -708,12 +729,14 @@ export class OverviewRepository {
       }) } catch (error) { if (error !== SCOPE_FENCE_REJECTED) throw error }
     })
   }
+
   async installRemoteOverview(record: OverviewCacheRecord, remoteState: OverviewSyncState, discardLegacySeed = false,
     expectedToken?: OverviewScopeFenceToken): Promise<boolean> {
+    try {
     const token = this.captureAndValidateToken(record.scopeType,record.scopeId,expectedToken)
-    return this.serializeWrite(async () => {
+    return await this.serializeWrite(async () => {
       if (!this.isScopeFenceTokenCurrent(token)) return false
-      try { return await this.transaction(async database => {
+      return this.transaction(async database => {
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       if (!this.sql) {
         const browser = this.readBrowserState()
@@ -745,9 +768,11 @@ export class OverviewRepository {
         userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType: record.scopeType, scopeId: record.scopeId, revisionKey: record.revisionKey,
       })
       return true
-      }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
+      })
     })
+    } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
   }
+
   private async removeIntent(clientWriteId: string, database?: LocalSqlDatabase): Promise<void> {
     if (this.sql) {
       if (!database) await this.ensureSql()
@@ -759,6 +784,7 @@ export class OverviewRepository {
     state.outbox = state.outbox.filter(item => item.clientWriteId !== clientWriteId)
     this.writeBrowserState(state)
   }
+
   async completeOverviewIntent(clientWriteId: string, record: OverviewCacheRecord, remoteState: OverviewSyncState,
     expectedToken?: OverviewScopeFenceToken): Promise<boolean> {
     const token = this.captureAndValidateToken(record.scopeType,record.scopeId,expectedToken)
@@ -797,6 +823,7 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
     })
   }
+
   async retryOverviewConflictLocally(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string): Promise<OverviewOutboxRecord | null> {
     const token = this.captureScopeFenceToken(scopeType,scopeId)
     return this.serializeWrite(async () => {
@@ -829,6 +856,7 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return null; throw error }
     })
   }
+
   async resolveGenerationEditConflict(clientWriteId: string, choice: 'KEEP_LOCAL' | 'USE_AI', isStillCurrent?: () => boolean,
     validateInputs?: () => Promise<boolean>): Promise<GenerationEditConflictResolution> {
     const all = await this.listOverviewOutbox()
@@ -869,7 +897,7 @@ export class OverviewRepository {
           assertSaveCurrent(isStillCurrent)
           if (validateInputs && !await validateInputs()) throw new Error('OVERVIEW_INPUT_CHANGED')
           const next = this.merge(current,candidate.scopeType,candidate.scopeId,candidate.revisionKey,exact.mode,exact.result,
-            exact.inputFingerprint,exact.outlineIdentityInput ?? undefined,exact.outlineProvenanceInput ?? undefined)
+            exact.inputFingerprint)
           const created = await this.persistSuccessful(next,exact.mode,database,isStillCurrent)
           if (this.sql) assertSaveCurrent(isStillCurrent)
           await updateExact({ ...exact, state: 'STALE', errorCode: 'OVERVIEW_GENERATION_EDIT_CONFLICT_APPLIED', updatedAt: this.now() })
@@ -885,6 +913,7 @@ export class OverviewRepository {
     if (intentRecord) notifyOverviewIntentCreated(this.userId,this.serverDeviceId,intentRecord)
     return result
   }
+
   async useRemoteOverview(record: OverviewCacheRecord, remoteState: OverviewSyncState,
     expectedToken?: OverviewScopeFenceToken): Promise<boolean> {
     const token = this.captureAndValidateToken(record.scopeType,record.scopeId,expectedToken)
@@ -922,27 +951,32 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
     })
   }
+
   async markFileRevisionStale(sourceId: string, currentRevision: string): Promise<void> {
     const records = await this.listOverviewOutbox()
     for (const item of records) if (item.scopeType === 'FILE' && item.scopeId === sourceId && item.revisionKey !== currentRevision && item.state !== 'STALE') {
       await this.setOverviewIntentState(item.clientWriteId,'STALE','OVERVIEW_REVISION_STALE')
     }
   }
+
   async getFileOverview(sourceId: string, ingestionRevision: string): Promise<FileOverviewRecord | null> {
     requireValue(sourceId, 'OVERVIEW_SCOPE_INVALID')
     requireFileRevision(ingestionRevision)
     const record = await this.get('FILE', sourceId, ingestionRevision)
     return record ? { ...await this.hydrateSyncStatus(record), scopeType: 'FILE', sourceId, ingestionRevision } : null
   }
+
   async captureGenerationBaseline(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, mode: OverviewMode): Promise<string> {
     const record = await this.get(scopeType,scopeId,revisionKey)
     return editablePartBaseline(record,mode)
   }
+
   async getLatestFileOverview(sourceId: string): Promise<FileOverviewRecord | null> {
     requireValue(sourceId, 'OVERVIEW_SCOPE_INVALID')
     const record = await this.getLatest('FILE', sourceId)
     return record ? { ...await this.hydrateSyncStatus(record), scopeType: 'FILE', sourceId, ingestionRevision: record.revisionKey } : null
   }
+
   async saveFileOverviewPart(input: SaveFileOverviewPartInput): Promise<FileOverviewRecord> {
     requireValue(input.sourceId, 'OVERVIEW_SCOPE_INVALID')
     requireFileRevision(input.ingestionRevision)
@@ -955,7 +989,7 @@ export class OverviewRepository {
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       const current = await this.get('FILE', input.sourceId, input.ingestionRevision, database)
       const next = this.merge(current, 'FILE', input.sourceId,
-        input.ingestionRevision, input.mode, input.response, null, input.outlineIdentityInput, input.outlineProvenanceInput)
+        input.ingestionRevision, input.mode, input.response, null)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       assertSaveCurrent(input.isStillCurrent)
       if (input.generationBaseline !== undefined && editablePartBaseline(current,input.mode) !== input.generationBaseline) {
@@ -979,11 +1013,13 @@ export class OverviewRepository {
     })
     return saved.record
   }
+
   async getSubjectOverview(subjectId: string): Promise<SubjectOverviewRecord | null> {
     requireValue(subjectId, 'OVERVIEW_SCOPE_INVALID')
     const record = await this.get('SUBJECT', subjectId, SUBJECT_REVISION_KEY)
     return record ? { ...await this.hydrateSyncStatus(record), scopeType: 'SUBJECT', subjectId } : null
   }
+
   async saveSubjectOverviewPart(input: SaveSubjectOverviewPartInput): Promise<SubjectOverviewRecord> {
     requireValue(input.subjectId, 'OVERVIEW_SCOPE_INVALID')
     const token = this.captureScopeFenceToken('SUBJECT',input.subjectId)
@@ -995,7 +1031,7 @@ export class OverviewRepository {
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       const current = await this.get('SUBJECT', input.subjectId, SUBJECT_REVISION_KEY, database)
       const next = this.merge(current, 'SUBJECT', input.subjectId,
-        SUBJECT_REVISION_KEY, input.mode, input.response, input.inputFingerprint, input.outlineIdentityInput, input.outlineProvenanceInput)
+        SUBJECT_REVISION_KEY, input.mode, input.response, input.inputFingerprint)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       assertSaveCurrent(input.isStillCurrent)
       if (input.generationBaseline !== undefined && editablePartBaseline(current,input.mode) !== input.generationBaseline) {
@@ -1019,15 +1055,18 @@ export class OverviewRepository {
     })
     return saved.record
   }
+
   async markSubjectOverviewFailed(subjectId: string, _mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void> {
     requireValue(subjectId, 'OVERVIEW_SCOPE_INVALID')
     await this.markFailed('SUBJECT', subjectId, SUBJECT_REVISION_KEY, errorCode, errorDetail)
   }
+
   async markFileOverviewFailed(sourceId: string, ingestionRevision: string, _mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void> {
     requireValue(sourceId, 'OVERVIEW_SCOPE_INVALID')
     requireFileRevision(ingestionRevision)
     await this.markFailed('FILE', sourceId, ingestionRevision, errorCode, errorDetail)
   }
+
   private async markFailed(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, errorCode: string, errorDetail: string): Promise<void> {
     const token = this.captureScopeFenceToken(scopeType,scopeId)
     await this.serializeWrite(async () => {
@@ -1038,9 +1077,7 @@ export class OverviewRepository {
       const now = this.now()
       await this.persist(current
         ? { ...current, status: 'FAILED', errorCode: safeErrorCode(errorCode), errorDetail: safeErrorDetail(errorDetail), updatedAt: now }
-        : { scopeType, scopeId, revisionKey, schemaVersion: 1, title: '', outline: null, summary: null,
-            identityReady: false, outlineIdentity: null, outlineIdentityInput: null,
-            outlineProvenance: null, outlineProvenanceInput: null,
+        : { scopeType, scopeId, revisionKey, schemaVersion: 2, title: '', outlineMarkdown: null, summaryMarkdown: null,
             outlineGeneratedAt: null, summaryGeneratedAt: null, inputFingerprint: null, status: 'FAILED',
             errorCode: safeErrorCode(errorCode), errorDetail: safeErrorDetail(errorDetail), updatedAt: now }, database)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
@@ -1050,14 +1087,38 @@ export class OverviewRepository {
       }) } catch (error) { if (error !== SCOPE_FENCE_REJECTED) throw error }
     })
   }
+
+  async saveOverviewSyncState(state: OverviewSyncState): Promise<void> {
+    return this.saveSyncState(state)
+  }
+
+  private async saveSyncState(state: OverviewSyncState, database?: LocalSqlDatabase): Promise<void> {
+    if (this.sql) {
+      if (!database) await this.ensureSql()
+      await (database ?? this.sql).execute(`INSERT INTO overview_sync_states
+        (user_id,device_id,scope_type,scope_id,revision_key,state_json,updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(user_id,device_id,scope_type,scope_id,revision_key) DO UPDATE SET
+        state_json=excluded.state_json,updated_at=excluded.updated_at`,
+      [this.userId,this.serverDeviceId,state.scopeType,state.scopeId,state.revisionKey,JSON.stringify(state),state.updatedAt])
+      return
+    }
+    const browser = this.readBrowserState()
+    const index = browser.states.findIndex(item => item.scopeType === state.scopeType && item.scopeId === state.scopeId && item.revisionKey === state.revisionKey)
+    if (index < 0) browser.states.push(state); else browser.states[index] = state
+    this.writeBrowserState(browser)
+  }
+
   async removeFileOverviews(sourceId: string): Promise<void> {
     requireValue(sourceId, 'OVERVIEW_SCOPE_INVALID')
     await this.serializeWrite(() => this.transaction(database => this.removeScope('FILE', sourceId, database)))
   }
+
   async removeSubjectOverview(subjectId: string): Promise<void> {
     requireValue(subjectId, 'OVERVIEW_SCOPE_INVALID')
     await this.serializeWrite(() => this.transaction(database => this.removeScope('SUBJECT', subjectId, database)))
   }
+
   private async removeScope(scopeType: 'FILE' | 'SUBJECT', scopeId: string, database?: LocalSqlDatabase): Promise<void> {
     if (this.sql) {
       if (!database) await this.ensureSql()

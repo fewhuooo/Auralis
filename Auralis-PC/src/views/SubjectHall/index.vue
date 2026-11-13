@@ -431,10 +431,11 @@ const handleSaveSubject = async (formData: any) => {
       closeAfterSave = true
     }
   } catch (e) {
-    console.error('Failed to save subject:', e)
+    const duplicateName = e instanceof Error && e.message === 'SUBJECT_NAME_ALREADY_EXISTS'
+    if (!duplicateName) console.error('Failed to save subject:', e)
     ElNotification({
       title: '学科空间保存失败',
-      message: '更改未能保存，请重试。表单内容仍保留。',
+      message: duplicateName ? '已有同名学科，请更换名称后重试。' : '更改未能保存，请重试。表单内容仍保留。',
       type: 'error',
       position: 'top-right'
     })

@@ -233,7 +233,7 @@ class ProviderHttpClientTests {
 
         ProviderHttpClient client = new ProviderHttpClient(new ObjectMapper(), transport, 1024, 3_000, 10_000);
         client.postJson(endpoint, "/chat/completions", "secret", Map.of(), JsonNode.class, 120_000);
-        client.postStream(endpoint, "/chat/completions", "secret", Map.of(), line -> { });
+        client.postStream(endpoint, "/chat/completions", "secret", Map.of(), line -> { }, null);
 
         assertThat(jsonConnect).hasValue(3_000);
         assertThat(jsonResponse).hasValue(120_000);

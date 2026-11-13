@@ -61,7 +61,7 @@ function setupCallback(sourceFile, name, bindings) {
 const modalScript = await readSetupScript('components/subject/SubjectCreateModal.vue')
 const hallScript = await readSetupScript('views/SubjectHall/index.vue')
 
-async function createFixture({ includeSubject = true } = {}) {
+async function createFixture({ includeSubject = true, subjectName = '原学科名称' } = {}) {
   const suffix = ++fixtureNumber
   const userId = `subject-edit-user-${suffix}`
   const deviceId = `subject-edit-device-${suffix}`
@@ -81,7 +81,7 @@ async function createFixture({ includeSubject = true } = {}) {
   if (includeSubject) {
     await repo.upsert('SUBJECT', subjectId, {
       id: subjectId,
-      name: '原学科名称',
+      name: subjectName,
       description: '原学科描述',
       iconKey: 'book',
       sortKey: 'sort-0042',
@@ -343,6 +343,26 @@ test('creating a Subject still commits locally, closes on success, and opens its
   assert.equal(created.name, '新学科')
   assert.deepEqual(harness.routes, [`/subject/${created.id}`])
   assert.equal((await fixture.repo.read('SUBJECT', created.id)).value.name, '新学科')
+})
+
+test('creating a Subject with the same trimmed name ignores case and leaves the form open without a local write', async () => {
+  const fixture = await createFixture({ subjectName: ' Chemistry ' })
+  const harness = createSaveHarness({ ...fixture, subject: null, formSubjectData: null })
+  harness.form.value.name = ' chemistry '
+  harness.form.value.description = '保留的描述'
+
+  harness.handleSave()
+  await harness.pendingSave
+
+  assert.equal(harness.showSubjectModal.value, true)
+  assert.equal(harness.isSavingSubject.value, false)
+  assert.equal(harness.form.value.name, ' chemistry ')
+  assert.equal(harness.form.value.description, '保留的描述')
+  assert.deepEqual(harness.routes, [])
+  assert.equal(harness.notifications[0]?.type, 'error')
+  assert.match(harness.notifications[0]?.message, /已有同名学科/)
+  assert.deepEqual((await fixture.repo.list('SUBJECT')).map((row) => row.value.id), [fixture.subjectId])
+  assert.deepEqual(await fixture.repo.listUnresolved('SUBJECT'), [])
 })
 
 test('a pending edit ignores duplicate saves and cannot close or switch to another Subject', async () => {

@@ -63,13 +63,32 @@ public class IngestionJobService implements ParsedDocumentIngestionPort {
                 .findFirstByUserIdAndSourceIdAndIngestionRevisionAndStatusInOrderByCreatedAtDesc(
                         userId, sourceId, ingestionRevision, ACTIVE_STATUSES);
         if (existing.isPresent()) {
-            IngestionJobEntity job = existing.get();
-            return reference(job);
+            return reference(existing.get());
         }
+        return reference(createParsedDocumentJob(userId, sourceId, parsedDocumentId, ingestionRevision, generation));
+    }
+
+    @Transactional
+    @Override
+    public void resumeParsedDocument(
+            UUID userId, UUID sourceId, UUID parsedDocumentId, UUID ingestionRevision, UUID generation) {
+        var existing = jobRepository
+                .findFirstForUpdateByUserIdAndSourceIdAndIngestionRevisionAndStatusInOrderByCreatedAtDesc(
+                        userId, sourceId, ingestionRevision, ACTIVE_STATUSES);
+        if (existing.isPresent()) {
+            // A worker holding this claim may have observed the source while it was deleted.
+            existing.get().releaseClaim();
+            return;
+        }
+        createParsedDocumentJob(userId, sourceId, parsedDocumentId, ingestionRevision, generation);
+    }
+
+    private IngestionJobEntity createParsedDocumentJob(
+            UUID userId, UUID sourceId, UUID parsedDocumentId, UUID ingestionRevision, UUID generation) {
         IngestionJobEntity job = new IngestionJobEntity(
                 UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
         job.attachParsedDocument(parsedDocumentId, ingestionRevision);
-        return reference(jobRepository.save(job));
+        return jobRepository.save(job);
     }
 
     @Transactional(readOnly = true)

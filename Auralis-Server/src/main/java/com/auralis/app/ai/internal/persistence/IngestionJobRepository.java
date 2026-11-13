@@ -32,6 +32,10 @@ public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity
             UUID userId, UUID sourceId, UUID ingestionRevision, List<IngestionJobStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<IngestionJobEntity> findFirstForUpdateByUserIdAndSourceIdAndIngestionRevisionAndStatusInOrderByCreatedAtDesc(
+            UUID userId, UUID sourceId, UUID ingestionRevision, List<IngestionJobStatus> statuses);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select job from IngestionJobEntity job
             where (job.status = :pendingStatus

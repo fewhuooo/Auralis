@@ -6,11 +6,9 @@ import com.auralis.app.ai.AiSettingsService;
 import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.OverviewResultService;
 import com.auralis.app.ai.OverviewResultView;
-import com.auralis.app.ai.OverviewDtos.OverviewChapter;
-import com.auralis.app.ai.OverviewDtos.OverviewSection;
-import com.auralis.app.ai.OverviewDtos.OverviewSummary;
 import com.auralis.app.ai.internal.persistence.SourceChunkEntity;
 import com.auralis.app.ai.internal.persistence.SourceChunkRepository;
+import com.auralis.app.ai.retrieval.PgVectorRetrievalRepository;
 import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.ai.usage.AiCredentialSource;
@@ -41,6 +39,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -78,7 +77,7 @@ class ChatReadToolsCatalogTests {
                 .thenReturn(List.of(first, second));
         when(overviews.currentSourceOverviewIds(eq(USER_ID), anyMap())).thenReturn(java.util.Set.of(first.id()));
         ChatReadTools.ReadScope scope = tools.begin(USER_ID,
-                new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of(), null));
+                new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of()));
 
         JsonNode firstPage = objectMapper.readTree(tools.execute(scope, null, ChatReadTools.LIST_SOURCES,
                 "{\"limit\":1}"));
@@ -112,7 +111,7 @@ class ChatReadToolsCatalogTests {
         when(sources.findActiveViewsByIds(USER_ID, List.of(selected.id()))).thenReturn(List.of(selected));
         ChatReadTools.ReadScope scope = tools.begin(USER_ID,
                 new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SELECTED_SOURCES,
-                        List.of(selected.id()), null));
+                        List.of(selected.id())));
 
         JsonNode result = objectMapper.readTree(tools.execute(scope, null, ChatReadTools.LIST_SOURCES, "{}"));
 
@@ -130,7 +129,7 @@ class ChatReadToolsCatalogTests {
         when(sources.list(USER_ID)).thenReturn(List.of(current, adjacent));
         when(sources.findActiveViewsByIds(USER_ID, List.of(current.id()))).thenReturn(List.of(current));
         ChatReadTools.ReadScope scope = tools.begin(USER_ID,
-                new ReadingContext(current.id(), SUBJECT_ID, ReadingContext.RetrievalMode.AUTO, List.of(), null));
+                new ReadingContext(current.id(), SUBJECT_ID, ReadingContext.RetrievalMode.AUTO, List.of()));
 
         JsonNode result = objectMapper.readTree(tools.execute(scope, null, ChatReadTools.LIST_SOURCES, "{}"));
 
@@ -143,13 +142,13 @@ class ChatReadToolsCatalogTests {
     void subjectModeRejectsCurrentOrSelectedSourceOverrides() {
         UUID currentSourceId = UUID.randomUUID();
         assertThatThrownBy(() -> tools.begin(USER_ID,
-                new ReadingContext(currentSourceId, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of(), null)))
+                new ReadingContext(currentSourceId, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of())))
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).code())
                 .isEqualTo("VALIDATION_FAILED");
         assertThatThrownBy(() -> tools.begin(USER_ID,
                 new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT,
-                        List.of(currentSourceId), null)))
+                        List.of(currentSourceId))))
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).code())
                 .isEqualTo("VALIDATION_FAILED");
@@ -161,7 +160,7 @@ class ChatReadToolsCatalogTests {
                 "Source", SourceIngestionStatus.READY, "00000000-0000-0000-0000-000000000301");
         when(sources.list(USER_ID)).thenReturn(List.of(source));
         ChatReadTools.ReadScope scope = tools.begin(USER_ID,
-                new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of(), null));
+                new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of()));
 
         assertThatThrownBy(() -> tools.execute(scope, null, ChatReadTools.LIST_SOURCES, "{\"limit\":21}"))
                 .isInstanceOf(DomainException.class)
@@ -244,7 +243,7 @@ class ChatReadToolsCatalogTests {
                 .thenReturn(Optional.empty());
         ChatReadTools.ReadScope scope = tools.begin(USER_ID,
                 new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SELECTED_SOURCES,
-                        List.of(selected.id()), null));
+                        List.of(selected.id())));
 
         JsonNode result = objectMapper.readTree(tools.execute(scope, null, ChatReadTools.READ_SOURCE_OVERVIEW,
                 "{\"sourceId\":\"" + selected.id() + "\"}"));
@@ -262,7 +261,7 @@ class ChatReadToolsCatalogTests {
     }
 
     @Test
-    void searchCanNarrowCatalogScopeAndReturnsOnlyRealChunksFromSelectedSources() throws Exception {
+    void searchUsesFrozenCatalogScopeAndCanNarrowItToOneSource() throws Exception {
         UUID selectedId = UUID.fromString("00000000-0000-0000-0000-000000000041");
         UUID otherId = UUID.fromString("00000000-0000-0000-0000-000000000042");
         SourceView selected = source(selectedId.toString(), SUBJECT_ID, "Selected", SourceIngestionStatus.READY,
@@ -270,31 +269,37 @@ class ChatReadToolsCatalogTests {
         SourceView other = source(otherId.toString(), UUID.fromString("00000000-0000-0000-0000-000000000099"),
                 "Other", SourceIngestionStatus.READY,
                 "00000000-0000-0000-0000-000000000402");
-        when(sources.list(USER_ID)).thenReturn(List.of(selected, other));
+        SourceView newlyReady = source("00000000-0000-0000-0000-000000000043", SUBJECT_ID, "Newly ready",
+                SourceIngestionStatus.READY, "00000000-0000-0000-0000-000000000403");
+        when(sources.list(USER_ID)).thenReturn(List.of(selected, other), List.of(selected, other, newlyReady));
         when(sources.findActiveViewsByIds(eq(USER_ID), anyCollection())).thenAnswer(invocation -> {
             java.util.Collection<UUID> ids = invocation.getArgument(1);
-            return List.of(selected, other).stream().filter(source -> ids.contains(source.id())).toList();
+            return List.of(selected, other, newlyReady).stream().filter(source -> ids.contains(source.id())).toList();
         });
         List<Double> vector = new ArrayList<>(java.util.Collections.nCopies(1024, 0d));
         vector.set(0, 1d);
         SourceChunkRepository chunkRepository = mock(SourceChunkRepository.class);
         UUID selectedChunkId = UUID.fromString("00000000-0000-0000-0000-000000000411");
-        UUID otherChunkId = UUID.fromString("00000000-0000-0000-0000-000000000412");
         String vectorJson = objectMapper.writeValueAsString(vector);
-        when(chunkRepository.findAllByUserIdAndActiveTrue(USER_ID)).thenReturn(List.of(
-                new SourceChunkEntity(selectedChunkId, USER_ID, selectedId, 0, "selected evidence", "hash1",
-                        0, 17, vectorJson),
-                new SourceChunkEntity(otherChunkId, USER_ID, otherId, 0, "other evidence", "hash2",
-                        0, 13, vectorJson)));
-        RetrievalService retrieval = new RetrievalService(chunkRepository, sources, null, subjects);
+        when(chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(USER_ID, selectedId))
+                .thenReturn(List.of(new SourceChunkEntity(selectedChunkId, USER_ID, selectedId, 0,
+                        "selected evidence", "hash1", 0, 17, vectorJson)));
+        when(chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(USER_ID, otherId))
+                .thenReturn(List.of(new SourceChunkEntity(UUID.randomUUID(), USER_ID, otherId, 0,
+                        "other evidence", "hash2", 0, 14, vectorJson)));
+        when(chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(USER_ID, newlyReady.id()))
+                .thenReturn(List.of(new SourceChunkEntity(UUID.randomUUID(), USER_ID, newlyReady.id(), 0,
+                        "newly available evidence", "hash3", 0, 24, vectorJson)));
+        RetrievalService retrieval = new RetrievalService(chunkRepository, sources,
+                mock(PgVectorRetrievalRepository.class), subjects);
         AiSettingsService settings = mock(AiSettingsService.class);
         when(settings.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.SILICONFLOW, "embedding-model",
+                AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                 new AiCredential("https://example.invalid", "key", "embedding-model"),
                 AiCredentialSource.PLATFORM));
         AiTaskScope taskScope = mock(AiTaskScope.class);
-        when(taskScope.embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.SILICONFLOW), anyString(),
-                eq(List.of("query")), any(), eq(AiCredentialSource.PLATFORM)))
+        when(taskScope.embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.OPENAI_COMPATIBLE), anyString(),
+                anyList(), any(), eq(AiCredentialSource.PLATFORM)))
                 .thenReturn(new AiInvocationResult<>(new EmbeddingResult(List.of(vector)), null));
         ChatReadTools searchTools = new ChatReadTools(null, objectMapper, retrieval, sources, chunkRepository,
                 subjects, settings, ChatAgentProperties.defaults(), overviews);
@@ -309,8 +314,20 @@ class ChatReadToolsCatalogTests {
         assertThat(result.path("evidence")).hasSize(1);
         assertThat(result.path("evidence").get(0).path("sourceId").textValue()).isEqualTo(selectedId.toString());
         assertThat(result.path("evidence").get(0).path("chunkId").textValue()).isEqualTo(selectedChunkId.toString());
-        verify(taskScope, times(1)).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.SILICONFLOW),
+        verify(chunkRepository, never()).findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(USER_ID, otherId);
+        verify(taskScope, times(1)).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.OPENAI_COMPATIBLE),
                 anyString(), eq(List.of("query")), any(), eq(AiCredentialSource.PLATFORM));
+
+        JsonNode allEvidence = objectMapper.readTree(searchTools.execute(scope, taskScope, ChatReadTools.SEARCH,
+                "{\"query\":\"all evidence\"}")).path("evidence");
+
+        assertThat(allEvidence).extracting(item -> item.path("sourceId").textValue())
+                .containsExactlyInAnyOrder(selectedId.toString(), otherId.toString());
+        verify(sources, times(1)).list(USER_ID);
+        verify(chunkRepository, never())
+                .findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(USER_ID, newlyReady.id());
+        verify(taskScope, times(1)).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.OPENAI_COMPATIBLE),
+                anyString(), eq(List.of("all evidence")), any(), eq(AiCredentialSource.PLATFORM));
     }
 
     @Test
@@ -320,7 +337,7 @@ class ChatReadToolsCatalogTests {
         when(sources.list(USER_ID)).thenReturn(List.of(source));
         when(sources.findActiveViewsByIds(USER_ID, List.of(source.id()))).thenReturn(List.of(source));
         ChatReadTools.ReadScope scope = tools.begin(USER_ID,
-                new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of(), null));
+                new ReadingContext(null, SUBJECT_ID, ReadingContext.RetrievalMode.SUBJECT, List.of()));
         List<String> invalidArguments = List.of(
                 "{\"query\":\"query\",\"sourceIds\":[]}",
                 "{\"query\":\"query\",\"sourceIds\":null}",
@@ -370,11 +387,10 @@ class ChatReadToolsCatalogTests {
 
     private OverviewResultView savedOverview(SourceView source) {
         return new OverviewResultView(UUID.randomUUID(), "SOURCE", source.id(), source.subjectId(),
-                source.ingestionRevision(), 7, 4, 5, 1, "Saved",
-                List.of(new OverviewChapter("第一章", List.of(
-                        new OverviewSection("小节", "细节", List.of(source.id().toString()), null)))),
-                new OverviewSummary("概述🌿", List.of("要点"), List.of("第一步")),
-                List.of(), List.of(), null, null, null, null, Instant.EPOCH, false, null, null, null, null);
+                source.ingestionRevision(), 7, 4, 5, 2, "Saved",
+                "## Outline\n\n### 第一章\n\n**小节**: 细节",
+                "## Summary\n\n概述\uD83C\uDF3F\n\n### Key points\n\n- 要点\n\n### Learning path\n\n- 第一步",
+                List.of(), List.of(), null, null, null, null, Instant.EPOCH, null, null);
     }
 }
 

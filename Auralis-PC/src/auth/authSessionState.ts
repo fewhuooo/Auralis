@@ -51,17 +51,23 @@ export function isAuthenticationRequired(error: unknown): boolean {
 }
 
 export function isPublicAuthPath(url: string): boolean {
-  const path = url.split('?', 1)[0].replace(/^https?:\/\/[^/]+/i, '')
+  const path = authPath(url)
   return path === '/api/auth/login'
     || path === '/api/auth/register'
     || path === '/api/auth/refresh'
-    || path === '/api/auth/logout'
     || path === '/actuator/health'
 }
 
-export function isAccountDeletionConfirmationFailure(url: string, method: string | undefined, responseData: unknown): boolean {
-  const path = url.split('?', 1)[0].replace(/^https?:\/\/[^/]+/i, '')
-  if (method?.toUpperCase() !== 'DELETE' || path !== '/api/auth/me' || !responseData || typeof responseData !== 'object') {
+export function isLogoutPath(url: string): boolean {
+  return authPath(url) === '/api/auth/logout'
+}
+
+export function isPasswordConfirmationFailure(url: string, method: string | undefined, responseData: unknown): boolean {
+  const path = authPath(url)
+  const verb = method?.toUpperCase()
+  const confirmsPassword = (verb === 'DELETE' && path === '/api/auth/me')
+    || (verb === 'PUT' && path === '/api/auth/password')
+  if (!confirmsPassword || !responseData || typeof responseData !== 'object') {
     return false
   }
 
@@ -71,4 +77,8 @@ export function isAccountDeletionConfirmationFailure(url: string, method: string
 
 export function shouldBlockProtectedRequest(url: string, reauthenticationRequired: boolean): boolean {
   return reauthenticationRequired && !isPublicAuthPath(url)
+}
+
+function authPath(url: string): string {
+  return url.split('?', 1)[0].replace(/^https?:\/\/[^/]+/i, '')
 }

@@ -838,21 +838,25 @@ export const useTaskStore = defineStore('task', () => {
       if (!task || task.status === 'cancelled') throw new Error('源任务已变化，请刷新后重试')
       if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
       if (isCompletedTask(task)) throw new Error('已完成的排期任务已固定')
-      let model: TaskModel | undefined
       for (let minutes = TIMELINE_START_MINUTES; minutes <= TIMELINE_END_MINUTES; minutes += TIMELINE_SLOT_MINUTES) {
         const slotTime = timeStringFromMinutes(minutes)
-        const candidate = toTaskModel({ ...task, status: task.status, startTime: `${day} ${slotTime}` })
-        if (isScheduledAtInPast(candidate.scheduledAt)) continue
-        if (!isScheduleWithinDeadline(candidate.scheduledAt, candidate.durationMinutes, candidate.dueAt)) continue
-        if (!findScheduleConflict(allTasks.value, toPresentationTask(candidate), new Set([taskId]))) {
-          model = candidate
-          break
+        const model = toTaskModel({ ...task, status: task.status, startTime: `${day} ${slotTime}` })
+        if (isScheduledAtInPast(model.scheduledAt)) continue
+        if (!isScheduleWithinDeadline(model.scheduledAt, model.durationMinutes, model.dueAt)) continue
+        if (findScheduleConflict(allTasks.value, toPresentationTask(model), new Set([taskId]))) continue
+        if (task.sync_status === 'pending_update') {
+          const pending = await (await repository()).listUnresolved('TASK')
+          if (pending.some((mutation) => mutation.mutationType === 'SCHEDULE_UNSCHEDULE' && mutation.resourceId === taskId)) {
+            await insertTaskAtSlot(taskId, slotTime, day)
+            return
+          }
         }
+        assertScheduledAtIsNotPast(model.scheduledAt)
+        model.version = task.version
+        await updateTaskModel(model)
+        return
       }
-      if (!model) throw new Error('当天没有符合任务时长和截止期限的可用排期时段')
-      assertScheduledAtIsNotPast(model.scheduledAt)
-      model.version = task.version
-      await updateTaskModel(model)
+      throw new Error('当天没有符合任务时长和截止期限的可用排期时段')
     })
   }
 

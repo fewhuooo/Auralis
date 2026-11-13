@@ -83,9 +83,13 @@ public class ReviewStateEntity {
         this.mastered = false;
         this.stableSuccessCount = 0;
         this.nextReviewStage = "EARLY_RECALL";
+        this.contentHash = newContentHash;
+        clearCausalReview();
+    }
+
+    public void clearCausalReview() {
         this.lastReviewId = null;
         this.pendingReviewId = null;
-        this.contentHash = newContentHash;
         this.updatedAt = Instant.now();
     }
 

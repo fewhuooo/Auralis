@@ -307,7 +307,7 @@ test('same-session token rotation keeps a local statistics read current', async 
   LocalSubjectStats.compute = async () => pending.promise
   try {
     const loading = statsStore.loadSubjectStats('token-subject', { days: 7, timeZone: 'UTC' })
-    authStore.setTokens({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh' })
+    authStore.applyRefresh({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh' }, 'rotated-sid')
     pending.resolve(statsView('token-subject', 3))
     const result = await loading
     assert.equal(result.overview.fileSourceCount, 3)

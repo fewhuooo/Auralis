@@ -1,6 +1,5 @@
 import request from './request.ts'
 import { ApiProblemError } from './httpError.ts'
-import { validateCanonicalOverviewProvenance } from './overviewResponseValidator.ts'
 import type {
   OverviewResultCommand,
   OverviewResultView,
@@ -14,17 +13,38 @@ function asOverviewResult(value: unknown): OverviewResultView {
   const item = value as Record<string, unknown>
   if (typeof item.id !== 'string' || !['SOURCE', 'SUBJECT'].includes(String(item.scopeType))
     || !Number.isInteger(item.version) || Number(item.version) < 0
-    || !Number.isInteger(item.schemaVersion) || item.schemaVersion !== 1
-    || typeof item.title !== 'string' || !Array.isArray(item.outline) || !item.summary
-    || typeof item.updatedAt !== 'string') throw new Error('OVERVIEW_RESULT_INVALID')
-  const outlineIdentity = item.outlineIdentity && typeof item.outlineIdentity === 'object'
-    && (item.outlineIdentity as Record<string, unknown>).schemaVersion === 1
-    && Array.isArray((item.outlineIdentity as Record<string, unknown>).nodes)
-    ? item.outlineIdentity : null
-  const outlineProvenance = item.outlineProvenance == null ? null
-    : validateCanonicalOverviewProvenance(item.outlineProvenance, item.outline as OverviewResultView['outline'])
-  return { ...item, identityReady: item.identityReady === true && outlineIdentity !== null,
-    outlineIdentity, outlineProvenance } as unknown as OverviewResultView
+    || !Number.isInteger(item.outlineVersion) || Number(item.outlineVersion) < 0
+    || !Number.isInteger(item.summaryVersion) || Number(item.summaryVersion) < 0
+    || item.schemaVersion !== 2
+    || typeof item.title !== 'string'
+    || typeof item.outlineMarkdown !== 'string' || !item.outlineMarkdown.trim()
+    || typeof item.summaryMarkdown !== 'string' || !item.summaryMarkdown.trim()
+    || typeof item.updatedAt !== 'string') {
+    throw new Error('OVERVIEW_RESULT_INVALID')
+  }
+  return {
+    id: item.id as string,
+    scopeType: item.scopeType as 'SOURCE' | 'SUBJECT',
+    sourceId: (item.sourceId as string | null) ?? null,
+    subjectId: (item.subjectId as string | null) ?? null,
+    ingestionRevision: (item.ingestionRevision as string | null) ?? null,
+    version: item.version as number,
+    outlineVersion: item.outlineVersion as number,
+    summaryVersion: item.summaryVersion as number,
+    schemaVersion: 2,
+    title: item.title as string,
+    outlineMarkdown: item.outlineMarkdown as string,
+    summaryMarkdown: item.summaryMarkdown as string,
+    outlineSourceManifest: (item.outlineSourceManifest as OverviewResultView['outlineSourceManifest']) ?? null,
+    summarySourceManifest: (item.summarySourceManifest as OverviewResultView['summarySourceManifest']) ?? null,
+    outlineInputFingerprint: (item.outlineInputFingerprint as string | null) ?? null,
+    summaryInputFingerprint: (item.summaryInputFingerprint as string | null) ?? null,
+    outlineGeneratedAt: (item.outlineGeneratedAt as string | null) ?? null,
+    summaryGeneratedAt: (item.summaryGeneratedAt as string | null) ?? null,
+    updatedAt: item.updatedAt as string,
+    outlineInputDescriptor: (item.outlineInputDescriptor as OverviewResultView['outlineInputDescriptor']) ?? undefined,
+    summaryInputDescriptor: (item.summaryInputDescriptor as OverviewResultView['summaryInputDescriptor']) ?? undefined,
+  }
 }
 
 function asOverviewSubjectStatusesResponse(value: unknown): OverviewSubjectStatusesResponse {

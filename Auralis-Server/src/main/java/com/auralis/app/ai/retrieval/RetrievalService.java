@@ -7,15 +7,13 @@ import com.auralis.app.source.SourceService;
 import com.auralis.app.source.SourceView;
 import com.auralis.app.source.SourceIngestionStatus;
 import com.auralis.app.subject.SubjectService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -56,18 +54,6 @@ public class RetrievalService {
     private final SubjectService subjectService;
     private final EmbeddingVectorCodec vectorCodec = new EmbeddingVectorCodec();
 
-    public RetrievalService(SourceChunkRepository chunkRepository, SourceService sourceService) {
-        this(chunkRepository, sourceService, null, null);
-    }
-
-    public RetrievalService(
-            SourceChunkRepository chunkRepository,
-            SourceService sourceService,
-            PgVectorRetrievalRepository pgVectorRepository) {
-        this(chunkRepository, sourceService, pgVectorRepository, null);
-    }
-
-    @Autowired
     public RetrievalService(
             SourceChunkRepository chunkRepository,
             SourceService sourceService,
@@ -79,81 +65,6 @@ public class RetrievalService {
         this.subjectService = subjectService;
     }
 
-    public List<Citation> retrieve(UUID userId, List<Double> queryVector, int topK) {
-        return retrieve(userId, queryVector, topK, null);
-    }
-
-    public List<Citation> retrieve(
-            UUID userId,
-            List<Double> queryVector,
-            int topK,
-            ReadingContext readingContext) {
-        return retrieve(userId, queryVector, topK, readingContext, null);
-    }
-
-    public List<Citation> retrieve(
-            UUID userId,
-            List<Double> queryVector,
-            int topK,
-            ReadingContext readingContext,
-            String queryText) {
-        vectorCodec.validate(queryVector);
-        if (topK <= 0) {
-            throw new IllegalArgumentException("topK must be positive");
-        }
-        if (readingContext != null) {
-            if (readingContext.retrievalMode() == ReadingContext.RetrievalMode.SELECTED_SOURCES) {
-                return retrieveSelectedSources(userId, queryVector, topK, readingContext, queryText);
-            }
-            if (readingContext.retrievalMode() == ReadingContext.RetrievalMode.SUBJECT) {
-                return retrieveSubjectSources(userId, queryVector, topK, readingContext, queryText);
-            }
-        }
-        SourceView currentSource = validateReadingContext(userId, readingContext);
-        UUID sourceId = currentSource == null ? null : currentSource.id();
-        List<Citation> currentHits = retrieveForSource(userId, queryVector, topK, sourceId, queryText);
-        if (currentSource == null || queryText == null || queryText.isBlank()) return currentHits;
-
-        List<SourceView> subjectSources = sourceService.list(userId);
-        ScopeEscalationPolicy.Decision decision = ScopeEscalationPolicy.decide(
-                queryText, currentSource, subjectSources == null ? List.of() : subjectSources,
-                currentHits.size(), ReadingRetrievalConfig.defaults());
-        if (!decision.escalated()) return currentHits;
-
-        List<Citation> expanded = new ArrayList<>(currentHits);
-        for (UUID targetId : decision.sourceIds()) {
-            expanded.addAll(retrieveForSource(userId, queryVector, topK, targetId, queryText));
-        }
-        return expanded.stream()
-                .collect(java.util.stream.Collectors.toMap(
-                        citation -> citation.sourceId() + ":" + citation.chunkId(),
-                        citation -> citation,
-                        (first, ignored) -> first,
-                        LinkedHashMap::new))
-                .values().stream()
-                .limit(topK)
-                .toList();
-    }
-
-    private List<Citation> retrieveSelectedSources(
-            UUID userId,
-            List<Double> queryVector,
-            int topK,
-            ReadingContext readingContext,
-            String queryText) {
-        requireActiveSubject(userId, readingContext.subjectId());
-        List<UUID> requestedIds = readingContext.sourceIds();
-        List<SourceView> requestedSources = requireReadySources(userId, requestedIds, readingContext.subjectId());
-        if (readingContext.currentSourceId() != null) {
-            SourceView current = sourceService.get(userId, readingContext.currentSourceId());
-            if (!readingContext.subjectId().equals(current.subjectId())) {
-                throw new DomainException("VALIDATION_FAILED", "readingContext subject does not match the current source");
-            }
-            requireReady(current);
-        }
-        return retrieveAcrossSources(userId, queryVector, topK, requestedSources, queryText);
-    }
-
     public List<Citation> retrieveWithinSources(
             UUID userId,
             List<Double> queryVector,
@@ -163,14 +74,33 @@ public class RetrievalService {
             String queryText) {
         vectorCodec.validate(queryVector);
         if (topK <= 0) throw new IllegalArgumentException("topK must be positive");
-        if (subjectId != null) requireActiveSubject(userId, subjectId);
-        return retrieveAcrossSources(userId, queryVector, topK,
-                requireReadySources(userId, sourceIds, subjectId), queryText);
+        if (subjectId != null) subjectService.requireActiveSubject(userId, subjectId);
+
+        Map<UUID, SourceView> sources = requireReadySources(userId, sourceIds, subjectId);
+        Optional<List<PgVectorRetrievalRepository.PgVectorChunk>> databaseResults =
+                pgVectorRepository.search(userId, sourceIds, queryVector, topK);
+        if (databaseResults.isPresent()) {
+            return databaseResults.get().stream()
+                    .map(chunk -> citation(chunk, sources.get(chunk.sourceId()), queryText))
+                    .toList();
+        }
+
+        return sourceIds.stream()
+                .flatMap(id -> chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(userId, id).stream())
+                .map(chunk -> scored(chunk, queryVector))
+                .filter(scored -> scored.similarity() > 0)
+                .sorted(Comparator.comparingDouble(ScoredChunk::similarity).reversed()
+                        .thenComparing(scored -> scored.chunk().getSourceId())
+                        .thenComparing(scored -> scored.chunk().getId()))
+                .limit(topK)
+                .map(scored -> citation(scored.chunk(), sources.get(scored.chunk().getSourceId()),
+                        scored.similarity(), queryText))
+                .toList();
     }
 
-    private List<SourceView> requireReadySources(UUID userId, List<UUID> sourceIds, UUID subjectId) {
-        if (sourceIds == null || sourceIds.isEmpty() || sourceIds.size() > 100
-                || sourceIds.stream().anyMatch(java.util.Objects::isNull)
+    private Map<UUID, SourceView> requireReadySources(UUID userId, List<UUID> sourceIds, UUID subjectId) {
+        if (sourceIds == null || sourceIds.isEmpty()
+                || sourceIds.stream().anyMatch(Objects::isNull)
                 || new LinkedHashSet<>(sourceIds).size() != sourceIds.size()) {
             throw new DomainException("VALIDATION_FAILED", "sourceIds must contain unique source IDs");
         }
@@ -182,118 +112,13 @@ public class RetrievalService {
             if (subjectId != null && !subjectId.equals(source.subjectId())) {
                 throw new DomainException("VALIDATION_FAILED", "A selected source does not belong to the reading subject");
             }
-            requireReady(source);
-        }
-        return requestedSources;
-    }
-
-    private List<Citation> retrieveSubjectSources(
-            UUID userId,
-            List<Double> queryVector,
-            int topK,
-            ReadingContext readingContext,
-            String queryText) {
-        if (!readingContext.sourceIds().isEmpty() || readingContext.currentSourceId() != null) {
-            throw new DomainException("VALIDATION_FAILED", "subject retrieval does not accept source IDs");
-        }
-        requireActiveSubject(userId, readingContext.subjectId());
-        List<SourceView> subjectSources = sourceService.list(userId).stream()
-                .filter(source -> readingContext.subjectId().equals(source.subjectId()))
-                .filter(source -> source.ingestionStatus() == SourceIngestionStatus.READY)
-                .toList();
-        return retrieveAcrossSources(userId, queryVector, topK, subjectSources, queryText);
-    }
-
-    private void requireActiveSubject(UUID userId, UUID subjectId) {
-        if (subjectService == null) {
-            throw new IllegalStateException("SubjectService is required for scoped retrieval");
-        }
-        subjectService.get(userId, subjectId);
-    }
-
-    private List<Citation> retrieveAcrossSources(
-            UUID userId,
-            List<Double> queryVector,
-            int topK,
-            List<SourceView> sources,
-            String queryText) {
-        Map<String, Citation> unique = new LinkedHashMap<>();
-        for (SourceView source : sources) {
-            for (Citation citation : retrieveForSource(userId, queryVector, topK, source.id(), queryText)) {
-                unique.putIfAbsent(citation.sourceId() + ":" + citation.chunkId(), citation);
+            if (source.ingestionStatus() != SourceIngestionStatus.READY) {
+                throw new DomainException("SOURCE_NOT_READY", "A selected source is not ready for AI retrieval");
             }
         }
-        return unique.values().stream()
-                .sorted(Comparator.comparingDouble(Citation::similarity).reversed()
-                        .thenComparing(Citation::sourceId)
-                        .thenComparing(Citation::chunkId))
-                .limit(topK)
-                .toList();
+        return requestedSources.stream().collect(Collectors.toMap(SourceView::id, source -> source));
     }
 
-    private void requireReady(SourceView source) {
-        if (source.ingestionStatus() != SourceIngestionStatus.READY) {
-            throw new DomainException("SOURCE_NOT_READY", "A selected source is not ready for AI retrieval");
-        }
-    }
-
-    private List<Citation> retrieveForSource(
-            UUID userId, List<Double> queryVector, int topK, UUID sourceId, String queryText) {
-        if (pgVectorRepository != null) {
-            Optional<List<PgVectorRetrievalRepository.PgVectorChunk>> databaseResults =
-                    sourceId == null
-                            ? pgVectorRepository.search(userId, queryVector, topK)
-                            : pgVectorRepository.search(userId, sourceId, queryVector, topK);
-            if (databaseResults.isPresent()) {
-                List<PgVectorRetrievalRepository.PgVectorChunk> hits = databaseResults.get();
-                Map<UUID, SourceView> sources = activeSourcesById(userId,
-                        hits.stream().map(PgVectorRetrievalRepository.PgVectorChunk::sourceId).collect(Collectors.toSet()));
-                return hits.stream()
-                        .filter(chunk -> sources.containsKey(chunk.sourceId()))
-                        .map(chunk -> citation(chunk, sources.get(chunk.sourceId()), queryText))
-                        .toList();
-            }
-        }
-        List<SourceChunkEntity> chunks = chunkRepository.findAllByUserIdAndActiveTrue(userId).stream()
-                .filter(chunk -> sourceId == null || sourceId.equals(chunk.getSourceId()))
-                .toList();
-        Map<UUID, SourceView> sources = activeSourcesById(userId,
-                chunks.stream().map(SourceChunkEntity::getSourceId).collect(Collectors.toSet()));
-        return chunks.stream()
-                .filter(chunk -> sources.containsKey(chunk.getSourceId()))
-                .map(chunk -> scored(chunk, queryVector))
-                .filter(scored -> scored.similarity() > 0)
-                .sorted(Comparator.comparingDouble(ScoredChunk::similarity).reversed()
-                        .thenComparing(scored -> scored.chunk().getId()))
-                .limit(topK)
-                .map(scored -> citation(scored.chunk(), sources.get(scored.chunk().getSourceId()),
-                        scored.similarity(), queryText))
-                .toList();
-    }
-
-    private Map<UUID, SourceView> activeSourcesById(UUID userId, Set<UUID> sourceIds) {
-        if (sourceIds.isEmpty()) {
-            return Map.of();
-        }
-        return sourceService.findActiveViewsByIds(userId, sourceIds).stream()
-                .collect(Collectors.toMap(SourceView::id, source -> source, (first, ignored) -> first,
-                        LinkedHashMap::new));
-    }
-
-    private SourceView validateReadingContext(UUID userId, ReadingContext readingContext) {
-        if (readingContext == null) return null;
-        if (readingContext.currentSourceId() == null) {
-            throw new DomainException("VALIDATION_FAILED", "readingContext.currentSourceId is required");
-        }
-        SourceView source = sourceService.get(userId, readingContext.currentSourceId());
-        if (readingContext.subjectId() != null && !readingContext.subjectId().equals(source.subjectId())) {
-            throw new DomainException("VALIDATION_FAILED", "readingContext subject does not match the source");
-        }
-        if (source.ingestionStatus() != SourceIngestionStatus.READY) {
-            throw new DomainException("SOURCE_NOT_READY", "The current source is not ready for AI retrieval");
-        }
-        return source;
-    }
 
     private ScoredChunk scored(SourceChunkEntity chunk, List<Double> query) {
         List<Double> vector = vectorCodec.decode(chunk.getEmbeddingJson());

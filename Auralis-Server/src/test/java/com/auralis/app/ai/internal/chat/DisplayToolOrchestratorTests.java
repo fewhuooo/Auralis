@@ -23,6 +23,11 @@ import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.ai.internal.persistence.ChatActivityEntity;
 import com.auralis.app.ai.internal.persistence.ChatAttemptEntity;
 import com.auralis.app.ai.internal.persistence.ChatRunEntity;
+import com.auralis.app.ai.internal.persistence.ChatRunRepository;
+import com.auralis.app.ai.internal.persistence.ChatAttemptRepository;
+import com.auralis.app.ai.internal.persistence.ChatActivityRepository;
+import com.auralis.app.ai.internal.persistence.ConversationEntity;
+import com.auralis.app.ai.internal.persistence.ConversationRepository;
 import com.auralis.app.ai.internal.persistence.MessageEntity;
 import com.auralis.app.ai.internal.persistence.MessageRepository;
 import com.auralis.app.ai.usage.AiCredentialSource;
@@ -79,6 +84,298 @@ import static org.mockito.Mockito.when;
 class DisplayToolOrchestratorTests {
     private static final String ENDPOINT = "https://api.deepseek.com/v1";
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void providerFailureAndDisconnectedErrorEventsStillReachTerminalPersistence(boolean persistenceFails) throws Exception {
+        Fixture fixture = new Fixture();
+        ConversationEntity conversation = new ConversationEntity(fixture.conversationId, fixture.userId,
+                "Chat", null, ConversationPurpose.GENERAL, null);
+        conversation.reserveChatRun(fixture.runId);
+        java.util.stream.IntStream.range(1, 7).forEach(ignored -> conversation.advancePendingChatRunFence(fixture.runId));
+        ConversationRepository conversationRows = mock(ConversationRepository.class);
+        ChatRunRepository runRows = mock(ChatRunRepository.class);
+        ChatAttemptRepository attemptRows = mock(ChatAttemptRepository.class);
+        when(conversationRows.findForUpdateByIdAndUserIdAndDeletedAtIsNull(fixture.conversationId, fixture.userId))
+                .thenReturn(Optional.of(conversation));
+        when(runRows.findForUpdate(fixture.runId, fixture.userId, fixture.conversationId))
+                .thenReturn(Optional.of(fixture.run));
+        when(attemptRows.findForUpdate(fixture.attemptId, fixture.runId, fixture.userId))
+                .thenReturn(Optional.of(fixture.attempt));
+        ChatRuntimePersistenceService terminalPersistence = new ChatRuntimePersistenceService(conversationRows,
+                fixture.messages, runRows, attemptRows, mock(ChatActivityRepository.class), mock(SourceService.class),
+                MAPPER, ChatAgentProperties.defaults(), "terminal-worker");
+        IllegalStateException disconnected = new IllegalStateException("SSE disconnected");
+        IllegalStateException persistenceFailure = new IllegalStateException("Terminal persistence failed");
+        if (persistenceFails) when(runRows.saveAndFlush(fixture.run)).thenThrow(persistenceFailure);
+        java.util.concurrent.atomic.AtomicBoolean providerExited = new java.util.concurrent.atomic.AtomicBoolean();
+        AtomicInteger errorEvents = new AtomicInteger();
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            try {
+                java.util.stream.IntStream.range(0, 2).forEach(index -> chunks.accept(new AiProviderChunk(
+                        "", false, null, AiProviderModelIdentity.missing(), "partial", index,
+                        new AiProviderToolCallDelta("steps-" + index, DisplayToolRegistry.RENDER_STEPS,
+                                "{\"title\":\"Flow\",\"items\":[{\"title\":\"One\"},"), null, false)));
+                throw new com.auralis.app.shared.error.DomainException("MODEL_PROVIDER_ERROR", "Provider failed");
+            } finally {
+                providerExited.set(true);
+            }
+        });
+        doAnswer(invocation -> {
+            assertThat(providerExited.get()).isTrue();
+            verify(fixture.taskScope).close();
+            assertThat(errorEvents.get()).isEqualTo(2);
+            return terminalPersistence.finish(invocation.getArgument(0), invocation.getArgument(1),
+                    invocation.getArgument(2), invocation.getArgument(3), invocation.getArgument(4),
+                    invocation.getArgument(5), invocation.getArgument(6), invocation.getArgument(7),
+                    invocation.getArgument(8), invocation.getArgument(9), invocation.getArgument(10),
+                    invocation.getArgument(11), invocation.getArgument(12));
+        }).when(fixture.persistence).finish(any(), any(), any(), any(), anyLong(), anyMap(),
+                anyString(), anyString(), anyString(), anyLong(), anyString(), anyString(), any());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> fixture.execute(event -> {
+            if ("block.error".equals(event.event())) {
+                errorEvents.incrementAndGet();
+                throw disconnected;
+            }
+            if ("run.failed".equals(event.event())) throw disconnected;
+        })).isSameAs(persistenceFails ? persistenceFailure : disconnected);
+
+        assertThat(fixture.providerCallCount.get()).isEqualTo(1);
+        assertThat(readParts(fixture.attempt.getPublicPartsJson())).hasSize(2)
+                .allSatisfy(part -> assertThat(part).containsEntry("state", "INVALID"));
+        assertThat(fixture.attempt.getSafeErrorCode()).isEqualTo("MODEL_PROVIDER_ERROR");
+        assertThat(fixture.run.getStatus()).isEqualTo("FAILED");
+        assertThat(fixture.attempt.getStatus()).isEqualTo("FAILED");
+        if (persistenceFails) {
+            assertThat(conversation.getActiveChatRunId()).isEqualTo(fixture.runId);
+            return;
+        }
+        assertThat(conversation.getActiveChatRunId()).isNull();
+        verify(conversationRows).saveAndFlush(conversation);
+        verify(fixture.messages).saveAndFlush(any(MessageEntity.class));
+    }
+
+    @Test
+    void elevenToolIterationsLeaveTheTwelfthForSummary() throws Exception {
+        Fixture fixture = new Fixture();
+        configureCatalogTool(fixture);
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            assertThat(callNo).isLessThanOrEqualTo(12);
+            if (callNo == 12) {
+                assertThat(request.messages()).anySatisfy(message -> {
+                    assertThat(message.role()).isEqualTo(AiMessageRole.SYSTEM);
+                    assertThat(message.content()).contains("final allowed model iteration", "Do not call any tool");
+                });
+                assertThat(request.tools()).isNotEmpty();
+                chunks.accept(textChunk("Summary from the available evidence."));
+                chunks.accept(terminal("summary", "stop"));
+                return;
+            }
+            sendCall(chunks, "read-" + callNo, 0, "catalog-" + callNo, ChatReadTools.LIST_SOURCES, "{}", false);
+            chunks.accept(terminal("read-" + callNo, "tool_calls"));
+        });
+
+        fixture.execute();
+
+        assertThat(fixture.providerCallCount.get()).isEqualTo(12);
+        verify(fixture.tools, times(11)).execute(any(), any(), eq(ChatReadTools.LIST_SOURCES), eq("{}"));
+        assertThat(fixture.terminal.get().status()).isEqualTo("COMPLETED");
+        assertThat(fixture.terminal.get().markdown()).contains("Summary from the available evidence.");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 3, 12})
+    void finalIterationRejectsDataAndActivityCallsWithoutAnotherModelRequest(int maxIterations) throws Exception {
+        Fixture fixture = new Fixture(null, "", new ChatAgentProperties(0, 0, maxIterations, 20,
+                65_536, 524_288, 300));
+        configureCatalogTool(fixture);
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            assertThat(callNo).isLessThanOrEqualTo(maxIterations);
+            sendCall(chunks, "read-" + callNo, 0, "catalog-" + callNo, ChatReadTools.LIST_SOURCES, "{}", false);
+            if (callNo == maxIterations) {
+                sendCall(chunks, "read-" + callNo, 1, "last-activity", DisplayToolRegistry.RENDER_QUESTION,
+                        "{\"question\":\"Explain the concept\"}", false);
+            }
+            chunks.accept(terminal("read-" + callNo, "tool_calls"));
+        });
+
+        List<ChatSseEnvelope> events = fixture.execute();
+
+        assertThat(fixture.providerCallCount.get()).isEqualTo(maxIterations);
+        verify(fixture.tools, times(maxIterations - 1)).execute(any(), any(), eq(ChatReadTools.LIST_SOURCES), eq("{}"));
+        assertThat(fixture.readyActivities.get()).isZero();
+        assertThat(events).extracting(ChatSseEnvelope::event).doesNotContain("activity.ready", "run.failed");
+        assertThat(fixture.terminal.get().status()).isEqualTo("COMPLETED");
+        assertThat(fixture.terminal.get().markdown()).contains("本轮已到达生成轮次上限");
+    }
+
+    @Test
+    void toolAllowanceCountsEveryCallInOneBatchAndStopsAfterTwenty() throws Exception {
+        Fixture fixture = new Fixture();
+        configureCatalogTool(fixture);
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            assertThat(callNo).isLessThanOrEqualTo(2);
+            if (callNo == 2) {
+                assertThat(request.messages().stream().filter(message -> message.role() == AiMessageRole.TOOL)
+                        .filter(message -> !message.content().contains("not_executed"))).hasSize(20);
+                chunks.accept(textChunk("Tool allowance summary."));
+                sendCall(chunks, "over-limit", 0, "catalog-20", ChatReadTools.LIST_SOURCES, "{}", false);
+                chunks.accept(terminal("over-limit", "tool_calls"));
+                return;
+            }
+            java.util.stream.IntStream.range(0, 20).forEach(index -> sendCall(chunks, "batch", index,
+                    "catalog-" + index, ChatReadTools.LIST_SOURCES, "{}", false));
+            chunks.accept(terminal("batch", "tool_calls"));
+        });
+
+        fixture.execute();
+
+        assertThat(fixture.providerCallCount.get()).isEqualTo(2);
+        verify(fixture.tools, times(20)).execute(any(), any(), eq(ChatReadTools.LIST_SOURCES), eq("{}"));
+        assertThat(fixture.terminal.get().status()).isEqualTo("COMPLETED");
+        assertThat(fixture.terminal.get().markdown()).contains("Tool allowance summary.", "本轮可用工具调用次数已用完");
+    }
+
+    private void configureCatalogTool(Fixture fixture) {
+        when(fixture.tools.sdkDefinitions()).thenReturn(DisplayToolRegistry.definitions(new ChatReadTools(
+                null, null, null, null, null, null, null, ChatAgentProperties.defaults(), null).definitions())
+                .stream().map(new AiChatRequestMapper(MAPPER)::toSdkTool).toList());
+        when(fixture.tools.execute(any(), any(), eq(ChatReadTools.LIST_SOURCES), eq("{}")))
+                .thenReturn("{\"items\":[],\"total\":0,\"hasMore\":false,\"nextOffset\":0}");
+    }
+
+    @Test
+    void quotedTextStaysInsideItsUserTurnForCurrentAndFollowUpRequests() throws Exception {
+        Fixture fixture = new Fixture(null, "CURRENT_QUOTE");
+        UUID previousUserId = UUID.randomUUID();
+        UUID previousReplyId = UUID.randomUUID();
+        ChatRunEntity previousRun = historyRun(fixture, previousUserId, previousReplyId, "ORIGINAL_QUOTE");
+        when(fixture.persistence.conversationRunHistory(fixture.userId, fixture.conversationId))
+                .thenReturn(List.of(previousRun));
+        when(fixture.persistence.privateToolEvidence(fixture.userId, fixture.conversationId,
+                previousRun.getId(), previousRun.getCurrentAttemptId())).thenReturn("[]");
+        when(fixture.messages.findById(fixture.userMessageId)).thenReturn(Optional.of(new MessageEntity(
+                fixture.userMessageId, fixture.conversationId, fixture.userId, 3, AiMessageRole.USER,
+                AiMessageStatus.COMPLETED, "Follow up", null, null, null)));
+        when(fixture.conversations.get(fixture.userId, fixture.conversationId)).thenReturn(historyView(fixture, List.of(
+                historyMessage(previousUserId, 1, AiMessageRole.USER, "Translate this"),
+                historyMessage(previousReplyId, 2, AiMessageRole.ASSISTANT, "Translation without the original"))));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            requests.add(request);
+            chunks.accept(textChunk("Answer"));
+            chunks.accept(terminal("quoted-response", "stop"));
+        });
+
+        fixture.execute();
+
+        assertThat(requests).hasSize(1);
+        assertThat(requests.getFirst().messages().stream().filter(message -> message.role() == AiMessageRole.USER)
+                .map(message -> message.content()).toList()).containsExactly(
+                        "Translate this\n\nSelected text supplied by the user (context only):\nORIGINAL_QUOTE",
+                        "Follow up\n\nSelected text supplied by the user (context only):\nCURRENT_QUOTE");
+    }
+
+    @Test
+    void historicalRetryKeepsCurrentAttemptReplyAndEvidenceWithItsOriginalQuestion() throws Exception {
+        Fixture fixture = new Fixture();
+        when(fixture.tools.sdkDefinitions()).thenReturn(DisplayToolRegistry.definitions(new ChatReadTools(
+                null, null, null, null, null, null, null, ChatAgentProperties.defaults(), null).definitions())
+                .stream().map(new AiChatRequestMapper(MAPPER)::toSdkTool).toList());
+        UUID firstUser = UUID.randomUUID(), secondUser = UUID.randomUUID();
+        UUID oldReply = UUID.randomUUID(), retriedReply = UUID.randomUUID(), secondReply = UUID.randomUUID();
+        ChatRunEntity firstRun = historyRun(fixture, firstUser, retriedReply, "FIRST_QUOTE");
+        ChatRunEntity secondRun = historyRun(fixture, secondUser, secondReply, "");
+        when(fixture.persistence.conversationRunHistory(fixture.userId, fixture.conversationId))
+                .thenReturn(List.of(firstRun, secondRun));
+        when(fixture.persistence.privateToolEvidence(fixture.userId, fixture.conversationId,
+                firstRun.getId(), firstRun.getCurrentAttemptId())).thenReturn(new ChatPrivateToolEvidenceCodec(MAPPER)
+                        .encode(List.of(new ChatToolEvidence("retry-iteration", 1, 0, "retry-call", "search",
+                                "{\"query\":\"retried question\"}", "{\"evidence\":[]}", "COMPLETED", List.of()))));
+        when(fixture.persistence.privateToolEvidence(fixture.userId, fixture.conversationId,
+                secondRun.getId(), secondRun.getCurrentAttemptId())).thenReturn("[]");
+        when(fixture.messages.findById(fixture.userMessageId)).thenReturn(Optional.of(new MessageEntity(
+                fixture.userMessageId, fixture.conversationId, fixture.userId, 6, AiMessageRole.USER,
+                AiMessageStatus.COMPLETED, "Third question", null, null, null)));
+        when(fixture.conversations.get(fixture.userId, fixture.conversationId)).thenReturn(historyView(fixture, List.of(
+                historyMessage(firstUser, 1, AiMessageRole.USER, "First question"),
+                historyMessage(oldReply, 2, AiMessageRole.ASSISTANT, "STALE_FAILED_PARTIAL"),
+                historyMessage(secondUser, 3, AiMessageRole.USER, "Second question"),
+                historyMessage(secondReply, 4, AiMessageRole.ASSISTANT, "Second answer"),
+                historyMessage(retriedReply, 5, AiMessageRole.ASSISTANT, "Retried first answer"))));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            requests.add(request);
+            chunks.accept(textChunk("Third answer"));
+            chunks.accept(terminal("history-response", "stop"));
+        });
+
+        fixture.execute();
+
+        assertThat(requests).hasSize(1);
+        var context = requests.getFirst().messages().stream()
+                .filter(message -> message.role() != AiMessageRole.SYSTEM).toList();
+        assertThat(context).extracting(message -> message.role()).containsExactly(AiMessageRole.USER,
+                AiMessageRole.ASSISTANT, AiMessageRole.TOOL, AiMessageRole.ASSISTANT,
+                AiMessageRole.USER, AiMessageRole.ASSISTANT, AiMessageRole.USER);
+        assertThat(context.get(0).content()).contains("First question", "FIRST_QUOTE");
+        assertThat(context.get(1).toolCalls().getFirst().id()).isEqualTo("retry-call");
+        assertThat(context.get(2).toolCallId()).isEqualTo("retry-call");
+        assertThat(context.get(3).content()).isEqualTo("Retried first answer");
+        assertThat(context.get(4).content()).isEqualTo("Second question");
+        assertThat(context.get(5).content()).isEqualTo("Second answer");
+        assertThat(context.get(6).content()).isEqualTo("Third question");
+        assertThat(context.toString()).doesNotContain("STALE_FAILED_PARTIAL");
+    }
+
+    @Test
+    void retryingAnEarlierQuestionDoesNotIncludeItsOldReplyOrLaterTurns() throws Exception {
+        Fixture fixture = new Fixture(null, "RETRY_QUOTE");
+        UUID laterUser = UUID.randomUUID(), laterReply = UUID.randomUUID();
+        ChatRunEntity laterRun = historyRun(fixture, laterUser, laterReply, "FUTURE_QUOTE");
+        when(fixture.persistence.conversationRunHistory(fixture.userId, fixture.conversationId))
+                .thenReturn(List.of(fixture.run, laterRun));
+        when(fixture.conversations.get(fixture.userId, fixture.conversationId)).thenReturn(historyView(fixture, List.of(
+                historyMessage(fixture.userMessageId, 1, AiMessageRole.USER, "Explain this"),
+                historyMessage(UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, "OLD_FAILED_REPLY"),
+                historyMessage(laterUser, 3, AiMessageRole.USER, "FUTURE_QUESTION"),
+                historyMessage(laterReply, 4, AiMessageRole.ASSISTANT, "FUTURE_REPLY"))));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            requests.add(request);
+            chunks.accept(textChunk("Retried answer"));
+            chunks.accept(terminal("retry-response", "stop"));
+        });
+
+        fixture.execute();
+
+        assertThat(requests).hasSize(1);
+        assertThat(requests.getFirst().messages().stream().filter(message -> message.role() != AiMessageRole.SYSTEM)
+                .map(message -> message.content()).toList()).containsExactly(
+                        "Explain this\n\nSelected text supplied by the user (context only):\nRETRY_QUOTE");
+        verify(fixture.persistence, never()).privateToolEvidence(any(), any(), any(), any());
+    }
+
+    private ChatRunEntity historyRun(Fixture fixture, UUID userMessageId, UUID replyId, String selection) {
+        ChatRunEntity run = new ChatRunEntity(UUID.randomUUID(), fixture.userId, fixture.conversationId,
+                UUID.randomUUID().toString(), "history-hash", MAPPER.writeValueAsString(Map.of(
+                        "selectionText", selection, "executionProfile", Map.of("provider", "DEEPSEEK"))),
+                "turn", userMessageId, UUID.randomUUID(), 1L);
+        run.pointToAttempt(UUID.randomUUID(), replyId);
+        run.mark("COMPLETED");
+        return run;
+    }
+
+    private MessageView historyMessage(UUID id, long sequence, AiMessageRole role, String content) {
+        return new MessageView(id, sequence, role, AiMessageStatus.COMPLETED, content, null, null, Instant.now());
+    }
+
+    private ConversationView historyView(Fixture fixture, List<MessageView> messages) {
+        return new ConversationView(fixture.conversationId, "Chat", messages, Instant.now(), Instant.now(), null,
+                0L, ConversationPurpose.GENERAL, null, (short) 1, true, null,
+                com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null);
+    }
 
     @Test
     void realAdapterStreamsVisualToolThenReturnsSmallResultForTheNextModelCall() throws Exception {
@@ -352,13 +649,13 @@ class DisplayToolOrchestratorTests {
                 .thenReturn(List.<Citation>of());
         AiSettingsService readSettings = mock(AiSettingsService.class);
         when(readSettings.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.SILICONFLOW, "embedding-model",
+                AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                 new AiCredential("https://example.invalid", "key", "embedding-model"), AiCredentialSource.PLATFORM));
         Fixture fixture = new Fixture(userId -> new ChatReadTools(new AiChatRequestMapper(new ObjectMapper()),
                 new ObjectMapper(), retrieval, sourceService, mock(SourceChunkRepository.class),
                 mock(SubjectService.class), readSettings, ChatAgentProperties.defaults(),
                 mock(com.auralis.app.ai.OverviewResultService.class)));
-        when(fixture.taskScope.embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.SILICONFLOW),
+        when(fixture.taskScope.embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.OPENAI_COMPATIBLE),
                 anyString(), anyList(), any(AiCredential.class), eq(AiCredentialSource.PLATFORM)))
                 .thenReturn(new AiInvocationResult<>(new EmbeddingResult(
                         List.of(java.util.Collections.nCopies(1024, 0d))), null));
@@ -388,9 +685,9 @@ class DisplayToolOrchestratorTests {
         assertThat(fixture.terminal.get().status()).isEqualTo("COMPLETED");
         assertThat(fixture.terminal.get().markdown()).contains("资料不足");
         assertThat(fixture.providerCallCount.get()).isEqualTo(3);
-        verify(fixture.taskScope, times(1)).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.SILICONFLOW),
+        verify(fixture.taskScope, times(1)).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.OPENAI_COMPATIBLE),
                 anyString(), eq(List.of("current query")), any(AiCredential.class), eq(AiCredentialSource.PLATFORM));
-        verify(fixture.taskScope, never()).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.SILICONFLOW),
+        verify(fixture.taskScope, never()).embed(eq(AiStage.RETRIEVAL_EMBEDDING), eq(AiProviderType.OPENAI_COMPATIBLE),
                 anyString(), eq(List.of("historic query")), any(AiCredential.class), eq(AiCredentialSource.PLATFORM));
         verify(retrieval, times(1)).retrieveWithinSources(any(), any(), anyInt(), eq(List.of(sourceId)), any(),
                 eq("current query"));
@@ -479,13 +776,25 @@ class DisplayToolOrchestratorTests {
         private final AtomicReference<FinishSnapshot> terminal = new AtomicReference<>();
         private List<String> readyObservations = new ArrayList<>();
         private final AuralisProperties properties;
+        private final ChatAgentProperties chatProperties;
 
-        private Fixture() throws Exception { this(null); }
+        private Fixture() throws Exception { this(null, ""); }
 
         private Fixture(Function<UUID, ChatReadTools> toolsFactory) throws Exception {
+            this(toolsFactory, "");
+        }
+
+        private Fixture(Function<UUID, ChatReadTools> toolsFactory, String selectionText) throws Exception {
+            this(toolsFactory, selectionText, ChatAgentProperties.defaults());
+        }
+
+        private Fixture(Function<UUID, ChatReadTools> toolsFactory, String selectionText,
+                ChatAgentProperties chatProperties) throws Exception {
+            this.chatProperties = chatProperties;
             tools = toolsFactory == null ? mock(ChatReadTools.class) : toolsFactory.apply(userId);
             readScope = toolsFactory == null ? mock(ChatReadTools.ReadScope.class) : null;
-            String requestContext = "{\"selectionText\":\"\",\"executionProfile\":{\"provider\":\"DEEPSEEK\","
+            String requestContext = "{\"selectionText\":" + mapper.writeValueAsString(selectionText)
+                    + ",\"executionProfile\":{\"provider\":\"DEEPSEEK\","
                     + "\"chatModel\":\"test-model\",\"endpointHash\":\"" + endpointHash + "\"}}";
             run = new ChatRunEntity(runId, userId, conversationId, "request-display", "request-hash",
                     requestContext, "turn", userMessageId, runId, 7L);
@@ -575,7 +884,7 @@ class DisplayToolOrchestratorTests {
         private List<ChatSseEnvelope> execute(Consumer<ChatSseEnvelope> observer) {
             List<ChatSseEnvelope> events = new ArrayList<>();
             ChatAgentOrchestrator orchestrator = new ChatAgentOrchestrator(persistence, conversations, messages,
-                    settings, gateway, adapterFactory, ChatAgentProperties.defaults(), tools,
+                    settings, gateway, adapterFactory, chatProperties, tools,
                     mock(AiUsageQueryService.class), mapper, properties);
             orchestrator.executeAdmission(userId,
                     new ChatRuntimePersistenceService.Admission(run, attempt, userMessageId, false),

@@ -37,6 +37,17 @@ public class SyncMutationProcessor {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SyncDtos.MutationResponse process(UUID userId, UUID serverDeviceId, SyncMutation mutation) {
+        return process(userId, serverDeviceId, mutation, null, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public SyncDtos.MutationResponse recordRejection(UUID userId, UUID serverDeviceId, SyncMutation mutation,
+                                                     String code, Object current) {
+        return process(userId, serverDeviceId, mutation, code, current);
+    }
+
+    private SyncDtos.MutationResponse process(UUID userId, UUID serverDeviceId, SyncMutation mutation,
+                                             String rejectionCode, Object current) {
         String hash = fingerprint(mutation);
         int reserved = inboundMutationRepository.reserve(
                 UUID.randomUUID(), userId, serverDeviceId, mutation.clientMutationId(), hash,
@@ -54,28 +65,22 @@ public class SyncMutationProcessor {
         InboundMutationEntity entity = inboundMutationRepository
                 .findByUserIdAndServerDeviceIdAndClientMutationId(userId, serverDeviceId, mutation.clientMutationId())
                 .orElseThrow(() -> new DomainException("INTERNAL_ERROR", "Reserved mutation could not be loaded"));
+        if (rejectionCode != null) {
+            MutationDecision decision = "RESOURCE_VERSION_CONFLICT".equals(rejectionCode)
+                    ? MutationDecision.CONFLICT : MutationDecision.REJECTED;
+            Object rejectionCurrent = isScheduleMutation(mutation)
+                    ? domainWritePort.currentTaskSchedule(userId, mutation) : current;
+            entity.complete(decision, null, serialize(rejectionCurrent), rejectionCode);
+            return response(inboundMutationRepository.saveAndFlush(entity));
+        }
+        if (mutation.mutationType() == SyncMutationType.CREATE && mutation.baseVersion() != 0) {
+            entity.complete(MutationDecision.REJECTED, null, null, "VALIDATION_FAILED");
+            return response(inboundMutationRepository.saveAndFlush(entity));
+        }
+
         changeLogCapture.begin();
         try {
-            if (mutation.mutationType() == SyncMutationType.CREATE && mutation.baseVersion() != 0) {
-                changeLogCapture.finish();
-                entity.complete(MutationDecision.REJECTED, null, null, "VALIDATION_FAILED");
-                return response(inboundMutationRepository.saveAndFlush(entity));
-            }
-
-            Object resource;
-            try {
-                resource = domainWritePort.apply(userId, mutation);
-            } catch (DomainException exception) {
-                changeLogCapture.finish();
-                MutationDecision decision = "RESOURCE_VERSION_CONFLICT".equals(exception.code())
-                        ? MutationDecision.CONFLICT : MutationDecision.REJECTED;
-                Object current = isScheduleMutation(mutation)
-                        ? domainWritePort.currentTaskSchedule(userId, mutation)
-                        : exception.current();
-                entity.complete(decision, null, serialize(current), exception.code());
-                return response(inboundMutationRepository.saveAndFlush(entity));
-            }
-
+            Object resource = domainWritePort.apply(userId, mutation);
             List<ChangeLogEntry> changes = changeLogCapture.finish();
             Long appliedCursor = isScheduleMutation(mutation)
                     ? changes.stream().mapToLong(ChangeLogEntry::cursor).max().stream().boxed().findFirst().orElse(null)

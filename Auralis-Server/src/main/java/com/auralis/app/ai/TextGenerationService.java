@@ -30,8 +30,7 @@ public class TextGenerationService {
             throw new DomainException("VALIDATION_FAILED", "input is required");
         }
         String operation = normalizeOperation(command.operation());
-        AiProviderType provider = defaultProvider();
-        AiSettingsService.ResolvedSettings resolved = settings.resolve(userId, provider);
+        AiSettingsService.ResolvedSettings resolved = settings.resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
         String taskKey = command.requestId() == null || command.requestId().isBlank()
                 ? UUID.randomUUID().toString() : command.requestId().trim();
         UUID budgetId = UUID.nameUUIDFromBytes(("auralis:text-generation:" + userId + ":" + taskKey)
@@ -43,7 +42,7 @@ public class TextGenerationService {
                 new AiProviderRequest.Message(AiMessageRole.USER, command.input().trim())),
                 0.2, 4096);
         try (AiTaskScope scope = gateway.beginTask(context)) {
-            var result = scope.completeChat(AiStage.CHAT_COMPLETION, provider, request,
+            var result = scope.completeChat(AiStage.CHAT_COMPLETION, resolved.provider(), request,
                     resolved.credential(), resolved.source(), properties.ai().requestTimeoutMillis(),
                     new OverviewCancellation());
             if (result.value() == null || result.value().content() == null) {
@@ -67,10 +66,5 @@ public class TextGenerationService {
             case "format" -> "Format the supplied text as clear Markdown without adding unsupported facts. Return only the formatted text.";
             default -> "Transcribe or clean up the supplied transcript while preserving its meaning. Return only the text.";
         };
-    }
-    private AiProviderType defaultProvider() {
-        String configured = properties.ai().defaultProvider();
-        try { return configured == null ? AiProviderType.SILICONFLOW : AiProviderType.valueOf(configured.trim().toUpperCase(Locale.ROOT)); }
-        catch (IllegalArgumentException exception) { throw new DomainException("MODEL_UNAVAILABLE", "Default AI provider is unavailable"); }
     }
 }

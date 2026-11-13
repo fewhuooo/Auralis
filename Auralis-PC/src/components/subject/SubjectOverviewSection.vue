@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { IconAlertTriangle, IconBook, IconChevronDown, IconChevronRight, IconDots, IconRefresh } from '@tabler/icons-vue'
 import type { SubjectOverviewRecord } from '@/types/overview'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = withDefaults(defineProps<{
   overview: SubjectOverviewRecord | null
@@ -25,7 +26,7 @@ const emit = defineEmits<{
   'resolve-generation-conflict': [payload: { clientWriteId: string; choice: 'KEEP_LOCAL' | 'USE_AI' }]
 }>()
 
-const hasContent = () => Boolean(props.overview?.outline?.length || props.overview?.summary)
+const hasContent = () => Boolean(props.overview?.outlineMarkdown?.trim() || props.overview?.summaryMarkdown?.trim())
 </script>
 
 <template>
@@ -117,12 +118,8 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
           <strong>生成期间本机内容有更新</strong>
           <details>
             <summary>查看生成结果</summary>
-            <p v-if="conflict.result.summary?.overview">{{ conflict.result.summary.overview }}</p>
-            <ul v-if="conflict.result.outline?.length">
-              <li v-for="chapter in conflict.result.outline" :key="chapter.title">
-                {{ chapter.title }}<span v-for="section in chapter.sections" :key="section.title"> · {{ section.title }}</span>
-              </li>
-            </ul>
+            <div v-if="conflict.result.outlineMarkdown" class="generation-edit-conflict__preview" v-html="renderMarkdown(conflict.result.outlineMarkdown)" />
+            <p v-if="conflict.result.summaryMarkdown" class="generation-edit-conflict__summary-preview">{{ conflict.result.summaryMarkdown.slice(0, 200) }}…</p>
           </details>
         </div>
         <button type="button" class="retry-capsule__btn" :disabled="generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { clientWriteId: conflict.clientWriteId, choice: 'KEEP_LOCAL' })">保留我的修改</button>
@@ -170,17 +167,12 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
             <IconRefresh :size="12" :stroke-width="1.6" class="is-spinning" />
             <span>正在重新生成学科总览与大纲…</span>
           </div>
-          <ol v-if="overview?.outline?.length" class="file-outline__chapters" :class="{ 'is-generating': isGenerating }">
-            <li v-for="chapter in overview.outline" :key="chapter.title">
-              <strong class="chapter-header">
-                <span class="chapter-title">{{ chapter.title }}</span>
-              </strong>
-              <div v-for="section in chapter.sections" :key="section.title" class="subject-outline__section">
-                <span>{{ section.title }}</span>
-                <IconChevronRight :size="11" :stroke-width="1.6" class="section-arrow" />
-              </div>
-            </li>
-          </ol>
+          <div
+            v-if="overview?.outlineMarkdown"
+            class="subject-outline-markdown"
+            :class="{ 'is-generating': isGenerating }"
+            v-html="renderMarkdown(overview.outlineMarkdown)"
+          />
         </template>
       </div>
     </article>
@@ -433,20 +425,233 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   cursor: wait;
 }
 
-/* 现代极简大纲展现风格 (Zen Minimalist Outline) */
-.file-outline__chapters {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 4px 0 2px;
-  padding: 4px 4px 6px;
-  list-style: none;
+/* Markdown 大纲渲染区 */
+.subject-outline-markdown {
+  padding: 10px 10px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  word-break: break-word;
 }
 .file-outline__chapters.is-generating {
   opacity: 0.6;
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
+/* --- 学科大纲标题 (H1) --- */
+.subject-outline-markdown :deep(h1) {
+  margin: 2px 0 10px 0;
+  padding: 0 0 6px 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: -0.01em;
+}
+.subject-outline-markdown :deep(h1::before) {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary-accent, #8B9A6E);
+  flex-shrink: 0;
+}
+
+/* --- 学科大纲议题/模块 (H2) --- */
+.subject-outline-markdown :deep(h2) {
+  margin: 13px 0 6px 0;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.subject-outline-markdown :deep(h1 + h2),
+.subject-outline-markdown :deep(> h2:first-child) {
+  margin-top: 4px;
+}
+.subject-outline-markdown :deep(h2::before) {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--color-primary-accent, #8B9A6E);
+  flex-shrink: 0;
+}
+
+/* --- 学科大纲小节 (H3 / H4) --- */
+.subject-outline-markdown :deep(h3) {
+  margin: 9px 0 4px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.subject-outline-markdown :deep(h3::before) {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--color-primary-accent, #8B9A6E);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.subject-outline-markdown :deep(h4),
+.subject-outline-markdown :deep(h5),
+.subject-outline-markdown :deep(h6) {
+  margin: 6px 0 3px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* --- 列表与要点 (UL / OL / LI) --- */
+.subject-outline-markdown :deep(ul),
+.subject-outline-markdown :deep(ol) {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.subject-outline-markdown :deep(li) {
+  position: relative;
+  padding-left: 14px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.subject-outline-markdown :deep(ul > li::before) {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 6.5px;
+  width: 4.5px;
+  height: 4.5px;
+  border-radius: 50%;
+  background: var(--color-primary-accent, #8B9A6E);
+  opacity: 0.65;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.subject-outline-markdown :deep(li:hover::before) {
+  opacity: 1;
+  transform: scale(1.15);
+}
+.subject-outline-markdown :deep(li > ul),
+.subject-outline-markdown :deep(li > ol) {
+  margin: 4px 0 2px 0;
+  padding-left: 8px;
+  gap: 4px;
+}
+.subject-outline-markdown :deep(li > ul > li::before) {
+  left: 3px;
+  top: 6.5px;
+  width: 4px;
+  height: 4px;
+  background: transparent;
+  border: 1.2px solid var(--color-primary-accent, #8B9A6E);
+  opacity: 0.75;
+}
+.subject-outline-markdown :deep(ol) {
+  counter-reset: outline-counter;
+}
+.subject-outline-markdown :deep(ol > li) {
+  counter-increment: outline-counter;
+  padding-left: 16px;
+}
+.subject-outline-markdown :deep(ol > li::before) {
+  content: counter(outline-counter) ".";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-primary-accent, #8B9A6E);
+  line-height: 1.55;
+}
+
+/* --- 段落与内联元素 --- */
+.subject-outline-markdown :deep(p) {
+  margin: 0 0 6px 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.subject-outline-markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.subject-outline-markdown :deep(strong) {
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.subject-outline-markdown :deep(code) {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 10.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-primary-accent, #8B9A6E);
+}
+.subject-outline-markdown :deep(blockquote) {
+  margin: 6px 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.06);
+  border-radius: 0 4px 4px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.subject-outline-markdown :deep(hr) {
+  margin: 8px 0;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* --- 冲突预览适配 --- */
+.generation-edit-conflict__preview :deep(h1) {
+  font-size: 11.5px;
+  font-weight: 700;
+  margin: 2px 0 4px;
+}
+.generation-edit-conflict__preview :deep(h2) {
+  font-size: 11px;
+  font-weight: 650;
+  margin: 4px 0 2px;
+}
+.generation-edit-conflict__preview :deep(ul) {
+  margin: 0;
+  padding-left: 12px;
+}
+.generation-edit-conflict__preview :deep(li) {
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+/* --- 暗色模式适配 --- */
+html.dark .subject-outline-markdown :deep(code) {
+  background: rgba(255, 255, 255, 0.08);
+}
+html.dark .subject-outline-markdown :deep(blockquote) {
+  background: rgba(139, 154, 110, 0.1);
+}
+
 .subject-overview__regenerating-banner {
   background: rgba(139, 154, 110, 0.08);
   color: var(--color-primary-accent);

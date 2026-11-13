@@ -1,5 +1,82 @@
 # Auralis 当前状态
 
+### 2026-11-13 本机 Overview 输入上限
+
+本机根 `.env` 持久设置 `AURALIS_AI_OVERVIEW_MAX_INPUT_TOKENS=32768`，与运行中的 backend 一致。桌面学科总览于香港 12:02:15 生成成功并保存为版本 2，大纲与总结均回读一致。三次模型调用均适配整篇，单次最高估算 22,795 Token。
+
+### 2026-11-13 学科总览直接生成修复（本机后端已部署）
+
+学科总览的直接入口开放 ALL 和 OUTLINE，原先两种模式在生成前被旧实现的模式限制拒绝。当前三种模式均复用 Markdown 生成和自动分批流程。定向回归 58 项通过，覆盖三种模式的预检与生成、SSE 和文件总览。
+
+香港 01:21:22 本机后端重建和健康检查完成，Overview 临时单次输入上限仍为 32,768 Token。桌面学科总览生成待复验。文件侧实测 1.pdf 分批成功，派发 8 次，其余三份输入适配整篇流程，分别派发 3 次。证据见 `D:/Temp/auralis-overview-cap32k-20261113/manual-test-diagnostic.md`。
+
+### 2026-11-13 Overview 超长输入自动分批（本机后端已部署）
+
+整篇请求可装入模型时走现有三阶段。超过容量时，服务端通过核心行归属执行分批清理，归并局部大纲，再按议题回读原文提炼要点并统一写总结。只在总结超限时复用已生成大纲。回归覆盖正常入口、16K 测试窗口的多批文件生成、单独总结超限和长行拆分。首轮定向 196 项通过，长行修正后相关 34 项通过。香港 00:59:34 本机后端健康验证通过，桌面生成待用户验收。
+
+使用编译后的 Pipeline 和 Planner 隔离调用真实模型。原 PPT 在 1,048,576 token 窗口使用 3 次调用，返回大纲与总结。原 PDF 在测试窗口 32,768 token 下自动切换为 4 次清理、3 次大纲生成及归并、3 次总结提炼及成文，10 次响应均正常结束，合计 92,909 tokens。测试探针中断后逐请求验证并复用已完成响应。PDF 大纲和总结各 6 个议题，DBTG 限定保留。证据位于 `D:/Temp/auralis-overview-multibatch-implementation-20261113/`。
+
+### 2026-11-12 大纲 Markdown 极简排版重构与构建闭环（源码与生产打包完成）
+
+根据用户反馈与实机截图，重构了文件大纲（`FileOutlineList.vue`）与学科总览大纲（`SubjectOverviewSection.vue`）中 Markdown 内容的排版展现体系，彻底解决 H1 默认字号过大突兀、议题 H2 缺乏视觉间隔、列表项缺乏引导圆点等粗糙问题：
+- **层级视觉节奏**：H1 规范为 13.5px 伴随 5px Zen Sage 圆点与下发丝线；H2 规范为 12px 议题胶囊条（`3px × 11px` 微晶），段前 13px 建立模块节奏；列表条目统一设置 14px 缩进并搭配 4.5px 浅草绿微晶小圆点与悬浮轻微放大；
+- **契约对齐与语法修复**：清理历史合并残留的未闭合重复标签与重复属性，`SubjectOverviewSection.vue` 完整对齐 `outlineMarkdown`/`summaryMarkdown` v2 契约；
+- **全量验证**：PC 端类型检查 `npm run type-check` exit 0；全量生产打包 `npm run build` exit 0；定向自动化测试套件 `r4-subject-overview-ui.test.mjs`、`r4-overview-generation.test.mjs`、`r4-overview-sync.test.mjs`、`r4-overview-cache.test.mjs` 154/154 项全部通过。桌面客户端真实 GUI 视觉走查待用户验收。
+
+### 2026-11-12 Overview 大纲按主线归并（本机后端已部署）
+
+OUTLINE 采用归并版提示词，以二级标题承载主要议题，各条目用主题短语指示讨论范围。定向 9 项通过。两份隔离模型成稿已审阅。香港 18:45:14 完成本机后端健康验证，正式生成待验收。证据见 `D:/Temp/auralis-overview-outline-grouped-deploy-20261112/report.md`。
+
+### 2026-11-12 Overview 总结保留核心解释（本机后端已部署）
+
+SUMMARY 采用 D 轮提示词，保留核心机制、区别和权衡，使用二级标题、短段落和必要列表。按清理后 Unicode 字符数给出参考篇幅，10000 字符及以下约 1200～1600 字符，超过约 3000～4000 字符。定向 9 项通过，阶段输出预算沿用原基准。两份隔离真实模型成稿已审阅。香港 17:07:33 完成本机后端健康验证，正式生成待验收。证据见 `D:/Temp/auralis-overview-summary-d-deploy-20261112/report.md`。
+
+### 2026-11-12 Overview 通用输入预算与动态输出预算（本机后端已部署）
+
+Overview 规划和 Gateway 准入按同一套通用输入规则计量完整请求，包括 CLEAN 的结构化响应声明。三阶段同时使用动态输出预算。定向 116 项通过，打包通过，16 条历史请求与两份冻结材料的 6 个阶段已离线复算。隔离环境使用生产 Pipeline/Planner 完成 PDF、PPT 各三阶段真实生成，6 次模型调用均正常结束。香港 15:59:24 完成后端单独重建的验证，镜像 `c339336761e5`，Docker healthy，宿主 liveness/readiness 均 HTTP 200 / UP。证据见 `docs/archive/overview-experiments/20261112-unified-budget-deploy/data/report.md`。
+
+香港 16:04 用部署版本串行跑通 PDF、PPT 各一次正式 ALL，SSE 分别耗时 16.485 秒和 9.375 秒。两份正式 PUT、GET 均 HTTP 200，版本各从 3 升至 4，回读与生成成稿相同。Gateway 六阶段实际派发并完成，结算合计 82074 tokens，无残留预留。桌面 GUI 尚未走查。逐阶段预留、实际用量和成稿核对见 `docs/archive/overview-experiments/20261112-unified-budget-formal/data/report.md`。
+
+香港 16:09，用户生成的学生操作手册 PDF 与星校园计划书 DOCX 均保存为正式版本 3。只读核对确认两份成稿与对应成功 generation 一致，六阶段已结算，分别用量 38544 和 36330 tokens，无残留预留。两份总结均在篇幅软目标内。手册遗漏产业赛道教师团队成员的学籍校验例外；计划书的测试、运营数字、团队人数与下一步验证均完成原文核对。证据见 `docs/archive/overview-experiments/20261112-docx-manual-review/data/report.md`。
+
+### 2026-11-12 Overview 动态输出预算（源码与定向验证完成）
+
+CLEAN、OUTLINE 和 SUMMARY 分别估算正常输出需要的最低 token，预留目标为最低值加 50% 裕量。Provider 的 `max_tokens` 与账本预留一致。九个定向套件 66 项及打包通过。两份冻结资料离线复算已完成。联合预算的隔离实测与部署见上节。证据见 `docs/archive/overview-experiments/20261112-output-budget/data/report.md`。
+
+### 2026-11-12 本机 AI 生成额度
+
+香港 15:24:50 使用原镜像单独重建 backend。真实 `.env` 的个人小时额度为 500 万 token，个人日与全局日额度各 2000 万，Overview 单任务额度仍为 1048576。运行变量核对及宿主 liveness/readiness HTTP 200 / UP 已验证。证据见 `docs/archive/overview-experiments/20261112-quota-increase/data/report.md`。
+
+### 2026-11-12 Overview 大纲与总结提示词
+
+已部署本机后端。大纲沿用试验通过的主题标题和短条目格式，总结保留原文限定的对象、场景和关系。按清理后正文的 Unicode 字符数选篇幅软目标，10000 字符及以下为约 1200～1800 字符，超过为约 3000～5000 字符。四个定向套件 41 项、打包和宿主健康检查通过。已有正式结果保留，新提示词的正式成稿待用户重新生成。证据见 `docs/archive/overview-experiments/20261112-prompts/data/report.md`。
+
+### 2026-11-12 Overview 平台生成模型容量
+
+平台 Overview 从 `AURALIS_AI_GENERATION_CONTEXT_TOKENS` 和 `AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS` 读取当前模型容量。BYOK 按 Provider、端点和模型匹配服务端容量条目。13 个后端套件 113 项通过，package exit 0。香港 14:45:50 单独重建 backend，宿主 liveness/readiness 均 HTTP 200 / UP。运行容器已加载两个容量值，原端点、模型和密钥逐项保持。证据见 `docs/archive/overview-experiments/20261112-env-capacity/data/report.md`。
+
+香港 14:50:16，为复测原 PDF，新增本机 `AURALIS_AI_LIMITS_OVERVIEW_TASK_TOKENS=1048576`。同一容量版镜像单独重建 backend，宿主 liveness/readiness 均 HTTP 200 / UP，运行额度从 524288 提高到 1048576。证据见 `docs/archive/overview-experiments/20261112-task-quota/data/report.md`。
+
+使用平台 `deepseek-flash` 从正式接口验证 PPT 和 PDF 的 CLEAN → OUTLINE → SUMMARY。PPT 在容量修复后生成成功，SSE 耗时 19.078 秒，账本 18957 tokens。PDF 在本机单任务额度提高后生成成功，SSE 耗时 66.578 秒，账本 86090 tokens。两份正式 PUT、GET 均 HTTP 200，版本均从 1 升至 2，回读大纲与总结和生成响应一致。桌面 GUI 尚未走查。证据见 `docs/archive/overview-experiments/20261112-pdf-ppt-capacity-retest/data/report.md` 与 `docs/archive/overview-experiments/20261112-pdf-budget-retest/data/report.md`。
+
+### 2026-11-12 平台 AI 生成与 Embedding 配置
+
+平台配置收敛为 `AURALIS_AI_GENERATION_*` 与 `AURALIS_AI_EMBEDDING_*`。本机 `.env` 将当前生成与向量端点、模型和 Key 原值映射到新键，Compose 对实际配置和 `.env.example` 的 `config --quiet` 均 exit 0。香港 14:29:58 本机 backend 已重建，容器 healthy，宿主 liveness/readiness 均 HTTP 200 / UP。容器中的六项新变量与本机配置一致，真实生成、向量化及检索尚待验证。部署证据见 `D:/Temp/auralis-platform-ai-20261112/deploy-report.md`。启用方式见[部署指南](../operations/Deployment.md)。
+
+隔离 PostgreSQL 与 TLS fixture 下，相关 21 个后端套件共 199 项全部通过，后端打包 exit 0。全量 911 项、3 个既有断言失败、0 错误、2 跳过，exit 1。证据见 `D:/Temp/auralis-platform-ai-20261112/report.md`。
+
+### 2026-11-12 环境文件整理
+
+`.env` 与 `.env.example` 按供应商、思考、超时、额度、基础服务与诊断重排。保留真实文件 43 项及示例 79 项原有有效赋值，仅移除无消费者的旧 adaptive 开关；DeepSeek/OpenAI 缺省地址和模型补为注释示例，不新增有效覆盖。前后 Compose 解析均通过，唯一差异是 backend 不再收到退役项，两份 `config --quiet` 均 exit 0。未切换供应商、改密钥或重启部署；证据见 `D:/Temp/auralis-env-organize-20261112/report.md`。
+
+### 2026-11-12 个人中心文件解析进度卡片截断与溢出修复（源码与定向验证完成）
+
+排查并修复了个人中心（`Profile/index.vue`）文件解析进度中心（`DocumentProcessingCenter.vue`）中长文件名或长状态文本挤破父级网格轨道与 Flex 布局、导致右侧状态药丸徽标和操作按钮被裁剪移出屏幕的问题：
+- **网格轨道与容器边界收窄**：`.processing-list` 补齐 `grid-template-columns: minmax(0, 1fr)` 与 `width: 100%; min-width: 0;`，`.processing-item` 设定 `box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;`，杜绝 CSS Grid 默认 auto 轨道按子项 max-content 撑大父级卡片的问题；
+- **全文本截断保护与原生 Tooltip**：对 `.processing-item-meta > span` 与 `.processing-error` 统一补齐 `flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`；为 `<strong>` 文件名补充 `:title` 原生 Tooltip 提示，超长文本优雅省略同时保证完整文件名随时可查；
+- **侧栏面板横向防溢出**：在 `Profile/index.vue` 的 `.studio-left` 与 `.studio-right` 补齐 `overflow-x: hidden;`，并对 `.studio-left > *` 设定 `max-width: 100%; box-sizing: border-box;`，确保在任何视口或窄屏断点（320px–480px）下右侧操作按钮和状态药丸徽标完整可见，绝不横向截断。
+- **验证**：PC 类型检查 `npm run type-check` exit 0；全量生产构建 `npm run build` exit 0；定向测试套件 `scripts/r4-document-processing-ui.test.mjs` 16/16 全部通过（含新增网格轨道与侧栏横向溢出守卫）；`r4-profile-live-links.test.mjs` 与 `r4-profile-logout.test.mjs` 15/15 全部通过。未执行真实桌面端 GUI 人工走查。
+
 ### 2026-11-10 PC 学科总览与文件大纲重新生成状态反馈与交互修复（源码完成，定向验证通过）
 
 针对用户反馈的“重新生成总览和大纲时页面无变化、按下去没反应但后端在运行”的问题进行根因定位与修复：

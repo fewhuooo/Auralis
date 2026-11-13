@@ -1,12 +1,6 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.OverviewDtos;
-import com.auralis.app.ai.OverviewIdentityDtos;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityNodeInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineProvenanceInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineProvenanceSectionInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineProvenanceSourceRefInput;
 import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewResultCommand;
 import com.auralis.app.ai.OverviewResultService;
@@ -150,7 +144,7 @@ class OverviewIdentityPostgresIntegrationTests {
     }
 
     @Test
-    void postgresPersistsIdentityAndChunkRefsAndReplaysReceiptAcrossRead() throws Exception {
+    void postgresPersistsMarkdownAndReplaysReceiptAcrossRead() throws Exception {
         Fixture fixture = fixture("stable");
         OverviewResultCommand command = command(fixture, UUID.randomUUID(), "Stable content");
 
@@ -160,21 +154,14 @@ class OverviewIdentityPostgresIntegrationTests {
 
         assertThat(replay).isEqualTo(saved);
         assertDatabaseReadMatches(saved, read);
-        assertThat(jdbc.queryForObject("select outline_identity_json from overview_results where user_id=? and scope_id=?",
-                String.class, fixture.userId(), fixture.sourceId())).contains(saved.outlineIdentity().nodes().get(0).nodeId().toString());
+        assertThat(jdbc.queryForObject("select outline from overview_results where user_id=? and scope_id=?",
+                String.class, fixture.userId(), fixture.sourceId()))
+                .isEqualTo(objectMapper.writeValueAsString(command.result().outlineMarkdown()));
+        assertThat(jdbc.queryForObject("select summary from overview_results where user_id=? and scope_id=?",
+                String.class, fixture.userId(), fixture.sourceId()))
+                .isEqualTo(objectMapper.writeValueAsString(command.result().summaryMarkdown()));
         assertThat(jdbc.queryForObject("select provenance_json from source_chunks where id=?", String.class,
                 fixture.chunkId())).contains(fixture.parsedDocumentId().toString());
-        assertThat(saved.outlineIdentity().nodes()).hasSize(2);
-        assertThat(saved.outlineIdentity().nodes().get(1).sourceRefs()).singleElement().satisfies(ref -> {
-            assertThat(ref.chunkId()).isEqualTo(fixture.chunkId());
-            assertThat(ref.precision()).isEqualTo(OverviewIdentityDtos.ProvenancePrecision.BLOCK);
-            assertThat(ref.locations()).singleElement().satisfies(location -> {
-                assertThat(location.charStart()).isEqualTo(2);
-                assertThat(location.charEnd()).isEqualTo(8);
-                assertThat(location.blockCharStart()).isEqualTo(2);
-                assertThat(location.blockCharEnd()).isEqualTo(8);
-            });
-        });
         assertThat(jdbc.queryForObject("select count(*) from overview_write_receipts where user_id=? and client_write_id=?",
                 Integer.class, fixture.userId(), command.clientWriteId())).isEqualTo(1);
 
@@ -195,7 +182,7 @@ class OverviewIdentityPostgresIntegrationTests {
     }
 
     @Test
-    void postgresReceiptFailureRollsBackOverviewIdentityAndReceiptTogether() {
+    void postgresReceiptFailureRollsBackOverviewMarkdownAndReceiptTogether() {
         Fixture fixture = fixture("rollback");
         jdbc.execute("create function fail_overview_receipt_insert() returns trigger language plpgsql as $$ "
                 + "begin raise exception 'forced overview receipt failure'; end; $$");
@@ -250,20 +237,10 @@ class OverviewIdentityPostgresIntegrationTests {
     }
 
     private OverviewResultCommand command(Fixture fixture, UUID writeId, String text) {
-        var result = new OverviewDtos.OverviewResponse(1, "M2 outline " + text,
-                List.of(new OverviewDtos.OverviewChapter("Chapter " + text,
-                        List.of(new OverviewDtos.OverviewSection("Section " + text, "Persisted summary",
-                                List.of(fixture.sourceId().toString()), null)))),
-                new OverviewDtos.OverviewSummary("Summary " + text, List.of("Key point"), List.of("Next step")));
-        OutlineIdentityInput identity = new OutlineIdentityInput(1, List.of(
-                new OutlineIdentityNodeInput(List.of(0), null),
-                new OutlineIdentityNodeInput(List.of(0, 0), null)));
-        OutlineProvenanceInput provenance = new OutlineProvenanceInput(1, List.of(
-                new OutlineProvenanceSectionInput(List.of(0, 0), List.of(
-                        new OutlineProvenanceSourceRefInput(fixture.sourceId(), fixture.revision(),
-                                fixture.chunkId(), fixture.generation(), 2, 8)))));
+        var result = new OverviewDtos.OverviewResponse(2, "M2 outline " + text,
+                "## Chapter " + text + "\n\n### Section\n\nPersisted body", "Summary " + text);
         return new OverviewResultCommand(0L, writeId, OverviewMode.ALL, fixture.revision(), null, null,
-                null, null, result, identity, provenance);
+                null, null, result);
     }
 
     private static String requirePostgresUrl() {

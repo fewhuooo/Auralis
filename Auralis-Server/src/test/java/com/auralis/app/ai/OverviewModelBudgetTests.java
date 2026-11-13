@@ -1,66 +1,74 @@
 package com.auralis.app.ai;
 
+import com.auralis.app.ai.usage.AiCredentialSource;
 import com.auralis.app.shared.config.AuralisProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OverviewModelBudgetTests {
+    private static final String PLATFORM_ENDPOINT = "https://api.deepseek.com";
+    private static final String PLATFORM_MODEL = "deepseek-flash";
 
     @Test
-    void resolvesOfficialMimoCapacityOnlyForExactProviderEndpointAndModel() {
-        OverviewModelBudget profile = OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://api.xiaomimimo.com/v1", "mimo-v2.6-flash", List.of());
+    void resolvesConfiguredPlatformCapacityForCurrentEndpointAndModel() {
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(ai.generation()).thenReturn(new AuralisProperties.GenerationEndpoint(
+                PLATFORM_ENDPOINT, PLATFORM_MODEL, "test-key", 1_048_576, 393_216));
 
-        assertThat(profile.isTrusted()).isTrue();
-        assertThat(profile.contextWindowTokens().orElseThrow()).isEqualTo(1_000_000);
-        assertThat(profile.maxOutputTokens().orElseThrow()).isEqualTo(128_000);
-        assertThat(profile.contextSafetyMarginTokens()).isEqualTo(8_192);
-        assertThat(OverviewModelBudget.resolve(AiProviderType.DEEPSEEK,
-                "https://api.xiaomimimo.com/v1", "mimo-v2.6-flash", List.of()).isTrusted()).isFalse();
-        assertThat(OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://api.xiaomimimo.com.evil.test/v1", "mimo-v2.6-flash", List.of()).isTrusted()).isFalse();
-        assertThat(OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://user@api.xiaomimimo.com/v1", "mimo-v2.6-flash", List.of()).isTrusted()).isFalse();
-        assertThat(OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://api.xiaomimimo.com/v1?route=other", "mimo-v2.6-flash", List.of()).isTrusted()).isFalse();
-        assertThat(OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://api.xiaomimimo.com/v2", "mimo-v2.6-flash", List.of()).isTrusted()).isFalse();
+        OverviewModelBudget profile = resolve(PLATFORM_ENDPOINT, PLATFORM_MODEL, AiCredentialSource.PLATFORM, ai);
+
+        assertThat(profile.contextWindowTokens()).hasValue(1_048_576);
+        assertThat(profile.maxOutputTokens()).hasValue(393_216);
+        assertThat(resolve(PLATFORM_ENDPOINT, "deepseek-v4-flash", AiCredentialSource.PLATFORM, ai).isTrusted())
+                .isFalse();
+        assertThat(resolve("https://elsewhere.test", PLATFORM_MODEL, AiCredentialSource.PLATFORM, ai).isTrusted())
+                .isFalse();
     }
 
     @Test
-    void resolvesOnlyExactServerConfiguredCapacityForUnknownModels() {
-        AuralisProperties.OverviewModelCapacity configured = new AuralisProperties.OverviewModelCapacity(
-                "OPENAI_COMPATIBLE", "https://provider.test/v1", "private-model", 80_000, 8_000);
+    void platformAndByokCapacitiesStaySeparateEvenForMatchingEndpointAndModel() {
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(ai.generation()).thenReturn(new AuralisProperties.GenerationEndpoint(
+                PLATFORM_ENDPOINT, PLATFORM_MODEL, "test-key", 1_048_576, 393_216));
+        assertThat(resolve(PLATFORM_ENDPOINT, PLATFORM_MODEL, AiCredentialSource.USER_SUPPLIED, ai).isTrusted())
+                .isFalse();
 
-        OverviewModelBudget profile = OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://provider.test/v1", "private-model", List.of(configured));
+        when(ai.overviewModelCapacities()).thenReturn(List.of(new AuralisProperties.OverviewModelCapacity(
+                "OPENAI_COMPATIBLE", PLATFORM_ENDPOINT, PLATFORM_MODEL, 4_096, 1_024)));
 
-        assertThat(profile.isTrusted()).isTrue();
-        assertThat(profile.contextWindowTokens().orElseThrow()).isEqualTo(80_000);
-        assertThat(profile.maxOutputTokens().orElseThrow()).isEqualTo(8_000);
-        assertThat(OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://provider.test/v1/", "private-model", List.of(configured)).isTrusted()).isFalse();
-        assertThat(OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://provider.test/v1", "other-model", List.of(configured)).isTrusted()).isFalse();
-        assertThat(OverviewModelBudget.resolve(AiProviderType.DEEPSEEK,
-                "https://provider.test/v1", "private-model", List.of(configured)).isTrusted()).isFalse();
+        OverviewModelBudget byok = resolve(PLATFORM_ENDPOINT, PLATFORM_MODEL, AiCredentialSource.USER_SUPPLIED, ai);
+        assertThat(byok.contextWindowTokens()).hasValue(4_096);
+        assertThat(byok.maxOutputTokens()).hasValue(1_024);
+        assertThat(byok.contextSafetyMarginTokens()).isEqualTo(1_024);
+        assertThat(resolve(PLATFORM_ENDPOINT, PLATFORM_MODEL, AiCredentialSource.PLATFORM, ai)
+                .maxOutputTokens()).hasValue(393_216);
+        assertThat(resolve(PLATFORM_ENDPOINT + "/", PLATFORM_MODEL, AiCredentialSource.USER_SUPPLIED, ai)
+                .isTrusted()).isFalse();
     }
 
     @Test
-    void exactServerCapacityOverridesOfficialValuesAndScalesMarginForSmallWindows() {
-        AuralisProperties.OverviewModelCapacity configured = new AuralisProperties.OverviewModelCapacity(
-                "OPENAI_COMPATIBLE", "https://api.xiaomimimo.com/v1",
-                "mimo-v2.6-flash", 4_096, 1_024);
+    void unconfiguredPlatformCapacityDoesNotFallBackAndInvalidPairsAreRejected() {
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(ai.generation()).thenReturn(new AuralisProperties.GenerationEndpoint(
+                PLATFORM_ENDPOINT, PLATFORM_MODEL, "test-key", 0, 0));
+        when(ai.overviewModelCapacities()).thenReturn(List.of(new AuralisProperties.OverviewModelCapacity(
+                "OPENAI_COMPATIBLE", PLATFORM_ENDPOINT, PLATFORM_MODEL, 80_000, 8_000)));
 
-        OverviewModelBudget profile = OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE,
-                "https://api.xiaomimimo.com/v1", "mimo-v2.6-flash", List.of(configured));
+        assertThat(resolve(PLATFORM_ENDPOINT, PLATFORM_MODEL, AiCredentialSource.PLATFORM, ai).isTrusted())
+                .isFalse();
+        assertThatIllegalArgumentException().isThrownBy(() -> new AuralisProperties.GenerationEndpoint(
+                PLATFORM_ENDPOINT, PLATFORM_MODEL, "test-key", 0, 1_024));
+        assertThatIllegalArgumentException().isThrownBy(() -> new AuralisProperties.GenerationEndpoint(
+                PLATFORM_ENDPOINT, PLATFORM_MODEL, "test-key", 1_024, 4_096));
+    }
 
-        assertThat(profile.isTrusted()).isTrue();
-        assertThat(profile.contextWindowTokens().orElseThrow()).isEqualTo(4_096);
-        assertThat(profile.maxOutputTokens().orElseThrow()).isEqualTo(1_024);
-        assertThat(profile.contextSafetyMarginTokens()).isEqualTo(1_024);
+    private OverviewModelBudget resolve(String endpoint, String model, AiCredentialSource source, AuralisProperties.Ai ai) {
+        return OverviewModelBudget.resolve(AiProviderType.OPENAI_COMPATIBLE, endpoint, model, source, ai);
     }
 }

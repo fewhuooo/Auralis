@@ -1,14 +1,6 @@
 package com.auralis.app.ai;
 
-import com.auralis.app.ai.OverviewDtos.OverviewChapter;
 import com.auralis.app.ai.OverviewDtos.OverviewResponse;
-import com.auralis.app.ai.OverviewDtos.OverviewSummary;
-import com.auralis.app.ai.OverviewDtos.OverviewSection;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityNodeInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityView;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineProvenanceInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineProvenanceView;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.auralis.app.ai.internal.persistence.OverviewResultEntity;
 import com.auralis.app.ai.internal.persistence.OverviewResultRepository;
@@ -30,9 +22,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -41,7 +33,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -61,14 +52,11 @@ public class OverviewResultService {
     private final SourceService sourceService;
     private final SubjectService subjectService;
     private final OverviewDocumentValidator documentValidator;
-    private final OverviewIdentityService overviewIdentityService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AuralisProperties.OverviewLimits overviewLimits;
     @Autowired(required = false)
     private OverviewGenerationService generationService;
-    @Autowired(required = false)
-    private OverviewCandidateInputResolver candidateInputResolver;
 
     public OverviewResultService(OverviewResultRepository resultRepository,
                                  OverviewWriteReceiptRepository receiptRepository,
@@ -76,11 +64,10 @@ public class OverviewResultService {
                                  SourceService sourceService,
                                  SubjectService subjectService,
                                  OverviewDocumentValidator documentValidator,
-                                 OverviewIdentityService overviewIdentityService,
                                  ObjectMapper objectMapper,
                                  ApplicationEventPublisher eventPublisher) {
         this(resultRepository, receiptRepository, identityService, sourceService, subjectService,
-                documentValidator, overviewIdentityService, objectMapper, eventPublisher,
+                documentValidator, objectMapper, eventPublisher,
                 AuralisProperties.OverviewLimits.withoutAdditionalCaps());
     }
 
@@ -91,12 +78,11 @@ public class OverviewResultService {
                                  SourceService sourceService,
                                  SubjectService subjectService,
                                  OverviewDocumentValidator documentValidator,
-                                 OverviewIdentityService overviewIdentityService,
                                  ObjectMapper objectMapper,
                                  ApplicationEventPublisher eventPublisher,
                                  AuralisProperties properties) {
         this(resultRepository, receiptRepository, identityService, sourceService, subjectService,
-                documentValidator, overviewIdentityService, objectMapper, eventPublisher,
+                documentValidator, objectMapper, eventPublisher,
                 properties == null ? AuralisProperties.OverviewLimits.withoutAdditionalCaps()
                         : properties.ai().overviewLimits());
     }
@@ -107,7 +93,6 @@ public class OverviewResultService {
                           SourceService sourceService,
                           SubjectService subjectService,
                           OverviewDocumentValidator documentValidator,
-                          OverviewIdentityService overviewIdentityService,
                           ObjectMapper objectMapper,
                           ApplicationEventPublisher eventPublisher,
                           AuralisProperties.OverviewLimits overviewLimits) {
@@ -117,7 +102,6 @@ public class OverviewResultService {
         this.sourceService = sourceService;
         this.subjectService = subjectService;
         this.documentValidator = documentValidator;
-        this.overviewIdentityService = overviewIdentityService;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.overviewLimits = overviewLimits == null
@@ -171,14 +155,9 @@ public class OverviewResultService {
         SourceView source = requireReadySource(userId, sourceId, null);
         validateSourceWrite(source, command);
         OverviewResultEntity existing = resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SOURCE_SCOPE, sourceId).orElse(null);
-        OverviewInputDescriptor input;
-        if (command.candidateInput() == null) {
-            input = resolveManualInputDescriptor(userId, SOURCE_SCOPE, sourceId, command, existing, List.of(), source);
-        } else {
-            validateCandidateInputShape(command);
-            input = resolveCandidateInput(userId, SOURCE_SCOPE, sourceId, command);
-        }
-        OverviewResponse validated = validateResult(command, input.sourceIds());
+        OverviewInputDescriptor input = resolveManualInputDescriptor(userId, SOURCE_SCOPE, sourceId, command,
+                existing, List.of(), source);
+        OverviewResponse validated = validateResult(command);
         String requestHash = payloadHash(SOURCE_SCOPE, sourceId, command, null);
         OverviewResultView replay = replay(userId, SOURCE_SCOPE, sourceId, command, requestHash);
         if (replay != null) return withSubjectId(replay, source.subjectId());
@@ -188,116 +167,24 @@ public class OverviewResultService {
         checkBaseVersion(entity, current, command);
         boolean updateOutline = command.mode() != OverviewMode.SUMMARY;
         boolean updateSummary = command.mode() != OverviewMode.OUTLINE;
-        OutlineIdentityView identity = null;
-        if (updateOutline) {
-            OutlineProvenanceInput provenance = command.outlineProvenance() != null
-                    ? command.outlineProvenance() : command.result().outlineProvenance();
-            identity = overviewIdentityService.bind(userId, validated, command.outlineIdentity(), provenance,
-                    Map.of(source.id(), source.ingestionRevision()), !current || entity == null
-                            ? null : entity.getOutlineIdentityJson())
-                    .outlineIdentity();
-        }
         if (entity == null) {
             entity = new OverviewResultEntity(UUID.randomUUID(), userId, SOURCE_SCOPE, sourceId,
                     source.subjectId(), sourceId, source.ingestionRevision());
         }
-        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outline()) : null,
-                updateSummary ? writeJson(validated.summary()) : null,
-                updateOutline ? writeJson(identity) : entity.getOutlineIdentityJson(), null, null,
+        String snapshot = input.origin() == OverviewInputDescriptor.Origin.SOURCE_CONTENT ? writeInputSnapshot(input) : null;
+        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outlineMarkdown()) : null,
+                updateSummary ? writeJson(validated.summaryMarkdown()) : null,
+                null, null,
                 updateOutline ? input.inputFingerprint() : entity.getOutlineInputFingerprint(),
                 updateSummary ? input.inputFingerprint() : entity.getSummaryInputFingerprint(),
                 generatedAt(command.outlineGeneratedAt(), updateOutline), generatedAt(command.summaryGeneratedAt(), updateSummary),
                 updateOutline, updateSummary, source.ingestionRevision());
-        String snapshot = input.origin() == OverviewInputDescriptor.Origin.SOURCE_CONTENT ? writeInputSnapshot(input) : null;
         entity.applyInputDescriptors(input.origin().name(), snapshot, input.origin().name(), snapshot,
                 updateOutline, updateSummary);
         OverviewResultEntity saved = resultRepository.saveAndFlush(entity);
         OverviewResultView response = view(saved, source.subjectId());
         saveReceipt(userId, SOURCE_SCOPE, sourceId, command, requestHash, response);
         eventPublisher.publishEvent(new OverviewResultChangedEvent(userId, SOURCE_SCOPE, sourceId,
-                response.version(), response.updatedAt()));
-        return response;
-    }
-
-    /** Trusted server path used only by the durable publication service after its job/plan fences pass. */
-    @Transactional(noRollbackFor = DomainException.class)
-    public OverviewResultView publishNative(UUID userId, String scopeType, UUID scopeId, long baseVersion,
-                                            UUID expectedResultId, Long expectedResultVersion,
-                                            UUID clientWriteId, OverviewMode mode, OverviewResponse candidate,
-                                            OverviewInputDescriptor input) {
-        identityService.lockUserForScheduling(userId);
-        if (input == null || input.origin() != OverviewInputDescriptor.Origin.SOURCE_CONTENT
-                || !scopeType.equals(input.scopeType()) || !scopeId.equals(input.scopeId()) || generationService == null) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Native publication input descriptor is invalid");
-        }
-        SourceView source = null;
-        if (SOURCE_SCOPE.equals(scopeType)) {
-            source = requireReadySource(userId, scopeId, null);
-            if (!input.sourceIds().equals(List.of(scopeId))) throw new DomainException("RESOURCE_VERSION_CONFLICT", "Native source scope changed");
-        } else if (SUBJECT_SCOPE.equals(scopeType)) {
-            subjectService.requireActiveSubjectForMutation(userId, scopeId);
-            for (UUID sourceId : input.sourceIds()) sourceService.requireActiveSourceForMutation(userId, sourceId, scopeId);
-        } else throw new DomainException("VALIDATION_FAILED", "Native publication scope is invalid");
-        OverviewJobDtos.Scope scope = OverviewJobDtos.Scope.valueOf(scopeType);
-        OverviewInputDescriptor currentInput = generationService.currentRawInputDescriptor(userId, scope, scopeId, input.sourceIds());
-        if (!input.equals(currentInput)) throw new DomainException("RESOURCE_VERSION_CONFLICT", "Native publication input changed");
-        OverviewResultEntity entity = resultRepository.findForUpdate(userId, scopeType, scopeId).orElse(null);
-        if (!Objects.equals(entity == null ? null : entity.getId(), expectedResultId)
-                || !Objects.equals(entity == null ? null : entity.getVersion(), expectedResultVersion)) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Formal result changed after the job captured its publication baseline");
-        }
-        boolean current = entity != null && (SOURCE_SCOPE.equals(scopeType)
-                ? isCurrentSourceResult(userId, entity, source)
-                : isCurrentSubjectResult(userId, entity, currentSubjectManifest(userId, scopeId)));
-        if (current) {
-            if (entity.getVersion() != baseVersion) throw versionConflict(entity);
-        } else if (baseVersion != 0 || mode != OverviewMode.ALL) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "A complete current result is required for OUTLINE publication");
-        }
-        OverviewResultCommand command = new OverviewResultCommand(baseVersion, clientWriteId, mode,
-                SOURCE_SCOPE.equals(scopeType) ? source.ingestionRevision() : null, null, input.inputFingerprint(),
-                mode == OverviewMode.OUTLINE || mode == OverviewMode.ALL ? Instant.now() : null,
-                mode == OverviewMode.ALL ? Instant.now() : null, candidate, null, null, input);
-        OverviewResponse validated = validateResult(command, input.sourceIds());
-        boolean updateOutline = mode != OverviewMode.SUMMARY;
-        boolean updateSummary = mode != OverviewMode.OUTLINE;
-        if (mode == OverviewMode.SUMMARY) throw new DomainException("VALIDATION_FAILED", "Native background publication does not support SUMMARY");
-        if (updateOutline && mode == OverviewMode.OUTLINE && (!current || entity == null || !complete(entity))) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "OUTLINE publication requires a current complete result");
-        }
-        OutlineIdentityView identity = null;
-        if (updateOutline) {
-            Map<UUID, UUID> revisions = new LinkedHashMap<>();
-            input.sourceRevisions().forEach(entry -> revisions.put(entry.sourceId(), entry.ingestionRevision()));
-            identity = overviewIdentityService.bind(userId, validated, serverIdentityInput(validated,
-                            current && entity != null ? entity.getOutlineIdentityJson() : null),
-                    candidate.outlineProvenance(),
-                    Map.copyOf(revisions), current && entity != null ? entity.getOutlineIdentityJson() : null).outlineIdentity();
-        }
-        if (entity == null) {
-            UUID subjectId = SOURCE_SCOPE.equals(scopeType) ? source.subjectId() : scopeId;
-            entity = new OverviewResultEntity(UUID.randomUUID(), userId, scopeType, scopeId, subjectId,
-                    SOURCE_SCOPE.equals(scopeType) ? scopeId : null,
-                    SOURCE_SCOPE.equals(scopeType) ? source.ingestionRevision() : null);
-        }
-        String snapshot = writeInputSnapshot(input);
-        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outline()) : null,
-                updateSummary ? writeJson(validated.summary()) : null,
-                updateOutline ? writeJson(identity) : entity.getOutlineIdentityJson(),
-                updateOutline ? null : entity.getOutlineSourceManifest(),
-                updateSummary ? null : entity.getSummarySourceManifest(),
-                updateOutline ? input.inputFingerprint() : entity.getOutlineInputFingerprint(),
-                updateSummary ? input.inputFingerprint() : entity.getSummaryInputFingerprint(),
-                updateOutline ? generatedAt(null, true) : entity.getOutlineGeneratedAt(),
-                updateSummary ? generatedAt(null, true) : entity.getSummaryGeneratedAt(),
-                updateOutline, updateSummary, SOURCE_SCOPE.equals(scopeType) ? source.ingestionRevision() : null);
-        entity.applyInputDescriptors(input.origin().name(), snapshot, input.origin().name(), snapshot,
-                updateOutline, updateSummary);
-        OverviewResultEntity saved = resultRepository.saveAndFlush(entity);
-        OverviewResultView response = SOURCE_SCOPE.equals(scopeType) ? view(saved, source.subjectId()) : view(saved);
-        String requestHash = payloadHash(scopeType, scopeId, command, null);
-        saveReceipt(userId, scopeType, scopeId, command, requestHash, response);
-        eventPublisher.publishEvent(new OverviewResultChangedEvent(userId, scopeType, scopeId,
                 response.version(), response.updatedAt()));
         return response;
     }
@@ -358,92 +245,17 @@ public class OverviewResultService {
         return new OverviewSubjectStatusesResponse(items);
     }
 
-    @Transactional
-    public OverviewOutlineView getSourceOutline(UUID userId, UUID sourceId) {
-        return outline(getSource(userId, sourceId, null));
-    }
-
-    @Transactional
-    public OverviewOutlineView getSubjectOutline(UUID userId, UUID subjectId) {
-        return outline(getSubject(userId, subjectId));
-    }
-
-    @Transactional
-    public OverviewSectionView getSourceSection(UUID userId, UUID sourceId, UUID sectionId, long expectedVersion) {
-        return section(getSource(userId, sourceId, null), sectionId, expectedVersion);
-    }
-
-    @Transactional
-    public OverviewSectionView getSubjectSection(UUID userId, UUID subjectId, UUID sectionId, long expectedVersion) {
-        return section(getSubject(userId, subjectId), sectionId, expectedVersion);
-    }
-
-    private OverviewOutlineView outline(OverviewResultView result) {
-        if (!result.identityReady() || result.outlineIdentity() == null || result.outline() == null) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Current Overview does not have stable section identities");
-        }
-        Map<List<Integer>, UUID> ids = new HashMap<>();
-        result.outlineIdentity().nodes().forEach(node -> ids.put(node.path(), node.nodeId()));
-        List<OverviewOutlineView.OutlineNode> nodes = new ArrayList<>();
-        for (int chapterIndex = 0; chapterIndex < result.outline().size(); chapterIndex++) {
-            OverviewChapter chapter = result.outline().get(chapterIndex);
-            List<Integer> chapterPath = List.of(chapterIndex);
-            UUID chapterId = ids.get(chapterPath);
-            if (chapterId == null) throw new DomainException("RESOURCE_VERSION_CONFLICT", "Current Overview chapter identity is missing");
-            nodes.add(new OverviewOutlineView.OutlineNode(chapterId, chapterPath, chapter.title(), true));
-            for (int sectionIndex = 0; sectionIndex < chapter.sections().size(); sectionIndex++) {
-                OverviewSection section = chapter.sections().get(sectionIndex);
-                List<Integer> path = List.of(chapterIndex, sectionIndex);
-                UUID sectionId = ids.get(path);
-                if (sectionId == null) throw new DomainException("RESOURCE_VERSION_CONFLICT", "Current Overview section identity is missing");
-                nodes.add(new OverviewOutlineView.OutlineNode(sectionId, path, section.title(), false));
-            }
-        }
-        return new OverviewOutlineView(result.id(), result.scopeType(), result.version(), nodes);
-    }
-
-    private OverviewSectionView section(OverviewResultView result, UUID sectionId, long expectedVersion) {
-        if (expectedVersion <= 0 || result.version() != expectedVersion) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview result version changed");
-        }
-        if (!result.identityReady() || result.outlineIdentity() == null || result.outline() == null
-                || result.outlineProvenance() == null) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Current Overview does not have canonical section provenance");
-        }
-        OverviewIdentityDtos.OutlineIdentityNodeView identity = result.outlineIdentity().nodes().stream()
-                .filter(node -> sectionId.equals(node.nodeId())).findFirst()
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Overview section was not found"));
-        List<Integer> path = identity.path();
-        if (path == null || path.size() != 2 || path.get(0) >= result.outline().size()
-                || path.get(1) >= result.outline().get(path.get(0)).sections().size()) {
-            throw new DomainException("RESOURCE_NOT_FOUND", "Overview section was not found");
-        }
-        OverviewChapter chapter = result.outline().get(path.get(0));
-        OverviewSection section = chapter.sections().get(path.get(1));
-        OverviewIdentityDtos.OutlineProvenanceSectionView provenance = result.outlineProvenance().sections().stream()
-                .filter(entry -> path.equals(entry.path())).findFirst()
-                .orElseThrow(() -> new DomainException("RESOURCE_VERSION_CONFLICT", "Overview section provenance is missing"));
-        return new OverviewSectionView(result.id(), sectionId, result.version(), chapter.title(), path, section,
-                provenance.sourceRefs());
-    }
-
     @Transactional(noRollbackFor = DomainException.class)
     public OverviewResultView putSubject(UUID userId, UUID subjectId, OverviewResultCommand command) {
         identityService.lockUserForScheduling(userId);
         subjectService.requireActiveSubjectForMutation(userId, subjectId);
-        if (command.candidateInput() != null) {
-            validateCandidateInputShape(command);
-            OverviewInputDescriptor input = resolveCandidateInput(userId, SUBJECT_SCOPE, subjectId, command);
-            return putSubjectWithCandidateInput(userId, subjectId, command, input);
-        }
         if (command.inputDescriptor() != null) {
             return putSubjectWithExplicitInput(userId, subjectId, command);
         }
         List<OverviewSourceManifestEntry> allInputs = currentSubjectManifest(userId, subjectId);
         List<OverviewSourceManifestEntry> requestManifest = projectedManifest(allInputs, command.mode());
         validateSubjectWrite(command, allInputs, requestManifest);
-        OverviewResponse validated = validateResult(command, allInputs.stream()
-                .map(OverviewSourceManifestEntry::sourceId).toList());
+        OverviewResponse validated = validateResult(command);
         String requestHash = payloadHash(SUBJECT_SCOPE, subjectId, command, requestManifest);
         OverviewResultView replay = replay(userId, SUBJECT_SCOPE, subjectId, command, requestHash);
         if (replay != null) return replay;
@@ -453,15 +265,6 @@ public class OverviewResultService {
         checkBaseVersion(entity, current, command);
         boolean updateOutline = command.mode() != OverviewMode.SUMMARY;
         boolean updateSummary = command.mode() != OverviewMode.OUTLINE;
-        OutlineIdentityView identity = null;
-        if (updateOutline) {
-            OutlineProvenanceInput provenance = command.outlineProvenance() != null
-                    ? command.outlineProvenance() : command.result().outlineProvenance();
-            identity = overviewIdentityService.bind(userId, validated, command.outlineIdentity(), provenance,
-                    sourceRevisionMap(allInputs), !current || entity == null
-                            ? null : entity.getOutlineIdentityJson())
-                    .outlineIdentity();
-        }
         if (entity == null) {
             entity = new OverviewResultEntity(UUID.randomUUID(), userId, SUBJECT_SCOPE, subjectId,
                     subjectId, null, null);
@@ -474,9 +277,8 @@ public class OverviewResultService {
                 : entity.getOutlineInputFingerprint();
         String summaryFingerprint = updateSummary ? subjectFingerprint(allInputs, OverviewMode.SUMMARY)
                 : entity.getSummaryInputFingerprint();
-        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outline()) : null,
-                updateSummary ? writeJson(validated.summary()) : null,
-                updateOutline ? writeJson(identity) : entity.getOutlineIdentityJson(),
+        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outlineMarkdown()) : null,
+                updateSummary ? writeJson(validated.summaryMarkdown()) : null,
                 updateOutline ? writeSourceManifest(outlineManifest) : entity.getOutlineSourceManifest(),
                 updateSummary ? writeSourceManifest(summaryManifest) : entity.getSummarySourceManifest(),
                 outlineFingerprint, summaryFingerprint,
@@ -496,58 +298,36 @@ public class OverviewResultService {
     }
 
     private OverviewResultView putSubjectWithExplicitInput(UUID userId, UUID subjectId, OverviewResultCommand command) {
-        return putSubjectWithInput(userId, subjectId, command, command.inputDescriptor(), false);
-    }
-
-    private OverviewResultView putSubjectWithCandidateInput(UUID userId, UUID subjectId,
-                                                             OverviewResultCommand command,
-                                                             OverviewInputDescriptor input) {
-        return putSubjectWithInput(userId, subjectId, command, input, true);
-    }
-
-    private OverviewResultView putSubjectWithInput(UUID userId, UUID subjectId, OverviewResultCommand command,
-                                                   OverviewInputDescriptor input, boolean candidateAdoption) {
+        OverviewInputDescriptor input = command.inputDescriptor();
         OverviewResultEntity existing = resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SUBJECT_SCOPE, subjectId)
                 .orElse(null);
-        if (!candidateAdoption && existing == null) {
+        if (existing == null) {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "An existing native input binding is required");
         }
         boolean updateOutline = command.mode() != OverviewMode.SUMMARY;
         boolean updateSummary = command.mode() != OverviewMode.OUTLINE;
         if (input.origin() != OverviewInputDescriptor.Origin.SOURCE_CONTENT || !SUBJECT_SCOPE.equals(input.scopeType())
                 || !subjectId.equals(input.scopeId()) || input.sourceIds().isEmpty()
-                || candidateAdoption && (generationService == null
-                    || !input.equals(generationService.currentRawInputDescriptor(userId, OverviewJobDtos.Scope.SUBJECT,
-                            subjectId, input.sourceIds())))
-                || !candidateAdoption && updateOutline && (!isCurrentRawContentPart(userId, existing, true, SUBJECT_SCOPE, subjectId)
+                || updateOutline && (!isCurrentRawContentPart(userId, existing, true, SUBJECT_SCOPE, subjectId)
                     || !Objects.equals(input, readInputDescriptor(existing, true)))
-                || !candidateAdoption && updateSummary && (!isCurrentRawContentPart(userId, existing, false, SUBJECT_SCOPE, subjectId)
+                || updateSummary && (!isCurrentRawContentPart(userId, existing, false, SUBJECT_SCOPE, subjectId)
                     || !Objects.equals(input, readInputDescriptor(existing, false)))) {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "Manual edit must retain the current native input binding");
         }
-        OverviewResponse validated = validateResult(command, input.sourceIds());
+        OverviewResponse validated = validateResult(command);
         String requestHash = payloadHash(SUBJECT_SCOPE, subjectId, command, null);
         OverviewResultView replay = replay(userId, SUBJECT_SCOPE, subjectId, command, requestHash);
         if (replay != null) return replay;
         OverviewResultEntity entity = resultRepository.findForUpdate(userId, SUBJECT_SCOPE, subjectId).orElse(null);
         boolean current = entity != null && isCurrentSubjectResult(userId, entity, currentSubjectManifest(userId, subjectId));
-        checkBaseVersion(entity, current && complete(entity), command);
+        checkBaseVersion(entity, current, command);
         if (entity == null) {
             entity = new OverviewResultEntity(UUID.randomUUID(), userId, SUBJECT_SCOPE, subjectId,
                     subjectId, null, null);
         }
-        OutlineIdentityView identity = null;
-        if (updateOutline) {
-            OutlineProvenanceInput provenance = command.outlineProvenance() != null
-                    ? command.outlineProvenance() : command.result().outlineProvenance();
-            identity = overviewIdentityService.bind(userId, validated, command.outlineIdentity(), provenance,
-                    sourceRevisionMap(input.sourceRevisions().stream().map(value -> new OverviewSourceManifestEntry(
-                            value.sourceId(), value.ingestionRevision(), null, null)).toList()),
-                    current ? entity.getOutlineIdentityJson() : null).outlineIdentity();
-        }
-        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outline()) : null,
-                updateSummary ? writeJson(validated.summary()) : null,
-                updateOutline ? writeJson(identity) : entity.getOutlineIdentityJson(),
+        String snapshot = writeInputSnapshot(input);
+        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outlineMarkdown()) : null,
+                updateSummary ? writeJson(validated.summaryMarkdown()) : null,
                 updateOutline ? null : entity.getOutlineSourceManifest(),
                 updateSummary ? null : entity.getSummarySourceManifest(),
                 updateOutline ? input.inputFingerprint() : entity.getOutlineInputFingerprint(),
@@ -555,7 +335,6 @@ public class OverviewResultService {
                 updateOutline ? generatedAt(command.outlineGeneratedAt(), true) : entity.getOutlineGeneratedAt(),
                 updateSummary ? generatedAt(command.summaryGeneratedAt(), true) : entity.getSummaryGeneratedAt(),
                 updateOutline, updateSummary, null);
-        String snapshot = writeInputSnapshot(input);
         entity.applyInputDescriptors(input.origin().name(), snapshot, input.origin().name(), snapshot, updateOutline, updateSummary);
         OverviewResultEntity saved = resultRepository.saveAndFlush(entity);
         OverviewResultView response = view(saved);
@@ -563,23 +342,6 @@ public class OverviewResultService {
         eventPublisher.publishEvent(new OverviewResultChangedEvent(userId, SUBJECT_SCOPE, subjectId,
                 response.version(), response.updatedAt()));
         return response;
-    }
-
-    private void validateCandidateInputShape(OverviewResultCommand command) {
-        if (command.mode() != OverviewMode.ALL && command.mode() != OverviewMode.OUTLINE
-                || command.inputDescriptor() != null
-                || command.sourceManifest() != null && !command.sourceManifest().isEmpty()
-                || command.inputFingerprint() != null) {
-            throw new DomainException("VALIDATION_FAILED", "candidateInput is exclusive with explicit input fields and requires ALL or OUTLINE mode");
-        }
-    }
-
-    private OverviewInputDescriptor resolveCandidateInput(UUID userId, String scopeType, UUID scopeId,
-                                                           OverviewResultCommand command) {
-        if (candidateInputResolver == null) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Candidate input resolver is unavailable");
-        }
-        return candidateInputResolver.resolve(userId, scopeType, scopeId, command.mode(), command.candidateInput());
     }
 
     private SourceView requireReadySource(UUID userId, UUID sourceId, UUID expectedRevision) {
@@ -649,20 +411,6 @@ public class OverviewResultService {
                         entry.sourceId(), entry.ingestionRevision())).toList(), List.of(), parts, fingerprint);
     }
 
-    private OutlineIdentityInput serverIdentityInput(OverviewResponse result, String previousIdentityJson) {
-        List<OutlineIdentityNodeInput> nodes = new ArrayList<>();
-        OutlineIdentityView previous = overviewIdentityService.parseIdentity(previousIdentityJson);
-        Map<List<Integer>, UUID> ids = new HashMap<>();
-        if (previous != null) previous.nodes().forEach(node -> ids.put(node.path(), node.nodeId()));
-        for (int chapter = 0; chapter < result.outline().size(); chapter++) {
-            nodes.add(new OutlineIdentityNodeInput(List.of(chapter), ids.get(List.of(chapter))));
-            for (int section = 0; section < result.outline().get(chapter).sections().size(); section++) {
-                nodes.add(new OutlineIdentityNodeInput(List.of(chapter, section), ids.get(List.of(chapter, section))));
-            }
-        }
-        return new OutlineIdentityInput(OverviewIdentityService.SCHEMA_VERSION, nodes);
-    }
-
     private void validateSubjectWrite(OverviewResultCommand command, List<OverviewSourceManifestEntry> allInputs,
                                       List<OverviewSourceManifestEntry> requestManifest) {
         if (command.ingestionRevision() != null) {
@@ -687,7 +435,7 @@ public class OverviewResultService {
         }
     }
 
-    private OverviewResponse validateResult(OverviewResultCommand command, List<UUID> sourceIds) {
+    private OverviewResponse validateResult(OverviewResultCommand command) {
         if (command.result() == null || command.mode() == null) {
             throw new DomainException("VALIDATION_FAILED", "Overview result and mode are required");
         }
@@ -700,11 +448,16 @@ public class OverviewResultService {
                 || command.mode() == OverviewMode.SUMMARY && command.outlineGeneratedAt() != null) {
             throw new DomainException("VALIDATION_FAILED", "generatedAt may only be set for the updated overview part");
         }
-        Map<String, String> aliases = new LinkedHashMap<>();
-        sourceIds.stream().map(UUID::toString).sorted().forEach(id -> aliases.put(id, id));
-        OverviewResponse result = documentValidator.validateProviderDocument(writeJson(command.result()), aliases);
-        boolean hasOutline = result.outline() != null && !result.outline().isEmpty();
-        boolean hasSummary = result.summary() != null;
+        String document = writeJson(command.result());
+        OverviewResponse result;
+        try {
+            result = documentValidator.validateProviderDocument(document);
+        } catch (DomainException invalid) {
+            if (!"MODEL_PROVIDER_ERROR".equals(invalid.code())) throw invalid;
+            throw new DomainException("VALIDATION_FAILED", invalid.getMessage(), null, invalid);
+        }
+        boolean hasOutline = result.outlineMarkdown() != null;
+        boolean hasSummary = result.summaryMarkdown() != null;
         if ((command.mode() == OverviewMode.ALL && (!hasOutline || !hasSummary))
                 || (command.mode() == OverviewMode.OUTLINE && !hasOutline)
                 || (command.mode() == OverviewMode.SUMMARY && !hasSummary)) {
@@ -714,10 +467,19 @@ public class OverviewResultService {
     }
 
     private void checkBaseVersion(OverviewResultEntity entity, boolean current, OverviewResultCommand command) {
+        if (entity != null && entity.getSchemaVersion() == 1) {
+            if (entity.getVersion() != command.baseVersion() || command.mode() != OverviewMode.ALL) {
+                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview version requires a complete replacement",
+                        Map.of("version", entity.getVersion(), "schemaVersion", entity.getSchemaVersion()));
+            }
+            return;
+        }
         if (current) {
             if (entity.getVersion() != command.baseVersion()) {
                 throw versionConflict(entity);
             }
+            if (command.mode() == OverviewMode.OUTLINE) readMarkdown(entity.getSummary());
+            if (command.mode() == OverviewMode.SUMMARY) readMarkdown(entity.getOutline());
             return;
         }
         if (command.baseVersion() != 0 || command.mode() != OverviewMode.ALL) {
@@ -725,19 +487,23 @@ public class OverviewResultService {
         }
     }
 
-    private boolean complete(OverviewResultEntity entity) {
-        return entity.getOutline() != null && entity.getSummary() != null;
+    private boolean hasMarkdownSchema(OverviewResultEntity entity) {
+        if (entity.getSchemaVersion() == 1) return false;
+        if (entity.getSchemaVersion() != OverviewDocumentValidator.SCHEMA_VERSION) {
+            throw new DomainException("INTERNAL_ERROR", "Stored overview result has an unsupported schema version");
+        }
+        return true;
     }
 
     private boolean isCurrentSourceResult(UUID userId, OverviewResultEntity entity, SourceView source) {
-        return complete(entity) && Objects.equals(entity.getIngestionRevision(), source.ingestionRevision())
+        return hasMarkdownSchema(entity) && Objects.equals(entity.getIngestionRevision(), source.ingestionRevision())
                 && isCurrentPart(userId, entity, true, List.of(), source)
                 && isCurrentPart(userId, entity, false, List.of(), source);
     }
 
     private boolean isCurrentSubjectResult(UUID userId, OverviewResultEntity entity,
                                           List<OverviewSourceManifestEntry> allInputs) {
-        if (!complete(entity) || allInputs == null || exceeds(overviewLimits.maxSources(), allInputs.size())) return false;
+        if (!hasMarkdownSchema(entity) || allInputs == null || exceeds(overviewLimits.maxSources(), allInputs.size())) return false;
         return isCurrentPart(userId, entity, true, allInputs, null)
                 && isCurrentPart(userId, entity, false, allInputs, null);
     }
@@ -823,24 +589,6 @@ public class OverviewResultService {
         return sha256("AURALIS-SOURCE-REVISION-V1\n" + lower(sourceId) + "\n" + lower(revision));
     }
 
-    @Transactional
-    public OverviewJobRepository.PublicationBaseline capturePublicationBaseline(UUID userId, String scopeType, UUID scopeId) {
-        OverviewResultEntity entity;
-        boolean current;
-        if (SOURCE_SCOPE.equals(scopeType)) {
-            SourceView source = requireReadySource(userId, scopeId, null);
-            entity = resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SOURCE_SCOPE, scopeId).orElse(null);
-            current = entity != null && isCurrentSourceResult(userId, entity, source);
-        } else if (SUBJECT_SCOPE.equals(scopeType)) {
-            subjectService.requireActiveSubjectForMutation(userId, scopeId);
-            List<OverviewSourceManifestEntry> currentInputs = currentSubjectManifest(userId, scopeId);
-            entity = resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SUBJECT_SCOPE, scopeId).orElse(null);
-            current = entity != null && isCurrentSubjectResult(userId, entity, currentInputs);
-        } else throw new DomainException("VALIDATION_FAILED", "Overview publication scope is invalid");
-        return new OverviewJobRepository.PublicationBaseline(current ? entity.getVersion() : 0,
-                entity == null ? null : entity.getId(), entity == null ? null : entity.getVersion());
-    }
-
     private List<OverviewSourceManifestEntry> currentSubjectManifest(UUID userId, UUID subjectId) {
         List<SourceView> sources = sourceService.readyOverviewSources(userId, subjectId).stream()
                 .filter(source -> source.type() == SourceType.FILE)
@@ -852,7 +600,7 @@ public class OverviewResultService {
         for (SourceView source : sources) {
             OverviewResultEntity sourceOverview = resultRepository.findByUserIdAndScopeTypeAndScopeId(
                     userId, SOURCE_SCOPE, source.id()).orElse(null);
-            boolean current = sourceOverview != null && complete(sourceOverview)
+            boolean current = sourceOverview != null && hasMarkdownSchema(sourceOverview)
                     && Objects.equals(sourceOverview.getIngestionRevision(), source.ingestionRevision());
             Long outlineVersion = current && sourceOverview.getOutline() != null && sourceOverview.getOutlineVersion() > 0
                     ? sourceOverview.getOutlineVersion() : null;
@@ -861,14 +609,6 @@ public class OverviewResultService {
             entries.add(new OverviewSourceManifestEntry(source.id(), source.ingestionRevision(), outlineVersion, summaryVersion));
         }
         return sortedManifest(entries);
-    }
-
-    private Map<UUID, UUID> sourceRevisionMap(List<OverviewSourceManifestEntry> entries) {
-        Map<UUID, UUID> revisions = new LinkedHashMap<>();
-        for (OverviewSourceManifestEntry entry : entries) {
-            revisions.put(entry.sourceId(), entry.ingestionRevision());
-        }
-        return Map.copyOf(revisions);
     }
 
     private List<OverviewSourceManifestEntry> projectedManifest(List<OverviewSourceManifestEntry> entries, OverviewMode mode) {
@@ -928,11 +668,14 @@ public class OverviewResultService {
             if (snapshot.path("revoked").asBoolean(false)) {
                 throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview write receipt was revoked with its source");
             }
-            if (snapshot instanceof ObjectNode object) {
-                if (!object.has("identityReady")) object.put("identityReady", false);
-                if (!object.has("outlineIdentity")) object.putNull("outlineIdentity");
-                if (!object.has("outlineProvenance")) object.putNull("outlineProvenance");
+            if (snapshot.path("schemaVersion").asInt() == 1) {
+                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview write receipt belongs to an unavailable result format");
             }
+            if (snapshot.path("schemaVersion").asInt() != OverviewDocumentValidator.SCHEMA_VERSION) {
+                throw new DomainException("INTERNAL_ERROR", "Overview write receipt has an invalid result format");
+            }
+            requiredStoredMarkdown(snapshot.path("outlineMarkdown"));
+            requiredStoredMarkdown(snapshot.path("summaryMarkdown"));
             return objectMapper.treeToValue(snapshot, OverviewResultView.class);
         } catch (DomainException exception) {
             throw exception;
@@ -953,7 +696,7 @@ public class OverviewResultService {
                 command.mode(), command.ingestionRevision(), normalizedManifest == null
                 ? sortedManifest(command.sourceManifest()) : normalizedManifest,
                 command.inputFingerprint(), command.outlineGeneratedAt(), command.summaryGeneratedAt(), command.result(),
-                command.outlineIdentity(), command.outlineProvenance(), command.inputDescriptor(), command.candidateInput())));
+                command.inputDescriptor())));
     }
 
     private String writeJson(Object value) {
@@ -1001,35 +744,36 @@ public class OverviewResultService {
     }
 
     private OverviewResultView view(OverviewResultEntity entity, UUID subjectId) {
-        List<OverviewChapter> outline = null;
-        OverviewSummary summary = null;
-        OutlineIdentityView identity = null;
-        try {
-            if (entity.getOutline() != null) outline = objectMapper.readValue(entity.getOutline(), new TypeReference<>() { });
-            if (entity.getSummary() != null) summary = objectMapper.readValue(entity.getSummary(), OverviewSummary.class);
-            identity = overviewIdentityService.parseIdentity(entity.getOutlineIdentityJson());
-        } catch (JacksonException exception) {
-            throw new DomainException("INTERNAL_ERROR", "Stored overview result could not be read", null, exception);
-        }
         return new OverviewResultView(entity.getId(), entity.getScopeType(), entity.getSourceId(), subjectId,
                 entity.getIngestionRevision(), entity.getVersion(), entity.getOutlineVersion(), entity.getSummaryVersion(),
-                entity.getSchemaVersion(), entity.getTitle(), outline, summary,
+                entity.getSchemaVersion(), entity.getTitle(), readMarkdown(entity.getOutline()), readMarkdown(entity.getSummary()),
                 readManifest(entity.getOutlineSourceManifest()), readManifest(entity.getSummarySourceManifest()),
                 entity.getOutlineInputFingerprint(), entity.getSummaryInputFingerprint(),
                 entity.getOutlineGeneratedAt(), entity.getSummaryGeneratedAt(), entity.getUpdatedAt(),
-                identity != null, identity, overviewIdentityService.provenanceView(identity, outline),
-                entity.getOutline() == null ? null : readInputDescriptor(entity, true),
-                entity.getSummary() == null ? null : readInputDescriptor(entity, false));
+                readInputDescriptor(entity, true), readInputDescriptor(entity, false));
+    }
+
+    private String readMarkdown(String json) {
+        try {
+            return requiredStoredMarkdown(json == null ? null : objectMapper.reader()
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(json));
+        } catch (JacksonException exception) {
+            throw new DomainException("INTERNAL_ERROR", "Stored overview Markdown could not be read", null, exception);
+        }
+    }
+
+    private String requiredStoredMarkdown(JsonNode part) {
+        if (part != null && part.isTextual() && !part.textValue().isBlank()) return part.textValue();
+        throw new DomainException("INTERNAL_ERROR", "Stored overview Markdown is missing or invalid");
     }
 
     private OverviewResultView withSubjectId(OverviewResultView result, UUID subjectId) {
         return new OverviewResultView(result.id(), result.scopeType(), result.sourceId(), subjectId,
                 result.ingestionRevision(), result.version(), result.outlineVersion(), result.summaryVersion(),
-                result.schemaVersion(), result.title(), result.outline(), result.summary(),
+                result.schemaVersion(), result.title(), result.outlineMarkdown(), result.summaryMarkdown(),
                 result.outlineSourceManifest(), result.summarySourceManifest(),
                 result.outlineInputFingerprint(), result.summaryInputFingerprint(),
                 result.outlineGeneratedAt(), result.summaryGeneratedAt(), result.updatedAt(),
-                result.identityReady(), result.outlineIdentity(), result.outlineProvenance(),
                 result.outlineInputDescriptor(), result.summaryInputDescriptor());
     }
 
@@ -1065,9 +809,6 @@ public class OverviewResultService {
                                   List<OverviewSourceManifestEntry> sourceManifest,
                                   String inputFingerprint, Instant outlineGeneratedAt, Instant summaryGeneratedAt,
                                   OverviewResponse result,
-                                  @JsonInclude(JsonInclude.Include.NON_NULL) OutlineIdentityInput outlineIdentity,
-                                  @JsonInclude(JsonInclude.Include.NON_NULL) OutlineProvenanceInput outlineProvenance,
-                                   @JsonInclude(JsonInclude.Include.NON_NULL) OverviewInputDescriptor inputDescriptor,
-                                   @JsonInclude(JsonInclude.Include.NON_NULL) OverviewResultCommand.CandidateInput candidateInput) {
+                                   @JsonInclude(JsonInclude.Include.NON_NULL) OverviewInputDescriptor inputDescriptor) {
     }
 }

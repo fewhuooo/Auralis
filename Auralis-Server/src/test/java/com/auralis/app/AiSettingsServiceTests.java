@@ -100,31 +100,52 @@ class AiSettingsServiceTests {
     }
 
     @Test
-    void resolveUsesEnvDefaultWhenUserHasNoByok(CapturedOutput output) {
+    void resolveUsesPlatformGenerationWhenUserHasNoByok(CapturedOutput output) {
         UUID userId = UUID.randomUUID();
-        when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.DEEPSEEK))
+        when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.OPENAI_COMPATIBLE))
                 .thenReturn(Optional.empty());
         when(properties.ai()).thenReturn(aiProperties);
-        when(aiProperties.defaults()).thenReturn(new AuralisProperties.Defaults(
-                new AuralisProperties.Provider(
-                        "https://api.deepseek.com", "deepseek-chat", "bge-m3", "env-deepseek-key"),
-                new AuralisProperties.Provider(
-                        "https://api.openai.com/v1", "gpt-4o-mini", "text-embedding-3-small", ""),
-                new AuralisProperties.Provider(
-                        "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3", "BAAI/bge-m3", "")));
+        when(aiProperties.generation()).thenReturn(new AuralisProperties.GenerationEndpoint(
+                "https://api.deepseek.com", "deepseek-chat", "env-generation-key", 0, 0));
 
-        AiSettingsService.ResolvedSettings resolved = settingsService.resolve(userId, AiProviderType.DEEPSEEK);
+        AiSettingsService.ResolvedSettings resolved = settingsService.resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
 
-        assertThat(resolved.provider()).isEqualTo(AiProviderType.DEEPSEEK);
+        assertThat(resolved.provider()).isEqualTo(AiProviderType.OPENAI_COMPATIBLE);
         assertThat(resolved.chatModel()).isEqualTo("deepseek-chat");
         assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
-                "https://api.deepseek.com", "env-deepseek-key"));
+                "https://api.deepseek.com", "env-generation-key"));
         assertThat(output.getOut())
                 .contains("AI_SETTINGS_RESOLVED")
                 .contains("source=ENV_DEFAULT")
-                .contains("provider=DEEPSEEK")
-                .doesNotContain("env-deepseek-key");
+                .contains("provider=OPENAI_COMPATIBLE")
+                .doesNotContain("env-generation-key");
         verifyNoInteractions(keyCipher);
+    }
+
+    @Test
+    void savedCompatibleCredentialTakesPrecedenceOverPlatformGeneration() {
+        UUID userId = UUID.randomUUID();
+        AiCredentialEntity saved = new AiCredentialEntity(UUID.randomUUID(), userId,
+                AiProviderType.OPENAI_COMPATIBLE, "https://personal.test/v1", "personal-model", "ciphertext");
+        when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.OPENAI_COMPATIBLE))
+                .thenReturn(Optional.of(saved));
+        when(keyCipher.decrypt("ciphertext")).thenReturn("personal-key");
+
+        var resolved = settingsService.resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
+
+        assertThat(resolved.source()).isEqualTo(com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED);
+        assertThat(resolved.chatModel()).isEqualTo("personal-model");
+        assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
+                "https://personal.test/v1", "personal-key"));
+        verifyNoInteractions(properties);
+    }
+
+    @Test
+    void namedProviderDoesNotUsePlatformGenerationCredentials() {
+        assertThatThrownBy(() -> settingsService.resolve(UUID.randomUUID(), AiProviderType.DEEPSEEK))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("AI provider is not configured");
+        verifyNoInteractions(properties, keyCipher);
     }
 
     @Test
@@ -143,28 +164,24 @@ class AiSettingsServiceTests {
     }
 
     @Test
-    void managedEmbeddingResolutionUsesOnlyServerSiliconFlowDefaults() {
+    void managedEmbeddingResolutionUsesItsOwnPlatformSettings() {
         when(properties.ai()).thenReturn(aiProperties);
-        when(aiProperties.defaults()).thenReturn(new AuralisProperties.Defaults(
-                new AuralisProperties.Provider("https://api.deepseek.com", "deepseek-chat", "user-embedding", ""),
-                new AuralisProperties.Provider("https://api.openai.com/v1", "gpt", "other-embedding", ""),
-                new AuralisProperties.Provider(
-                        "https://api.siliconflow.cn/v1", "server-chat", "server-embedding", "server-key")));
+        when(aiProperties.embedding()).thenReturn(new AuralisProperties.ModelEndpoint(
+                "https://embedding.test/v1", "server-embedding", "server-key"));
 
         AiSettingsService.ResolvedSettings resolved = settingsService.resolveServerManagedEmbedding();
 
-        assertThat(resolved.provider()).isEqualTo(AiProviderType.SILICONFLOW);
+        assertThat(resolved.provider()).isEqualTo(AiProviderType.OPENAI_COMPATIBLE);
         assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
-                "https://api.siliconflow.cn/v1", "server-key", "server-embedding"));
+                "https://embedding.test/v1", "server-key", "server-embedding"));
         verifyNoInteractions(credentialRepository, keyCipher);
     }
 
     @Test
     void managedEmbeddingResolutionFailsClearlyWhenServerKeyIsMissing() {
         when(properties.ai()).thenReturn(aiProperties);
-        when(aiProperties.defaults()).thenReturn(new AuralisProperties.Defaults(
-                null, null, new AuralisProperties.Provider(
-                        "https://api.siliconflow.cn/v1", "server-chat", "server-embedding", " ")));
+        when(aiProperties.embedding()).thenReturn(new AuralisProperties.ModelEndpoint(
+                "https://embedding.test/v1", "server-embedding", " "));
 
         assertThatThrownBy(settingsService::resolveServerManagedEmbedding)
                 .isInstanceOf(DomainException.class)

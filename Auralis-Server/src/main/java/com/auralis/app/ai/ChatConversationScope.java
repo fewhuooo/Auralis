@@ -23,6 +23,6 @@ public record ChatConversationScope(
     }
 
     public ReadingContext toReadingContext() {
-        return new ReadingContext(currentSourceId, subjectId, retrievalMode, sourceIds, null);
+        return new ReadingContext(currentSourceId, subjectId, retrievalMode, sourceIds);
     }
 }

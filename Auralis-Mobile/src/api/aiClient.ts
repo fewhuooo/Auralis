@@ -16,7 +16,7 @@ export interface Protocol1MessageCommand {
   conversationId: string
   requestId: string
   content?: string
-  readingContext?: Record<string, unknown>
+  readingContext?: components['schemas']['ReadingContext']
   selectionText?: string
   activityId?: string
   questionVersion?: number

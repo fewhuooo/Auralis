@@ -74,9 +74,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         registry.add("auralis.identity.jwt-secret", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.encryption-key", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.ingestion-worker-enabled", () -> "false");
-        registry.add("auralis.ai.overview-adaptive-generation-enabled", () -> "true");
         registry.add("auralis.ai.overview-jobs-poll-ms", () -> "3600000");
-        registry.add("auralis.ai.overview-publication-poll-ms", () -> "3600000");
     }
 
     @AfterAll
@@ -144,7 +142,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                             + "'WRITING',?,?,?)",
                     jobId, userId, UUID.randomUUID(), UUID.randomUUID(), subjectId, HASH_A, HASH_B, HASH_C, "adaptive-v1",
                     current.generationId(), workerId, now.plusHours(1), now.plusHours(2));
-            tiny.saveCheckpoint(current.lease(), "writer", HASH_A, HASH_C, "adaptive-v1", 1, "{\"raw\":\"checkpoint\"}");
+            OverviewHistoricalFixtures.insertCheckpoint(jdbc, current.lease(), "writer", "{\"raw\":\"checkpoint\"}");
 
             assertThat(tiny.complete(current.lease(), "{\"raw\":\"result larger than configured cache\"}", usage(), 0, List.of()))
                     .isTrue();
@@ -172,8 +170,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                 revision, HASH_A, HASH_B, HASH_C, "adaptive-v1",
                 List.of(new OverviewGenerationCoordinator.SourceDependency(sourceId, revision, "Source " + sourceId)));
         var generation = coordinator.acquire(sourceRequest);
-        coordinator.saveCheckpoint(generation.lease(), "writer-step", HASH_A, HASH_C, "adaptive-v1", 1,
-                "{\"raw\":\"private checkpoint\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, generation.lease(), "writer-step", "{\"raw\":\"private checkpoint\"}");
         assertThat(coordinator.complete(generation.lease(), "{\"raw\":\"private result\"}", usage(), 0, List.of())).isTrue();
         UUID planId = seedPlanAndNode(generation.lease(), sourceId);
         UUID reservationId = seedCall(generation.lease(), planId);
@@ -260,8 +257,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         UUID revision = jdbc.queryForObject("select ingestion_revision from sources where id=?", UUID.class, sourceId);
         var generation = coordinator.acquire(new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SOURCE", sourceId,
                 revision, HASH_A, HASH_B, HASH_C, "adaptive-v1"));
-        coordinator.saveCheckpoint(generation.lease(), "writer-step", HASH_A, HASH_C, "adaptive-v1", 1,
-                "{\"raw\":\"private checkpoint\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, generation.lease(), "writer-step", "{\"raw\":\"private checkpoint\"}");
         assertThat(coordinator.complete(generation.lease(), "{\"raw\":\"private result\"}", usage(), 0, List.of())).isTrue();
         UUID planId = seedPlanAndNode(generation.lease(), sourceId);
         UUID jobId = seedCompletedJob(userId, sourceId, generation.generationId(), sourceId);

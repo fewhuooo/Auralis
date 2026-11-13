@@ -19,14 +19,9 @@ import java.util.UUID;
 @RequestMapping("/api/ai/overview-jobs")
 public class OverviewJobController {
     private final OverviewJobService service;
-    private final OverviewPublicationService publicationService;
-    private final OverviewPreviewService previewService;
 
-    public OverviewJobController(OverviewJobService service, OverviewPublicationService publicationService,
-                                 OverviewPreviewService previewService) {
+    public OverviewJobController(OverviewJobService service) {
         this.service = service;
-        this.publicationService = publicationService;
-        this.previewService = previewService;
     }
 
     @PostMapping
@@ -53,33 +48,6 @@ public class OverviewJobController {
     @GetMapping("/{id}/candidate")
     public OverviewJobDtos.Candidate candidate(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID id) {
         return service.candidate(user.userId(), id);
-    }
-
-    @PostMapping("/{id}/publish")
-    public OverviewPublicationDtos.PublicationView publish(@AuthenticationPrincipal AuthenticatedUser user,
-                                                           @PathVariable UUID id,
-                                                           @Valid @RequestBody OverviewPublicationDtos.PublishRequest request) {
-        return publicationService.publish(user.userId(), id, request);
-    }
-
-    @GetMapping("/{id}/publication")
-    public OverviewPublicationDtos.PublicationView publication(@AuthenticationPrincipal AuthenticatedUser user,
-                                                                @PathVariable UUID id) {
-        return publicationService.get(user.userId(), id);
-    }
-
-    @GetMapping("/{id}/preview")
-    public OverviewPreviewDtos.Page preview(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID id,
-                                            @RequestParam(defaultValue = "20") int limit,
-                                            @RequestParam(required = false) String cursor) {
-        return previewService.page(user.userId(), id, limit, cursor);
-    }
-
-    @GetMapping("/{id}/preview/{nodeId}")
-    public OverviewPreviewDtos.NodeView previewNode(@AuthenticationPrincipal AuthenticatedUser user,
-                                                     @PathVariable UUID id, @PathVariable UUID nodeId,
-                                                     @RequestParam UUID planId) {
-        return previewService.node(user.userId(), id, nodeId, planId);
     }
 
     @PostMapping("/{id}/pause")

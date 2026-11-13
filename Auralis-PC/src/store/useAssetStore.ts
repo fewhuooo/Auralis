@@ -160,7 +160,7 @@ export const useAssetStore = defineStore('asset', () => {
     }
   }
 
-  async function downloadUrlForOwner(assetId: string, owner: AssetOwnerSnapshot): Promise<string> {
+  async function downloadAssetInfo(assetId: string, owner = requireOwner()) {
     const localAssetRepo = await getLocalAssetRepository(owner.userId, owner.serverDeviceId)
     const localRecord = await localAssetRepo.getAssetFile(assetId)
       ?? await localAssetRepo.getAssetFileByServerId(assetId)
@@ -168,19 +168,12 @@ export const useAssetStore = defineStore('asset', () => {
 
     const response = await getDownloadUrl(localRecord?.serverAssetId || assetId)
     if (!response.url) throw new Error('Asset download response missing URL')
+    if (!response.originalName || !response.mimeType) throw new Error('Asset download response missing file metadata')
     assertOwner(owner)
-    return response.url
+    return { url: response.url, originalName: response.originalName, mimeType: response.mimeType }
   }
 
-  async function downloadUrl(assetId: string): Promise<string> {
-    return downloadUrlForOwner(assetId, requireOwner())
-  }
-
-  async function resolveLocalFile(
-    assetId: string,
-    fileName?: string,
-    mimeType = 'application/octet-stream',
-  ): Promise<AssetInput | null> {
+  async function resolveLocalFile(assetId: string): Promise<AssetInput | null> {
     const authStore = useAuthStore()
     const userId = authStore.user?.id
     const serverDeviceId = authStore.serverDeviceId
@@ -188,9 +181,8 @@ export const useAssetStore = defineStore('asset', () => {
 
     const localAssetRepo = await getLocalAssetRepository(userId, serverDeviceId)
     const assetService = getOrCreateLocalAssetService(localAssetRepo)
-    const options = { name: fileName, mimeType }
-    const local = await assetService.readAssetFile({ localAssetId: assetId }, options)
-      ?? await assetService.readAssetFile({ serverAssetId: assetId }, options)
+    const local = await assetService.readAssetFile({ localAssetId: assetId })
+      ?? await assetService.readAssetFile({ serverAssetId: assetId })
     if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) {
       local?.cleanup()
       throw new Error('ASSET_IDENTITY_CHANGED')
@@ -198,33 +190,23 @@ export const useAssetStore = defineStore('asset', () => {
     return local
   }
 
-  async function downloadSourceInput(assetId: string, fileName: string, mimeType = 'application/octet-stream'): Promise<{
-    file: File
-    cleanup: () => void
-  }> {
+  async function resolveSourceInput(assetId: string): Promise<AssetInput> {
     const owner = requireOwner()
-    const local = await resolveLocalFile(assetId, fileName, mimeType)
+    const local = await resolveLocalFile(assetId)
     assertOwner(owner)
     if (local) return local
 
-    const url = await downloadUrlForOwner(assetId, owner)
+    const { url, originalName, mimeType } = await downloadAssetInfo(assetId, owner)
     assertOwner(owner)
-    const response = await fetch(url)
+    const response = await fetch(url).catch(() => { throw new Error('NETWORK_OFFLINE') })
     assertOwner(owner)
     if (!response.ok) throw new Error(`ASSET_DOWNLOAD_FAILED_${response.status}`)
-    const blob = await response.blob()
+    const blob = await response.blob().catch(() => { throw new Error('NETWORK_OFFLINE') })
     assertOwner(owner)
     return {
-      file: new File([blob], fileName, { type: mimeType }),
+      file: new File([blob], originalName, { type: mimeType }),
       cleanup: () => undefined,
     }
-  }
-
-  // Shared resolver for preview and the online/server-bound document pipeline.
-  // The scheduler calls this only after its local-only attempt, while callers
-  // such as preview can use it directly and still remain local-first.
-  async function resolveSourceInput(assetId: string, fileName: string, mimeType = 'application/octet-stream'): Promise<AssetInput> {
-    return downloadSourceInput(assetId, fileName, mimeType)
   }
 
   async function getAssetSha256(assetId: string): Promise<string | null> {
@@ -258,9 +240,8 @@ export const useAssetStore = defineStore('asset', () => {
     pendingUploads,
     lastError,
     upload,
-    downloadUrl,
+    downloadAssetInfo,
     resolveLocalFile,
-    downloadSourceInput,
     resolveSourceInput,
     getAssetSha256,
     getLocalFile,

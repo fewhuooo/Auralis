@@ -117,8 +117,7 @@ class OverviewJobPostgresIntegrationTests {
                 fixture.sourceId(), row -> new OverviewJobDtos.JobView(row.id(), row.status(), row.version(),
                         OverviewJobDtos.Scope.valueOf(row.scopeType()), fixture.sourceId(), null, null,
                         OverviewJobDtos.Mode.valueOf(row.mode()), row.stage(), row.verifiedNodes(), row.totalNodes(),
-                        row.deadlineAt(), row.safeErrorCode(), row.createdAt(), row.updatedAt(), row.completedAt(),
-                        row.publicationBaseVersion()));
+                        row.deadlineAt(), row.safeErrorCode(), row.createdAt(), row.updatedAt(), row.completedAt()));
         assertThat(page.jobs()).hasSize(1);
         assertThat(page.nextCursor()).isNotBlank();
         assertThatThrownBy(() -> jobs.list(fixture.userId(), 1, page.nextCursor(), OverviewJobDtos.Scope.SOURCE,

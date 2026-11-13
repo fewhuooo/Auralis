@@ -243,6 +243,61 @@ test('SQLite legacy account-less rows are copied to unassigned backup without de
   }
 });
 
+test('PC SQLite startup retries failed schema initialization without creating or altering retired business tables', async (t) => {
+  const sqlite = new TemporarySqlite();
+  const previousWindow = globalThis.window;
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+    sqlite.close();
+  });
+
+  await sqlite.execute('CREATE TABLE subjects (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT)');
+  await sqlite.execute('INSERT INTO subjects VALUES ($1, $2, $3)', ['old-1', 'Unassigned', '#123456']);
+
+  const sqliteBusy = new Error('database is locked');
+  let loads = 0;
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      async invoke(command, args) {
+        switch (command) {
+          case 'plugin:sql|load':
+            loads += 1;
+            return args.db;
+          case 'initialize_local_database_pool':
+            return;
+          case 'plugin:sql|execute':
+            if (loads === 1 && args.query.includes('INSERT OR IGNORE INTO local_schema_migrations')) throw sqliteBusy;
+            await sqlite.execute(args.query, args.values);
+            return [0, null];
+          case 'plugin:sql|select':
+            return sqlite.select(args.query, args.values);
+          default:
+            throw new Error(`Unexpected Tauri command: ${command}`);
+        }
+      },
+    },
+  };
+
+  const { getLocalAssetRepository, getLocalRepository, getLocalSqlDatabase } = await import('../src/services/localDb.ts');
+  await assert.rejects(getLocalAssetRepository('user-a', 'device-1'), sqliteBusy);
+  assert.throws(getLocalSqlDatabase, /LOCAL_DATABASE_NOT_INITIALIZED/);
+  const repository = await getLocalRepository('user-a', 'device-1');
+  assert.equal(loads, 2);
+  await repository.upsert('SUBJECT', 'current-1', { name: 'Active' }, { version: 1 });
+
+  assert.equal((await repository.read('SUBJECT', 'current-1'))?.value.name, 'Active');
+  assert.equal(await repository.read('SUBJECT', 'old-1'), null);
+  assert.equal((await sqlite.select('SELECT version FROM local_schema_migrations'))[0]?.version, LOCAL_SCHEMA_VERSION);
+  assert.deepEqual(
+    (await sqlite.select('SELECT id, name, color FROM subjects')).map((row) => ({ ...row })),
+    [{ id: 'old-1', name: 'Unassigned', color: '#123456' }],
+  );
+  const tables = (await sqlite.select("SELECT name FROM sqlite_master WHERE type = 'table'")).map((row) => row.name);
+  const retiredTables = ['legacy_sync_metadata', 'legacy_local_mutations', 'knowledge_blocks', 'task_blocks', 'chat_sessions', 'chat_messages', 'source_files'];
+  assert.deepEqual(tables.filter((name) => retiredTables.includes(name)), []);
+});
+
 test('tombstone remains readable and stale baseVersion returns a conflict', async () => {
   const { first } = createRepositories();
   await first.upsert('KNOWLEDGE_BLOCK', 'block-1', { title: 'Limits' }, { version: 7 });
@@ -511,7 +566,7 @@ test('coalesces pending local writes per resource without changing their server 
     baseVersion: mutation.baseVersion,
     payload: mutation.payload,
   })), [{
-    clientMutationId: 'update-1', mutationType: 'DELETE', baseVersion: 4, payload: { id: 'task-1' },
+    clientMutationId: 'update-1', mutationType: 'DELETE', baseVersion: 4, payload: { id: 'task-1', _localCrudPredecessor: null },
   }]);
 
   await first.enqueueMutation({
@@ -530,7 +585,7 @@ test('coalesces pending local writes per resource without changing their server 
     baseVersion: mutation.baseVersion,
     payload: mutation.payload,
   })), [{
-    clientMutationId: 'create-1', mutationType: 'CREATE', baseVersion: 0, payload: { title: 'Latest title' },
+    clientMutationId: 'create-1', mutationType: 'CREATE', baseVersion: 0, payload: { title: 'Latest title', _localCrudPredecessor: null },
   }]);
 });
 
@@ -550,8 +605,9 @@ test('server swap batch rolls back the first task when the second write fails, t
       clientMutationId: 'unrelated-conflict', resourceType: 'TASK', resourceId: 'unrelated-task',
       mutationType: 'UPDATE', baseVersion: 2, payload: { title: 'Local conflict' },
     });
+    const [claimed] = await repository.claimPending(1);
     await repository.settleMutation({
-      clientMutationId: 'unrelated-conflict', status: 'conflict', error: 'RESOURCE_VERSION_CONFLICT', remoteVersion: 3,
+      ...claimed, status: 'conflict', error: 'RESOURCE_VERSION_CONFLICT', remoteVersion: 3,
     });
     const unresolvedBefore = await repository.listUnresolved();
 
@@ -830,22 +886,98 @@ test('upsertFromSync preserves a local mutation that appears after pull prefligh
   }
 });
 
-test('a new local edit remains pending when an older claimed mutation is acknowledged', async () => {
-  const { first } = createRepositories();
-  await first.commitMutation({
-    resourceType: 'TASK', resourceId: 'task-1', value: { title: 'first' }, version: 1, deletedAt: null,
-    mutation: { clientMutationId: 'm-1', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 1, payload: { title: 'first' } },
-  });
-  assert.deepEqual((await first.claimPending(200)).map((item) => item.clientMutationId), ['m-1']);
-  await first.commitMutation({
-    resourceType: 'TASK', resourceId: 'task-1', value: { title: 'second' }, version: 1, deletedAt: null,
-    mutation: { clientMutationId: 'm-2', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 1, payload: { title: 'second' } },
-  });
-  await first.settleMutation({ clientMutationId: 'm-1', status: 'applied', remoteVersion: 2 });
+for (const backend of ['browser', 'sqlite']) {
+  test(`${backend}: ordinary sync replays an unknown request and only the first matching receipt advances its successor`, async () => {
+    const sqlite = backend === 'sqlite' ? new TemporarySqlite() : null;
+    const storage = createMemoryStorage();
+    const options = { ...(sqlite ? { sql: serializeLocalSqlDatabase(sqlite) } : { storage }),
+      now: () => '2026-11-11T04:00:00Z' };
+    const open = () => new LocalRepository('ordinary-replay', 'device', options);
+    const key = { resourceType: 'SUBJECT', resourceId: 'subject' };
+    const edit = (repository, clientMutationId, name, version) => repository.commitMutation({
+      ...key, value: { id: key.resourceId, name, version }, version, deletedAt: null,
+      mutation: { ...key, clientMutationId, mutationType: 'UPDATE', baseVersion: version, payload: { name, baseVersion: version } },
+    });
+    const run = (repository, pushChanges) => runSyncCycle({ repository, serverDeviceId: 'device', api: {
+      pushChanges,
+      async pullChanges({ cursor }) { return { changes: [], nextCursor: cursor, hasMore: false, resetRequired: false }; },
+      async getSnapshot() { assert.fail('unexpected snapshot'); },
+    } });
+    const receipt = (mutation, version, decision = 'APPLIED') => ({ results: [{ ...key,
+      clientMutationId: mutation.clientMutationId, mutationType: 'UPDATE', decision,
+      current: { id: key.resourceId, name: mutation.payload.name, version },
+      ...(decision === 'CONFLICT' ? { code: 'RESOURCE_VERSION_CONFLICT' } : {}),
+    }] });
 
-  assert.equal((await first.read('TASK', 'task-1'))?.syncStatus, 'pending');
-  assert.deepEqual((await first.listPending()).map((item) => item.clientMutationId), ['m-2']);
-});
+    try {
+      const initial = open();
+      await initial.saveCursor('before');
+      await edit(initial, 'z-first', 'first edit', 4);
+      let dispatched;
+      await assert.rejects(run(initial, async ({ mutations }) => {
+        [dispatched] = mutations;
+        throw new Error('response lost');
+      }), /response lost/);
+      assert.deepEqual(dispatched.payload, { name: 'first edit', baseVersion: 4 });
+      assert.equal((await initial.listUnresolved())[0].status, 'inflight');
+
+      const reopened = open();
+      const pushStarted = Promise.withResolvers();
+      const lateResponse = Promise.withResolvers();
+      const olderCycle = run(reopened, async ({ mutations }) => {
+        pushStarted.resolve(mutations);
+        return lateResponse.promise;
+      });
+      assert.deepEqual(await pushStarted.promise, [dispatched]);
+      await edit(reopened, 'a-successor', 'second edit', 4);
+
+      const firstSettlement = await run(open(), async ({ mutations }) => {
+        assert.deepEqual(mutations, [dispatched], 'the same-millisecond successor cannot overtake its frozen predecessor');
+        return receipt(dispatched, 5);
+      });
+      assert.equal(firstSettlement.ordinarySettled, 1);
+      const pending = await reopened.read(key.resourceType, key.resourceId);
+      assert.deepEqual([pending.syncStatus, pending.version, pending.value.version, pending.value.name], ['pending', 5, 5, 'second edit']);
+
+      await run(open(), async ({ mutations }) => {
+        assert.deepEqual(mutations.map(({ clientMutationId, baseVersion, payload }) => ({ clientMutationId, baseVersion, payload })),
+          [{ clientMutationId: 'a-successor', baseVersion: 5, payload: { name: 'second edit', baseVersion: 5 } }]);
+        return receipt(mutations[0], 6);
+      });
+      lateResponse.resolve(receipt(dispatched, 5));
+      assert.equal((await olderCycle).ordinarySettled, 0);
+      const synced = await reopened.read(key.resourceType, key.resourceId);
+      assert.deepEqual([synced.syncStatus, synced.version, synced.value.name], ['synced', 6, 'second edit']);
+
+      await edit(reopened, 'queued-after-ack', 'edit captured before the preceding ACK', pending.version);
+      assert.equal((await reopened.read(key.resourceType, key.resourceId)).version, 6,
+        'the exact prior local receipt prevents a version rollback if ACK enters the write boundary first');
+      await run(reopened, async ({ mutations }) => {
+        assert.equal(mutations[0].baseVersion, 6);
+        assert.equal(mutations[0].payload.baseVersion, 6);
+        return receipt(mutations[0], 7);
+      });
+
+      await reopened.upsertFromSync(key.resourceType, key.resourceId, { id: key.resourceId, name: 'other device', version: 8 },
+        { version: 8, deletedAt: null, syncStatus: 'synced' });
+      await edit(reopened, 'remote-conflict', 'another local edit', 6);
+      await run(reopened, async ({ mutations }) => receipt(mutations[0], 8, 'CONFLICT'));
+      const [conflict] = await reopened.listUnresolved();
+      assert.deepEqual([conflict.status, conflict.baseVersion, conflict.remoteVersion, conflict.error],
+        ['conflict', 6, 8, 'RESOURCE_VERSION_CONFLICT']);
+      assert.equal((await reopened.read(key.resourceType, key.resourceId)).value.name, 'another local edit');
+
+      await edit(reopened, 'fresh-form', 'form based on remote v8', 8);
+      await edit(reopened, 'stale-form', 'form still holding v6', 6);
+      await run(reopened, async ({ mutations }) => {
+        assert.deepEqual(mutations.map(({ clientMutationId, baseVersion }) => [clientMutationId, baseVersion]), [['fresh-form', 8]]);
+        return receipt(mutations[0], 9);
+      });
+      assert.deepEqual((await reopened.listPending()).map(({ clientMutationId, baseVersion }) => [clientMutationId, baseVersion]),
+        [['stale-form', 6]], 'an older form never inherits the newer, unrelated pending baseline');
+    } finally { sqlite?.close(); }
+  });
+}
 
 test('legacy data is backed up without assignment or deletion and requires an explicit choice', () => {
   const storage = createMemoryStorage();

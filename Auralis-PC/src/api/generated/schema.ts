@@ -812,22 +812,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ai/overview-jobs/{id}/publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["publish"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/overview-jobs/{id}/pause": {
         parameters: {
             query?: never;
@@ -1052,70 +1036,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/overview-results/subjects/{subjectId}/sections/{sectionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getSubjectSection"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/overview-results/subjects/{subjectId}/outline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getSubjectOutline"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/overview-results/sources/{sourceId}/sections/{sectionId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getSourceSection"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/overview-results/sources/{sourceId}/outline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getSourceOutline"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/auth/sessions": {
         parameters: {
             query?: never;
@@ -1172,54 +1092,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_5"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/publication": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["publication"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["preview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/preview/{nodeId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["previewNode"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1398,49 +1270,6 @@ export interface components {
             /** Format: date-time */
             deletedAt?: string;
         };
-        CandidateInput: {
-            /** Format: uuid */
-            jobId: string;
-            /** Format: int32 */
-            jobVersion: number;
-        };
-        OutlineIdentityInput: {
-            /** Format: int32 */
-            schemaVersion: number;
-            nodes: components["schemas"]["OutlineIdentityNodeInput"][];
-        };
-        OutlineIdentityNodeInput: {
-            path: number[];
-            /** Format: uuid */
-            nodeId: string | null;
-        };
-        OutlineProvenanceInput: {
-            /** Format: int32 */
-            schemaVersion: number;
-            sections: components["schemas"]["OutlineProvenanceSectionInput"][];
-        };
-        OutlineProvenanceSectionInput: {
-            path: number[];
-            sourceRefs: components["schemas"]["OutlineProvenanceSourceRefInput"][];
-        };
-        OutlineProvenanceSourceRefInput: {
-            /** Format: uuid */
-            sourceId: string;
-            /** Format: uuid */
-            ingestionRevision: string;
-            /** Format: uuid */
-            chunkId?: string | null;
-            /** Format: uuid */
-            generation?: string | null;
-            /** Format: int32 */
-            charStart?: number | null;
-            /** Format: int32 */
-            charEnd?: number | null;
-        };
-        OverviewChapter: {
-            title?: string;
-            sections: components["schemas"]["OverviewSection"][];
-        };
         OverviewInputDescriptor: {
             /** @enum {string} */
             origin: "SOURCE_REVISION" | "SOURCE_OVERVIEW_PARTS" | "SOURCE_CONTENT";
@@ -1452,11 +1281,6 @@ export interface components {
             rawUnits: components["schemas"]["OverviewPartInputUnit"][];
             overviewParts: components["schemas"]["OverviewSourceManifestEntry"][];
             inputFingerprint: string;
-        };
-        OverviewLocator: {
-            /** Format: int32 */
-            page?: number;
-            blockId?: string;
         };
         OverviewPartInputUnit: {
             alias?: string;
@@ -1480,9 +1304,8 @@ export interface components {
             /** Format: int32 */
             schemaVersion: number;
             title: string;
-            outline: components["schemas"]["OverviewChapter"][] | null;
-            summary: components["schemas"]["OverviewSummary"];
-            outlineProvenance?: components["schemas"]["OutlineProvenanceInput"];
+            outlineMarkdown: string | null;
+            summaryMarkdown: string | null;
         };
         OverviewResultCommand: {
             /** Format: int64 */
@@ -1500,16 +1323,7 @@ export interface components {
             /** Format: date-time */
             summaryGeneratedAt?: string;
             result: components["schemas"]["OverviewResponse"];
-            outlineIdentity?: components["schemas"]["OutlineIdentityInput"] | null;
-            outlineProvenance?: components["schemas"]["OutlineProvenanceInput"] | null;
             inputDescriptor?: components["schemas"]["OverviewInputDescriptor"];
-            candidateInput?: components["schemas"]["CandidateInput"];
-        };
-        OverviewSection: {
-            title?: string;
-            summary?: string;
-            sourceIds: string[];
-            locator?: components["schemas"]["OverviewLocator"];
         };
         OverviewSourceManifestEntry: {
             /** Format: uuid */
@@ -1521,60 +1335,11 @@ export interface components {
             /** Format: int64 */
             summaryVersion?: number;
         };
-        OverviewSummary: {
-            overview?: string;
-            keyPoints: string[];
-            learningPath: string[];
-        };
         SourceRevision: {
             /** Format: uuid */
             sourceId?: string;
             /** Format: uuid */
             ingestionRevision?: string;
-        };
-        CanonicalSourceRefView: {
-            /** Format: uuid */
-            sourceId: string;
-            /** Format: uuid */
-            ingestionRevision: string;
-            /** Format: uuid */
-            chunkId: string | null;
-            /** Format: uuid */
-            generation: string | null;
-            /** Format: int32 */
-            charStart: number | null;
-            /** Format: int32 */
-            charEnd: number | null;
-            contentHash: string | null;
-            /** @enum {string} */
-            precision: "SOURCE" | "CHUNK" | "BLOCK";
-            /** Format: uuid */
-            parsedDocumentId: string | null;
-            parserId: string | null;
-            locations: components["schemas"]["ProvenanceLocationView"][];
-        };
-        OutlineIdentityNodeView: {
-            path: number[];
-            /** Format: uuid */
-            nodeId: string;
-            /** Format: int64 */
-            contentVersion: number;
-            contentHash: string;
-            sourceRefs: components["schemas"]["CanonicalSourceRefView"][];
-        };
-        OutlineIdentityView: {
-            /** Format: int32 */
-            schemaVersion: number;
-            nodes: components["schemas"]["OutlineIdentityNodeView"][];
-        };
-        OutlineProvenanceSectionView: {
-            path: number[];
-            sourceRefs: components["schemas"]["CanonicalSourceRefView"][];
-        };
-        OutlineProvenanceView: {
-            /** Format: int32 */
-            schemaVersion: number;
-            sections: components["schemas"]["OutlineProvenanceSectionView"][];
         };
         OverviewResultView: {
             /** Format: uuid */
@@ -1595,8 +1360,8 @@ export interface components {
             /** Format: int32 */
             schemaVersion?: number;
             title?: string;
-            outline?: components["schemas"]["OverviewChapter"][];
-            summary?: components["schemas"]["OverviewSummary"];
+            outlineMarkdown: string;
+            summaryMarkdown: string;
             outlineSourceManifest?: components["schemas"]["OverviewSourceManifestEntry"][];
             summarySourceManifest?: components["schemas"]["OverviewSourceManifestEntry"][];
             outlineInputFingerprint?: string;
@@ -1607,34 +1372,14 @@ export interface components {
             summaryGeneratedAt?: string;
             /** Format: date-time */
             updatedAt?: string;
-            identityReady: boolean;
-            outlineIdentity: components["schemas"]["OutlineIdentityView"] | null;
-            outlineProvenance?: components["schemas"]["OutlineProvenanceView"] | null;
             outlineInputDescriptor: components["schemas"]["OverviewInputDescriptor"];
             summaryInputDescriptor: components["schemas"]["OverviewInputDescriptor"];
-        };
-        ProvenanceLocationView: {
-            /** Format: int64 */
-            blockOrdinal: number;
-            /** Format: int64 */
-            pageNumber: number | null;
-            /** Format: int64 */
-            anchorIndex: number | null;
-            /** Format: int64 */
-            startLine: number | null;
-            /** Format: int32 */
-            charStart: number;
-            /** Format: int32 */
-            charEnd: number;
-            /** Format: int32 */
-            blockCharStart: number;
-            /** Format: int32 */
-            blockCharEnd: number;
         };
         PasswordChangeRequest: {
             /** Format: int64 */
             baseVersion: number;
             currentPassword: string;
+            /** @description At most 72 UTF-8 bytes */
             newPassword: string;
         };
         ProfileUpdateRequest: {
@@ -1721,34 +1466,6 @@ export interface components {
         ScheduleInsertionResponse: {
             tasks: components["schemas"]["Response"][];
         };
-        JsonNode: {
-            array?: boolean;
-            empty?: boolean;
-            null?: boolean;
-            float?: boolean;
-            container?: boolean;
-            missingNode?: boolean;
-            object?: boolean;
-            integralNumber?: boolean;
-            bigInteger?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            bigDecimal?: boolean;
-            valueNode?: boolean;
-            floatingPointNumber?: boolean;
-            number?: boolean;
-            boolean?: boolean;
-            binary?: boolean;
-            int?: boolean;
-            pojo?: boolean;
-            string?: boolean;
-            double?: boolean;
-            /** @deprecated */
-            textual?: boolean;
-            short?: boolean;
-            long?: boolean;
-            embeddedValue?: boolean;
-        };
         MutationRequest: {
             clientMutationId: string;
             /** @enum {string} */
@@ -1759,7 +1476,10 @@ export interface components {
             mutationType: "CREATE" | "UPDATE" | "DELETE" | "RESTORE" | "SCHEDULE_INSERTION" | "SCHEDULE_SWAP";
             /** Format: int64 */
             baseVersion?: number;
-            payload?: components["schemas"]["JsonNode"];
+            /** @description Fields of the command selected by resourceType and mutationType. */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
         };
         PushRequest: {
             /** Format: uuid */
@@ -1840,7 +1560,7 @@ export interface components {
             parserVersion: string;
             normalizationVersion: string;
             ocrModelVersion?: string;
-            sourceAssetSha256?: string;
+            sourceAssetSha256: string;
             payloadSha256: string;
             /** Format: int64 */
             sizeBytes: number;
@@ -2071,6 +1791,7 @@ export interface components {
         };
         RegisterRequest: {
             username: string;
+            /** @description At most 72 UTF-8 bytes */
             password: string;
             displayName: string;
             clientDeviceKey: string;
@@ -2109,6 +1830,8 @@ export interface components {
             url?: string;
             /** Format: date-time */
             expiresAt?: string;
+            originalName: string;
+            mimeType: string;
         };
         AssetResponse: {
             /** Format: uuid */
@@ -2207,8 +1930,8 @@ export interface components {
             /** Format: uuid */
             sourceId: string;
             title?: string;
-            outline?: components["schemas"]["OverviewChapter"][] | null;
-            summary?: components["schemas"]["OverviewSummary"];
+            outlineMarkdown?: string | null;
+            summaryMarkdown?: string | null;
         };
         SourceOverviewRequest: {
             /** Format: uuid */
@@ -2273,39 +1996,10 @@ export interface components {
             updatedAt: string;
             /** Format: date-time */
             completedAt: string | null;
-            /** Format: int64 */
-            publicationBaseVersion: number;
         };
         ControlRequest: {
             /** Format: int32 */
             expectedVersion: number;
-        };
-        PublishRequest: {
-            /** Format: uuid */
-            clientPublishId: string;
-            /** Format: int32 */
-            expectedVersion: number;
-            /** Format: int64 */
-            baseVersion: number;
-        };
-        PublicationView: {
-            /** Format: uuid */
-            publicationId?: string;
-            /** Format: uuid */
-            jobId?: string;
-            /** @enum {string} */
-            state?: "PENDING" | "PUBLISHED" | "CONFLICT" | "FAILED";
-            /** Format: int32 */
-            version?: number;
-            /** Format: uuid */
-            resultId?: string;
-            /** Format: int64 */
-            resultVersion?: number;
-            safeErrorCode?: string;
-            /** Format: date-time */
-            retryAt?: string;
-            /** Format: date-time */
-            updatedAt?: string;
         };
         AiMessageCommand: {
             /**
@@ -2339,6 +2033,34 @@ export interface components {
              */
             answer?: components["schemas"]["JsonNode"];
         };
+        JsonNode: {
+            container?: boolean;
+            array?: boolean;
+            empty?: boolean;
+            null?: boolean;
+            float?: boolean;
+            object?: boolean;
+            missingNode?: boolean;
+            string?: boolean;
+            double?: boolean;
+            binary?: boolean;
+            long?: boolean;
+            /** @deprecated */
+            textual?: boolean;
+            pojo?: boolean;
+            short?: boolean;
+            int?: boolean;
+            number?: boolean;
+            boolean?: boolean;
+            bigDecimal?: boolean;
+            bigInteger?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            valueNode?: boolean;
+            integralNumber?: boolean;
+            floatingPointNumber?: boolean;
+            embeddedValue?: boolean;
+        };
         ReadingContext: {
             /** Format: uuid */
             currentSourceId?: string;
@@ -2347,7 +2069,6 @@ export interface components {
             /** @enum {string} */
             retrievalMode: "AUTO" | "SELECTED_SOURCES" | "SUBJECT";
             sourceIds?: string[];
-            selectionText?: string;
         };
         ConversationCommand: {
             title?: string;
@@ -2511,7 +2232,10 @@ export interface components {
             version?: number;
             /** Format: date-time */
             deletedAt?: string;
-            payload?: components["schemas"]["JsonNode"];
+            /** @description Resource view selected by resourceType. */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
             /** Format: date-time */
             createdAt?: string;
         };
@@ -2673,33 +2397,6 @@ export interface components {
             commands?: components["schemas"]["CommandHistory"][];
             effectiveReviews?: components["schemas"]["EffectiveReview"][];
         };
-        OverviewSectionView: {
-            /** Format: uuid */
-            resultId?: string;
-            /** Format: uuid */
-            sectionId?: string;
-            /** Format: int64 */
-            version?: number;
-            chapterTitle?: string;
-            path?: number[];
-            section?: components["schemas"]["OverviewSection"];
-            sourceRefs?: components["schemas"]["CanonicalSourceRefView"][];
-        };
-        OutlineNode: {
-            /** Format: uuid */
-            sectionId?: string;
-            path?: number[];
-            title?: string;
-            chapter?: boolean;
-        };
-        OverviewOutlineView: {
-            /** Format: uuid */
-            resultId?: string;
-            scopeType?: string;
-            /** Format: int64 */
-            version?: number;
-            nodes?: components["schemas"]["OutlineNode"][];
-        };
         SessionListResponse: {
             items?: components["schemas"]["SessionResponse"][];
             nextCursor?: string;
@@ -2766,65 +2463,6 @@ export interface components {
         JobList: {
             jobs: components["schemas"]["JobView"][];
             nextCursor: string | null;
-        };
-        InputRef: {
-            /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            sourceRevision?: string;
-            /** Format: uuid */
-            chunkId?: string;
-            /** Format: uuid */
-            generation?: string;
-            /** Format: int32 */
-            ordinal?: number;
-            contentHash?: string;
-            /** Format: int32 */
-            charStart?: number;
-            /** Format: int32 */
-            charEnd?: number;
-        };
-        Node: {
-            /** Format: uuid */
-            nodeId?: string;
-            /** Format: int32 */
-            ordinal?: number;
-            /** Format: int32 */
-            chapterIndex?: number;
-            chapterTitle?: string;
-            sectionTitle?: string;
-            sectionSummary?: string;
-            inputs?: components["schemas"]["InputRef"][];
-        };
-        Page: {
-            /** Format: uuid */
-            jobId?: string;
-            /** @enum {string} */
-            status?: "QUEUED" | "RUNNING" | "PAUSING" | "PAUSED" | "CANCELLING" | "CANCELLED" | "COMPLETED" | "FAILED" | "RECOVERY_REQUIRED" | "EXPIRED";
-            /** Format: uuid */
-            planId?: string;
-            planFingerprint?: string;
-            incomplete?: boolean;
-            nodes?: components["schemas"]["Node"][];
-            nextCursor?: string;
-        };
-        Fragment: {
-            section?: components["schemas"]["OverviewSection"];
-            provenance?: components["schemas"]["CanonicalSourceRefView"][];
-        };
-        NodeView: {
-            /** Format: uuid */
-            jobId?: string;
-            /** Format: uuid */
-            planId?: string;
-            /** Format: uuid */
-            nodeId?: string;
-            /** Format: int32 */
-            ordinal?: number;
-            /** Format: int32 */
-            chapterIndex?: number;
-            chapterTitle?: string;
-            fragments?: components["schemas"]["Fragment"][];
         };
         Candidate: {
             /** Format: uuid */
@@ -4614,32 +4252,6 @@ export interface operations {
             };
         };
     };
-    publish: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PublishRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["PublicationView"];
-                };
-            };
-        };
-    };
     pause: {
         parameters: {
             query?: never;
@@ -4993,100 +4605,6 @@ export interface operations {
             };
         };
     };
-    getSubjectSection: {
-        parameters: {
-            query: {
-                version: number;
-            };
-            header?: never;
-            path: {
-                subjectId: string;
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["OverviewSectionView"];
-                };
-            };
-        };
-    };
-    getSubjectOutline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                subjectId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["OverviewOutlineView"];
-                };
-            };
-        };
-    };
-    getSourceSection: {
-        parameters: {
-            query: {
-                version: number;
-            };
-            header?: never;
-            path: {
-                sourceId: string;
-                sectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["OverviewSectionView"];
-                };
-            };
-        };
-    };
-    getSourceOutline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sourceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["OverviewOutlineView"];
-                };
-            };
-        };
-    };
     sessions: {
         parameters: {
             query?: never;
@@ -5167,78 +4685,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    publication: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["PublicationView"];
-                };
-            };
-        };
-    };
-    preview: {
-        parameters: {
-            query?: {
-                limit?: number;
-                cursor?: string;
-            };
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["Page"];
-                };
-            };
-        };
-    };
-    previewNode: {
-        parameters: {
-            query: {
-                planId: string;
-            };
-            header?: never;
-            path: {
-                id: string;
-                nodeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["NodeView"];
                 };
             };
         };

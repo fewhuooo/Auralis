@@ -15,6 +15,10 @@ public interface ParsedDocumentIngestionPort {
             UUID userId, UUID sourceId, UUID parsedDocumentId,
             UUID ingestionRevision, UUID generation);
 
+    void resumeParsedDocument(
+            UUID userId, UUID sourceId, UUID parsedDocumentId,
+            UUID ingestionRevision, UUID generation);
+
     Optional<IngestionJobReference> findParsedDocumentJob(
             UUID userId, UUID sourceId, UUID ingestionRevision);
 }

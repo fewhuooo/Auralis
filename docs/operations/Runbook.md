@@ -1,5 +1,13 @@
 # Auralis 运维与应急 Runbook
 
+### 2026-11-12 Overview 现行排障边界
+
+当前生成采用清理、大纲和总结。旧 Writer 计划、节点预览与候选发布接口已退役，不应通过恢复旧配置、补写 ASSEMBLED 计划或转换历史内容排障。正式结果使用当前 Markdown 与输入描述契约保存，旧行版本冲突仍需用户明确选择替换。历史数据保留，本次未执行清库；下方旧阶段排障记录仅适用于相应历史版本。
+
+Overview 通用输入估算可通过 `AI_INPUT_TOKEN_ESTIMATE` 的 `profile=unicode-category-v1` 核对输入估算。旧输入估算模式已从 Compose 移除。
+
+Overview 先尝试整篇，单请求超容量时改为分批。若返回 `OVERVIEW_PROMPT_BUDGET_EXCEEDED`，检查当前阶段的请求容量和最低输出预留。若返回 `AI_TASK_BUDGET_EXCEEDED`，核对整次任务的累计用量及剩余预留。
+
 ### 2026-10-28 Overview 自动重试配置（源码候选，未部署）
 
 AURALIS_AI_OVERVIEW_MAX_RETRIES=3，含义为首发失败后最多额外重试3次；0关闭，负数启动校验拒绝。Spring属性auralis.ai.overview-max-retries与Compose透传同步；实际.env未修改，重建后端后方生效，无新数据库迁移或前端要求。仅重试已返回且结算的模型内容校验失败，网络未知派发、预算/额度和取消等直接停止；次数不影响既有检查点身份，每次重发仍计费。重试日志phase=ADAPTIVE_MODEL_RETRY；阶段INVALID/校验失败日志后可能继续重试，最终结果以RUN_FINISHED/最终任务状态确认。配置与定向/affected检查已完成，完整验证边界见D:/Temp/auralis-overview-auto-retry-20261028/final-report.md；未部署或调用真实模型。
@@ -73,7 +81,7 @@ AURALIS_AI_OVERVIEW_MAX_RETRIES=3，含义为首发失败后最多额外重试3�
 
 ## AI Provider 超时诊断
 
-Chat 运行以 `CHAT_RUN_FAILED` 结束且没有 `AI_PROVIDER_HTTP_FAILED` 时，检查同一时间的 `CHAT_RUN_FAILED` WARN。该事件带 run/attempt、iteration、`stage`、`safeErrorCode`、exception/cause 类型和 `frameClass/frameMethod/frameLine`，可以定位 Orchestrator 中的本地失败点；它不包含 throwable message、模型内容、reasoning 或工具调用原文。旧运行曾由 `AiUsageLimitException` 被误映射为 `CHAT_RUN_FAILED`；旧日志中的 `AI_BUDGET_REJECT dimension=TASK_CALLS used=N limit=N` 表示当时同一 Chat run 在各 retry attempt 间累计的 combined all-origin provider/embedding 调用上限已耗尽。当前源码改为独立 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS` 和 `AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` stage 帽（默认0表示不限制），并提供跨 retry 的 `accountingSummary.modelCalls` 与 `embeddingCalls`。配置新源码后，`STAGE_CALLS` 拒绝表示相应单类上限已用尽；budget rejection 前没有新 reservation。保留既有账本并以新 Chat run 继续，不在同一 run 上反复 retry。`accountingSummary.currentAttemptToolCalls` 只按当前 attempt 的 toolTrace 中 distinct call ID 计数；工具上限 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS` 独立配置（当前12、attempt 范围）。Iteration 8 和 Token/并发/窗口额度继续限制运行。源码变更需重建 backend 才在新请求生效。
+Chat 运行以 `CHAT_RUN_FAILED` 结束且没有 `AI_PROVIDER_HTTP_FAILED` 时，检查同一时间的 `CHAT_RUN_FAILED` WARN。该事件带 run/attempt、iteration、`stage`、`safeErrorCode`、exception/cause 类型和 `frameClass/frameMethod/frameLine`，可以定位 Orchestrator 中的本地失败点；它不包含 throwable message、模型内容、reasoning 或工具调用原文。旧运行曾由 `AiUsageLimitException` 被误映射为 `CHAT_RUN_FAILED`；旧日志中的 `AI_BUDGET_REJECT dimension=TASK_CALLS used=N limit=N` 表示当时同一 Chat run 在各 retry attempt 间累计的 combined all-origin provider/embedding 调用上限已耗尽。当前源码改为独立 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS` 和 `AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` stage 帽（默认0表示不限制），并提供跨 retry 的 `accountingSummary.modelCalls` 与 `embeddingCalls`。配置新源码后，`STAGE_CALLS` 拒绝表示相应单类上限已用尽；budget rejection 前没有新 reservation。保留既有账本并以新 Chat run 继续，不在同一 run 上反复 retry。`accountingSummary.currentAttemptToolCalls` 只按当前 attempt 的 toolTrace 中 distinct call ID 计数；工具上限 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS` 独立配置（当前默认及上限20、attempt 范围）。Iteration 默认及上限12，最后一轮禁止新工具并根据已有证据收尾；若仍请求工具则给出限制说明后结束。Token/并发/窗口额度、独立调用帽和期限仍可能在收尾前终止运行。源码变更需重建 backend 才在新请求生效。
 
 `MODEL_TIMEOUT`（HTTP 504）表示 Provider socket response/read 超时；`MODEL_UNAVAILABLE`（HTTP 503）保留给其它不可用/IOException。检查 backend 的 `AI_PROVIDER_HTTP_FAILED` 中 `phase`、`errorType`、安全 `errorCode` / `causeType`、host/path 和 `elapsedMs`，不记录 key 或 prompt。`phase=http_status` 的 `status` 表示真实 HTTP 非 2xx；`provider_frame_json` / `provider_frame_protocol` 表示上游 SSE 帧解析或协议错误；`consumer_callback` 表示本地消费链抛错；`transport` 表示传输阶段异常。日志不采集响应正文，不能从中还原 Provider 的私有错误消息。默认连接超时为 3000ms，普通聊天/流式/embedding response-read 为 10000ms，Overview map/reduce 非流式窗口为 120000ms（允许 60000–120000ms）；仅在确认上游生成耗时确实较长时调整 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`，不要把普通请求窗口改成 Overview 窗口。
 
@@ -192,8 +200,9 @@ chat/ingest 超时、401、模型不存在、无效 JSON 或空结果。
 ### 检查
 
 - 激活 profile 和配置键。
-- 默认 Provider 的 `DEEPSEEK_API_KEY`/`OPENAI_API_KEY`/`SILICONFLOW_API_KEY` 是否已注入后端进程；用户 BYOK 是否在 `GET /api/ai/settings` 显示 `hasApiKey=true`。
-- API key、base URL、model 与 `AURALIS_AI_DEFAULT_PROVIDER` 是否匹配。
+- Chat 或 Overview 失败时，检查 `GET /api/ai/settings` 中 `OPENAI_COMPATIBLE` 的 `hasApiKey`。Chat 可通过 `AI_SETTINGS_RESOLVED` 核对凭据来源。使用平台端点时，检查 backend 中 `AURALIS_AI_GENERATION_BASE_URL`、`AURALIS_AI_GENERATION_MODEL` 和 `AURALIS_AI_GENERATION_API_KEY` 是否完整且彼此匹配。
+- Overview 返回 `503 MODEL_UNAVAILABLE` 且没有上游派发时，核对实际凭据来源。平台生成检查运行中 backend 的 `AURALIS_AI_GENERATION_CONTEXT_TOKENS` 和 `AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS`。BYOK 检查服务端 `overview-model-capacities` 是否存在精确匹配当前 Provider、端点及模型的条目。
+- 检索或入库向量化失败时，检查 `AURALIS_AI_EMBEDDING_BASE_URL`、`AURALIS_AI_EMBEDDING_MODEL` 和 `AURALIS_AI_EMBEDDING_API_KEY` 是否完整且彼此匹配。确认 `/embeddings` 返回每条 1024 个有限数值。排查时只核对 Key 是否存在。
 - 网络和提供商状态。
 - 失败日志中的 `errorCode` 只是稳定业务码；同时查看同一事件的 `exceptionType`、`exceptionMessage`、`rootCauseType` 和 `rootCauseMessage`。message 已做敏感字段脱敏和 300 字符截断，不能据此推断完整上游响应。
 - 请求是否超过文件/上下文限制。

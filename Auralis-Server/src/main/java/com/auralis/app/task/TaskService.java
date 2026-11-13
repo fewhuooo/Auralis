@@ -1,6 +1,7 @@
 package com.auralis.app.task;
 
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.CoreResourceInsert;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
@@ -30,16 +31,19 @@ import java.util.UUID;
 public class TaskService {
 
     private final TaskRepository taskRepository;
+    private final CoreResourceInsert resourceInsert;
     private final SubjectLockCoordinator subjectLockCoordinator;
     private final IdentityService identityService;
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(
             TaskRepository taskRepository,
+            CoreResourceInsert resourceInsert,
             SubjectLockCoordinator subjectLockCoordinator,
             IdentityService identityService,
             ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
+        this.resourceInsert = resourceInsert;
         this.subjectLockCoordinator = subjectLockCoordinator;
         this.identityService = identityService;
         this.eventPublisher = eventPublisher;
@@ -61,7 +65,7 @@ public class TaskService {
                 taskId, userId, command.subjectId(), required(command.title()), command.description(),
                 status(command.status()), command.scheduledAt(), command.dueAt(), command.durationMinutes(),
                 defaultSortKey(command.sortKey()));
-        TaskView result = view(taskRepository.save(entity));
+        TaskView result = view(resourceInsert.insert("tasks", entity));
         publishChange(userId, result, "CREATE");
         return result;
     }

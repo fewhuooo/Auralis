@@ -41,10 +41,6 @@ public class OpenApiConfiguration {
     @Bean
     OpenApiCustomizer overviewNullableReferenceSchemas() {
         return openApi -> {
-            normalizeNullableReference(openApi, "OverviewResultView", "outlineIdentity");
-            normalizeNullableReference(openApi, "OverviewResultView", "outlineProvenance");
-            normalizeNullableReference(openApi, "OverviewResultCommand", "outlineIdentity");
-            normalizeNullableReference(openApi, "OverviewResultCommand", "outlineProvenance");
             normalizeNullableReference(openApi, "ConversationView", "chatScope");
         };
     }

@@ -1,12 +1,7 @@
 package com.auralis.app.ai;
 
 import com.auralis.app.AuralisApplication;
-import com.auralis.app.ai.OverviewDtos.OverviewChapter;
 import com.auralis.app.ai.OverviewDtos.OverviewResponse;
-import com.auralis.app.ai.OverviewDtos.OverviewSection;
-import com.auralis.app.ai.OverviewDtos.OverviewSummary;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityInput;
-import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityNodeInput;
 import com.auralis.app.ai.internal.persistence.SourceChunkEntity;
 import com.auralis.app.ai.internal.persistence.SourceChunkRepository;
 import com.auralis.app.identity.DeviceCommand;
@@ -144,16 +139,10 @@ class OverviewResultReadPathPostgresIntegrationTests {
     }
 
     private void saveFormalSourceOverview(UUID userId, SourceEntity source) {
-        var result = new OverviewResponse(1, "Saved source overview",
-                List.of(new OverviewChapter("Chapter", List.of(new OverviewSection(
-                        "Section", "Section summary", List.of(source.getId().toString()), null)))),
-                new OverviewSummary("Summary", List.of("Point"), List.of("Step")));
-        var identity = new OutlineIdentityInput(1, List.of(
-                new OutlineIdentityNodeInput(List.of(0), null),
-                new OutlineIdentityNodeInput(List.of(0, 0), null)));
+        var result = new OverviewResponse(2, "Saved source overview",
+                "## Chapter\n\n### Section\n\nSection summary", "Summary");
         overviews.putSource(userId, source.getId(), new OverviewResultCommand(0L, UUID.randomUUID(),
-                OverviewMode.ALL, source.getIngestionRevision(), null, null, null, null,
-                result, identity, null));
+                OverviewMode.ALL, source.getIngestionRevision(), null, null, null, null, result));
     }
 
     private void persistCurrentRawContentBinding(UUID userId, SourceEntity source) throws Exception {

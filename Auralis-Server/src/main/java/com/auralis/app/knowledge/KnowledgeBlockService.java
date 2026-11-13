@@ -1,10 +1,12 @@
 package com.auralis.app.knowledge;
 
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.CoreResourceInsert;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.shared.domain.KnowledgeBlockContentChangedEvent;
+import com.auralis.app.shared.domain.KnowledgeBlockSubjectChangedEvent;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
 import com.auralis.app.subject.SubjectLockCoordinator;
@@ -19,22 +21,26 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public class KnowledgeBlockService {
 
     private final KnowledgeBlockRepository knowledgeBlockRepository;
+    private final CoreResourceInsert resourceInsert;
     private final SubjectLockCoordinator subjectLockCoordinator;
     private final SourceService sourceService;
     private final ApplicationEventPublisher eventPublisher;
 
     public KnowledgeBlockService(
             KnowledgeBlockRepository knowledgeBlockRepository,
+            CoreResourceInsert resourceInsert,
             SubjectLockCoordinator subjectLockCoordinator,
             SourceService sourceService,
             ApplicationEventPublisher eventPublisher) {
         this.knowledgeBlockRepository = knowledgeBlockRepository;
+        this.resourceInsert = resourceInsert;
         this.subjectLockCoordinator = subjectLockCoordinator;
         this.sourceService = sourceService;
         this.eventPublisher = eventPublisher;
@@ -54,7 +60,7 @@ public class KnowledgeBlockService {
         if (sourceSubjectId != null) ownerSubjectIds.add(sourceSubjectId);
         subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
         validateSource(userId, command.sourceId(), sourceSubjectId);
-        KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
+        KnowledgeBlockView result = view(resourceInsert.insert("knowledge_blocks", new KnowledgeBlockEntity(
                 blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
                 required(command.content(), "content"), command.colorOverride())));
         publishChange(userId, result, "CREATE");
@@ -122,20 +128,30 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView update(UUID userId, UUID id, long baseVersion, KnowledgeBlockCommand command) {
-        UUID currentSubjectId = ownerSubjectIdForMutation(userId, id);
+        var currentLinks = knowledgeBlockRepository.findMutationLinks(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
+        UUID currentSubjectId = currentLinks.getSubjectId();
+        boolean retainingSource = currentSubjectId.equals(command.subjectId())
+                && Objects.equals(currentLinks.getSourceId(), command.sourceId());
         List<UUID> ownerSubjectIds = new ArrayList<>();
         ownerSubjectIds.add(currentSubjectId);
         ownerSubjectIds.add(command.subjectId());
         UUID sourceSubjectId = command.sourceId() == null
                 ? null : sourceService.ownerSubjectIdForMutation(userId, command.sourceId());
-        if (sourceSubjectId != null) ownerSubjectIds.add(sourceSubjectId);
+        if (sourceSubjectId != null && !retainingSource) ownerSubjectIds.add(sourceSubjectId);
         subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
         KnowledgeBlockEntity entity = activeForUpdate(userId, id);
         if (!entity.getSubjectId().equals(currentSubjectId)) {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block subject changed while being updated");
         }
         requireVersion(entity, baseVersion);
-        validateSource(userId, command.sourceId(), sourceSubjectId);
+        if (retainingSource && !Objects.equals(entity.getSourceId(), command.sourceId())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block source changed while being updated",
+                    view(entity));
+        }
+        if (!retainingSource) {
+            validateSource(userId, command.sourceId(), sourceSubjectId);
+        }
         String content = required(command.content(), "content");
         boolean contentChanged = !entity.getContent().equals(content);
         entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"),
@@ -144,6 +160,9 @@ public class KnowledgeBlockService {
         if (contentChanged) {
             eventPublisher.publishEvent(new KnowledgeBlockContentChangedEvent(
                     userId, result.id(), KnowledgeBlockContentHash.sha256(content)));
+        }
+        if (!contentChanged && !currentSubjectId.equals(result.subjectId())) {
+            eventPublisher.publishEvent(new KnowledgeBlockSubjectChangedEvent(userId, result.id()));
         }
         publishChange(userId, result, "UPDATE");
         return result;

@@ -199,7 +199,8 @@ public class AssetService {
             throw new DomainException("MUTATION_REJECTED", "Asset is not ready for download");
         }
         AssetStoragePort.DownloadUrl downloadUrl = assetStorage.createDownloadUrl(asset.getObjectKey());
-        return new AssetDownloadUrlView(downloadUrl.url(), downloadUrl.expiresAt());
+        return new AssetDownloadUrlView(
+                downloadUrl.url(), downloadUrl.expiresAt(), asset.getOriginalName(), asset.getMimeType());
     }
 
     public AssetView get(UUID userId, UUID assetId) {
@@ -224,7 +225,7 @@ public class AssetService {
      * fills the nullable legacy Asset checksum. Client declarations are never
      * used as the source of truth.
      */
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public String ensureSha256(UUID userId, UUID assetId) {
         AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));

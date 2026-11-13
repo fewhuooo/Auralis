@@ -141,8 +141,10 @@ class SourceAssetRelationServiceTests {
         var ready = assetService.complete(owner.user().id(), intent.assetId());
         assertThat(ready.uploadStatus()).isEqualTo(AssetUploadStatus.READY);
         assertThat(ready.completedAt()).isNotNull();
-        assertThat(assetService.downloadUrl(owner.user().id(), intent.assetId()).url())
-                .startsWith("https://storage.test/download/");
+        var download = assetService.downloadUrl(owner.user().id(), intent.assetId());
+        assertThat(download.url()).startsWith("https://storage.test/download/");
+        assertThat(download.originalName()).isEqualTo("notes.md");
+        assertThat(download.mimeType()).isEqualTo("text/markdown");
     }
 
     @Test

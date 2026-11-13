@@ -15,7 +15,7 @@ const SYNC_RESOURCE_TYPES = new Set<SyncResourceType>(['SUBJECT', 'SOURCE', 'KNO
 
 type SyncRepository = Pick<LocalRepository,
   'claimPending' | 'settleMutation' | 'releaseInflight' | 'getSyncState' | 'saveCursor'
-  | 'listUnresolved' | 'read' | 'upsert' | 'upsertFromSync' | 'replaceSnapshotPreservingPending'>
+  | 'listUnresolved' | 'read' | 'upsertFromSync' | 'replaceSnapshotPreservingPending'>
   & Pick<LocalRepository, 'resolveScheduleMutation'>
   & Partial<Pick<LocalRepository, 'resolveRejectedSubjectDelete'>>
 
@@ -36,6 +36,7 @@ export interface SyncCycleInput {
 export interface SyncCycleResult {
   changedResourceTypes: ReadonlySet<SyncResourceType>
   cursor: string | null
+  ordinarySettled: number
   scheduleApplied: number
   scheduleErrors: Array<{ clientMutationId: string; code: string }>
 }
@@ -142,38 +143,27 @@ export async function applyPullPage(
 
 async function settlePushResult(
   repository: SyncRepository,
+  mutation: LocalMutation,
   result: SyncMutationResponse,
   checkCurrent: () => void,
-): Promise<SyncResourceType | null> {
+): Promise<boolean> {
   checkCurrent()
-  if (!result.clientMutationId || !result.decision || result.decision === 'PROCESSING') return null
+  if (!result.decision || result.decision === 'PROCESSING' || result.mutationType !== mutation.mutationType) return false
   const status = result.decision === 'APPLIED' ? 'applied'
     : result.decision === 'CONFLICT' ? 'conflict' : 'error'
-  await repository.settleMutation({
-    clientMutationId: result.clientMutationId,
+  const version = resourceVersion(result.current, -1)
+  const settled = await repository.settleMutation({
+    clientMutationId: mutation.clientMutationId,
+    resourceType: mutation.resourceType,
+    resourceId: mutation.resourceId,
+    mutationType: mutation.mutationType,
     status,
     error: result.decision === 'APPLIED' ? undefined : result.code,
     remoteValue: result.current,
-    remoteVersion: resourceVersion(result.current, 0),
+    remoteVersion: Number.isInteger(version) && version >= 0 ? version : undefined,
   })
   checkCurrent()
-  if (result.decision !== 'APPLIED' || !result.resourceType || !result.resourceId || !SYNC_RESOURCE_TYPES.has(result.resourceType)) return null
-
-  const unresolved = await repository.listUnresolved()
-  checkCurrent()
-  if (unresolved.some((mutation) => mutation.resourceType === result.resourceType && mutation.resourceId === result.resourceId)) {
-    return result.resourceType
-  }
-  if (result.current === undefined) return result.resourceType
-  const current = await repository.read(result.resourceType, result.resourceId)
-  checkCurrent()
-  await repository.upsert(result.resourceType, result.resourceId, result.current, {
-    version: resourceVersion(result.current, current?.version ?? 0),
-    deletedAt: isRecord(result.current) && typeof result.current.deletedAt === 'string' ? result.current.deletedAt : current?.deletedAt ?? null,
-    syncStatus: 'synced',
-  })
-  checkCurrent()
-  return result.resourceType
+  return settled
 }
 
 function isScheduleMutation(mutation: LocalMutation | undefined): mutation is LocalMutation & { mutationType: 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP' | 'SCHEDULE_UNSCHEDULE' } {
@@ -226,7 +216,11 @@ async function settleSchedulePushResult(
   const currentItems = mutation.mutationType === 'SCHEDULE_UNSCHEDULE' && isRecord(result.current) && !Array.isArray(result.current)
     ? [result.current]
     : result.current
-  const items = scheduleResultItems(currentItems)
+  // A deleted Task has no current UPDATE record, but its tombstone is in the snapshot.
+  const missingUnscheduleTask = mutation.mutationType === 'SCHEDULE_UNSCHEDULE'
+    && result.resourceId === mutation.resourceId && result.decision === 'REJECTED'
+    && result.code === 'RESOURCE_NOT_FOUND' && result.current == null
+  const items = missingUnscheduleTask ? [] : scheduleResultItems(currentItems)
   if (!items) throw new Error('SYNC_SCHEDULE_RESULT_INVALID')
 
   const applied = result.decision === 'APPLIED'
@@ -403,11 +397,14 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
   const checkCurrent = (): void => assertCurrent(input.isCurrent ?? input.scope?.isCurrent)
   checkCurrent()
   let claimed: LocalMutation[] = []
+  let claimedScheduleIds: string[] = []
   const changedResourceTypes = new Set<SyncResourceType>()
+  let ordinarySettled = 0
   let scheduleApplied = 0
   const scheduleErrors: Array<{ clientMutationId: string; code: string }> = []
   try {
     claimed = orderMutationsForPush(await input.repository.claimPending(200))
+    claimedScheduleIds = claimed.filter(isScheduleMutation).map((mutation) => mutation.clientMutationId)
     checkCurrent()
     if (claimed.length > 0) {
       const pushed = await input.api.pushChanges({ serverDeviceId: input.serverDeviceId, mutations: claimed }, input.scope)
@@ -417,6 +414,7 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
         const claimedMutation = result.clientMutationId
           ? claimed.find((mutation) => mutation.clientMutationId === result.clientMutationId)
           : undefined
+        if (!claimedMutation) continue
         if (isScheduleMutation(claimedMutation)) {
           const scheduleResult = await settleSchedulePushResult(
             input.repository, claimedMutation, result, checkCurrent, input.api, input.scope,
@@ -428,9 +426,12 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
           }
           continue
         }
-        const resourceType = await settlePushResult(input.repository, result, checkCurrent)
-        if (resourceType) changedResourceTypes.add(resourceType)
-        const rejectedSubjectDelete = claimedMutation?.resourceType === 'SUBJECT'
+        if (!result.resourceType || result.resourceType !== claimedMutation.resourceType
+          || result.resourceId !== claimedMutation.resourceId) continue
+        if (!await settlePushResult(input.repository, claimedMutation, result, checkCurrent)) continue
+        ordinarySettled += 1
+        if (result.decision === 'APPLIED') changedResourceTypes.add(result.resourceType)
+        const rejectedSubjectDelete = claimedMutation.resourceType === 'SUBJECT'
           && claimedMutation.mutationType === 'DELETE'
           && result.decision !== 'APPLIED'
           && result.decision !== 'PROCESSING'
@@ -462,7 +463,7 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
       }
     }
   } catch (error) {
-    if (claimed.length > 0) await input.repository.releaseInflight(claimed.map((mutation) => mutation.clientMutationId))
+    if (claimedScheduleIds.length > 0) await input.repository.releaseInflight(claimedScheduleIds)
     throw error
   }
   let pulled: { cursor: string | null; changedResourceTypes: Set<SyncResourceType> }
@@ -470,12 +471,12 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
     pulled = await pullToCursor(input.repository, input.api, input.scope, checkCurrent)
   } catch (error) {
     const isCurrent = input.isCurrent ?? input.scope?.isCurrent
-    if (claimed.length > 0 && isCurrent && !isCurrent()) {
-      await input.repository.releaseInflight(claimed.map((mutation) => mutation.clientMutationId))
+    if (claimedScheduleIds.length > 0 && isCurrent && !isCurrent()) {
+      await input.repository.releaseInflight(claimedScheduleIds)
     }
     throw error
   }
   checkCurrent()
   for (const resourceType of pulled.changedResourceTypes) changedResourceTypes.add(resourceType)
-  return { changedResourceTypes, cursor: pulled.cursor, scheduleApplied, scheduleErrors }
+  return { changedResourceTypes, cursor: pulled.cursor, ordinarySettled, scheduleApplied, scheduleErrors }
 }

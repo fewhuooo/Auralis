@@ -1,5 +1,11 @@
 # 测试账号数据库重建与数据注入流程
 
+### 2026-11-12 双账号执行结果
+
+用户明确要求不做新备份并全清测试数据。已重建本机 PostgreSQL public schema、应用 V45、清空 MinIO `auralis-assets`。当前两个账号为 `pc-ai-test-20260918@example.com` 与 `pc-ai-test-2-20261103@example.com`，沿用脚本测试密码；每账号 12 学科、240 任务、360 知识块。均有 48 活动排期，重复、重叠、非法时长和超截止排期均为 0；Source/Asset/Overview 为 0。第二账号以当前脚本在内存替换用户名、deviceKey、显示名注入，未修改仓库脚本。
+
+PC 两个 com.auralis.app 目录由用户清空并回查为空；旧备份、历史数据目录及本地密钥未删除（自动审批拒绝），准确边界见 `D:/Temp/auralis-redeploy-reset-20261112/inventory.md` 和 pending-local-cleanup.txt。当前部署、HTTP 和数据计数通过，PC 启动/首次同步及真实模型仍未验收。下文为历史操作参考，不能以其旧 V29 和单账号计数覆盖本条。
+
 更新时间：2026-10-10
 
 文档状态：现行，仅适用于本机开发环境

@@ -1,3 +1,5 @@
+import { ApiProblemError } from '../../api/httpError.ts'
+
 export const MAX_AUTOMATIC_RETRIES = 3
 
 export const PARSED_DOCUMENT_UPLOAD_FAILURE_REASONS = [
@@ -21,6 +23,7 @@ export function isAppClosed(error: unknown): boolean {
 }
 
 export function isNetworkFailure(error: unknown): boolean {
+  if (error instanceof ApiProblemError) return error.status === 0
   return ['NETWORK_OFFLINE', 'NETWORK_ERROR', 'FETCH_FAILED', 'DOCUMENT_UPLOAD_RETRYABLE'].includes(errorCode(error))
 }
 

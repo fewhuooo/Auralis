@@ -10,10 +10,12 @@ import {
   recoverChatRunAttempt,
   retryChatRun,
   type ChatConversationDetail,
+  type ChatRunStatus,
   type Protocol1MessageCommand,
   type ReadingContextDto,
 } from '@/api/aiClient'
 import { useAuthStore } from '@/store/useAuthStore'
+import { SyncScopeChangedError } from '@/api/request'
 import { uuidv7 } from '@/utils/uuid'
 import { AiStreamController } from '@/services/aiStreamController'
 import { createChatStreamState, reduceChatStreamEvent, setPart, type ChatStreamState } from '@/services/aiStreamReducer'
@@ -52,7 +54,6 @@ export function buildReadingContext(options: ChatRequestOptions): ReadingContext
       retrievalMode: 'SUBJECT',
       currentSourceId: null,
       sourceIds: [],
-      selectionText: options.selectionText?.slice(0, 4000),
     }
   }
 
@@ -62,7 +63,6 @@ export function buildReadingContext(options: ChatRequestOptions): ReadingContext
       retrievalMode: 'AUTO',
       currentSourceId: options.sourceId || null,
       sourceIds: [],
-      selectionText: options.selectionText?.slice(0, 4000),
     }
   }
 
@@ -72,7 +72,6 @@ export function buildReadingContext(options: ChatRequestOptions): ReadingContext
       retrievalMode: 'SELECTED_SOURCES',
       currentSourceId: null,
       sourceIds: Array.isArray(options.sourceIds) ? [...options.sourceIds] : [],
-      selectionText: options.selectionText?.slice(0, 4000),
     }
   }
 
@@ -123,6 +122,7 @@ export interface ChatMessage {
   messageSequence?: number
   createdAt?: string
   requestOptions?: ChatRequestOptions
+  requestCommand?: Protocol1MessageCommand
   submissionId?: string
   activityId?: string
   questionVersion?: number
@@ -172,6 +172,7 @@ export const useChatStore = defineStore('chat', () => {
   const isRecovering = ref(false)
   const activityDrafts = ref<Record<string, ChatActivityDraft>>({})
   let activeRetryAbortController: AbortController | null = null
+  let conversationGeneration = 0
 
   const activeSession = computed(() => sessions.value.find((session) => session.id === activeSessionId.value) || null)
   // Both PENDING/FAILED user turns and FAILED/INTERRUPTED assistant replies expose retry entry points
@@ -256,42 +257,97 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function loadSessions(): Promise<ChatSession[]> {
+    const isCurrent = conversationGuard()
     const views = await listConversations()
+    if (!isCurrent()) throw new SyncScopeChangedError()
     sessions.value = (views || []).map((view) => mapSession(view))
     return sessions.value
   }
 
   async function pollRunStatusUntilSettled(conversationId: string, runId: string, targetSessionId: string): Promise<void> {
-    const maxAttempts = 60
+    const isCurrent = conversationGuard()
+    // Cover the server's 300-second attempt deadline and its recovery observation window.
+    const maxAttempts = 220
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1500))
-      // Stop polling if user switched away to a different session
-      if (activeSessionId.value !== targetSessionId) return
+      if (!isCurrent()) return
       try {
         const status = await getChatRunStatus(conversationId, runId)
-        if (status.status === 'UNKNOWN') {
-          // UNKNOWN requires explicit user recovery action; stop polling immediately
-          if (activeRun.value && activeRun.value.runId === runId) {
-            activeRun.value.status = 'UNKNOWN'
-            activeRun.value.currentAttemptId = status.currentAttemptId || activeRun.value.currentAttemptId
-          }
-          isStreaming.value = false
-          return
-        }
-        if (!status.executionActive) {
-          activeRun.value = null
-          isStreaming.value = false
-          // Refresh canonical detail now that execution settled
-          const freshDetail = await getConversation(conversationId).catch(() => null)
-          if (freshDetail && activeSessionId.value === targetSessionId) {
-            messages.value = (freshDetail.messages || []).map((message) => mapMessage(message, targetSessionId))
-          }
-          return
-        }
+        if (!isCurrent()) return
+        if (!await applyRunStatus(status, conversationId, targetSessionId, isCurrent)) return
       } catch {
         // Continue trying until settled or maxAttempts
       }
     }
+    if (!isCurrent()) return
+    lastErrorCode.value = 'CHAT_STATUS_POLL_TIMEOUT'
+    lastError.value = '尚未确认服务端执行结束。可以停止生成，或重新打开此会话查看最新状态。'
+  }
+
+  async function applyRunStatus(
+    status: ChatRunStatus,
+    conversationId: string,
+    targetSessionId: string,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
+    if (!isCurrent()) return false
+    if (status.executionActive) {
+      activeRun.value = {
+        conversationId,
+        runId: status.runId,
+        requestId: status.requestId,
+        executionActive: true,
+        status: status.status,
+        currentAttemptId: status.currentAttemptId,
+      }
+      isStreaming.value = status.status !== 'UNKNOWN'
+      return status.status !== 'UNKNOWN'
+    }
+    const detail = await getConversation(conversationId).catch(() => null)
+    if (!isCurrent()) return false
+    if (detail) {
+      messages.value = (detail.messages || []).map((message) => {
+        const mapped = mapMessage(message, targetSessionId)
+        if (message.id === status.userMessageId || message.id === status.currentReplyMessageId) {
+          mapped.runId = status.runId
+          mapped.attemptId = status.currentAttemptId
+          mapped.executionActive = false
+        }
+        return mapped
+      })
+    }
+    if (!detail) {
+      for (const message of messages.value.filter((item) => item.runId === status.runId)) {
+        message.status = status.status === 'FAILED' ? 'FAILED'
+          : status.status === 'CANCELLED' && message.role === 'ASSISTANT' ? 'INTERRUPTED' : 'COMPLETED'
+        message.executionActive = false
+      }
+    }
+    activeRun.value = null
+    isStreaming.value = false
+    const safeErrorCode = status.attempts?.find((attempt) => attempt.attemptId === status.currentAttemptId)?.safeErrorCode
+    lastErrorCode.value = status.status === 'FAILED' ? safeErrorCode || 'CHAT_RUN_FAILED' : null
+    lastError.value = lastErrorCode.value ? mapSafeErrorMessage(lastErrorCode.value) : null
+    return false
+  }
+
+  async function reconcileDisconnectedRun(
+    conversationId: string,
+    runId: string,
+    requestId: string,
+    targetSessionId: string,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    const status = await getChatRunStatus(conversationId, runId).catch(() => null)
+    if (!isCurrent()) return
+    if (status) {
+      if (await applyRunStatus(status, conversationId, targetSessionId, isCurrent) && isCurrent()) {
+        void pollRunStatusUntilSettled(conversationId, runId, targetSessionId)
+      }
+      return
+    }
+    activeRun.value = { conversationId, runId, requestId, executionActive: true }
+    void pollRunStatusUntilSettled(conversationId, runId, targetSessionId)
   }
 
   async function loadMessages(sessionId: string): Promise<ChatMessage[]> {
@@ -301,6 +357,7 @@ export const useChatStore = defineStore('chat', () => {
     const session = sessions.value.find((item) => item.id === sessionId)
     if (!session) throw new Error('Conversation is not available')
     activeSessionId.value = sessionId
+    const isCurrent = conversationGuard()
 
     if (!session.chatSupported || session.chatProtocolVersion !== 1) {
       messages.value = []
@@ -310,6 +367,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const detail = await getConversation(session.remoteId)
+    if (!isCurrent()) throw new SyncScopeChangedError()
     if (detail.chatScopeState) {
       session.chatScopeState = detail.chatScopeState
       session.chatScope = detail.chatScope ?? null
@@ -390,11 +448,22 @@ export const useChatStore = defineStore('chat', () => {
 
   async function createSession(title: string, subjectId?: string): Promise<string> {
     abortStream()
+    const isCurrent = conversationGuard()
     const view = await createConversation({
       title: title.slice(0, 240) || '新会话',
       baseVersion: 0,
       clientRequestId: uuidv7(),
+    }).catch((error) => {
+      if (isCurrent()) {
+        const running = activeRun.value
+        isStreaming.value = Boolean(running?.executionActive && running.status !== 'UNKNOWN')
+        if (running?.executionActive && running.status !== 'UNKNOWN') {
+          void pollRunStatusUntilSettled(running.conversationId, running.runId, activeSessionId.value!)
+        }
+      }
+      throw error
     })
+    if (!isCurrent()) throw new SyncScopeChangedError()
     if (!view.id) throw new Error('Conversation response missing id')
     const session = mapSession(
       { ...view, id: view.id, title: view.title || title || '新会话', version: view.version ?? 0, chatProtocolVersion: 1, chatSupported: true },
@@ -403,6 +472,8 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value.unshift(session)
     activeSessionId.value = session.id
     messages.value = []
+    activeRun.value = null
+    isStreaming.value = false
     lastError.value = null
     lastErrorCode.value = null
     return session.id
@@ -413,7 +484,10 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function startSubjectConversation(subjectId: string, title = '学科对话'): Promise<string> {
+    abortStream()
+    const isCurrent = conversationGuard()
     const auth = useAuthStore()
+    const loginGeneration = auth.loginGeneration
     const ownerId = auth.user?.id
     if (!ownerId || !subjectId) return startNewSession(title, subjectId)
 
@@ -422,6 +496,7 @@ export const useChatStore = defineStore('chat', () => {
     if (mappedId) {
       if (!sessions.value.some((session) => session.id === mappedId)) {
         await loadSessions().catch(() => undefined)
+        if (!isCurrent()) throw new SyncScopeChangedError()
       }
       const existing = sessions.value.find(
         (session) => session.id === mappedId && session.chatSupported && session.chatProtocolVersion === 1
@@ -432,6 +507,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const id = await createSession(title, subjectId)
+    if (auth.loginGeneration !== loginGeneration || activeSessionId.value !== id) throw new SyncScopeChangedError()
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(key, id)
     }
@@ -439,9 +515,10 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function startNewSubjectConversation(subjectId: string, title = '学科对话'): Promise<string> {
-    abortStream()
-    const id = await createSession(title, subjectId)
     const ownerId = useAuthStore().user?.id
+    const loginGeneration = useAuthStore().loginGeneration
+    const id = await createSession(title, subjectId)
+    if (useAuthStore().loginGeneration !== loginGeneration || activeSessionId.value !== id) throw new SyncScopeChangedError()
     if (ownerId && typeof localStorage !== 'undefined') {
       localStorage.setItem(`auralis.chat.protocol1.${ownerId}.${subjectId}`, id)
     }
@@ -554,6 +631,10 @@ export const useChatStore = defineStore('chat', () => {
 
   async function runCommand(message: ChatMessage, command: Protocol1MessageCommand): Promise<void> {
     if (isStreaming.value) return
+    conversationGeneration += 1
+    const isCurrent = conversationGuard()
+    // Replays must retain the admitted payload, including an omitted readingContext.
+    message.requestCommand ??= structuredClone(command)
     isStreaming.value = true
     streamingContent.value = ''
     streamingReasoning.value = ''
@@ -577,7 +658,7 @@ export const useChatStore = defineStore('chat', () => {
         onEvent(event, state) {
           latestState = state
           // Reject stale stream events if active conversation changed
-          if (activeSessionId.value !== targetSessionId) return
+          if (!isCurrent()) return
 
           if (event.event === 'run.started') {
             activeRun.value = {
@@ -629,10 +710,12 @@ export const useChatStore = defineStore('chat', () => {
           }
         },
       })
+      if (!isCurrent()) return
 
       // Handle stream finishing without a terminal event (premature EOF)
       if (!final.terminal && final.runId) {
         const runStatus = await getChatRunStatus(command.conversationId, final.runId).catch(() => null)
+        if (!isCurrent()) return
         if (runStatus) {
           if (runStatus.status === 'UNKNOWN') {
             activeRun.value = {
@@ -706,26 +789,12 @@ export const useChatStore = defineStore('chat', () => {
         lastError.value = mapSafeErrorMessage(errorCode)
       }
     } catch (error) {
+      if (!isCurrent()) throw error
       // Network disconnection or runtime stream failure
       const isAborted = (error instanceof Error && error.name === 'AbortError') || (error instanceof DOMException && error.name === 'AbortError')
-      const isStaleSession = activeSessionId.value !== targetSessionId
-
-      const fallbackRunId = (latestState as ChatStreamState | null)?.runId
-      const activeRunId = activeRun.value?.runId || fallbackRunId
-      if (activeRunId) {
-        const status = await getChatRunStatus(command.conversationId, activeRunId).catch(() => null)
-        if (status && !status.executionActive) {
-          activeRun.value = null
-        } else if (!status) {
-          activeRun.value = null
-        }
-      } else {
-        activeRun.value = null
-      }
-
       const fallbackState: ChatStreamState | null = (latestState as ChatStreamState | null) || (final as ChatStreamState | null)
       const assistantId = fallbackState?.replyMessageId
-      if (assistantId && fallbackState && !isStaleSession) {
+      if (assistantId && fallbackState) {
         upsertAssistant(fallbackState, assistantId, 'INTERRUPTED', targetSessionId)
       }
 
@@ -734,19 +803,24 @@ export const useChatStore = defineStore('chat', () => {
         user.status = 'FAILED'
       }
 
-      if (!isAborted && !isStaleSession) {
+      if (!isAborted) {
         lastError.value = error instanceof Error ? error.message : '网络连接中断，请重试'
         lastErrorCode.value = 'AI_STREAM_DISCONNECTED'
       }
+      const runId = fallbackState?.runId || message.runId
+      if (runId) {
+        await reconcileDisconnectedRun(command.conversationId, runId, command.requestId, targetSessionId, isCurrent)
+      }
+      if (!runId) activeRun.value = null
       throw error
     } finally {
-      if (!activeRun.value?.executionActive) {
-        isStreaming.value = false
+      if (isCurrent()) {
+        if (!activeRun.value?.executionActive) isStreaming.value = false
+        streamingContent.value = ''
+        streamingReasoning.value = ''
+        streamingParts.value = []
+        streamingTools.value = []
       }
-      streamingContent.value = ''
-      streamingReasoning.value = ''
-      streamingParts.value = []
-      streamingTools.value = []
     }
   }
 
@@ -775,17 +849,19 @@ export const useChatStore = defineStore('chat', () => {
       readingContext = buildReadingContext(options)
     }
 
+    const sending = runCommand(message, {
+      protocolVersion: 1,
+      action: 'turn',
+      conversationId: session.remoteId,
+      requestId,
+      content: text,
+      readingContext,
+      selectionText: options.selectionText?.slice(0, 4000),
+    })
+    const isCurrent = conversationGuard()
     try {
-      await runCommand(message, {
-        protocolVersion: 1,
-        action: 'turn',
-        conversationId: session.remoteId,
-        requestId,
-        content: text,
-        readingContext,
-        selectionText: options.selectionText?.slice(0, 4000),
-      })
-
+      await sending
+      if (!isCurrent()) return
       // Once admitted, transition unbound session to bound
       if (session.chatScopeState === 'UNBOUND') {
         const boundContext = buildReadingContext(options)
@@ -800,6 +876,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
     } catch (error: any) {
+      if (!isCurrent()) throw error
       const status = error?.status || error?.response?.status || error?.problem?.status
       const code = error?.code || error?.response?.data?.code || error?.problem?.code
       if (status === 409 && (code === 'CHAT_SCOPE_CONFLICT' || String(error?.message || '').includes('CHAT_SCOPE_CONFLICT'))) {
@@ -853,6 +930,10 @@ export const useChatStore = defineStore('chat', () => {
 
     const session = activeSession.value
     if (!message || !session) return
+    if (!message.runId && !message.requestCommand) {
+      lastError.value = '原始请求已不可用，无法安全重试。请重新提问。'
+      return
+    }
 
     // 重试清理：移除当前提问轮次中前序未完成或失败的旧助手消息，避免重试后同一个提问下残留并存多个气泡
     if (staleAssistantIds.length > 0) {
@@ -865,36 +946,12 @@ export const useChatStore = defineStore('chat', () => {
     message.status = 'PENDING'
 
     if (!message.runId) {
-      const options = message.requestOptions || {}
-      const requestId = message.clientRequestId || uuidv7()
-      message.clientRequestId = requestId
-      const readingContext = buildReadingContext(options)
-
-      const command: Protocol1MessageCommand =
-        message.activityId && message.submissionId && message.answerPayload
-          ? {
-              protocolVersion: 1,
-              action: 'activity_submission',
-              conversationId: session.remoteId,
-              requestId,
-              activityId: message.activityId,
-              questionVersion: message.questionVersion,
-              submissionId: message.submissionId,
-              answer: message.answerPayload,
-            }
-          : {
-              protocolVersion: 1,
-              action: 'turn',
-              conversationId: session.remoteId,
-              requestId,
-              content: message.content,
-              readingContext,
-              selectionText: options.selectionText?.slice(0, 4000),
-            }
-      await runCommand(message, command)
+      await runCommand(message, message.requestCommand!)
       return
     }
 
+    conversationGeneration += 1
+    const isCurrent = conversationGuard()
     isStreaming.value = true
     streamingContent.value = ''
     streamingReasoning.value = ''
@@ -907,7 +964,7 @@ export const useChatStore = defineStore('chat', () => {
     activeRetryAbortController = retryAbortController
     try {
       for await (const event of retryChatRun(session.remoteId, message.runId, requestId, retryAbortController.signal)) {
-        if (activeSessionId.value !== targetSessionId) break
+        if (!isCurrent()) return
         const next = reduceChatStreamEvent(state, event)
         if (next === state) continue
         state = next
@@ -929,10 +986,12 @@ export const useChatStore = defineStore('chat', () => {
           executionActive: state.executionActive,
         }
       }
+      if (!isCurrent()) return
 
       // Handle stream finishing without a terminal event (premature EOF)
       if (!state.terminal && state.runId) {
         const runStatus = await getChatRunStatus(session.remoteId, state.runId).catch(() => null)
+        if (!isCurrent()) return
         if (runStatus) {
           if (runStatus.status === 'UNKNOWN') {
             activeRun.value = {
@@ -978,6 +1037,7 @@ export const useChatStore = defineStore('chat', () => {
       } else if (state.runId && state.executionActive) {
         await confirmRunStatus(session.remoteId, state.runId)
       }
+      if (!isCurrent()) return
 
       if (state.replyMessageId && activeSessionId.value === targetSessionId) {
         upsertAssistant(
@@ -1005,11 +1065,11 @@ export const useChatStore = defineStore('chat', () => {
         lastError.value = mapSafeErrorMessage(errorCode)
       }
     } catch (error) {
+      if (!isCurrent()) return
       const isAborted = (error instanceof Error && error.name === 'AbortError') || retryAbortController.signal.aborted
-      const isStaleSession = activeSessionId.value !== targetSessionId
 
       const assistantId = state.replyMessageId
-      if (assistantId && !isStaleSession) {
+      if (assistantId) {
         upsertAssistant(state, assistantId, 'INTERRUPTED', targetSessionId)
       }
 
@@ -1018,22 +1078,22 @@ export const useChatStore = defineStore('chat', () => {
         user.status = 'FAILED'
       }
 
-      if (!isAborted && !isStaleSession) {
+      if (!isAborted) {
         lastError.value = error instanceof Error ? error.message : '重试请求失败'
         lastErrorCode.value = 'CHAT_RETRY_FAILED'
       }
-      activeRun.value = null
+      await reconcileDisconnectedRun(session.remoteId, message.runId, requestId, targetSessionId, isCurrent)
     } finally {
       if (activeRetryAbortController === retryAbortController) {
         activeRetryAbortController = null
       }
-      if (!activeRun.value?.executionActive) {
-        isStreaming.value = false
+      if (isCurrent()) {
+        if (!activeRun.value?.executionActive) isStreaming.value = false
+        streamingContent.value = ''
+        streamingReasoning.value = ''
+        streamingParts.value = []
+        streamingTools.value = []
       }
-      streamingContent.value = ''
-      streamingReasoning.value = ''
-      streamingParts.value = []
-      streamingTools.value = []
     }
   }
 
@@ -1074,14 +1134,17 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function confirmRunStatus(conversationId: string, runId: string): Promise<void> {
+    const isCurrent = conversationGuard()
     try {
       const status = await getChatRunStatus(conversationId, runId)
+      if (!isCurrent()) return
       if (!status.executionActive) {
         activeRun.value = null
         isStreaming.value = false
       } else {
-        activeRun.value = { conversationId, runId, requestId: status.requestId, executionActive: true }
-        isStreaming.value = true
+        activeRun.value = { conversationId, runId, requestId: status.requestId, executionActive: true,
+          status: status.status, currentAttemptId: status.currentAttemptId }
+        isStreaming.value = status.status !== 'UNKNOWN'
       }
     } catch {
       // Keep UI busy until the next detail/status check confirms worker exit
@@ -1091,10 +1154,13 @@ export const useChatStore = defineStore('chat', () => {
   async function requestCancel(): Promise<void> {
     const running = activeRun.value
     if (!running) return
+    const isCurrent = conversationGuard()
     try {
       await cancelChatRun(running.conversationId, running.runId)
+      if (!isCurrent()) return
       await confirmRunStatus(running.conversationId, running.runId)
     } catch (error) {
+      if (!isCurrent()) return
       lastError.value = error instanceof Error ? error.message : '取消请求失败'
     }
   }
@@ -1216,6 +1282,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function abortStream(): void {
+    conversationGeneration += 1
     controller.abort()
     if (activeRetryAbortController) {
       activeRetryAbortController.abort()
@@ -1223,9 +1290,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function appendAssistantChunk(_chunk: string): void {}
-  async function finalizeAssistantMessage(): Promise<void> {
-    isStreaming.value = false
+  function conversationGuard(): () => boolean {
+    const generation = conversationGeneration
+    const auth = useAuthStore()
+    const loginGeneration = auth.loginGeneration
+    const ownerId = auth.user?.id
+    const sessionId = activeSessionId.value
+    return () => generation === conversationGeneration && auth.loginGeneration === loginGeneration
+      && auth.user?.id === ownerId && activeSessionId.value === sessionId
   }
 
   function setActivityDraft(componentId: string, draft: ChatActivityDraft): void {
@@ -1277,7 +1349,5 @@ export const useChatStore = defineStore('chat', () => {
     abortStream,
     clearActiveConversation,
     deleteSession,
-    appendAssistantChunk,
-    finalizeAssistantMessage,
   }
 })

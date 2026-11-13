@@ -148,8 +148,8 @@ class MinioAssetStorageIntegrationTests {
                         new AuralisProperties.Storage(internalEndpoint, publicEndpoint, BUCKET, ACCESS_KEY, SECRET_KEY, 300)),
                 new AuralisProperties.Identity("test-secret", 900, 900),
                 new AuralisProperties.Ai(
-                        false, "test-encryption-key", "DEEPSEEK",
-                        new AuralisProperties.Defaults(null, null, null),
+                        false, "test-encryption-key", null,
+                        null,
                         3000, 1000, 120000, 240000, 12000, 8, 1024, 32, 32768,
                         1000, 1000, 1, 1024 * 1024, List.of(), false, 1000, 1000, 1,
                         new AuralisProperties.Limits(

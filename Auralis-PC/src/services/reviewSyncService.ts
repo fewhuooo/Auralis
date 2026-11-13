@@ -140,21 +140,6 @@ function canonicalState(state: LifecycleHistoryResponse['state']): LifecycleHist
   return JSON.parse(JSON.stringify(serverState)) as LifecycleHistoryResponse['state']
 }
 
-function anchorFromFetched(
-  history: LifecycleHistoryResponse,
-  subjectId: string,
-  contentHash: string,
-): LocalReviewCanonicalAnchor | null {
-  return {
-    knowledgeBlockVersion: history.knowledgeBlockVersion,
-    subjectId,
-    contentHash,
-    state: canonicalState(history.state),
-    commands: JSON.parse(JSON.stringify(history.commands)),
-    effectiveReviews: JSON.parse(JSON.stringify(history.effectiveReviews)),
-  }
-}
-
 function matchesContentInvalidation(
   anchor: LocalReviewCanonicalAnchor,
   history: LifecycleHistoryResponse,
@@ -194,31 +179,20 @@ function sameRemoteAnchor(
   subjectId: string,
   contentHash: string,
 ): boolean {
-  const fetched = anchorFromFetched(history, subjectId, contentHash)
-  return !!fetched
-    && anchor.knowledgeBlockVersion === fetched.knowledgeBlockVersion
-    && anchor.subjectId === fetched.subjectId
-    && anchor.contentHash === fetched.contentHash
-    && sameCanonicalReviewState(anchor.state, fetched.state)
-    && sameCommands(anchor.commands, fetched.commands)
-    && sameEffectiveReviews(anchor.effectiveReviews, fetched.effectiveReviews)
-}
-
-function matchesMetadataOnlyUpdate(
-  anchor: LocalReviewCanonicalAnchor,
-  history: LifecycleHistoryResponse,
-  currentHash: string,
-): boolean {
-  // Subject moves and other metadata-only KB revisions do not change review
-  // state. The current local KB/parent were already re-read inside the atomic
-  // preparation boundary; compare the full server review history and body
-  // hash here while allowing its scope/version metadata to advance.
-  if (anchor.contentHash !== currentHash
+  if (anchor.subjectId !== subjectId || anchor.contentHash !== contentHash
     || history.knowledgeBlockVersion < anchor.knowledgeBlockVersion
-    || !sameCanonicalReviewState(anchor.state, canonicalState(history.state))
     || !sameCommands(anchor.commands, history.commands)
     || !sameEffectiveReviews(anchor.effectiveReviews, history.effectiveReviews)) return false
-  return true
+  const remoteState = canonicalState(history.state)
+  if (anchor.knowledgeBlockVersion === history.knowledgeBlockVersion) {
+    return sameCanonicalReviewState(anchor.state, remoteState)
+  }
+  if (!anchor.state || !remoteState) return anchor.state === remoteState
+  // History projects the latest core KB revision onto the same review state.
+  return anchor.state.contentHash === contentHash && remoteState.contentHash === contentHash
+    && anchor.state.knowledgeBlockVersion === anchor.knowledgeBlockVersion
+    && remoteState.knowledgeBlockVersion === history.knowledgeBlockVersion
+    && sameCanonicalReviewState({ ...anchor.state, knowledgeBlockVersion: history.knowledgeBlockVersion }, remoteState)
 }
 
 function assertReceipt(response: LifecycleCommandResponse, intent: LocalReviewIntent): void {
@@ -232,13 +206,14 @@ function assertReceipt(response: LifecycleCommandResponse, intent: LocalReviewIn
     // is version 0 in the current service; retries and later responses must be
     // accepted at the actual non-negative version returned by the server.
     || !Number.isSafeInteger(receiptVersion) || Number(receiptVersion) < baseVersion
+    || response.knowledgeBlockVersion !== Number(request.knowledgeBlockVersion)
     || response.state.knowledgeBlockVersion !== Number(request.knowledgeBlockVersion)
     || response.state.contentHash !== request.contentHash) {
     throw new Error('REVIEW_RECEIPT_MISMATCH')
   }
   if (intent.action === 'REVIEW_SELECTED' || intent.action === 'REVIEW_CONFIRMED' || intent.action === 'REVIEW_CORRECTED') {
     const baseline = response.effectiveReview?.schedulingBaseline
-    if (!response.effectiveReview || !baseline
+    if (!response.effectiveReview || response.effectiveReview.reviewId !== request.reviewId || !baseline
       || (baseline.dueAt !== null && (typeof baseline.dueAt !== 'string' || !Number.isFinite(Date.parse(baseline.dueAt))))
       || typeof baseline.mastered !== 'boolean'
       || !Number.isSafeInteger(baseline.stableSuccessCount)
@@ -263,47 +238,28 @@ function mergeEffectiveReview(current: LocalReviewRecord['effectiveReviews'], in
   return next
 }
 
-function mergeCommandHistory(current: LocalReviewRecord['history'], response: LifecycleCommandResponse, intent: LocalReviewIntent): NonNullable<LocalReviewRecord['history']> {
-  const history = current ?? []
-  const command = {
-    commandId: response.commandId,
-    clientCommandId: response.clientCommandId,
-    action: response.action,
-    occurredAt: response.occurredAt,
-    reviewId: response.effectiveReview?.reviewId ?? (typeof intent.payload.reviewId === 'string' ? intent.payload.reviewId : null),
-    rating: typeof intent.payload.rating === 'string' ? intent.payload.rating as any : null,
-    durationSeconds: typeof intent.payload.durationSeconds === 'number' ? intent.payload.durationSeconds : null,
-    baseVersion: Number(intent.payload.baseVersion),
-    knowledgeBlockVersion: response.knowledgeBlockVersion,
-  }
-  const index = history.findIndex(item => item.clientCommandId === intent.clientCommandId)
-  if (index < 0) return [...history, command]
-  const updated = history.slice()
-  updated[index] = command
-  return updated
-}
-
-function canonicalCommand(response: LifecycleCommandResponse, intent: LocalReviewIntent): LifecycleHistoryResponse['commands'][number] {
+function acknowledgedCommand(response: LifecycleCommandResponse, intent: LocalReviewIntent): LifecycleHistoryCommandView {
   return {
     commandId: response.commandId,
     clientCommandId: response.clientCommandId,
     action: response.action,
     occurredAt: response.occurredAt,
     reviewId: typeof intent.payload.reviewId === 'string' ? intent.payload.reviewId : response.effectiveReview?.reviewId ?? null,
-    rating: typeof intent.payload.rating === 'string' ? intent.payload.rating as any : null,
+    rating: response.action === 'REVIEW_CORRECTED' ? 'AGAIN'
+      : response.action === 'REVIEW_SELECTED' || response.action === 'REVIEW_CONFIRMED'
+        ? response.effectiveReview?.selectedRating ?? null
+        : null,
     durationSeconds: typeof intent.payload.durationSeconds === 'number' ? intent.payload.durationSeconds : null,
     baseVersion: Number(intent.payload.baseVersion),
     knowledgeBlockVersion: response.knowledgeBlockVersion,
   }
 }
 
-function mergeCanonicalCommand(
-  current: LifecycleHistoryResponse['commands'],
-  response: LifecycleCommandResponse,
-  intent: LocalReviewIntent,
-): LifecycleHistoryResponse['commands'] {
-  const command = canonicalCommand(response, intent)
-  const index = current.findIndex(item => item.clientCommandId === intent.clientCommandId)
+function mergeCommandHistory(
+  current: LifecycleHistoryCommandView[],
+  command: LifecycleHistoryCommandView,
+): LifecycleHistoryCommandView[] {
+  const index = current.findIndex(item => item.clientCommandId === command.clientCommandId)
   if (index < 0) return [...current, command]
   const next = current.slice()
   next[index] = command
@@ -446,7 +402,6 @@ export class ReviewSyncService {
       const preparation = latest.preparation
       const anchor = currentRecord.canonicalAnchor
       let baselineMatches = false
-      let metadataOnlyMatches = false
       let contentInvalidationMatches = false
       let localCreateMatches = false
       let unknownEmptyRemoteMatches = false
@@ -470,8 +425,14 @@ export class ReviewSyncService {
         if (allowedLineage && anchor.contentHash === actualHash
           && (preparation.predecessorClientCommandIds.length === 0
             || preparation.predecessorClientCommandIds.every(id => anchor.commands.some(command => command.clientCommandId === id)))) {
+          // A new first learning after a move can prove absence in the new subject.
           baselineMatches = sameRemoteAnchor(anchor, history, subjectId, actualHash)
-          metadataOnlyMatches = matchesMetadataOnlyUpdate(anchor, history, actualHash)
+            || (initialAnchorStillCurrent && anchor.subjectId !== subjectId
+            && intent.action === 'LEARNING_COMPLETED' && typeof intent.payload.reviewId !== 'string'
+            && intent.payload.knowledgeBlockVersion === history.knowledgeBlockVersion
+            && preparation.predecessorClientCommandIds.length === 0
+            && anchor.state === null && anchor.commands.length === 0 && anchor.effectiveReviews.length === 0
+            && history.state === null && history.commands.length === 0 && history.effectiveReviews.length === 0)
         }
         if (preparation.allowContentInvalidation && preparation.predecessorClientCommandIds.length === 0
           && preparation.anchorFingerprint === currentFingerprint
@@ -515,7 +476,7 @@ export class ReviewSyncService {
           && sameRemoteAnchor(anchor, history, subjectId, actualHash)
       }
 
-      const hasKnownAnchor = baselineMatches || metadataOnlyMatches || contentInvalidationMatches
+      const hasKnownAnchor = baselineMatches || contentInvalidationMatches
         || localCreateMatches || unknownEmptyRemoteMatches || unknownAcknowledgedPrefixMatches
       const remoteStateAbsent = history.state === null
       if (!hasKnownAnchor || intent.payload.expectedStateAbsent !== remoteStateAbsent) {
@@ -662,8 +623,7 @@ export class ReviewSyncService {
       if (!intent) continue
       const currentState = await this.localReview.getKnowledgeBlockState(userId, deviceId, kbId, subjectId)
       if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
-      if (!currentState || currentState.knowledgeBlockVersion !== Number(intent.payload.knowledgeBlockVersion)
-        || currentState.contentHash !== intent.payload.contentHash) {
+      if (!currentState || currentState.contentHash !== intent.payload.contentHash) {
         // The local service archives intents when it detects a body revision.
         return { synced, conflict: false, protocolBlocked: false }
       }
@@ -694,8 +654,8 @@ export class ReviewSyncService {
         const corePayload = JSON.parse(kbResource.payload) as Record<string, unknown>
         const actualSubjectId = corePayload.subject_id ?? corePayload.subjectId
         const actualHash = await currentContentHash(corePayload)
-        if (actualSubjectId !== subjectId
-          || Number(kbResource.version) !== Number(intent.payload.knowledgeBlockVersion)
+        if (actualSubjectId !== subjectId || kbResource.version !== history.knowledgeBlockVersion
+          || kbResource.version < Number(intent.payload.knowledgeBlockVersion)
           || !actualHash || actualHash !== intent.payload.contentHash) return false
         await this.repository.updateIntentStatus(tx, userId, deviceId, intent.clientCommandId, 'inflight')
         claimed = true
@@ -709,6 +669,7 @@ export class ReviewSyncService {
         if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
         assertReceipt(response, intent)
         let committed = false
+        let conflict = false
         await this.repository.executeAtomicReviewCommit(userId, deviceId, kbId, async (tx, currentRecord, kbResource, subjectResource) => {
           if (!isScopeCurrent(scope)) return
           const latest = await this.repository.getIntent(tx, userId, deviceId, intent.clientCommandId)
@@ -718,7 +679,7 @@ export class ReviewSyncService {
           const actualSubjectId = corePayload.subject_id ?? corePayload.subjectId
           const actualHash = await currentContentHash(corePayload)
           if (!actualHash || actualSubjectId !== subjectId
-            || Number(kbResource.version) !== Number(intent.payload.knowledgeBlockVersion)
+            || kbResource.version !== history.knowledgeBlockVersion
             || actualHash !== intent.payload.contentHash
             || (currentRecord && (currentRecord.subjectId !== subjectId || currentRecord.contentHash !== actualHash))) return
 
@@ -737,26 +698,35 @@ export class ReviewSyncService {
           const currentVersion = currentRecord?.state?.version ?? 0
           const currentCanonical = Number((currentRecord?.state as any)?.canonicalVersion ?? 0)
           const receiptVersion = response.state.version
-          const state = currentRecord?.state && currentVersion > receiptVersion
-            ? { ...currentRecord.state, canonicalVersion: Math.max(currentCanonical, receiptVersion) } as any
-            : { ...response.state, canonicalVersion: Math.max(currentCanonical, receiptVersion) } as any
           const previousAnchor = currentRecord?.canonicalAnchor ?? null
+          const command = acknowledgedCommand(response, intent)
           const canonicalAnchor: LocalReviewCanonicalAnchor = {
             knowledgeBlockVersion: response.knowledgeBlockVersion,
             subjectId,
             contentHash: String(intent.payload.contentHash),
             state: canonicalState(response.state),
-            commands: mergeCanonicalCommand(previousAnchor?.commands ?? [], response, intent),
+            commands: mergeCommandHistory(previousAnchor?.commands ?? [], command),
             effectiveReviews: mergeEffectiveReview(previousAnchor?.effectiveReviews ?? [], response.effectiveReview),
+          }
+          if (response.knowledgeBlockVersion !== history.knowledgeBlockVersion
+            && !sameRemoteAnchor(canonicalAnchor, history, subjectId, actualHash)) {
+            await this.repository.updateIntentStatus(tx, userId, deviceId, intent.clientCommandId, 'conflict')
+            conflict = true
+            return
+          }
+          const state = {
+            ...(currentRecord?.state && currentVersion > receiptVersion ? currentRecord.state : response.state),
+            knowledgeBlockVersion: kbResource.version,
+            canonicalVersion: Math.max(currentCanonical, receiptVersion),
           }
           const record: LocalReviewRecord = {
             knowledgeBlockId: kbId,
             subjectId,
             localRevision: (currentRecord?.localRevision ?? 0) + 1,
-            serverKnowledgeBlockVersion: response.knowledgeBlockVersion,
+            serverKnowledgeBlockVersion: kbResource.version,
             contentHash: String(intent.payload.contentHash),
             state,
-            history: mergeCommandHistory(currentRecord?.history ?? [], response, intent),
+            history: mergeCommandHistory(currentRecord?.history ?? [], command),
             effectiveReviews: mergeEffectiveReview(currentRecord?.effectiveReviews ?? [], response.effectiveReview),
             historyImported: currentRecord?.historyImported ?? false,
             canonicalAnchor,
@@ -767,7 +737,7 @@ export class ReviewSyncService {
           committed = true
         })
         if (committed) synced += 1
-        else return { synced, conflict: false, protocolBlocked: false }
+        else return { synced, conflict, protocolBlocked: false }
       } catch (error) {
         if (!isScopeCurrent(scope) || (error instanceof Error && error.message === 'SYNC_SCOPE_CHANGED')) throw new Error('SYNC_SCOPE_CHANGED')
         if (classifyStatus(error) === 401) throw error
@@ -786,7 +756,7 @@ export class ReviewSyncService {
             const actualSubjectId = corePayload.subject_id ?? corePayload.subjectId
             const actualHash = await currentContentHash(corePayload)
             if (actualSubjectId !== subjectId || !actualHash
-              || Number(kbResource.version) !== Number(intent.payload.knowledgeBlockVersion)
+              || kbResource.version !== history.knowledgeBlockVersion
               || actualHash !== intent.payload.contentHash) return
             const [latestKb, latestSubject, latestIntent] = await Promise.all([
               this.repository.getKbResource(tx, userId, kbId),

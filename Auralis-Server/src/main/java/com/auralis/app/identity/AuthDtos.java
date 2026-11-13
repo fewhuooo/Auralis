@@ -1,5 +1,6 @@
 package com.auralis.app.identity;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -16,7 +17,7 @@ public final class AuthDtos {
 
     public record RegisterRequest(
             @NotBlank @Size(max = 64) String username,
-            @NotBlank @Size(min = 12, max = 200) String password,
+            @NotBlank @Size(min = 12, max = 72) @Schema(description = "At most 72 UTF-8 bytes") String password,
             @NotBlank @Size(max = 120) String displayName,
             @NotBlank @Size(max = 128) String clientDeviceKey,
             @NotBlank @Size(max = 120) String deviceName,
@@ -50,7 +51,7 @@ public final class AuthDtos {
     public record PasswordChangeRequest(
             @NotNull @PositiveOrZero Long baseVersion,
             @NotBlank String currentPassword,
-            @NotBlank @Size(min = 12, max = 200) String newPassword) {
+            @NotBlank @Size(min = 12, max = 72) @Schema(description = "At most 72 UTF-8 bytes") String newPassword) {
     }
 
     public record AccountDeletionRequest(@NotBlank String password) {

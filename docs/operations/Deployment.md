@@ -1,8 +1,59 @@
 # Auralis 部署指南
 
+### 2026-11-13 Overview 单次输入上限
+
+本机根 `.env` 设置 `AURALIS_AI_OVERVIEW_MAX_INPUT_TOKENS=32768`。正数限制每次 Overview 模型请求的估算输入 Token，超过时尝试分批。设为 `0` 可取消这项额外限制。以后修改此值，使用当前镜像重新创建 backend 容器即可生效。
+
+### 2026-11-13 学科总览直接生成修复部署
+
+香港 01:21:22 本机仅重建 backend。镜像 `sha256:92f14d854c8d8db0d5618be8f1dc81ead96fdbb5dd731ab38eb7330c5e92170d`，Docker healthy，宿主 liveness/readiness HTTP 200 / UP。新旧可执行差异限于 OverviewGenerationService 的直接生成门禁。Flyway V45 无迁移，32,768 Token 临时输入上限仍生效。证据见 `D:/Temp/auralis-subject-direct-deploy-20261113/report.md`。
+
+### 2026-11-13 Overview 超长输入分批本机部署
+
+香港 00:59:34 完成 backend 单独构建、重建与健康验证。运行镜像为 `sha256:1011c85cc18dc34f04298d69ac4a6154c02ed6db9debb95e23e598e195ecf034`，宿主 liveness/readiness HTTP 200 / UP。JAR 差异限于本轮 Overview 五个源码的产物。Flyway 保持 V45，其他服务容器身份与后端环境逐项一致。平台上下文为 1,048,576 Token，模型输出上限 393,216 Token，单任务额度 1,048,576 Token。证据见 `D:/Temp/auralis-overview-multibatch-deploy-20261113/report.md`。
+
+### 2026-11-12 平台 AI 配置入口
+
+根 `.env` 前部各有一组平台生成与 Embedding 配置，按 `.env.example` 填写各自的 Base URL、模型 ID 和 Key。升级时将原来实际使用的生成三项与 Embedding 三项分别填入新变量。Base URL 填供应商的公网 HTTPS API 根地址，例如 `https://gateway.example/v1`。后端生成请求使用 `/chat/completions`，向量请求使用 `/embeddings`。账号已保存的 `OPENAI_COMPATIBLE` 个人配置优先用于新生成请求。入库与检索统一使用平台 Embedding，所选模型或网关须返回 1024 维向量。
+
+平台 Overview 还需要 `AURALIS_AI_GENERATION_CONTEXT_TOKENS` 和 `AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS`。按当前端点和模型的能力同时填写两项，更换模型时一并核对。两项均为 `0` 时，平台 Overview 在调用模型前返回 `MODEL_UNAVAILABLE`。使用 BYOK 生成 Overview 时，按下方示例给服务端传入精确匹配其 Provider、端点和模型的 `overview-model-capacities` 条目。
+
+Overview 通用输入与动态输出预算由新后端镜像提供，基础 Compose 和 trace overlay 已移除旧输入估算模式变量。香港 15:59:24 已完成本机单独重建 backend 的健康验证。构建和重建均退出 0，Flyway V45 无需迁移。证据见 `docs/archive/overview-experiments/20261112-unified-budget-deploy/data/report.md`。
+
+香港 17:07:33 完成 D 版 Overview 总结后端部署。仅重建 backend，新旧 JAR 的应用条目仅总结所在类发生变化，宿主 liveness/readiness 均 HTTP 200 / UP。证据见 `D:/Temp/auralis-overview-summary-d-deploy-20261112/report.md`。
+
+香港 18:45:14 完成归并版 Overview 大纲的后端健康验证。只重建 backend，归并版 OUTLINE 和 D 版 SUMMARY 均已在新镜像中核对。证据见 `D:/Temp/auralis-overview-outline-grouped-deploy-20261112/report.md`。
+
+修改后端运行环境后须重新创建 backend 容器。首次启用新配置时须使用包含新绑定的后端镜像。更换实际 Embedding 模型时，先确认旧向量与新模型处于同一向量空间，否则须为受影响的资料重新入库，以保持检索结果可比。`VITE_OVERVIEW_SSE_DEADLINE_MS` 属前端构建参数，修改它还须重新构建前端。
+
+香港 14:29:58 使用原项目 `auralis`、根 `.env` 与基础 `docker-compose.yml` 构建并单独重建 backend。build、recreate 均 exit 0，Docker healthy，宿主 liveness/readiness 均 HTTP 200 / UP，Flyway V45 无需迁移。容器六项新环境变量与 `.env` 一致。依赖和 frontend 容器保持原身份。命令与镜像证据见 `D:/Temp/auralis-platform-ai-20261112/deploy-report.md`。
+
+香港 14:50:16，为原 PDF 复测仅在本机 `.env` 设置 `AURALIS_AI_LIMITS_OVERVIEW_TASK_TOKENS=1048576`，沿用容量版镜像单独重建 backend。运行额度已核对，宿主健康检查均为 HTTP 200 / UP。证据见 `docs/archive/overview-experiments/20261112-task-quota/data/report.md`。
+
+### 2026-11-12 本机 AI 生成额度调整
+
+香港 15:24:50，在真实 `.env` 显式设置 `AURALIS_AI_LIMITS_PER_USER_HOURLY_TOKENS=5000000`、`AURALIS_AI_LIMITS_PER_USER_DAILY_TOKENS=20000000`、`AURALIS_AI_LIMITS_GLOBAL_DAILY_TOKENS=20000000`。沿用原镜像单独重建 backend，运行三项额度及宿主 HTTP 健康检查通过。示例配置的原默认值保持。证据见 `docs/archive/overview-experiments/20261112-quota-increase/data/report.md`。
+
+### 2026-11-12 Overview 提示词本机部署
+
+香港 15:15:16 沿用项目 `auralis`、根 `.env` 与基础 Compose 构建并单独重建 backend。Docker healthy，宿主 liveness/readiness 均 HTTP 200 / UP。所有容器环境项及本机环境文件字节一致。既有正式结果保留，新提示词待用户重新生成验收。证据见 `docs/archive/overview-experiments/20261112-prompts/data/report.md`。
+
+### 2026-11-12 本机部署完成
+
+按用户授权使用当前 `.env` 和基础 Compose 构建、recreate backend/frontend。backend readiness UP，frontend HTTP 200；数据库按授权无新增备份重建至 V45，双账号注入及 MinIO 清空验证见 TestAccountDataResetAndSeed。Docker 前端上下文新增排除 `src-tauri/target-*`；仅过滤历史编译产物，不改变页面。PC 本地目录由用户手动清空，自动启动被工具审批拒绝，用户可在 Auralis-PC 运行 `npm run tauri dev`。证据位于 `D:/Temp/auralis-redeploy-reset-20261112/`。
+
+### 2026-11-12 Overview 旧接口与配置清理（未部署）
+
+旧作业 preview/publication 与正式 PUT 的 candidateInput 已退役，现行调用方应使用 Markdown 结果契约。旧检查点与 Writer 的 MAX_CHECKPOINT_CHARS、MAX_PLAN_CHARS、MAX_NODE_DESCRIPTOR_CHARS、MAX_WRITER_NODES_PER_PLAN 四项 Overview 环境绑定移除，旧 publication poll 调度同步删除；实际 `.env` 中历史键不会启用旧流程。本次仅修改源码与生成契约，不清库、不改历史迁移、不重启服务；已运行实例尚未应用本次清理。
+
+### 2026-11-12 Overview Markdown 重写（未部署）
+
+新生成链删除旧自动内容修复/重试配置 `AURALIS_AI_OVERVIEW_MAX_RETRIES`、`AURALIS_AI_OVERVIEW_OUTPUT_RECOVERY_ENABLED`。下方对旧配置的记录仅代表对应历史版本。实际 `.env` 未修改，服务未重启；新契约需后端与 PC 一起更新，不能把旧章/节客户端视作 v2 可用客户端。旧正式内容不会自动转换，重新生成完整结果后才产生新内容。
+
+
 ### Chat 调用次数配置（源码候选，未部署）
 
-Compose backend 透传 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` 与 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS`。模型和 embedding 分别默认 0（不设次数帽），正数为独立上限，负数会阻止启动；工具默认12并沿用 attempt 级限制。Iteration 8、Token 预算、deadline、并发和小时/日额度仍生效。需用新源码构建并 recreate backend 才会进入运行态；本轮未修改本机 `.env`、未部署或调用真实 Provider。
+Compose backend 透传 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` 与 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS`。模型和 embedding 分别默认 0（不设次数帽），正数为独立上限，负数会阻止启动；工具默认及上限20并沿用 attempt 级限制，`AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS` 默认及上限12，最后一轮只收尾。显式环境覆盖值仍优先。Token 预算、deadline、并发和小时/日额度仍生效。需用新源码构建并 recreate backend 才会进入运行态；本轮未修改本机 `.env`、未部署或调用真实 Provider。
 
 ### 2026-10-28 Overview 自动重试配置（源码候选，未部署）
 
@@ -24,7 +75,11 @@ AURALIS_AI_OVERVIEW_MAX_RETRIES=3，含义为首发失败后最多额外重试3�
 
 26 项 `AURALIS_AI_OVERVIEW_MAX_*` 已由主 Compose 透传，完整清单见根 `.env.example`。0 表示不加静态帽，正数额外限幅；模型能力、实际请求输出预留及统一额度继续约束派发。Overview calls 默认 0，财务额度保持。单次响应超时仍默认 120000ms、最低 60000ms，已移除旧最大 120000ms 校验；任务期限默认值和 0 语义保持。新源码需重新构建后才生效，仅编辑 `.env` 不会改变旧镜像。
 
-精确官方 profile 可直接使用；其它模型需配置完整能力身份。直接 Java/backend 进程可用根 `.env.example` 所示五个 `AURALIS_AI_OVERVIEWMODELCAPACITIES_0_*` 环境变量。Compose 用户可在专用 override 文件中显式透传以下字段，再将该 override 加入自己的构建/启动命令；不向默认空列表注入空 slot：
+当时的候选通过 package、Compose config、OpenAPI/SDK、PC 类型与接收检查。全量失败及定向验证见[实施计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。V40 当时尚未应用到业务库。
+
+### BYOK Overview 模型容量
+
+BYOK 的容量条目可在直接运行的 backend 进程中通过以下五个 `AURALIS_AI_OVERVIEWMODELCAPACITIES_0_*` 环境变量配置。Compose 可通过 override 显式透传完整条目，再将 override 加入构建和启动命令。
 
 ```yaml
 services:
@@ -37,7 +92,7 @@ services:
       AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MAXOUTPUTTOKENS: ${AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MAXOUTPUTTOKENS:?set max output}
 ```
 
-Provider 取 DEEPSEEK、OPENAI_COMPATIBLE 或 SILICONFLOW 的精确名称，endpoint/model 精确匹配；显式配置优先于内置能力，未知能力拒绝。能力配置为运营声明，不能视为实测 tokenizer 校准。package、Compose config、OpenAPI/SDK、PC 类型与接收检查已完成；唯一 full 失败及定向闭合情况见[本轮计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。V40 将在后续新后端启动时迁移，当前业务库未应用；本轮未部署。
+Provider 取 `DEEPSEEK`、`OPENAI_COMPATIBLE` 或 `SILICONFLOW` 的精确名称，endpoint/model 精确匹配。能力配置声明的是端点可用容量。
 
 ### 2026-10-24 Overview 直接请求整任务期限配置（实现候选；未部署）
 
@@ -152,10 +207,12 @@ AURALIS_JWT_SECRET / AURALIS_AI_ENCRYPTION_KEY
 AURALIS_MINIO_ROOT_USER / AURALIS_MINIO_ROOT_PASSWORD / AURALIS_MINIO_BUCKET
 AURALIS_CORS_ALLOWED_ORIGINS
 AURALIS_AI_ALLOWED_PROVIDER_HOSTS / AURALIS_AI_*_TIMEOUT_MILLIS
-DEEPSEEK_API_KEY / OPENAI_API_KEY / SILICONFLOW_API_KEY（可选默认 Provider）
+AURALIS_AI_GENERATION_BASE_URL / AURALIS_AI_GENERATION_MODEL / AURALIS_AI_GENERATION_API_KEY
+AURALIS_AI_GENERATION_CONTEXT_TOKENS / AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS
+AURALIS_AI_EMBEDDING_BASE_URL / AURALIS_AI_EMBEDDING_MODEL / AURALIS_AI_EMBEDDING_API_KEY
 ```
 
-实际变量名必须与最终配置绑定一致。Provider 默认 key 由 Compose 注入后端运行时；用户 BYOK 仍通过 API 加密存储，任何 key 都不写入日志。
+每个 AI 端点的 Base URL、模型与 Key 成套填写。平台 Overview 还需同时填写两项模型容量。平台 Key 由 Compose 注入后端运行时，用户 BYOK 通过 API 加密存储。排查配置时只记录端点 host、模型及 Key 是否配置。
 
 ## 本地基础设施
 

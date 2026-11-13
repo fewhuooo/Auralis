@@ -16,6 +16,7 @@ import com.auralis.app.review.internal.persistence.ReviewParameterSetRepository;
 import com.auralis.app.review.internal.persistence.ReviewStateEntity;
 import com.auralis.app.review.internal.persistence.ReviewStateRepository;
 import com.auralis.app.shared.domain.KnowledgeBlockContentChangedEvent;
+import com.auralis.app.shared.domain.KnowledgeBlockSubjectChangedEvent;
 import com.auralis.app.shared.domain.ReviewChangedEvent;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.context.ApplicationEventPublisher;
@@ -74,14 +75,14 @@ public class ReviewLifecycleService {
     @Transactional
     public CommandResponse completeLearning(UUID userId, ReviewLifecycleDtos.LearningCompletionRequest request) {
         require(request);
-        KnowledgeBlockView block = lockAndValidateBlock(userId, request.knowledgeBlockId(),
-                request.knowledgeBlockVersion(), request.contentHash());
+        KnowledgeBlockView block = lockAndValidateBlockContent(userId, request.knowledgeBlockId(), request.contentHash());
         ReviewStateEntity current = lockState(userId, block.id());
         String payload = fingerprint("LEARNING_COMPLETED", request.clientCommandId(), request.knowledgeBlockId(),
                 request.knowledgeBlockVersion(), request.baseVersion(), request.contentHash(), request.reviewId(), null,
                 null, request.occurredAt(), request.expectedStateAbsent());
         CommandResponse replay = replay(userId, request.clientCommandId(), payload);
         if (replay != null) return replay;
+        requireBlockVersion(block, request.knowledgeBlockVersion(), current);
         requireExpectedStatePresence(current, request.expectedStateAbsent(), block.version());
         requireStateVersion(current, request.baseVersion(), block.version());
 
@@ -113,8 +114,7 @@ public class ReviewLifecycleService {
     @Transactional
     public CommandResponse startAttempt(UUID userId, ReviewLifecycleDtos.ReviewAttemptRequest request) {
         require(request);
-        KnowledgeBlockView block = lockAndValidateBlock(userId, request.knowledgeBlockId(),
-                request.knowledgeBlockVersion(), request.contentHash());
+        KnowledgeBlockView block = lockAndValidateBlockContent(userId, request.knowledgeBlockId(), request.contentHash());
         ReviewStateEntity current = lockState(userId, block.id());
         ReviewRating rating = ReviewRating.valueOf(request.rating().name());
         String payload = fingerprint("REVIEW_SELECTED", request.clientCommandId(), request.knowledgeBlockId(),
@@ -122,6 +122,7 @@ public class ReviewLifecycleService {
                 rating, request.durationSeconds(), request.occurredAt(), request.expectedStateAbsent());
         CommandResponse replay = replay(userId, request.clientCommandId(), payload);
         if (replay != null) return replay;
+        requireBlockVersion(block, request.knowledgeBlockVersion(), current);
         requireExpectedStatePresence(current, request.expectedStateAbsent(), block.version());
         requireStateVersion(current, request.baseVersion(), block.version());
         Instant occurredAt = resolveOccurredAt(request.occurredAt());
@@ -159,14 +160,14 @@ public class ReviewLifecycleService {
     @Transactional
     public CommandResponse confirm(UUID userId, UUID reviewId, ReviewLifecycleDtos.ReviewResolutionRequest request) {
         require(request);
-        KnowledgeBlockView block = lockAndValidateBlock(userId, request.knowledgeBlockId(),
-                request.knowledgeBlockVersion(), request.contentHash());
+        KnowledgeBlockView block = lockAndValidateBlockContent(userId, request.knowledgeBlockId(), request.contentHash());
         ReviewStateEntity current = lockState(userId, block.id());
         String payload = fingerprint("REVIEW_CONFIRMED", request.clientCommandId(), request.knowledgeBlockId(),
                 request.knowledgeBlockVersion(), request.baseVersion(), request.contentHash(), reviewId, null, null,
                 request.occurredAt(), request.expectedStateAbsent());
         CommandResponse replay = replay(userId, request.clientCommandId(), payload);
         if (replay != null) return replay;
+        requireBlockVersion(block, request.knowledgeBlockVersion(), current);
         requireExpectedStatePresence(current, request.expectedStateAbsent(), block.version());
         requireStateVersion(current, request.baseVersion(), block.version());
         Instant occurredAt = resolveOccurredAt(request.occurredAt());
@@ -179,7 +180,7 @@ public class ReviewLifecycleService {
                 || ("AGAIN".equals(lifecycleReview.getSelectedRating()))) {
             throw rejected("Review attempt cannot be confirmed");
         }
-        if (!sameContentVersion(lifecycleReview, block, request.contentHash())) {
+        if (!lifecycleReview.getContentHash().equals(request.contentHash())) {
             throw rejected("Review attempt no longer matches current content");
         }
         LifecycleSnapshot before = parseSnapshot(lifecycleReview.getBeforeState());
@@ -206,14 +207,14 @@ public class ReviewLifecycleService {
     public CommandResponse correctAgain(UUID userId, UUID reviewId,
                                         ReviewLifecycleDtos.ReviewResolutionRequest request) {
         require(request);
-        KnowledgeBlockView block = lockAndValidateBlock(userId, request.knowledgeBlockId(),
-                request.knowledgeBlockVersion(), request.contentHash());
+        KnowledgeBlockView block = lockAndValidateBlockContent(userId, request.knowledgeBlockId(), request.contentHash());
         ReviewStateEntity current = lockState(userId, block.id());
         String payload = fingerprint("REVIEW_CORRECTED", request.clientCommandId(), request.knowledgeBlockId(),
                 request.knowledgeBlockVersion(), request.baseVersion(), request.contentHash(), reviewId,
                 ReviewRating.AGAIN, null, request.occurredAt(), request.expectedStateAbsent());
         CommandResponse replay = replay(userId, request.clientCommandId(), payload);
         if (replay != null) return replay;
+        requireBlockVersion(block, request.knowledgeBlockVersion(), current);
         requireExpectedStatePresence(current, request.expectedStateAbsent(), block.version());
         requireStateVersion(current, request.baseVersion(), block.version());
         Instant occurredAt = resolveOccurredAt(request.occurredAt());
@@ -222,7 +223,7 @@ public class ReviewLifecycleService {
             throw rejected("Review attempt is no longer the current correction target");
         }
         ReviewLifecycleReviewEntity lifecycleReview = requireReview(userId, block.id(), reviewId);
-        if (!sameContentVersion(lifecycleReview, block, request.contentHash())) {
+        if (!lifecycleReview.getContentHash().equals(request.contentHash())) {
             throw rejected("Review attempt no longer matches current content");
         }
         if (lifecycleReview.getResolution() != null && "SUPERSEDED".equals(lifecycleReview.getResolution())) {
@@ -260,14 +261,14 @@ public class ReviewLifecycleService {
     @Transactional
     public CommandResponse reopenLearning(UUID userId, ReviewLifecycleDtos.LearningReopenRequest request) {
         require(request);
-        KnowledgeBlockView block = lockAndValidateBlock(userId, request.knowledgeBlockId(),
-                request.knowledgeBlockVersion(), request.contentHash());
+        KnowledgeBlockView block = lockAndValidateBlockContent(userId, request.knowledgeBlockId(), request.contentHash());
         ReviewStateEntity current = lockState(userId, block.id());
         String payload = fingerprint("LEARNING_REOPENED", request.clientCommandId(), request.knowledgeBlockId(),
                 request.knowledgeBlockVersion(), request.baseVersion(), request.contentHash(), request.reviewId(), null,
                 null, request.occurredAt(), request.expectedStateAbsent());
         CommandResponse replay = replay(userId, request.clientCommandId(), payload);
         if (replay != null) return replay;
+        requireBlockVersion(block, request.knowledgeBlockVersion(), current);
         requireExpectedStatePresence(current, request.expectedStateAbsent(), block.version());
         requireStateVersion(current, request.baseVersion(), block.version());
         Instant occurredAt = resolveOccurredAt(request.occurredAt());
@@ -320,6 +321,18 @@ public class ReviewLifecycleService {
                 current.getVersion(), now()));
     }
 
+    @EventListener
+    @Transactional
+    public void onSubjectChanged(KnowledgeBlockSubjectChangedEvent event) {
+        ReviewStateEntity current = lockState(event.userId(), event.knowledgeBlockId());
+        if (current == null || (current.getLastReviewId() == null && current.getPendingReviewId() == null)) return;
+        lifecycleReviewRepository.supersedeUnresolved(event.userId(), event.knowledgeBlockId());
+        current.clearCausalReview();
+        current = stateRepository.saveAndFlush(current);
+        eventPublisher.publishEvent(new ReviewChangedEvent(event.userId(), event.knowledgeBlockId(),
+                current.getVersion(), now()));
+    }
+
     private CommandResponse saveCommand(UUID userId, KnowledgeBlockView block, UUID clientCommandId,
                                         String action, Instant occurredAt, long baseVersion, String contentHash,
                                         UUID reviewId, ReviewRating rating, Integer durationSeconds, String payload,
@@ -353,15 +366,21 @@ public class ReviewLifecycleService {
         }
     }
 
-    private KnowledgeBlockView lockAndValidateBlock(UUID userId, UUID blockId, long version, String contentHash) {
+    private KnowledgeBlockView lockAndValidateBlockContent(UUID userId, UUID blockId, String contentHash) {
         KnowledgeBlockView block = knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, blockId);
-        ReviewStateEntity current = stateRepository.findForUpdateByUserIdAndKnowledgeBlockId(userId, blockId)
-                .orElse(null);
-        if (block.version() != version || !KnowledgeBlockContentHash.sha256(block.content()).equals(contentHash)) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block content/version does not match",
-                    current == null ? null : stateView(current, block.version()));
+        if (!KnowledgeBlockContentHash.sha256(block.content()).equals(contentHash)) {
+            throw blockConflict(block, lockState(userId, blockId));
         }
         return block;
+    }
+
+    private void requireBlockVersion(KnowledgeBlockView block, long version, ReviewStateEntity current) {
+        if (block.version() != version) throw blockConflict(block, current);
+    }
+
+    private DomainException blockConflict(KnowledgeBlockView block, ReviewStateEntity current) {
+        return new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block content/version does not match",
+                current == null ? null : stateView(current, block.version()));
     }
 
     private ReviewStateEntity lockState(UUID userId, UUID blockId) {
@@ -382,7 +401,7 @@ public class ReviewLifecycleService {
         }
         ReviewLifecycleReviewEntity review = requireReview(userId, block.id(), reviewId);
         if (!ReviewRating.AGAIN.name().equals(review.getEffectiveRating())
-                || !sameContentVersion(review, block, KnowledgeBlockContentHash.sha256(block.content()))) {
+                || !review.getContentHash().equals(KnowledgeBlockContentHash.sha256(block.content()))) {
             throw rejected(reopen
                     ? "Learning reopen must reference the current AGAIN review attempt"
                     : "Learning completion reviewId must reference the current AGAIN review attempt");
@@ -392,12 +411,6 @@ public class ReviewLifecycleService {
     private ReviewLifecycleReviewEntity requireReview(UUID userId, UUID blockId, UUID reviewId) {
         return lifecycleReviewRepository.findByUserIdAndKnowledgeBlockIdAndReviewId(userId, blockId, reviewId)
                 .orElseThrow(() -> rejected("Review attempt was not found"));
-    }
-
-    private boolean sameContentVersion(ReviewLifecycleReviewEntity review, KnowledgeBlockView block, String hash) {
-        return review.getKnowledgeBlockVersion() == block.version()
-                && review.getContentHash().equals(hash)
-                && KnowledgeBlockContentHash.sha256(block.content()).equals(hash);
     }
 
     private Schedule selectSchedule(ReviewStateEntity current, ReviewRating rating, Instant selectedAt) {

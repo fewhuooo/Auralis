@@ -78,8 +78,8 @@ test('subject deletion coordinator local-tombstones descendants without child ou
   assert.ok(await assetRepo.claimNextSyncJob(now), 'test must model an already-claimed asset queue job')
 
   const overview = new OverviewRepository('user-a', 'device-a', { storage, now: () => now })
-  await overview.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: 'f', response: { title: 'A', outline: [], summary: { overview: 'x', keyPoints: [], learningPath: [] } } })
-  await overview.saveFileOverviewPart({ sourceId: 'source-a', ingestionRevision: 'rev-a', mode: 'ALL', response: { title: 'A', outline: [], summary: { overview: 'x', keyPoints: [], learningPath: [] } } })
+  await overview.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: 'f', response: { schemaVersion: 2, title: 'A', outlineMarkdown: '## Chapter', summaryMarkdown: 'x' } })
+  await overview.saveFileOverviewPart({ sourceId: 'source-a', ingestionRevision: 'rev-a', mode: 'ALL', response: { schemaVersion: 2, title: 'A', outlineMarkdown: '## Chapter', summaryMarkdown: 'x' } })
   const jobs = new DocumentProcessingJobRepository('user-a', 'device-a', { storage, now: () => now })
   await jobs.create({ jobId: 'job-a', sourceId: 'source-a', ingestionRevision: 'rev-a' })
   const coordinator = new SubjectDeletionCoordinator({ repo, assetRepo, assetService, overview, jobs })
@@ -256,7 +256,7 @@ test('rejected Subject DELETE restores remote Subject, clears the unresolved fen
   const repo = new LocalRepository('user-a', 'device-a', { storage, now: () => now })
   await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-a', value: { id: 'subject-a', name: 'A', version: 2 }, version: 2, deletedAt: now, mutation: mutation('SUBJECT', 'subject-a', 'DELETE') })
   const api = {
-    async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-a-DELETE', decision: 'CONFLICT', resourceType: 'SUBJECT', resourceId: 'subject-a', current: { id: 'subject-a', name: 'Remote A', version: 3, deletedAt: null } }] } },
+    async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-a-DELETE', decision: 'CONFLICT', resourceType: 'SUBJECT', resourceId: 'subject-a', mutationType: 'DELETE', current: { id: 'subject-a', name: 'Remote A', version: 3, deletedAt: null } }] } },
     async pullChanges() { return { changes: [], nextCursor: 'snap', hasMore: false } },
     async getSnapshot() { return { snapshotCursor: 'snap', subjects: [{ id: 'subject-a', name: 'Remote A', version: 3 }], sources: [{ id: 'source-a', subjectId: 'subject-a', version: 1 }], knowledgeBlocks: [], tasks: [], relations: [] } },
   }
@@ -277,7 +277,7 @@ test('rejected Subject DELETE atomically sets reset_required and retries a faile
       await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-reset', value: { id: 'subject-reset', name: 'Local', version: 2 }, version: 2, deletedAt: now, mutation: mutation('SUBJECT', 'subject-reset', 'DELETE') })
       let snapshotAttempts = 0
       const api = {
-        async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-reset-DELETE', decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-reset', current: { id: 'subject-reset', name: 'Remote', version: 3, deletedAt: null } }] } },
+        async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-reset-DELETE', decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-reset', mutationType: 'DELETE', current: { id: 'subject-reset', name: 'Remote', version: 3, deletedAt: null } }] } },
         async pullChanges() { throw new Error('PULL_MUST_NOT_RUN_WHILE_RESET_REQUIRED') },
         async getSnapshot() {
           snapshotAttempts += 1
@@ -312,7 +312,7 @@ test('rejected Subject DELETE reprojects a local-only draft and preserves its as
   await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-local-reject', value: { id: 'subject-local-reject', name: 'Local' }, version: 1, deletedAt: now, mutation: mutation('SUBJECT', 'subject-local-reject', 'DELETE') })
   await coordinator.reconcileDeletedSubject('subject-local-reject')
   const api = {
-    async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-local-reject-DELETE', decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-local-reject', current: { id: 'subject-local-reject', name: 'Remote', version: 2, deletedAt: null } }] } },
+    async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-local-reject-DELETE', decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-local-reject', mutationType: 'DELETE', current: { id: 'subject-local-reject', name: 'Remote', version: 2, deletedAt: null } }] } },
     async pullChanges() { return { changes: [], nextCursor: 'local-reject', hasMore: false, resetRequired: false } },
     async getSnapshot() { return { snapshotCursor: 'local-reject', subjects: [{ id: 'subject-local-reject', name: 'Remote', version: 2 }], sources: [], knowledgeBlocks: [], tasks: [], relations: [] } },
   }
@@ -333,8 +333,9 @@ async function assertDeletedSubjectFenceSurvivesCleanupFailure(failurePoint) {
   const overview = new OverviewRepository('user-delete-cleanup-failure', `device-${failurePoint}-failure`, { storage, now: () => now })
   const originalResponse = {
     title: 'Existing result',
-    outline: [{ title: 'Chapter', sections: [{ title: 'Section', summary: 'Text', sourceIds: ['source-a'], locator: null }] }],
-    summary: { overview: 'Original summary', keyPoints: ['Point'], learningPath: ['Chapter'] },
+    schemaVersion: 2,
+    outlineMarkdown: '## Chapter\n- Section',
+    summaryMarkdown: 'Original summary',
   }
   await overview.saveSubjectOverviewPart({ subjectId, mode: 'ALL', inputFingerprint: 'fingerprint', response: originalResponse })
   await repo.commitMutation({

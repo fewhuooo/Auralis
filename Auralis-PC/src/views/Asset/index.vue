@@ -218,6 +218,9 @@
             <div class="editor-bar-right">
               <span v-if="selected.due" class="header-meta-pill">截止: {{ selected.due }}</span>
               <span class="header-meta-pill">预计: {{ formatDuration(selected.durationMinutes || 30) }}</span>
+              <button type="button" class="btn-secondary sm-btn" @click="deleteTask(selected)">
+                删除任务
+              </button>
               <button
                 class="btn-primary sm-btn header-save-btn"
                 :disabled="selected.done"
@@ -490,6 +493,7 @@
     <FileRegisterDialog
       v-model="showRegisterModal"
       :default-subject-id="selectedSubjectId"
+      :initial-file="initialRegisterFile"
       :is-uploading="isUploading"
       :upload-progress="uploadProgress"
       :upload-stage="uploadStatusText"
@@ -501,8 +505,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { LocalConflictError } from '@/services/localRepository'
 import { useRoute } from 'vue-router'
-import { ElNotification } from 'element-plus'
+import { ElMessageBox, ElNotification } from 'element-plus'
+import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
@@ -547,6 +553,10 @@ import { renderMarkdown } from '@/utils/markdown'
 
 // ---- Layout States ----
 const showRegisterModal = ref(false)
+const initialRegisterFile = ref<File | null>(null)
+watch(showRegisterModal, (visible) => {
+  if (!visible) initialRegisterFile.value = null
+})
 const isBlockPreviewMode = ref(false)
 
 // ---- Upload ----
@@ -723,7 +733,9 @@ function taskGroupFolders(tasks: any[], groupId: string, openUnassigned = false)
 }
 
 function rebuildAssetTree(): void {
-  const selectedId = selected.value?.id
+  const selection = selected.value
+  const previousBlockNode = selection?.type === 'block' ? findTreeNode(rootNodes.value, selection.id) : null
+  const previousTaskNode = selection?.type === 'task' ? findTreeNode(rootNodes.value, selection.id) : null
   const openStates = new Set<string>()
   try {
     const collectOpenStates = (nodes: TreeNode[] | undefined) => {
@@ -842,7 +854,27 @@ function rebuildAssetTree(): void {
   }
 
   rootNodes.value = newRoots
-  if (selectedId) selected.value = findTreeNode(newRoots, selectedId) ?? selected.value
+  if (selection) {
+    const refreshed = findTreeNode(newRoots, selection.id)
+    if (selection.type === 'block') {
+      const editedName = previousBlockNode && selection.name !== previousBlockNode.name
+      const editedContent = previousBlockNode && selection.content !== previousBlockNode.content
+      selected.value = refreshed && {
+        ...refreshed,
+        name: editedName ? selection.name : refreshed.name,
+        content: editedContent ? selection.content : refreshed.content,
+        originalData: editedName || editedContent ? selection.originalData : refreshed.originalData,
+      }
+    } else if (selection.type !== 'task') selected.value = refreshed ?? selection
+    else if (!refreshed || !previousTaskNode) selected.value = refreshed ? { ...refreshed } : null
+    else {
+      const editableFields = ['name', 'preview', 'due', 'durationMinutes', 'groupId'] as const
+      const edits = Object.fromEntries(editableFields
+        .filter((field) => selection[field] !== previousTaskNode[field] || field === 'due' && selection.dueDateTouched)
+        .map((field) => [field, selection[field]]))
+      Object.assign(selection, refreshed, edits, { dueDateTouched: selection.dueDateTouched })
+    }
+  }
   focusUnassigned.value = shouldFocusUnassigned
 }
 
@@ -930,7 +962,10 @@ const selectedPreviewFile = computed<PreviewFile | null>(() => {
 })
 const selectItem = (item: TreeNode) => {
   if (item.type !== 'file' && item.type !== 'block' && item.type !== 'task') return
-  selected.value = item
+  if (item.type === 'task' && selected.value?.id === item.id) return
+  if (item.type === 'block' && selected.value?.id === item.id
+    && selected.value.originalData?.version === item.originalData?.version) return
+  selected.value = item.type === 'task' || item.type === 'block' ? { ...item } : item
   showRegisterModal.value = false
 }
 
@@ -968,7 +1003,10 @@ const saveTaskEdit = async (task: TreeNode) => {
       durationMinutes: normalizeDuration(task.durationMinutes),
     })
     await loadAssetsFromBackend()
-    selected.value = findTreeNode(rootNodes.value, task.id)
+    if (selected.value === task) {
+      const saved = findTreeNode(rootNodes.value, task.id)
+      selected.value = saved ? { ...saved } : null
+    }
     ElNotification({ title: '✅ 成功', message: '任务已更新', type: 'success' })
   } catch (err) {
     console.error('[Asset] Failed to save task:', err)
@@ -976,8 +1014,24 @@ const saveTaskEdit = async (task: TreeNode) => {
   }
 }
 
+const deleteTask = async (task: TreeNode) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这个任务吗？', '删除提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await taskStore.deleteTask(task.id.slice(2))
+    if (selected.value === task) selected.value = null
+    ElNotification({ title: '任务已删除', type: 'success' })
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElNotification({ title: '删除任务失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error' })
+  }
+}
+
 const saveBlockEdit = async (block: TreeNode) => {
-  if (!block.originalData) return
+  if (selected.value !== block || !block.originalData) return
   try {
     const targetSubjectId = block.groupId && block.groupId !== 'all' ? block.groupId : block.originalData.subjectId
     const content = block.content ?? block.originalData.content ?? ''
@@ -987,10 +1041,18 @@ const saveBlockEdit = async (block: TreeNode) => {
       content,
       subjectId: targetSubjectId
     })
-    await loadAssetsFromBackend()
-    selected.value = findTreeNode(rootNodes.value, block.id)
     ElNotification({ title: '✅ 成功', message: '知识块已更新', type: 'success' })
   } catch (err) {
+    if (err instanceof LocalConflictError) {
+      const deleted = !err.resource || err.resource.deletedAt !== null
+      if (deleted && selected.value?.id === block.id) selected.value = null
+      ElNotification({
+        title: '保存失败',
+        message: deleted ? '知识块已删除' : '知识块已更新，请重新打开后再编辑',
+        type: 'warning',
+      })
+      return
+    }
     console.error('[Asset] Failed to save block:', err)
     ElNotification({ title: '保存失败', message: '知识块更新失败，请稍后重试', type: 'error' })
   }
@@ -1044,13 +1106,13 @@ const selectGraphNode = (node: { type: 'file' | 'block'; id: string; subjectId: 
 
 const handleDrop = (e: DragEvent) => {
   isDragover.value = false
-  const f = e.dataTransfer?.files?.[0]
-  if (f) {
-    if (!selectedSubjectId.value) {
-      selectedSubjectId.value = subjectStore.subjects[0]?.id || ''
-    }
-    showRegisterModal.value = true
+  const file = e.dataTransfer?.files?.[0]
+  if (!file || showRegisterModal.value) return
+  if (!selectedSubjectId.value) {
+    selectedSubjectId.value = subjectStore.subjects[0]?.id || ''
   }
+  initialRegisterFile.value = file
+  showRegisterModal.value = true
 }
 
 const openUploadForGroup = (groupId: string) => {
@@ -1059,11 +1121,6 @@ const openUploadForGroup = (groupId: string) => {
 }
 
 const handleRegisterSubmit = async ({ file, name, subjectId }: { file: File; name: string; subjectId: string }) => {
-  const finalFile = new window.File([file], name, { type: file.type })
-  await handleFileUpload(finalFile, subjectId)
-}
-
-const handleFileUpload = async (file: File, subjectId: string) => {
   isUploading.value = true
   uploadProgress.value = 5
   uploadStatusText.value = '校验文件...'
@@ -1075,7 +1132,7 @@ const handleFileUpload = async (file: File, subjectId: string) => {
     })
     uploadProgress.value = 75
     uploadStatusText.value = '正在关联学科资料...'
-    await sourceStore.createFileSource(subjectId, file.name, asset.id)
+    await sourceStore.createFileSource(subjectId, name, asset.id)
     uploadProgress.value = 90
     uploadStatusText.value = '正在刷新资料列表...'
     await loadAssetsFromBackend()
@@ -1083,7 +1140,7 @@ const handleFileUpload = async (file: File, subjectId: string) => {
     uploadStatusText.value = '上传成功'
     ElNotification({
       title: '上传成功',
-      message: `文件 ${file.name} 已成功关联`,
+      message: `文件 ${name} 已成功关联`,
       type: 'success',
     })
     await new Promise(resolve => setTimeout(resolve, 400))

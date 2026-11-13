@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.shared.domain.CoreResourceInsert;
 import com.auralis.app.source.ParsedDocumentIngestionPort;
 import com.auralis.app.source.SourceIngestionStatus;
 import com.auralis.app.source.SourceService;
@@ -37,6 +38,8 @@ class SourceServiceReadBatchTests {
     @Mock
     private SourceRepository sourceRepository;
     @Mock
+    private CoreResourceInsert resourceInsert;
+    @Mock
     private AssetRepository assetRepository;
     @Mock
     private SubjectLockCoordinator subjectLockCoordinator;
@@ -51,7 +54,7 @@ class SourceServiceReadBatchTests {
 
     @BeforeEach
     void setUp() {
-        sourceService = new SourceService(sourceRepository, assetRepository, subjectLockCoordinator,
+        sourceService = new SourceService(sourceRepository, resourceInsert, assetRepository, subjectLockCoordinator,
                 eventPublisher, parsedDocumentRepository, ingestionJobService);
     }
 

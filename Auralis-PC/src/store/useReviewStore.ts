@@ -530,6 +530,7 @@ export const useReviewStore = defineStore('review', () => {
           ...eligible.filter((block) => {
             const state = lifecycleStateFor(input.subjectId, block.id)
             return !!state && !state.needsLearning && !state.mastered
+              && !(state.pendingReviewId && state.pendingReviewRating && state.pendingReviewBaseline)
           }).sort((left, right) => {
             const leftDueAt = Date.parse(lifecycleStateFor(input.subjectId, left.id)?.dueAt ?? '')
             const rightDueAt = Date.parse(lifecycleStateFor(input.subjectId, right.id)?.dueAt ?? '')

@@ -151,6 +151,9 @@ public class ParsedDocumentService {
                 throw new DomainException("MUTATION_REJECTED", "FILE Source has no Asset");
             }
             String assetSha = assetService.ensureSha256(userId, source.getAssetId());
+            if (!assetSha.equalsIgnoreCase(document.getSourceAssetSha256())) {
+                throw new DomainException("PARSED_DOCUMENT_INVALID", "Upload intent sourceAssetSha256 does not match the current Asset");
+            }
             ParsedDocumentValidator.ValidatedParsedDocument validated = validator.validate(
                     assetStorage.openObject(document.getObjectKey()),
                     new ParsedDocumentValidator.Metadata(

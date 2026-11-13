@@ -2,7 +2,6 @@ package com.auralis.app.ai.ingestion;
 
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.shared.config.AuralisProperties;
-import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiSettingsService;
 import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.SourceChunkProvenance;
@@ -184,8 +183,8 @@ public class IngestionWorker {
             if (text == null || text.isBlank()) {
                 throw new IllegalArgumentException("Parsed source is empty");
             }
-            if (!sourceService.markIndexingIfRevision(userId, source.id(), sourceRevision)) {
-                throw new DomainException("INGESTION_REVISION_STALE", "Source revision changed during parsing");
+            if (!completionService.markIndexing(claim, sourceRevision)) {
+                throw new DomainException("INGESTION_REVISION_STALE", "Ingestion claim no longer owns the source");
             }
             List<com.auralis.app.ai.ingestion.TextChunk> chunks = chunker.chunk(text);
             List<String> provenanceJson = parsedBlocks == null ? null : SourceChunkProvenance.encode(
@@ -205,7 +204,7 @@ public class IngestionWorker {
                 if (missing.isEmpty()) continue;
                 if (settings == null) settings = settingsService.resolveServerManagedEmbedding();
                 EmbeddingResult batchEmbeddings = taskScope.embed(AiStage.INGESTION_EMBEDDING,
-                        AiProviderType.SILICONFLOW, settings.credential().model(),
+                        settings.provider(), settings.credential().model(),
                         missing.stream().map(com.auralis.app.ai.ingestion.TextChunk::content).toList(),
                         settings.credential(), settings.source()).value();
                 if (batchEmbeddings == null || batchEmbeddings.vectors().size() != missing.size()) {

@@ -24,7 +24,9 @@
 
 ### Overview
 
-- [Overview 动态窗口重构方向（2026-11-10；设计提案）](2026-11-10-overview-dynamic-window-refactor.md)
+- [Overview 清理、大纲与 Markdown 总结替换（2026-11-12；源码、定向与构建完成，未部署）](2026-11-12-overview-markdown-replacement.md)
+- [Overview 动态窗口重构方向（2026-11-10；已由 Markdown 替换方案取代）](2026-11-10-overview-dynamic-window-refactor.md)
+- [Overview 动态窗口重构分批实施文档（2026-11-10）](2026-11-10-overview-dynamic-window-implementation.md)
 
 - [Overview 独立执行重试实施计划（2026-10-27）](2026-10-27-overview-explicit-retry.md)
 

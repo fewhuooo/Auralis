@@ -115,9 +115,9 @@ class ChatRuntimeConcurrencyPostgresIntegrationTests {
     void competingFirstTurnsPersistOneReadingScopeAndRejectTheDifferentScope() throws Exception {
         UnboundFixture fixture = seedUnboundConversation();
         ReadingContext subjectScope = new ReadingContext(null, fixture.subjectId(),
-                ReadingContext.RetrievalMode.SUBJECT, java.util.List.of(), null);
+                ReadingContext.RetrievalMode.SUBJECT, java.util.List.of());
         ReadingContext otherSubjectScope = new ReadingContext(null, fixture.otherSubjectId(),
-                ReadingContext.RetrievalMode.SUBJECT, java.util.List.of(), null);
+                ReadingContext.RetrievalMode.SUBJECT, java.util.List.of());
         AiMessageCommand scopedTurn = new AiMessageCommand(1, "turn", fixture.conversationId(), "scope-turn-a",
                 "A subject question", subjectScope, null, null, null, null, null);
         AiMessageCommand otherScopedTurn = new AiMessageCommand(1, "turn", fixture.conversationId(), "scope-turn-b",
@@ -146,7 +146,7 @@ class ChatRuntimeConcurrencyPostgresIntegrationTests {
     void invalidFirstScopeDoesNotBindOrPersistUserAndRun() {
         UnboundFixture fixture = seedUnboundConversation();
         ReadingContext invalidSubjectScope = new ReadingContext(UUID.randomUUID(), fixture.subjectId(),
-                ReadingContext.RetrievalMode.SUBJECT, java.util.List.of(), null);
+                ReadingContext.RetrievalMode.SUBJECT, java.util.List.of());
         AiMessageCommand command = new AiMessageCommand(1, "turn", fixture.conversationId(), "invalid-scope-turn",
                 "An invalid scoped question", invalidSubjectScope, null, null, null, null, null);
 

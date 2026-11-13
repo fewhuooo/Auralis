@@ -32,11 +32,6 @@ public record AiMessageCommand(
         if (selectionText != null) selectionText = selectionText.trim();
     }
 
-    public String effectiveSelectionText() {
-        return selectionText != null ? selectionText
-                : readingContext == null ? null : readingContext.selectionText();
-    }
-
     public void validateProtocol() {
         if (!Integer.valueOf(1).equals(protocolVersion)) {
             throw new com.auralis.app.shared.error.DomainException("CHAT_PROTOCOL_UNSUPPORTED",

@@ -220,12 +220,15 @@ export class LocalReviewService {
         throw localReviewConflict()
       }
       if (observedHash !== expectedHash) return currentRecord
+      const effectiveReviews = currentRecord.effectiveReviews.map(review => review.resolution === null
+        ? { ...review, resolution: 'SUPERSEDED' as const }
+        : review)
       if (subjectChanged && latestSubjectId && observedHash === currentRecord.contentHash) {
         // A pure parent move changes scope and KB revision, but unchanged body
         // content keeps its schedule and mastery. Old-scope commands remain
         // visible as explicit conflicts instead of becoming orphaned.
         const state = currentRecord.state
-          ? { ...currentRecord.state, knowledgeBlockVersion: reread.version, contentHash: observedHash }
+          ? { ...currentRecord.state, knowledgeBlockVersion: reread.version, lastReviewId: null, pendingReviewId: null }
           : null
         const movedRecord: LocalReviewRecord = {
           ...currentRecord,
@@ -234,6 +237,7 @@ export class LocalReviewService {
           serverKnowledgeBlockVersion: reread.version,
           contentHash: observedHash,
           state,
+          effectiveReviews,
           updatedAt: new Date().toISOString(),
         }
         await this.repo.saveSubjectMoveCommit(tx, userId, deviceId, kbId, movedRecord)
@@ -249,9 +253,7 @@ export class LocalReviewService {
         serverKnowledgeBlockVersion: reread.version,
         contentHash: observedHash,
         state,
-        effectiveReviews: currentRecord.effectiveReviews.map(review => review.resolution === null
-          ? { ...review, resolution: 'SUPERSEDED' }
-          : review),
+        effectiveReviews,
         updatedAt: new Date().toISOString(),
       }
       await this.repo.saveInvalidationCommit(tx, userId, deviceId, kbId, record)
@@ -277,6 +279,9 @@ export class LocalReviewService {
     const state = record?.state
       ? { ...record.state }
       : makeUnlearnedState(row.id, row.version, hash ?? '', new Date().toISOString())
+    if (hash && state.contentHash === hash && record?.subjectId === subjectIdOf(payload)) {
+      state.knowledgeBlockVersion = row.version
+    }
     if (!hash) {
       state.needsLearning = true
       state.mastered = false
@@ -520,7 +525,8 @@ export class LocalReviewService {
         action,
         occurredAt,
         reviewId: response.effectiveReview?.reviewId ?? (typeof requestPayload.reviewId === 'string' ? requestPayload.reviewId : null),
-        rating: response.effectiveReview?.selectedRating ?? rating,
+        rating: action === 'REVIEW_CORRECTED' ? 'AGAIN'
+          : action === 'REVIEW_SELECTED' || action === 'REVIEW_CONFIRMED' ? selectedRating : null,
         durationSeconds: typeof requestPayload.durationSeconds === 'number' ? requestPayload.durationSeconds : null,
         baseVersion,
         knowledgeBlockVersion: response.knowledgeBlockVersion,

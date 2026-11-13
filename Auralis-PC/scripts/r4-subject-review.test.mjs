@@ -632,7 +632,7 @@ test('normal token rotation within the same owner device and session keeps a loc
   }
   const loading = reviewStore.loadSubjectStates(subjectId)
   await readStarted.promise
-  authStore.setTokens({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh' })
+  authStore.applyRefresh({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh' }, 'rotated-sid')
   readResult.resolve(snapshot)
 
   await loading
@@ -1386,6 +1386,100 @@ test('a selected GOOD is confirmed under the same review id and advances local s
   assert.equal(round.progressByBlock[block.id].confirmed, true)
   assert.equal(record.state.stableSuccessCount, 1)
   assert.equal(record.localRevision, 3)
+})
+
+for (const resolution of [
+  { button: '下一个', action: 'REVIEW_CONFIRMED', phase: 'GROUP_COMPLETE' },
+  { button: '记错了', action: 'REVIEW_CORRECTED', phase: 'LEARNING_READ' },
+]) {
+  test(`the regular review entry restores a saved selection to ${resolution.action} after ending and reloading`, async () => {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
+    const userId = 'scheduled-review-resume-' + resolution.action
+    const subjectId = 'scheduled-review-resume-subject'
+    const blockId = 'scheduled-review-resume-block'
+    const { authStore, reviewStore, pinia } = fixture(userId)
+    useSyncStore().requestBackgroundSync = () => undefined
+    const { repository } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [
+      { id: blockId, state: stateView(blockId, new Date(Date.now() - 60_000).toISOString(), 1, { nextReviewStage: 'CROSS_DAY' }) },
+      ...Array.from({ length: 5 }, (_, index) => {
+        const id = 'scheduled-review-future-' + index
+        return { id, state: stateView(id, new Date(Date.now() + 86_400_000).toISOString(), 1) }
+      }),
+    ])
+    const { app, root } = await mountReviewPane(pinia, subjectId)
+    await waitFor(() => findButton(root, '进入复习')?.props.disabled === false, 'the only due card should be available')
+    await findButton(root, '进入复习').props.onClick()
+    await waitFor(() => findButton(root, '认识')?.props.disabled === false, 'the due card should allow an initial selection')
+    await findButton(root, '认识').props.onClick()
+    await waitFor(() => findButton(root, '下一个')?.props.disabled === false, 'the saved selection should be ready to confirm')
+
+    const initial = await inspectLocalReview(authStore, repository, blockId)
+    const reviewId = initial.pending[0].payload.reviewId
+    assert.equal(initial.record.state.pendingReviewId, reviewId)
+    assert.ok(Date.parse(initial.record.state.dueAt) > Date.now())
+    await findButton(root, '结束本轮').props.onClick()
+    await waitFor(() => findButton(root, '进入复习'), 'the pane should return to planning')
+    assert.equal(findButton(root, '进入复习').props.disabled, false)
+    assert.match(collectText(root), /待核对 1/)
+    await findButton(root, '进入复习').props.onClick()
+    assert.equal(reviewStore.getLifecycleRound(subjectId).phase, 'REVIEW_CHECK')
+    await settleVue()
+    await findButton(root, '结束本轮').props.onClick()
+    app.unmount()
+    mountedApps.splice(mountedApps.indexOf(app), 1)
+
+    const restarted = fixture(userId)
+    useSyncStore().requestBackgroundSync = () => undefined
+    const reloaded = await mountReviewPane(restarted.pinia, subjectId)
+    await waitFor(() => restarted.reviewStore.isSubjectStatesLoaded(subjectId)
+      && collectText(reloaded.root).includes('共 6 个知识块'), 'the new pane should read all six local cards')
+    await findButton(reloaded.root, '5 个').props.onClick()
+    assert.equal(findButton(reloaded.root, '进入复习').props.disabled, false)
+    await findButton(reloaded.root, '进入复习').props.onClick()
+    const round = restarted.reviewStore.getLifecycleRound(subjectId)
+    assert.equal(round.groupSize, 5)
+    assert.deepEqual(round.queue, [blockId])
+    assert.equal(round.phase, 'REVIEW_CHECK')
+    assert.equal(round.currentReviewId, reviewId)
+    await waitFor(() => findButton(reloaded.root, resolution.button)?.props.disabled === false, 'the resumed card should allow resolution')
+    await findButton(reloaded.root, resolution.button).props.onClick()
+    await waitFor(() => round.phase === resolution.phase, 'the resolution should apply to the resumed card')
+
+    const resolved = await inspectLocalReview(restarted.authStore, repository, blockId)
+    assert.deepEqual(resolved.pending.map((intent) => intent.action), ['REVIEW_SELECTED', resolution.action])
+    assert.equal(resolved.pending[1].payload.reviewId, reviewId)
+    assert.equal(resolved.record.state.pendingReviewId, null)
+    if (resolution.action === 'REVIEW_CONFIRMED') assert.equal(resolved.record.state.dueAt, initial.record.state.dueAt)
+    await findButton(reloaded.root, '结束本轮').props.onClick()
+    await waitFor(() => findButton(reloaded.root, '进入复习'), 'the pane should return to planning after resolution')
+    assert.equal(findButton(reloaded.root, '进入复习').props.disabled, true)
+    await new Promise((resolve) => setTimeout(resolve, 650))
+  })
+}
+
+test('resuming a pending GOOD after it becomes due confirms the only queued card', async () => {
+  const { authStore, reviewStore } = fixture('lifecycle-due-pending-good-user')
+  const subjectId = 'subject-lifecycle-due-pending-good'
+  const block = { id: 'kb-due-pending-good', version: 4 }
+  const dueAt = new Date(Date.now() + 60_000)
+  const { contentHashes } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{
+    ...block, state: stateView(block.id, dueAt.toISOString(), 2, { nextReviewStage: 'CROSS_DAY' }),
+  }])
+  await reviewStore.loadSubjectStates(subjectId)
+  reviewStore.startLifecycleRound({
+    subjectId, knowledgeBlocks: [block], groupSize: 5, manualMode: 'EARLY_PRACTICE', manualBlockIds: [block.id],
+  })
+  await reviewStore.selectLifecycleRating(subjectId, 'GOOD', contentHashes[block.id])
+  reviewStore.endLifecycleRound(subjectId, true)
+  await reviewStore.loadSubjectStates(subjectId)
+
+  const round = reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [block], groupSize: 5, now: dueAt })
+  assert.equal(round.phase, 'REVIEW_CHECK')
+  assert.equal(round.firstGroupCount, 1)
+  await reviewStore.confirmLifecycleReview(subjectId, contentHashes[block.id])
+  assert.deepEqual(round.completedIds, [block.id])
+  assert.equal(round.phase, 'GROUP_COMPLETE')
+  assert.equal(round.currentKnowledgeBlockId, null)
 })
 
 test('AGAIN enters 3R relearning and a successful relearn schedules ten minutes without stable progress', async () => {

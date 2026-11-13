@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import axios from 'axios'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { runInNewContext } from 'node:vm'
+import ts from 'typescript'
+import { computed, ref, watch } from 'vue'
 
 test('aiClient defines and exports normalizeProvider, listAiModels, and testAiConnection', async () => {
   const aiClientSource = await readFile(new URL('../src/api/aiClient.ts', import.meta.url), 'utf8')
@@ -22,7 +25,10 @@ test('aiClient defines and exports normalizeProvider, listAiModels, and testAiCo
 })
 
 test('Profile connects real identity endpoints for avatar, nickname, and password change', async () => {
-  const profileSource = await readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8')
+  const [profileSource, passwordDialog] = await Promise.all([
+    readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/profile/ChangePasswordDialog.vue', import.meta.url), 'utf8'),
+  ])
 
   // Avatar: real endpoints, no localStorage for avatar data
   assert.match(profileSource, /useAuthApi\.getAvatarBlob\(\)/, 'Must fetch avatar blob from server')
@@ -34,8 +40,8 @@ test('Profile connects real identity endpoints for avatar, nickname, and passwor
   assert.match(profileSource, /useAuthApi\.updateProfile\(\{/, 'Must call updateProfile')
   assert.match(profileSource, /baseVersion/, 'Must pass baseVersion to updateProfile')
 
-  // Password: at least 12 chars and calls changePassword
-  assert.match(profileSource, /newPassword\.length\s*<\s*12/, 'Must enforce at least 12 characters password')
+  assert.match(passwordDialog, /newPassword\.length\s*<\s*12/, 'The password dialog enforces the minimum length')
+  assert.match(passwordDialog, /new TextEncoder\(\)\.encode\(form\.newPassword\)\.byteLength\s*>\s*72/, 'The password dialog checks the UTF-8 byte limit')
   assert.match(profileSource, /useAuthApi\.changePassword\(\{/, 'Must call changePassword')
 })
 
@@ -78,15 +84,10 @@ test('Profile connects real AI endpoints and decouples cache clear from offline 
   assert.doesNotMatch(profileSource, /customEmbeddingModel|embeddingModel\s*:/, 'Profile must not ask users to configure or send an embedding model')
   assert.match(profileSource, /res\.chatModel/, 'Connection feedback must report the backend-tested chat model')
   assert.doesNotMatch(profileSource, /res\.modelCount/, 'Connection feedback must not depend on model-list discovery')
-  assert.match(profileSource, /watch\(\s*\(\) => normalizeProvider\(customProvider\.value\)/, 'Changing providers must clear the prior chat model')
-  assert.match(profileSource, /saved\.chatModel \|\| \(normalizeProvider\(saved\.provider\) === 'DEEPSEEK' \? 'deepseek-chat' : ''\)/, 'Loading settings must preserve saved model and avoid a DeepSeek fallback for other providers')
   assert.match(profileSource, /provider !== 'DEEPSEEK' && !customChatModel\.value\.trim\(\)/, 'Non-DeepSeek providers must require an explicit chat model')
-  assert.match(profileSource, /canonical === 'SILICONFLOW'[\s\S]*?'https:\/\/api\.siliconflow\.cn\/v1'/, 'SiliconFlow must use its provider endpoint when Base URL is omitted')
   assert.match(profileSource, /provider === 'OPENAI_COMPATIBLE' && !customBaseUrl\.value\.trim\(\)/, 'Generic OpenAI-compatible providers must require an explicit Base URL')
   const saveHandler = profileSource.match(/const handleSaveAiSettings = async \(\) => \{([\s\S]*?)\n\}/)?.[1]
-  const saveBeforeTest = profileSource.match(/const ensureAiSettingsSavedForTest = async \(\): Promise<boolean> => \{([\s\S]*?)\n\}/)?.[1]
   assert.match(saveHandler, /getAiSettingsValidationError\(canonical\)/, 'Saving must reject invalid provider configuration')
-  assert.match(saveBeforeTest, /getAiSettingsValidationError\(canonical\)/, 'Testing must reject invalid input before reusing saved credentials or settings')
   const connectionHandler = profileSource.match(/const handleTestConnection = async \(\) => \{([\s\S]*?)\n\}/)?.[1]
   assert.ok(connectionHandler, 'Must define the connection test handler')
   assert.match(connectionHandler, /testAiConnection\(/, 'Connection test must call the backend chat test')
@@ -100,10 +101,184 @@ test('Profile connects real AI endpoints and decouples cache clear from offline 
   assert.match(profileSource, /syncStore\.resetOfflineData\(\)/, 'Offline reset handler must call syncStore.resetOfflineData()')
   assert.match(profileSource, /useAuthApi\.deleteAccount\(\{/, 'Must call deleteAccount on server')
   assert.match(profileSource, /syncStatusText/, 'Must bind dynamic sync status text')
+})
 
-  // AI dirty check & auto-save before connection test and detection
-  assert.match(profileSource, /ensureAiSettingsSavedForTest/, 'Must ensure dirty AI settings are persisted before testing or detection')
-  assert.match(profileSource, /handleTestConnection/, 'Must have handleTestConnection defined')
+const deepseekSettings = { provider: 'DEEPSEEK', baseUrl: 'https://api.deepseek.com', chatModel: 'deepseek-chat', hasApiKey: true }
+const compatibleSettings = { provider: 'OPENAI_COMPATIBLE', baseUrl: 'https://gateway.example/v1', chatModel: 'custom-model', hasApiKey: true }
+
+async function mountAiSettingsForm({
+  listAiModels,
+  testAiConnection,
+  getAiSettings = async () => [deepseekSettings, compatibleSettings],
+  beforeSaveResponse,
+} = {}) {
+  const [profile, client] = await Promise.all([
+    readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/api/aiClient.ts', import.meta.url), 'utf8'),
+  ])
+  const normalizeProvider = client.slice(client.indexOf('export function normalizeProvider'), client.indexOf('export async function checkHealth'))
+  const form = profile.slice(profile.indexOf('// === BYOK AI Settings ==='), profile.indexOf('const syncStore = useSyncStore()'))
+  const { outputText } = ts.transpileModule(`
+    ${normalizeProvider.replace('export ', '')}
+    ${form}
+    ;({ customProvider, customBaseUrl, customChatModel, customApiKey, detectingModels, detectedModels,
+        quickProviders, applyQuickProvider, loadAiSettings, handleSaveAiSettings, handleTestConnection,
+        handleDetectModels })
+  `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } })
+  const updates = []
+  const notifications = []
+  const settings = runInNewContext(outputText, {
+    computed, ref, watch, Error,
+    getAiSettings,
+    updateAiSettings: async (command) => {
+      updates.push(command)
+      await beforeSaveResponse?.()
+      return { provider: command.provider, baseUrl: command.baseUrl, chatModel: command.chatModel, hasApiKey: true }
+    },
+    ElNotification: (notification) => notifications.push(notification),
+    listAiModels,
+    testAiConnection,
+  })
+  return { ...settings, updates, notifications, loading: settings.loadAiSettings() }
+}
+
+test('Profile loads the selected Provider settings and requires an explicit save before probing a draft', async () => {
+  const connectionTests = []
+  const modelRequests = []
+  const form = await mountAiSettingsForm({
+    testAiConnection: async (provider) => {
+      connectionTests.push(provider)
+      throw new Error('Simulated Provider rejection')
+    },
+    listAiModels: async (provider) => {
+      modelRequests.push(provider)
+      return { provider, models: ['available-model'] }
+    },
+  })
+  await form.loading
+  form.customApiKey.value = 'synthetic-deepseek-key'
+  form.applyQuickProvider(form.quickProviders.find((preset) => preset.provider === compatibleSettings.provider))
+  assert.equal(form.customApiKey.value, '')
+  assert.equal(form.customBaseUrl.value, compatibleSettings.baseUrl)
+  assert.equal(form.customChatModel.value, compatibleSettings.chatModel)
+
+  await form.handleTestConnection()
+  assert.deepEqual(connectionTests, ['OPENAI_COMPATIBLE'])
+  assert.equal(form.notifications.at(-1).message, 'Simulated Provider rejection')
+  assert.equal(form.updates.length, 0)
+
+  form.customBaseUrl.value = 'https://draft.example/v1'
+  await form.handleTestConnection()
+  await form.handleDetectModels()
+  assert.deepEqual(connectionTests, ['OPENAI_COMPATIBLE'])
+  assert.equal(modelRequests.length, 0)
+  assert.equal(form.updates.length, 0)
+  assert.equal(form.notifications.at(-1).title, '请先保存 AI 配置')
+
+  form.customApiKey.value = 'synthetic-draft-endpoint-key'
+  form.applyQuickProvider(form.quickProviders.find((preset) => preset.provider === compatibleSettings.provider))
+  assert.equal(form.customBaseUrl.value, compatibleSettings.baseUrl)
+  assert.equal(form.customApiKey.value, '')
+
+  form.customApiKey.value = 'synthetic-compatible-key'
+  form.customProvider.value = 'SiliconFlow'
+  assert.equal(form.customApiKey.value, '')
+  assert.equal(form.customBaseUrl.value, '')
+  assert.equal(form.customChatModel.value, '')
+
+  form.customChatModel.value = 'siliconflow-model'
+  form.customApiKey.value = 'synthetic-siliconflow-key'
+  await form.handleSaveAiSettings()
+  assert.equal(form.updates.length, 1)
+  assert.equal(form.updates[0].provider, 'SILICONFLOW')
+  assert.equal(form.updates[0].baseUrl, 'https://api.siliconflow.cn/v1')
+  assert.equal(form.updates[0].apiKey, 'synthetic-siliconflow-key')
+  assert.equal(form.customApiKey.value, '')
+
+  form.customChatModel.value = 'another-model'
+  await form.handleTestConnection()
+  await form.handleDetectModels()
+  assert.deepEqual(connectionTests, ['OPENAI_COMPATIBLE'])
+  assert.deepEqual(modelRequests, ['SILICONFLOW'])
+  assert.equal(form.updates.length, 1)
+})
+
+test('Profile discards late model candidates after switching Providers or changing the endpoint', async () => {
+  const requests = []
+  const form = await mountAiSettingsForm({
+    listAiModels: (provider) => new Promise((resolve) => {
+      requests.push({ provider, respond: (model) => resolve({ provider, models: [model] }) })
+    }),
+  })
+  await form.loading
+  const previous = form.handleDetectModels()
+  assert.equal(requests[0].provider, 'DEEPSEEK')
+  form.applyQuickProvider(form.quickProviders.find((preset) => preset.provider === compatibleSettings.provider))
+  form.customChatModel.value = ''
+  const current = form.handleDetectModels()
+  assert.equal(requests[1].provider, 'OPENAI_COMPATIBLE')
+
+  requests[0].respond('previous-provider-model')
+  await previous
+  assert.equal(form.detectingModels.value, true)
+  assert.equal(form.detectedModels.value.length, 0)
+  assert.equal(form.customChatModel.value, '')
+
+  requests[1].respond('current-provider-model')
+  await current
+  assert.deepEqual([...form.detectedModels.value], ['current-provider-model'])
+  assert.equal(form.customChatModel.value, 'current-provider-model')
+
+  const previousEndpoint = form.handleDetectModels()
+  form.customBaseUrl.value = 'https://other-gateway.example/v1'
+  assert.equal(form.detectedModels.value.length, 0)
+  form.customBaseUrl.value = compatibleSettings.baseUrl
+  requests[2].respond('expired-endpoint-model')
+  await previousEndpoint
+  assert.equal(form.detectedModels.value.length, 0)
+  assert.equal(form.customChatModel.value, 'current-provider-model')
+  assert.equal(form.updates.length, 0)
+})
+
+test('Profile preserves a draft entered during the initial AI settings read', async () => {
+  const initialSettings = Promise.withResolvers()
+  const form = await mountAiSettingsForm({ getAiSettings: () => initialSettings.promise })
+  form.customBaseUrl.value = 'https://api.deepseek.com/v1'
+  form.customChatModel.value = 'deepseek-reasoner'
+  form.customApiKey.value = 'synthetic-initial-draft-key'
+  await form.handleSaveAiSettings()
+  assert.equal(form.updates.length, 0)
+
+  initialSettings.resolve([])
+  await form.loading
+  assert.equal(form.customBaseUrl.value, 'https://api.deepseek.com/v1')
+  assert.equal(form.customChatModel.value, 'deepseek-reasoner')
+  assert.equal(form.customApiKey.value, 'synthetic-initial-draft-key')
+  await form.handleSaveAiSettings()
+  assert.equal(form.updates.length, 1)
+  assert.equal(form.updates[0].apiKey, 'synthetic-initial-draft-key')
+})
+
+test('Profile clears the saved Key and preserves a different Key entered during saving', async () => {
+  const saveResponses = []
+  const form = await mountAiSettingsForm({
+    beforeSaveResponse: () => new Promise((resolve) => saveResponses.push(resolve)),
+  })
+  await form.loading
+  form.customApiKey.value = 'synthetic-submitted-key'
+  const firstSave = form.handleSaveAiSettings()
+  form.customBaseUrl.value = 'https://api.deepseek.com/v1'
+  form.customBaseUrl.value = deepseekSettings.baseUrl
+  saveResponses[0]()
+  await firstSave
+  assert.equal(form.customApiKey.value, '')
+
+  form.customApiKey.value = 'synthetic-next-submitted-key'
+  const secondSave = form.handleSaveAiSettings()
+  form.customApiKey.value = 'synthetic-new-key'
+  saveResponses[1]()
+  await secondSave
+  assert.equal(form.customApiKey.value, 'synthetic-new-key')
 })
 
 test('LocalRepository and useSyncStore provide persistent offline reset pipeline', async () => {
@@ -122,26 +297,24 @@ test('LocalRepository and useSyncStore provide persistent offline reset pipeline
   assert.match(storeSource, /resetOfflineStorage\(\)/, 'useSyncStore.resetOfflineData must call repository.resetOfflineStorage()')
 })
 
-test('account deletion confirmation 401 does not trigger global auth recovery', async () => {
+test('password confirmation 401 does not trigger global auth recovery', async () => {
   const [requestSource, sessionSource] = await Promise.all([
     readFile(new URL('../src/api/request.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/auth/authSessionState.ts', import.meta.url), 'utf8'),
   ])
   const authSessionPolicy = await import('../src/auth/authSessionState.ts')
-  const isDeletionConfirmationFailure = authSessionPolicy.isAccountDeletionConfirmationFailure
+  const isConfirmationFailure = authSessionPolicy.isPasswordConfirmationFailure
 
-  assert.equal(typeof isDeletionConfirmationFailure, 'function', 'Must expose the deletion confirmation 401 policy')
   const wrongPasswordProblem = { code: 'UNAUTHENTICATED', detail: 'Invalid credentials' }
   const expiredTokenProblem = { code: 'UNAUTHENTICATED', detail: 'Authentication is required' }
-  assert.equal(isDeletionConfirmationFailure('/api/auth/me', 'DELETE', wrongPasswordProblem), true, 'Must recognize wrong deletion-confirmation credentials')
-  assert.equal(isDeletionConfirmationFailure('https://api.example/api/auth/me?retry=1', 'delete', wrongPasswordProblem), true, 'Must normalize absolute URLs, query strings, and method case')
-  assert.equal(isDeletionConfirmationFailure('/api/auth/me', 'DELETE', expiredTokenProblem), false, 'Must allow normal recovery for an expired bearer token')
-  assert.equal(isDeletionConfirmationFailure('/api/auth/me', 'PUT', wrongPasswordProblem), false, 'Must preserve normal recovery for other /me operations')
-  assert.equal(isDeletionConfirmationFailure('/api/auth/sessions', 'DELETE', wrongPasswordProblem), false, 'Must preserve normal recovery for other DELETE operations')
-  assert.match(sessionSource, /isAccountDeletionConfirmationFailure\s*\(/, 'Must centralize the route and Problem Details policy')
-  assert.match(requestSource, /isAccountDeletionConfirmationFailure\(originalRequest\.url\s*\?\?\s*['"]['"],\s*originalRequest\.method,\s*error\.response\?\.data\)/, 'Must use the policy with the Axios 401 response')
-  assert.equal((requestSource.match(/!isDeletionConfirmationFailure/g) ?? []).length, 2, 'Must gate both refresh/replay and redirect with the policy')
-  assert.match(requestSource, /error\.response\?\.status\s*===\s*401/, 'Other protected 401 responses must still use normal auth recovery')
+  assert.equal(isConfirmationFailure('/api/auth/me', 'DELETE', wrongPasswordProblem), true, 'Must recognize wrong deletion-confirmation credentials')
+  assert.equal(isConfirmationFailure('https://api.example/api/auth/me?retry=1', 'delete', wrongPasswordProblem), true, 'Must normalize absolute URLs, query strings, and method case')
+  assert.equal(isConfirmationFailure('/api/auth/me', 'DELETE', expiredTokenProblem), false, 'Must allow normal recovery for an expired bearer token')
+  assert.equal(isConfirmationFailure('/api/auth/me', 'PUT', wrongPasswordProblem), false, 'Must preserve normal recovery for other /me operations')
+  assert.equal(isConfirmationFailure('/api/auth/sessions', 'DELETE', wrongPasswordProblem), false, 'Must preserve normal recovery for other DELETE operations')
+  assert.match(sessionSource, /isPasswordConfirmationFailure\s*\(/, 'Must centralize the route and Problem Details policy')
+  assert.match(requestSource, /isPasswordConfirmationFailure\(originalRequest\.url\s*\?\?\s*['"]['"],\s*originalRequest\.method,\s*error\.response\?\.data\)/, 'Must use the policy with the Axios 401 response')
+  assert.match(requestSource, /if \(error\.response\?\.status\s*===\s*401\s*&&\s*originalRequest\s*&&\s*session\s*&&\s*!isConfirmationFailure/, 'Must gate the shared 401 recovery path with the policy')
 })
 
 test('avatar offline caching integrates IndexedDB with auth store and Profile', async () => {

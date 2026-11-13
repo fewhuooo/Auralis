@@ -20,7 +20,7 @@ import {
   createChatStreamState,
   reduceChatStreamEvent,
 } from '../src/services/aiStreamReducer.ts'
-import { AiStreamController } from '../src/services/aiStreamController.ts'
+const { AiStreamController } = await import('../src/services/aiStreamController.ts')
 
 const makeEnvelope = (overrides = {}) => ({
   protocolVersion: 1,

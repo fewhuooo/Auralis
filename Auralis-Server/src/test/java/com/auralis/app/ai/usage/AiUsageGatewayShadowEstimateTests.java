@@ -2,6 +2,7 @@ package com.auralis.app.ai.usage;
 
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiMessageRole;
+import com.auralis.app.ai.AiProviderCallCancellation;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderChunk;
 import com.auralis.app.ai.AiProviderModelIdentity;
@@ -36,33 +37,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(OutputCaptureExtension.class)
 class AiUsageGatewayShadowEstimateTests {
     @Test
-    void overviewReservationUsesTheSameResolvedEstimateAsPlanner(CapturedOutput output) throws Exception {
+    void overviewReservationUsesFullStructuredRequestEstimate(CapturedOutput output) throws Exception {
         String system = "SYSTEM rules are kept as UTF-8 bytes.";
-        String user = "这是当前资料的中文结构化内容，需要根据上下文总结主题和关键关系。".repeat(80);
+        String user = "这是当前资料的中文结构化内容，需要根据上下文总结主题和关键关系。".repeat(80) + "\n~~~\ncode = 5\n~~~\n";
         var request = new AiProviderRequest("deepseek-v4-flash", List.of(
                 new AiProviderRequest.Message(AiMessageRole.SYSTEM, system),
                 new AiProviderRequest.Message(AiMessageRole.USER, user)), 0.1, 512, true);
-        AiInputTokenEstimator.Profile profile = AiInputTokenEstimator.resolve(AiProviderType.DEEPSEEK,
-                "https://api.deepseek.com", request.model(), AiInputTokenEstimator.MODE_CALIBRATED_CATEGORY);
-        long planned = com.auralis.app.ai.OverviewBudgetPlanner.assessRequest(system, user,
-                com.auralis.app.ai.OverviewModelBudget.resolve(AiProviderType.DEEPSEEK,
-                        "https://api.deepseek.com", request.model()),
-                com.auralis.app.ai.OverviewBudgetPlanner.OutputStage.INTERMEDIATE,
-                24, 524_288, 512, profile).estimatedInputTokens();
-        Fixture fixture = new Fixture(new AiProviderResponse("ok", 10L, 3L), true, null,
-                AiInputTokenEstimator.MODE_CALIBRATED_CATEGORY);
+        Fixture fixture = new Fixture(new AiProviderResponse("ok", 10L, 3L));
+        var estimate = AiInputTokenEstimator.estimateOverview(request);
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                 fixture.user, AiFeature.SOURCE_OVERVIEW, "estimator-overview-task"))) {
-            task.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request,
+            task.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request,
                     new AiCredential("https://api.deepseek.com", "synthetic-key"),
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE);
         }
 
         long reserved = fixture.jdbc.queryForObject(
                 "select estimated_input_tokens from ai_usage_reservations", Long.class);
-        assertThat(reserved).isEqualTo(planned);
-        assertThat(output.getOut()).contains("AI_INPUT_TOKEN_ESTIMATE", profile.identity(),
-                "strategy=mixed-category-and-bytes", "categoryMessages=1", "byteMessages=1");
+        assertThat(reserved).isEqualTo(estimate.inputTokens());
+        assertThat(output.getOut()).contains("AI_INPUT_TOKEN_ESTIMATE", estimate.profileIdentity(),
+                "strategy=mixed-category-and-bytes", "categoryMessages=2", "byteMessages=1");
         fixture.close();
     }
 
@@ -72,7 +66,7 @@ class AiUsageGatewayShadowEstimateTests {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 5L, 2L, null, observed));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                 fixture.user, AiFeature.CHAT, "model-identity-task"))) {
-            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("requested-model", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "synthetic")), 0.0, 1),
                     new AiCredential("https://api.deepseek.com/v1", "synthetic-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
@@ -127,7 +121,7 @@ class AiUsageGatewayShadowEstimateTests {
             List<AiProviderChunk> delivered = new ArrayList<>();
             try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                     fixture.user, AiFeature.CHAT, "stream-observation-" + index))) {
-                task.stream(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+                task.stream(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                         new AiProviderRequest(requested, List.of(
                                 new AiProviderRequest.Message(AiMessageRole.USER, "synthetic")), 0.0, 1),
                         new AiCredential("https://api.deepseek.com/v1", "synthetic-key"),
@@ -167,7 +161,7 @@ class AiUsageGatewayShadowEstimateTests {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 5L, 2L));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                 fixture.user, AiFeature.CHAT, "prompt-marker-do-not-log"))) {
-            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "abc")), 0.0, 1),
                     new AiCredential("https://api.deepseek.com/v1?query-secret", "key-marker"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
@@ -198,7 +192,7 @@ class AiUsageGatewayShadowEstimateTests {
                 new AiProviderRequest.Message(AiMessageRole.USER, "中文"));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                 fixture.user, AiFeature.CHAT, "multi-message-framing-task"))) {
-            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", messages, 0.0, 1),
                     new AiCredential("https://api.deepseek.com/v1", "synthetic-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
         }
@@ -235,7 +229,7 @@ class AiUsageGatewayShadowEstimateTests {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", (Long) null, (Long) null, null));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                 fixture.user, AiFeature.CHAT, "unknown-usage-task"))) {
-            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "abc")), 0.0, 1),
                     new AiCredential("https://api.deepseek.com/v1", "key-marker"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
@@ -258,7 +252,7 @@ class AiUsageGatewayShadowEstimateTests {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 5L, 2L), false);
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
                 fixture.user, AiFeature.CHAT, "shadow-disabled-task"))) {
-            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "abc")), 0.0, 1),
                     new AiCredential("https://api.deepseek.com/v1", "key-marker"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
@@ -279,20 +273,15 @@ class AiUsageGatewayShadowEstimateTests {
         private final List<AiProviderChunk> streamingChunks;
 
         private Fixture(AiProviderResponse response) throws Exception {
-            this(response, true, null, AiInputTokenEstimator.MODE_LEGACY_BYTES);
+            this(response, true, null);
         }
 
         private Fixture(AiProviderResponse response, boolean shadowEnabled) throws Exception {
-            this(response, shadowEnabled, null, AiInputTokenEstimator.MODE_LEGACY_BYTES);
+            this(response, shadowEnabled, null);
         }
 
         private Fixture(AiProviderResponse response, boolean shadowEnabled,
                         List<AiProviderChunk> streamingChunks) throws Exception {
-            this(response, shadowEnabled, streamingChunks, AiInputTokenEstimator.MODE_LEGACY_BYTES);
-        }
-
-        private Fixture(AiProviderResponse response, boolean shadowEnabled,
-                        List<AiProviderChunk> streamingChunks, String estimatorMode) throws Exception {
             this.streamingChunks = streamingChunks;
             source = new DriverManagerDataSource("jdbc:h2:mem:shadow" + UUID.randomUUID().toString().replace("-", "")
                     + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
@@ -309,18 +298,20 @@ class AiUsageGatewayShadowEstimateTests {
             var transactions = new DataSourceTransactionManager(source);
             var limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000, 2_000_000,
                     60_000, 1_000, 4096, 2, 32_000, 24, 524_288, 512, 16_777_216);
-            var ai = new AuralisProperties.Ai(false, "", "DEEPSEEK", new AuralisProperties.Defaults(null, null, null),
+            var ai = new AuralisProperties.Ai(false, "", new AuralisProperties.GenerationEndpoint(
+                    "https://api.deepseek.com", "deepseek-v4-flash", "synthetic-key", 1_048_576, 393_216), null,
                     3_000, 10_000, 120_000, 240_000, 12_000, 8, 5_242_880,
                     32, 32_768, 3_000, 10_000, 3, 1_048_576, List.of(), false,
-                    1_000, 60_000, 3, limits, shadowEnabled, true, estimatorMode, List.of(),
-                    AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
+                    1_000, 60_000, 3, limits, shadowEnabled, List.of(),
+                    AuralisProperties.OverviewLimits.withoutAdditionalCaps());
             AiUsageGuard guard = new AiUsageGuard(jdbc, transactions, Clock.systemUTC(), limits);
             AiProviderPort provider = new AiProviderPort() {
-                @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+                @Override public AiProviderType type() { return AiProviderType.OPENAI_COMPATIBLE; }
                 @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
                     return response;
                 }
                 @Override public void streamInto(AiProviderRequest request, AiCredential credential,
+                                                 AiProviderCallCancellation cancellation,
                                                  java.util.function.Consumer<AiProviderChunk> sink) {
                     if (Fixture.this.streamingChunks != null) {
                         Fixture.this.streamingChunks.forEach(sink);

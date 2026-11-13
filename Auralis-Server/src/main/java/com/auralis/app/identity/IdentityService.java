@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -91,6 +92,7 @@ public class IdentityService {
     @Transactional
     public AuthResult register(String username, String password, String displayName, DeviceCommand device) {
         String normalizedUsername = normalizeUsername(username);
+        requirePasswordFitsEncoder(password);
         if (userRepository.findByNormalizedUsername(normalizedUsername).isPresent()) {
             throw new IdentityException("MUTATION_REJECTED", "Username is already registered");
         }
@@ -201,9 +203,7 @@ public class IdentityService {
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             throw invalidCredentials();
         }
-        if (newPassword == null || newPassword.length() < 12 || newPassword.length() > 200) {
-            throw new IdentityException("VALIDATION_FAILED", "Password must contain 12 to 200 characters");
-        }
+        requirePasswordFitsEncoder(newPassword);
         if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
             throw new IdentityException("VALIDATION_FAILED", "New password must differ from the current password");
         }
@@ -289,13 +289,13 @@ public class IdentityService {
     }
 
     @Transactional(readOnly = true)
-    public List<SessionView> listSessions(UUID userId, UUID currentSessionId) {
+    public List<SessionView> listSessions(UUID userId, UUID currentDeviceId) {
         Instant now = clock.instant();
         Set<UUID> listedDevices = new HashSet<>();
         return refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId).stream()
                 .filter(session -> !session.isRotatedOrRevoked() && !session.isExpired(now))
                 .sorted(Comparator
-                        .comparing((RefreshSessionEntity session) -> !session.getId().equals(currentSessionId))
+                        .comparing((RefreshSessionEntity session) -> !session.getServerDeviceId().equals(currentDeviceId))
                         .thenComparing(RefreshSessionEntity::getLastUsedAt, Comparator.reverseOrder()))
                 .filter(session -> listedDevices.add(session.getServerDeviceId()))
                 .map(session -> {
@@ -310,23 +310,26 @@ public class IdentityService {
                             session.getLastUsedAt(),
                             session.getExpiresAt(),
                             session.getRevokedAt(),
-                            session.getId().equals(currentSessionId));
+                            device.getId().equals(currentDeviceId));
                 })
                 .toList();
     }
 
-    @Transactional(noRollbackFor = IdentityException.class)
+    @Transactional
     public void revokeSession(UUID userId, UUID sessionId) {
+        userRepository.findForUpdateById(userId).orElseThrow(this::resourceNotFound);
         RefreshSessionEntity session = refreshSessionRepository.findByIdAndUserId(sessionId, userId)
                 .orElseThrow(this::resourceNotFound);
-        session.revoke(clock.instant());
+        refreshSessionRepository.revokeActiveDeviceSessions(userId, session.getServerDeviceId(), clock.instant());
     }
 
-    @Transactional(noRollbackFor = IdentityException.class)
-    public void revokeOtherSessions(UUID userId, UUID currentSessionId) {
+    @Transactional
+    public void revokeOtherSessions(UUID userId, UUID currentDeviceId) {
+        userRepository.findForUpdateById(userId).orElseThrow(this::resourceNotFound);
         Instant now = clock.instant();
         refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId).stream()
-                .filter(session -> !session.getId().equals(currentSessionId))
+                .filter(session -> !session.getServerDeviceId().equals(currentDeviceId))
+                .filter(session -> !session.isRotatedOrRevoked() && !session.isExpired(now))
                 .forEach(session -> session.revoke(now));
     }
 
@@ -383,6 +386,12 @@ public class IdentityService {
     private void requireVersion(UserEntity user, long baseVersion) {
         if (user.getVersion() != baseVersion) {
             throw new IdentityException("RESOURCE_VERSION_CONFLICT", "User profile changed since it was read");
+        }
+    }
+
+    private void requirePasswordFitsEncoder(String password) {
+        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new IdentityException("VALIDATION_FAILED", "Password must not exceed 72 UTF-8 bytes");
         }
     }
 

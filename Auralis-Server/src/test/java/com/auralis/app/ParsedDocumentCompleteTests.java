@@ -1,6 +1,9 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.IngestionJobStatus;
+import com.auralis.app.ai.ingestion.IngestionClaim;
+import com.auralis.app.ai.ingestion.IngestionCompletionService;
+import com.auralis.app.ai.ingestion.TextChunk;
 import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
@@ -20,6 +23,7 @@ import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.source.ParsedDocumentUploadCommand;
 import com.auralis.app.source.ParsedDocumentUploadIntentView;
 import com.auralis.app.source.SourceCommand;
+import com.auralis.app.source.SourceIngestionStatus;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.source.SourceType;
 import com.auralis.app.source.SourceView;
@@ -86,6 +90,7 @@ class ParsedDocumentCompleteTests {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ChangeLogService changeLogService;
     @Autowired private RealtimeEventPublisher realtimeEventPublisher;
+    @Autowired private IngestionCompletionService ingestionCompletionService;
     @MockitoSpyBean private IngestionJobService ingestionJobService;
 
     @BeforeEach
@@ -224,6 +229,155 @@ class ParsedDocumentCompleteTests {
                 && fixture.source().id().equals(event.resourceId()));
     }
 
+    @Test
+    void restoresIndexingFileWithTheCurrentAcceptedDocumentAndNoDuplicateActiveJob() throws Exception {
+        Fixture fixture = fixture("complete-restore");
+        UUID ownerId = fixture.owner().user().id();
+        UUID sourceId = fixture.source().id();
+        UUID revision = fixture.source().ingestionRevision();
+        Upload upload = upload(fixture, "hello");
+        var completed = parsedDocumentService.complete(ownerId, sourceId, upload.document().getId());
+
+        sourceService.delete(ownerId, sourceId, sourceService.get(ownerId, sourceId).version());
+        long deletedVersion = sourceRepository.findById(sourceId).orElseThrow().getVersion();
+        var restoredWithActiveJob = sourceService.restore(ownerId, sourceId, deletedVersion);
+        assertThat(ingestionJobRepository.findAll()).singleElement()
+                .extracting(job -> job.getId()).isEqualTo(completed.ingestionJobId());
+
+        sourceService.delete(ownerId, sourceId, restoredWithActiveJob.version());
+        Instant now = Instant.now();
+        var claimed = ingestionJobService.claimById(
+                ownerId, completed.ingestionJobId(), now, now.plusSeconds(60), 3).orElseThrow();
+        ingestionCompletionService.fail(
+                IngestionClaim.from(claimed), revision, now, 3, "RESOURCE_NOT_FOUND", "Source was not found");
+        assertThat(ingestionJobRepository.findById(claimed.getId()).orElseThrow().getStatus())
+                .isEqualTo(IngestionJobStatus.FAILED);
+
+        SourceView restored = sourceService.restore(
+                ownerId, sourceId, sourceRepository.findById(sourceId).orElseThrow().getVersion());
+        assertThat(restored.ingestionStatus()).isEqualTo(SourceIngestionStatus.INDEXING);
+        assertThat(restored.ingestionRevision()).isEqualTo(revision);
+        assertThat(ingestionJobRepository.findAll()).filteredOn(job -> !job.getId().equals(claimed.getId()))
+                .singleElement().satisfies(job -> {
+                    assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PENDING);
+                    assertThat(job.getParsedDocumentId()).isEqualTo(completed.parsedDocumentId());
+                    assertThat(job.getIngestionRevision()).isEqualTo(revision);
+                    assertThat(job.getGeneration()).isEqualTo(completed.generation());
+                });
+    }
+
+    @Test
+    void restoreRevokesTheDeletedSourceClaimWithoutConsumingTheLastRetry() throws Exception {
+        Fixture fixture = fixture("complete-restore-claim");
+        UUID ownerId = fixture.owner().user().id();
+        UUID sourceId = fixture.source().id();
+        UUID revision = fixture.source().ingestionRevision();
+        Upload upload = upload(fixture, "hello");
+        var completed = parsedDocumentService.complete(ownerId, sourceId, upload.document().getId());
+        UUID jobId = completed.ingestionJobId();
+        Instant now = Instant.now();
+        for (int index = 0; index < 2; index++) {
+            var attempt = ingestionJobService.claimById(ownerId, jobId, now, now.plusSeconds(60), 3).orElseThrow();
+            assertThat(ingestionCompletionService.fail(IngestionClaim.from(attempt), revision, now, 3,
+                    "PROVIDER_TEMPORARY", "Temporary embedding failure")).isTrue();
+        }
+
+        var oldClaim = IngestionClaim.from(
+                ingestionJobService.claimById(ownerId, jobId, now, now.plusSeconds(60), 3).orElseThrow());
+        sourceService.delete(ownerId, sourceId, sourceService.get(ownerId, sourceId).version());
+        assertThatThrownBy(() -> sourceService.requireActiveSource(ownerId, sourceId))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("RESOURCE_NOT_FOUND"));
+        assertThat(ingestionCompletionService.markIndexing(oldClaim, revision)).isFalse();
+
+        SourceView restored = sourceService.restore(
+                ownerId, sourceId, sourceRepository.findById(sourceId).orElseThrow().getVersion());
+        assertThat(ingestionCompletionService.markIndexing(oldClaim, revision)).isFalse();
+        assertThat(ingestionCompletionService.fail(oldClaim, revision, now, 3,
+                "RESOURCE_NOT_FOUND", "Source was not found")).isFalse();
+        assertThat(ingestionCompletionService.complete(oldClaim, revision, List.of(), List.of(), now)).isFalse();
+        assertThat(ingestionCompletionService.stageCheckpoint(oldClaim, revision, List.of(), List.of())).isFalse();
+        assertThatThrownBy(() -> ingestionCompletionService.loadCheckpoint(oldClaim, revision, List.of()))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("INGESTION_REVISION_STALE"));
+        var afterStaleClaim = sourceService.get(ownerId, sourceId);
+        assertThat(afterStaleClaim.version()).isEqualTo(restored.version());
+        assertThat(afterStaleClaim.ingestionStatus()).isEqualTo(SourceIngestionStatus.PENDING);
+        assertThat(ingestionJobRepository.findAll()).singleElement().satisfies(job -> {
+            assertThat(job.getId()).isEqualTo(jobId);
+            assertThat(job.getParsedDocumentId()).isEqualTo(completed.parsedDocumentId());
+            assertThat(job.getIngestionRevision()).isEqualTo(revision);
+            assertThat(job.getGeneration()).isEqualTo(completed.generation());
+            assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PENDING);
+            assertThat(job.getLeaseUntil()).isNull();
+            assertThat(job.getFailureCount()).isEqualTo(2);
+        });
+
+        var nextAttempt = ingestionJobService.claimById(ownerId, jobId, now, now.plusSeconds(60), 3).orElseThrow();
+        assertThat(nextAttempt.getAttemptCount()).isGreaterThan(oldClaim.attemptCount());
+        assertThat(nextAttempt.getFailureCount()).isEqualTo(2);
+        assertThat(ingestionCompletionService.markIndexing(oldClaim, revision)).isFalse();
+        assertThat(ingestionCompletionService.fail(oldClaim, revision, now, 3,
+                "RESOURCE_NOT_FOUND", "Source was not found")).isFalse();
+        var currentClaim = IngestionClaim.from(nextAttempt);
+        assertThat(ingestionCompletionService.markIndexing(currentClaim, revision)).isTrue();
+        assertThat(ingestionCompletionService.complete(currentClaim, revision,
+                List.of(new TextChunk(0, "hello", 0, 5)), List.of(java.util.Collections.nCopies(1024, 0.1)), now))
+                .isTrue();
+        assertThat(ingestionCompletionService.markIndexing(oldClaim, revision)).isFalse();
+        assertThat(sourceService.get(ownerId, sourceId).ingestionStatus()).isEqualTo(SourceIngestionStatus.READY);
+        assertThat(ingestionJobRepository.findById(jobId).orElseThrow().getStatus()).isEqualTo(IngestionJobStatus.READY);
+    }
+
+    @Test
+    void persistsRejectionWhenTheLegacyAssetChecksumCannotBeRead() throws Exception {
+        Fixture fixture = fixture("complete-legacy-asset-read", null);
+        UUID ownerId = fixture.owner().user().id();
+        UUID sourceId = fixture.source().id();
+        var asset = assetRepository.findById(fixture.source().assetId()).orElseThrow();
+        assertThat(asset.getSha256()).isNull();
+        Upload upload = upload(fixture, "hello");
+        storage.deleteObject(asset.getObjectKey());
+
+        assertThatThrownBy(() -> parsedDocumentService.complete(ownerId, sourceId, upload.document().getId()))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("UPLOAD_VALIDATION_FAILED"));
+        assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getStatus())
+                .isEqualTo(ParsedDocumentStatus.REJECTED);
+        assertThat(sourceService.get(ownerId, sourceId).ingestionStatus())
+                .isEqualTo(SourceIngestionStatus.AWAITING_CLIENT);
+        assertThat(ingestionJobRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void rejectsIntentAssetHashMismatchBeforeItCanWinAndAcceptsACorrectedUpload() throws Exception {
+        Fixture fixture = fixture("complete-intent-asset-hash");
+        UUID ownerId = fixture.owner().user().id();
+        UUID sourceId = fixture.source().id();
+        byte[] payload = payload(fixture.source(), "hello");
+        var intent = parsedDocumentService.createUploadIntent(ownerId, sourceId,
+                new ParsedDocumentUploadCommand(fixture.source().ingestionRevision(), 1, "pdfjs", "1", "1",
+                        null, "a".repeat(64), sha256(payload), payload.length));
+        var document = parsedDocumentRepository.findById(intent.parsedDocumentId()).orElseThrow();
+        storage.put(document.getObjectKey(),
+                new AssetStoragePort.ObjectMetadata(payload.length, "application/gzip", sha256(payload)), payload);
+
+        assertThatThrownBy(() -> parsedDocumentService.complete(ownerId, sourceId, document.getId()))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("PARSED_DOCUMENT_INVALID"));
+        assertThat(parsedDocumentRepository.findById(document.getId()).orElseThrow().getStatus())
+                .isEqualTo(ParsedDocumentStatus.REJECTED);
+        assertThat(sourceService.get(ownerId, sourceId).ingestionStatus())
+                .isEqualTo(SourceIngestionStatus.AWAITING_CLIENT);
+        assertThat(ingestionJobRepository.findAll()).isEmpty();
+
+        Upload corrected = upload(fixture, "hello");
+        var completed = parsedDocumentService.complete(ownerId, sourceId, corrected.document().getId());
+        assertThat(completed.status()).isEqualTo(ParsedDocumentStatus.ACCEPTED);
+        assertThat(parsedDocumentService.readAccepted(ownerId, sourceId, completed.parsedDocumentId()).blocks())
+                .singleElement().satisfies(block -> assertThat(block.text()).isEqualTo("hello"));
+    }
+
     private String completeCode(Fixture fixture, Upload upload) {
         try {
             return parsedDocumentService.complete(
@@ -245,13 +399,17 @@ class ParsedDocumentCompleteTests {
     }
 
     private Fixture fixture(String suffix) {
+        return fixture(suffix, ASSET_SHA);
+    }
+
+    private Fixture fixture(String suffix, String assetSha256) {
         AuthResult owner = identityService.register(suffix + "@example.com", "correct horse battery staple", suffix,
                 new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(), new SubjectCommand("Parsed", null, null, "001"));
         var assetIntent = assetService.createUploadIntent(owner.user().id(),
-                new AssetUploadIntentCommand(0, UUID.randomUUID(), "source.pdf", 12, "application/pdf", ASSET_SHA));
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "source.pdf", 12, "application/pdf", assetSha256));
         String assetKey = assetRepository.findById(assetIntent.assetId()).orElseThrow().getObjectKey();
-        storage.put(assetKey, new AssetStoragePort.ObjectMetadata(12, "application/pdf", ASSET_SHA), "asset-bytes");
+        storage.put(assetKey, new AssetStoragePort.ObjectMetadata(12, "application/pdf", assetSha256), "asset-bytes");
         assetService.complete(owner.user().id(), assetIntent.assetId());
         SourceView source = sourceService.create(owner.user().id(), new SourceCommand(
                 subject.id(), SourceType.FILE, "source.pdf", assetIntent.assetId(), null, null, null));
@@ -297,7 +455,13 @@ class ParsedDocumentCompleteTests {
         }
         @Override public Optional<ObjectMetadata> headObject(String key) { return Optional.ofNullable(objects.get(key)); }
         @Override public DownloadUrl createDownloadUrl(String key) { return new DownloadUrl("https://storage.test/download/" + key, Instant.now().plusSeconds(300)); }
-        @Override public InputStream openObject(String key) { return new ByteArrayInputStream(payloads.getOrDefault(key, new byte[0])); }
+        @Override public InputStream openObject(String key) {
+            byte[] payload = payloads.get(key);
+            if (payload == null) {
+                throw new IllegalStateException("Object could not be opened");
+            }
+            return new ByteArrayInputStream(payload);
+        }
         @Override public void deleteObject(String key) { objects.remove(key); payloads.remove(key); }
         void put(String key, ObjectMetadata metadata, String text) { put(key, metadata, text.getBytes(StandardCharsets.UTF_8)); }
         void put(String key, ObjectMetadata metadata, byte[] payload) { objects.put(key, metadata); payloads.put(key, payload); }

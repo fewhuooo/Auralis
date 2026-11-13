@@ -22,19 +22,19 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-public class SiliconFlowEmbeddingProvider implements EmbeddingProviderPort {
+public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProviderPort {
 
     private final ProviderEndpointPolicy endpointPolicy;
     private final ProviderHttpClient httpClient;
 
-    public SiliconFlowEmbeddingProvider(ProviderEndpointPolicy endpointPolicy, ProviderHttpClient httpClient) {
+    public OpenAiCompatibleEmbeddingProvider(ProviderEndpointPolicy endpointPolicy, ProviderHttpClient httpClient) {
         this.endpointPolicy = endpointPolicy;
         this.httpClient = httpClient;
     }
 
     @Override
     public AiProviderType type() {
-        return AiProviderType.SILICONFLOW;
+        return AiProviderType.OPENAI_COMPATIBLE;
     }
 
     @Override
@@ -43,18 +43,18 @@ public class SiliconFlowEmbeddingProvider implements EmbeddingProviderPort {
             throw new DomainException("VALIDATION_FAILED", "Embedding input must not be empty");
         }
         if (credential == null || credential.baseUrl() == null || credential.baseUrl().isBlank()
-                || credential.apiKey() == null || credential.apiKey().isBlank()) {
+                || credential.apiKey() == null || credential.apiKey().isBlank()
+                || credential.model() == null || credential.model().isBlank()) {
             throw new DomainException("MODEL_UNAVAILABLE", "Embedding provider is not configured");
         }
         try {
             ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
-                    AiProviderType.SILICONFLOW, URI.create(credential.baseUrl().trim()));
+                    AiProviderType.OPENAI_COMPATIBLE, URI.create(credential.baseUrl().trim()));
             JsonNode body = httpClient.postJson(
                     endpoint,
                     "/embeddings",
                     credential.apiKey(),
-                    Map.of("model", credential.model() == null || credential.model().isBlank()
-                            ? "BAAI/bge-m3" : credential.model(), "input", texts),
+                    Map.of("model", credential.model(), "input", texts),
                     JsonNode.class);
             if (body == null || !body.path("data").isArray() || body.path("data").size() != texts.size()) {
                 throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response");

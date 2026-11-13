@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
+import { runInNewContext } from 'node:vm'
 import path from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDocumentProcessingStore } from '../src/store/useDocumentProcessingStore.ts'
@@ -66,8 +67,8 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /v-else-if="source\.ingestionStatus === 'FAILED'"/)
   assert.match(center, /retrySource\(source\.id\)/)
   assert.doesNotMatch(center, /blockOrdinal > 0|已处理 .*内容块/)
-  assert.match(center, /!store\.jobs\.some\(\(job\) => job\.sourceId === source\.id\)/,
-    'serverProcessingSources must exclude sources with any existing job to prevent completion flash')
+  assert.match(center, /serverProcessingSources\.value\.length && \+\+sourcePollTicks/)
+  assert.match(center, /@click="resumeDraft\(sourceId\)">继续/)
   assert.match(center, /min-width: 0/)
   assert.match(center, /html\.dark/)
   assert.match(center, /准备中|正在处理/)
@@ -97,12 +98,47 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(sourceStore, /import\.meta\.hot\.accept\(acceptHMRUpdate\(useSourceStore, import\.meta\.hot\)\)/)
   const profile = await source('src/views/Profile/index.vue')
   assert.match(profile, /DocumentProcessingCenter/)
+  assert.match(center, /grid-template-columns:\s*minmax\(0,\s*1fr\)/)
+  assert.match(profile, /\.studio-left\s*\{[\s\S]*?overflow-x:\s*hidden/)
   const workspace = await source('src/views/SubjectWorkspace/index.vue')
   assert.match(workspace, /DocumentProcessingDot/)
   assert.match(workspace, /DocumentNotReadyDialog/)
   assert.match(workspace, /showProcessingRequired/)
   assert.match(workspace, /selectedFile\.ingestionStatus === 'FAILED'/)
   assert.match(workspace, /handleRetryFileProcessing\(selectedFile\.id\)/)
+})
+
+test('processing center shows current server indexing and failures after local READY, and keeps paused drafts actionable', async () => {
+  const center = await source('src/components/documentProcessing/DocumentProcessingCenter.vue')
+  const projection = center.slice(center.indexOf('const pausedDraftSourceIds ='), center.indexOf('const pausedNetworkDetail ='))
+  const sourceStore = { sources: [
+    { id: 'file-indexing', type: 'FILE', ingestionStatus: 'INDEXING', ingestionRevision: 'current' },
+    { id: 'file-failed', type: 'FILE', ingestionStatus: 'FAILED', ingestionRevision: 'current' },
+    { id: 'file-draft', type: 'FILE', ingestionStatus: 'AWAITING_CLIENT' },
+    { id: 'file-uploading', type: 'FILE', ingestionStatus: 'AWAITING_CLIENT', ingestionRevision: 'current' },
+  ] }
+  const store = {
+    jobs: [
+      { sourceId: 'file-indexing', ingestionRevision: 'old', phase: 'FAILED_LOCAL' },
+      { sourceId: 'file-indexing', ingestionRevision: 'current', phase: 'READY' },
+      { sourceId: 'file-failed', ingestionRevision: 'current', phase: 'READY' },
+      { sourceId: 'file-draft', ingestionRevision: 'old', phase: 'FAILED_LOCAL' },
+      { sourceId: 'file-uploading', ingestionRevision: 'current', phase: 'UPLOADING' },
+    ],
+    pausedDraftSourceIds: ['file-draft'],
+  }
+  const result = runInNewContext(`${projection}
+    JSON.stringify({
+      server: serverProcessingSources.value.map((source) => source.id),
+      jobs: jobs.value.map((job) => job.sourceId),
+      drafts: pausedDraftSourceIds.value,
+    })`, { store, sourceStore, computed: (read) => ({ get value() { return read() } }) })
+
+  assert.deepEqual(JSON.parse(result), {
+    server: ['file-indexing', 'file-failed'],
+    jobs: ['file-uploading'],
+    drafts: ['file-draft'],
+  })
 })
 
 test('manual resume does not read or schedule after logout, account/device switch, or scheduler replacement during sync', async () => {
@@ -178,6 +214,7 @@ test('DocumentProcessingStore.resumePending routes recoverable jobs through the 
     list: async () => [
       { jobId: 'job-1', sourceId: 'source-1', phase: 'QUEUED' },
       { jobId: 'job-2', sourceId: 'source-2', phase: 'FAILED_LOCAL' },
+      { jobId: 'job-3', sourceId: 'source-3', phase: 'PAUSED_NETWORK' },
     ],
     resumePending: async () => { calls.push('runner.resumePending') },
   })

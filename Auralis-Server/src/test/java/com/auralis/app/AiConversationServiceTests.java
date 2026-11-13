@@ -1,23 +1,23 @@
 package com.auralis.app;
 
-import com.auralis.app.ai.AiMessageRole;
-import com.auralis.app.ai.AiMessageStatus;
 import com.auralis.app.ai.ConversationCommand;
 import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
 import com.auralis.app.ai.ChatConversationScope;
 import com.auralis.app.ai.ChatConversationScopeState;
-import com.auralis.app.ai.ReadingConversationCleanupService;
-import com.auralis.app.ai.MessageView;
+import com.auralis.app.ai.internal.persistence.ChatAttemptRepository;
+import com.auralis.app.ai.internal.persistence.ChatRunRepository;
 import com.auralis.app.ai.internal.persistence.ConversationEntity;
 import com.auralis.app.ai.internal.persistence.ConversationRepository;
-import com.auralis.app.ai.internal.persistence.MessageEntity;
 import com.auralis.app.ai.internal.persistence.MessageRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -39,6 +39,15 @@ class AiConversationServiceTests {
     @Mock
     private MessageRepository messageRepository;
 
+    @Mock
+    private ChatAttemptRepository chatAttemptRepository;
+
+    @Mock
+    private ChatRunRepository chatRunRepository;
+
+    @Spy
+    private ObjectMapper objectMapper = JsonMapper.builder().build();
+
     @InjectMocks
     private ConversationService conversationService;
 
@@ -55,23 +64,6 @@ class AiConversationServiceTests {
         assertThat(created.title()).isEqualTo("Study");
         assertThat(conversationService.list(userId)).isEmpty();
         verify(conversationRepository).findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId);
-    }
-
-    @Test
-    void allocatesMessageSequencesFromTheConversationCounterAndRejectsBlankContent() {
-        UUID userId = UUID.randomUUID();
-        UUID conversationId = UUID.randomUUID();
-        when(conversationRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId))
-                .thenReturn(Optional.of(new ConversationEntity(conversationId, userId, "Study")));
-        when(messageRepository.saveAndFlush(any(MessageEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        MessageView message = conversationService.appendMessage(
-                userId, conversationId, AiMessageRole.USER, "hello", AiMessageStatus.COMPLETED, null, null);
-
-        assertThat(message.messageSequence()).isEqualTo(1L);
-        assertThatThrownBy(() -> conversationService.appendMessage(
-                userId, conversationId, AiMessageRole.USER, " ", AiMessageStatus.COMPLETED, null, null))
-                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -115,28 +107,10 @@ class AiConversationServiceTests {
         when(messageRepository.findAllByConversationIdAndUserIdOrderByMessageSequenceAsc(conversationId, userId))
                 .thenReturn(List.of());
 
-        ConversationService service = new ConversationService(conversationRepository, messageRepository, null,
-                tools.jackson.databind.json.JsonMapper.builder().build());
-        ConversationView view = service.get(userId, conversationId);
+        ConversationView view = conversationService.get(userId, conversationId);
 
         assertThat(view.chatScopeState()).isEqualTo(ChatConversationScopeState.BOUND);
         assertThat(view.chatScope()).isEqualTo(scope);
     }
 
-    @Test
-    void cleanupSoftDeletesOnlyInactiveReadingSessions() {
-        ConversationEntity session = new ConversationEntity(
-                UUID.randomUUID(), UUID.randomUUID(), "Old", null, ConversationPurpose.READING_SESSION,
-                UUID.randomUUID());
-        when(conversationRepository.findAllByPurposeAndDeletedAtIsNullAndUpdatedAtBefore(
-                any(ConversationPurpose.class), any()))
-                .thenReturn(List.of(session));
-
-        ReadingConversationCleanupService cleanup = new ReadingConversationCleanupService(conversationRepository);
-        int count = cleanup.cleanupInactive(java.time.Instant.parse("2026-08-26T00:00:00Z"));
-
-        assertThat(count).isEqualTo(1);
-        assertThat(session.getDeletedAt()).isNotNull();
-        verify(conversationRepository).saveAllAndFlush(List.of(session));
-    }
 }

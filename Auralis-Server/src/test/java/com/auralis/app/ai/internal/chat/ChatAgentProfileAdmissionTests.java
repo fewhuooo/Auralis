@@ -52,6 +52,24 @@ class ChatAgentProfileAdmissionTests {
     }
 
     @Test
+    void newTurnPinsTheCompatibleGenerationProfile() {
+        var command = new AiMessageCommand(1, "turn", conversationId, "request-1", "Explain this",
+                null, null, null, null, null, null);
+        when(settings.resolve(userId, AiProviderType.OPENAI_COMPATIBLE)).thenReturn(
+                new AiSettingsService.ResolvedSettings(AiProviderType.OPENAI_COMPATIBLE, "configured-model",
+                        new com.auralis.app.ai.AiCredential("https://generation.test/v1", "test-key"),
+                        AiCredentialSource.PLATFORM));
+
+        orchestrator.admit(userId, command);
+
+        var profile = org.mockito.ArgumentCaptor.forClass(ChatRuntimePersistenceService.ExecutionProfile.class);
+        verify(persistence).admit(org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.eq(command), profile.capture());
+        assertThat(profile.getValue().provider()).isEqualTo(AiProviderType.OPENAI_COMPATIBLE);
+        assertThat(profile.getValue().chatModel()).isEqualTo("configured-model");
+    }
+
+    @Test
     void retryRejectsChangedModelBeforeCreatingAnotherAttempt() {
         var savedProfile = new ChatRuntimePersistenceService.ExecutionProfile(
                 AiProviderType.SILICONFLOW, "model-old", "endpoint-hash");

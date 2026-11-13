@@ -3,15 +3,12 @@ package com.auralis.app.ai;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.ai.usage.AiCredentialSource;
 import com.auralis.app.ai.usage.AiFeature;
-import com.auralis.app.ai.usage.AiInvocationState;
 import com.auralis.app.ai.usage.AiOutputRole;
 import com.auralis.app.ai.usage.AiStage;
 import com.auralis.app.ai.usage.AiTaskContext;
 import com.auralis.app.ai.usage.AiTokenUsage;
 import com.auralis.app.ai.usage.AiUsageGuard;
 import com.auralis.app.ai.usage.AiOperationKind;
-import com.auralis.app.ai.usage.AiUsageQueryService;
-import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -22,23 +19,13 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.transaction.PlatformTransactionManager;
 
-import java.time.Clock;
-import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @EnabledIfSystemProperty(named = "auralis.postgres.it", matches = "true")
 @SpringBootTest(classes = AuralisApplication.class)
@@ -72,138 +59,11 @@ class OverviewExecutionJournalPostgresIntegrationTests {
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private OverviewGenerationCoordinator coordinator;
-    @Autowired private OverviewExecutionJournal journal;
     @Autowired private OverviewJobInvocationJournal invocationJournal;
     @Autowired private AiUsageGuard usageGuard;
-    @Autowired private PlatformTransactionManager transactionManager;
-    @Autowired private Clock clock;
 
     @Test
-    void postgresPersistsPlanAndAtomicallyVerifiesCheckpointUnderTheCurrentFence() {
-        UUID userId = createUser("journal-verify");
-        UUID subjectId = UUID.randomUUID();
-        OverviewGenerationCoordinator.Acquisition owner = coordinator.acquire(request(userId, subjectId, UUID.randomUUID(), HASH_A));
-        assertThat(owner.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
-        var nodeSpec = spec("writer-node-0");
-        String planJson = "{\"nodes\":[0]}";
-        var opened = journal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson, List.of(nodeSpec));
-        assertThat(opened.recoveryRequired()).isFalse();
-        var attempt = journal.beginAttempt(owner.lease(), opened.nodes().getFirst());
-        assertThat(attempt.number()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, owner.generationId())).isZero();
-
-        String payload = "{\"schemaVersion\":1,\"title\":\"verified\"}";
-        journal.verifyAndSaveCheckpoint(owner.lease(), attempt, nodeSpec.checkpointStep(), payload);
-
-        assertThat(jdbc.queryForObject("select state from overview_execution_nodes where id=?", String.class,
-                attempt.nodeId())).isEqualTo("VERIFIED");
-        assertThat(jdbc.queryForObject("select payload_json from overview_generation_checkpoints where generation_id=? "
-                        + "and step_key=?", String.class, owner.generationId(), nodeSpec.checkpointStep())).isEqualTo(payload);
-        assertThat(journal.beginAttempt(owner.lease(), opened.nodes().getFirst()).alreadyVerified()).isTrue();
-        journal.markAssembled(owner.lease(), opened.planId());
-        var reopened = journal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson, List.of(nodeSpec));
-        assertThat(reopened.planId()).isEqualTo(opened.planId());
-        assertThat(journal.beginAttempt(owner.lease(), reopened.nodes().getFirst()).alreadyVerified()).isTrue();
-        journal.markAssembled(owner.lease(), reopened.planId());
-
-        jdbc.update("update overview_generations set lease_until=? where id=?",
-                OffsetDateTime.now().minusSeconds(1), owner.generationId());
-        OverviewGenerationCoordinator.Acquisition takeover = coordinator.acquire(request(userId, subjectId, UUID.randomUUID(), HASH_A));
-        assertThat(takeover.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
-        assertThat(takeover.budgetTaskId()).isEqualTo(owner.budgetTaskId());
-        assertThatThrownBy(() -> journal.verifyAndSaveCheckpoint(owner.lease(), attempt, nodeSpec.checkpointStep(),
-                "{\"schemaVersion\":1,\"title\":\"stale\"}"))
-                .isInstanceOf(DomainException.class);
-        assertThat(jdbc.queryForObject("select payload_json from overview_generation_checkpoints where generation_id=? "
-                        + "and step_key=?", String.class, owner.generationId(), nodeSpec.checkpointStep())).isEqualTo(payload);
-        coordinator.fail(takeover.lease(), "MODEL_TIMEOUT", (com.auralis.app.ai.usage.OverviewTaskUsageSummary) null,
-                0, List.of());
-    }
-
-    @Test
-    void unresolvedExactReservationBlocksAChangedProfilePlan() {
-        UUID userId = createUser("journal-unknown");
-        UUID subjectId = UUID.randomUUID();
-        OverviewGenerationCoordinator.Acquisition owner = coordinator.acquire(request(userId, subjectId, UUID.randomUUID(), HASH_A));
-        AiUsageQueryService unknownUsage = mock(AiUsageQueryService.class);
-        when(unknownUsage.invocationStateForOwner(org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.anySet())).thenReturn(Optional.empty());
-        OverviewExecutionJournal isolatedJournal = new OverviewExecutionJournal(jdbc, transactionManager, clock, unknownUsage);
-        var firstNode = spec("first-profile-node");
-        String planJson = "{\"profile\":\"first\"}";
-        var firstPlan = isolatedJournal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson,
-                List.of(firstNode));
-        var attempt = isolatedJournal.beginAttempt(owner.lease(), firstPlan.nodes().getFirst());
-        UUID reservationId = UUID.randomUUID();
-        UUID ledgerTaskId = AiTaskContext.overviewLedgerTaskId(userId, AiFeature.SUBJECT_OVERVIEW, owner.budgetTaskId());
-        jdbc.update("insert into overview_execution_calls(id,generation_id,plan_id,node_id,attempt,reservation_id,task_id,"
-                        + "user_id,operation_kind) values (?,?,?,?,?,?,?,?,?)",
-                UUID.randomUUID(), owner.generationId(), firstPlan.planId(), attempt.nodeId(), attempt.number(),
-                reservationId, ledgerTaskId, userId, AiOperationKind.SUBJECT_OVERVIEW.name());
-        assertThatThrownBy(() -> isolatedJournal.bindReservation(owner.lease(), ledgerTaskId,
-                AiOperationKind.SUBJECT_OVERVIEW, attempt, UUID.randomUUID())).isInstanceOf(DomainException.class);
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where plan_id=?", Integer.class,
-                firstPlan.planId())).isEqualTo(1);
-        coordinator.fail(owner.lease(), "MODEL_TIMEOUT", (com.auralis.app.ai.usage.OverviewTaskUsageSummary) null,
-                0, List.of());
-        OverviewGenerationCoordinator.Acquisition changedProfile = coordinator.acquire(request(userId, subjectId,
-                UUID.randomUUID(), HASH_B));
-        assertThat(changedProfile.generationId()).isEqualTo(owner.generationId());
-        assertThat(changedProfile.budgetTaskId()).isEqualTo(owner.budgetTaskId());
-
-        assertThat(isolatedJournal.priorProfilesAreSafe(changedProfile.lease())).isFalse();
-
-        assertThat(jdbc.queryForObject("select state from overview_execution_plans where id=?", String.class,
-                firstPlan.planId())).isEqualTo("RECOVERY_REQUIRED");
-        assertThat(jdbc.queryForObject("select state from overview_execution_nodes where id=?", String.class,
-                attempt.nodeId())).isEqualTo("RECOVERY_REQUIRED");
-        coordinator.fail(changedProfile.lease(), "OVERVIEW_RECOVERY_EXHAUSTED",
-                (com.auralis.app.ai.usage.OverviewTaskUsageSummary) null, 0, List.of());
-    }
-
-    @Test
-    void exactCompletedReservationAllowsANewNodeAttemptWithoutChangingTheParentBudget() {
-        UUID userId = createUser("journal-known-terminal");
-        UUID subjectId = UUID.randomUUID();
-        OverviewGenerationCoordinator.Acquisition owner = coordinator.acquire(
-                request(userId, subjectId, UUID.randomUUID(), HASH_A));
-        AiUsageQueryService exactUsage = mock(AiUsageQueryService.class);
-        AtomicReference<AiInvocationState> state = new AtomicReference<>();
-        when(exactUsage.invocationStateForOwner(org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.anySet())).thenAnswer(invocation -> Optional.ofNullable(state.get()));
-        OverviewExecutionJournal isolatedJournal = new OverviewExecutionJournal(jdbc, transactionManager, clock, exactUsage);
-        var nodeSpec = spec("known-terminal-node");
-        String planJson = "{\"profile\":\"first\"}";
-        var plan = isolatedJournal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson,
-                List.of(nodeSpec));
-        var firstAttempt = isolatedJournal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-        UUID reservationId = UUID.randomUUID();
-        UUID ledgerTaskId = AiTaskContext.overviewLedgerTaskId(userId, AiFeature.SUBJECT_OVERVIEW, owner.budgetTaskId());
-        state.set(new AiInvocationState(reservationId, ledgerTaskId, AiOperationKind.SUBJECT_OVERVIEW,
-                "RESERVED", false, null, null, 0));
-
-        isolatedJournal.bindReservation(owner.lease(), ledgerTaskId, AiOperationKind.SUBJECT_OVERVIEW,
-                firstAttempt, reservationId);
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where reservation_id=? and "
-                + "node_id=? and attempt=? and task_id=?", Integer.class, reservationId, firstAttempt.nodeId(),
-                firstAttempt.number(), ledgerTaskId)).isEqualTo(1);
-
-        state.set(new AiInvocationState(reservationId, ledgerTaskId, AiOperationKind.SUBJECT_OVERVIEW,
-                "COMPLETED", true, 12L, 9L, 21));
-        isolatedJournal.failNode(owner.lease(), firstAttempt, "MODEL_PROVIDER_ERROR");
-        var retry = isolatedJournal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-
-        assertThat(retry.number()).isEqualTo(2);
-        assertThat(retry.recoveryRequired()).isFalse();
-        assertThat(ledgerTaskId).isEqualTo(jdbc.queryForObject(
-                "select task_id from overview_execution_calls where reservation_id=?", UUID.class, reservationId));
-    }
-
-    @Test
-    void conservativelyChargedTerminalWriterFailureResumesOnlyThatNodeAndKeepsVerifiedCheckpoints() {
+    void exactChargedWriterFailureAllowsPreflightAndRequiresAnIntactVerifiedCheckpoint() {
         UUID userId = createUser("journal-terminal-writer-replay");
         UUID subjectId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
@@ -215,28 +75,15 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.TaskLease task = usageGuard.beginTask(context);
         UUID ledgerTaskId = AiTaskContext.overviewLedgerTaskId(userId, AiFeature.SUBJECT_OVERVIEW, budgetTaskId);
 
-        List<OverviewExecutionJournal.NodeSpec> specs = java.util.stream.IntStream.range(0, 15)
-                .mapToObj(index -> spec("replay-writer-" + index)).toList();
-        String planJson = "{\"nodes\":15}";
-        var plan = journal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson, specs);
-        assertThat(plan.nodes()).hasSize(15);
-        for (int index = 0; index < 13; index++) {
-            var checkpointAttempt = journal.beginAttempt(owner.lease(), plan.nodes().get(index));
-            journal.verifyAndSaveCheckpoint(owner.lease(), checkpointAttempt, specs.get(index).checkpointStep(),
-                    "{\"verified\":" + index + "}");
-        }
-
-        var failedAttempt = journal.beginAttempt(owner.lease(), plan.nodes().get(13));
+        UUID nodeId = insertHistoricalWriterNode(owner.lease());
         AiUsageGuard.CallReservation unknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
         var binding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         binding.onReserved(unknown.id());
-        journal.bindReservation(owner.lease(), task.taskId(), AiOperationKind.SUBJECT_OVERVIEW,
-                failedAttempt, unknown.id());
+        bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 1, unknown.id());
         usageGuard.markDispatched(task, unknown, () -> binding.beforeDispatch(unknown.id()));
         usageGuard.settle(task, unknown, null, false, "MODEL_UNAVAILABLE");
-        journal.failNode(owner.lease(), failedAttempt, "MODEL_UNAVAILABLE");
 
         long originalCharge = jdbc.queryForObject("select charged_tokens from ai_usage_reservations where id=?",
                 Long.class, unknown.id());
@@ -244,29 +91,24 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         assertThat(usageGuard.isConservativelyChargedTerminalFailure(userId, ledgerTaskId, unknown.id(),
                 AiOperationKind.SUBJECT_OVERVIEW)).isTrue();
         assertThat(invocationJournal.allSafe(owner.lease())).isTrue();
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, owner.generationId())).isEqualTo(13);
-
-        var retry = journal.beginAttempt(owner.lease(), plan.nodes().get(13));
-        assertThat(retry.number()).isEqualTo(2);
-        assertThat(retry.recoveryRequired()).isFalse();
         AiUsageGuard.CallReservation replacement = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
         var replacementBinding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         replacementBinding.onReserved(replacement.id());
-        journal.bindReservation(owner.lease(), task.taskId(), AiOperationKind.SUBJECT_OVERVIEW,
-                retry, replacement.id());
+        bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 2, replacement.id());
         usageGuard.markDispatched(task, replacement, () -> replacementBinding.beforeDispatch(replacement.id()));
         assertThat(usageGuard.settleSuccessful(task, replacement, new AiTokenUsage(12L, 18L)).accepted()).isTrue();
-        journal.verifyAndSaveCheckpoint(owner.lease(), retry, specs.get(13).checkpointStep(), "{\"verified\":13}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "writer-step", "{\"verified\":true}");
+        jdbc.update("update overview_execution_nodes set state='VERIFIED',attempt=2,checkpoint_sha256="
+                        + "(select payload_sha256 from overview_generation_checkpoints where generation_id=?) where id=?",
+                owner.generationId(), nodeId);
 
         assertThat(jdbc.queryForObject("select charged_tokens from ai_usage_reservations where id=?",
                 Long.class, unknown.id())).isEqualTo(originalCharge);
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, owner.generationId())).isEqualTo(14);
         assertThat(invocationJournal.allSafe(owner.lease())).isTrue();
-        assertThat(journal.beginAttempt(owner.lease(), plan.nodes().get(14)).number()).isEqualTo(1);
+        jdbc.update("update overview_generation_checkpoints set payload_json='{}' where generation_id=?", owner.generationId());
+        assertThat(invocationJournal.allSafe(owner.lease())).isFalse();
         assertThat(budgetTaskId).isEqualTo(jdbc.queryForObject("select budget_task_id from overview_generations where id=?",
                 UUID.class, owner.generationId()));
         assertThat(jdbc.queryForObject("select count(*) from ai_usage_reservations where task_id=?",
@@ -277,7 +119,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
     }
 
     @Test
-    void secondUnknownWriterAttemptRemainsHeldAfterTheOnePermittedReplay() {
+    void preflightHoldsWhenTwoHistoricalWriterAttemptsWereUnknown() {
         UUID userId = createUser("journal-second-unknown");
         UUID subjectId = UUID.randomUUID();
         OverviewGenerationCoordinator.Acquisition owner = coordinator.acquire(
@@ -287,45 +129,32 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.TaskLease task = usageGuard.beginTask(context);
         UUID ledgerTaskId = AiTaskContext.overviewLedgerTaskId(userId, AiFeature.SUBJECT_OVERVIEW,
                 owner.budgetTaskId());
-        String planJson = "{\"nodes\":[\"one-shot\"]}";
-        var plan = journal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson,
-                List.of(spec("one-shot-node")));
-
-        var first = journal.beginAttempt(owner.lease(), plan.nodes().getFirst());
+        UUID nodeId = insertHistoricalWriterNode(owner.lease());
         AiUsageGuard.CallReservation firstUnknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
         var firstBinding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         firstBinding.onReserved(firstUnknown.id());
-        journal.bindReservation(owner.lease(), task.taskId(), AiOperationKind.SUBJECT_OVERVIEW, first,
-                firstUnknown.id());
+        bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 1, firstUnknown.id());
         usageGuard.markDispatched(task, firstUnknown, () -> firstBinding.beforeDispatch(firstUnknown.id()));
         usageGuard.settle(task, firstUnknown, null, false, "MODEL_UNAVAILABLE");
-        journal.failNode(owner.lease(), first, "MODEL_UNAVAILABLE");
+        assertThat(invocationJournal.allSafe(owner.lease())).isTrue();
 
-        var replay = journal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-        assertThat(replay.number()).isEqualTo(2);
         AiUsageGuard.CallReservation secondUnknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
         var secondBinding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         secondBinding.onReserved(secondUnknown.id());
-        journal.bindReservation(owner.lease(), task.taskId(), AiOperationKind.SUBJECT_OVERVIEW, replay,
-                secondUnknown.id());
+        bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 2, secondUnknown.id());
         usageGuard.markDispatched(task, secondUnknown, () -> secondBinding.beforeDispatch(secondUnknown.id()));
         usageGuard.settle(task, secondUnknown, null, false, "MODEL_UNAVAILABLE");
-        journal.failNode(owner.lease(), replay, "MODEL_UNAVAILABLE");
+        jdbc.update("update overview_execution_nodes set attempt=2 where id=?", nodeId);
 
         assertThat(usageGuard.isConservativelyChargedTerminalFailure(userId, ledgerTaskId, firstUnknown.id(),
                 AiOperationKind.SUBJECT_OVERVIEW)).isTrue();
         assertThat(usageGuard.isConservativelyChargedTerminalFailure(userId, ledgerTaskId, secondUnknown.id(),
                 AiOperationKind.SUBJECT_OVERVIEW)).isTrue();
         assertThat(invocationJournal.allSafe(owner.lease())).isFalse();
-        var held = journal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-        assertThat(held.number()).isEqualTo(2);
-        assertThat(held.recoveryRequired()).isTrue();
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where node_id=?",
-                Integer.class, first.nodeId())).isEqualTo(2);
         usageGuard.closeTask(task);
         coordinator.fail(owner.lease(), "OVERVIEW_RECOVERY_EXHAUSTED",
                 (com.auralis.app.ai.usage.OverviewTaskUsageSummary) null, 0, List.of());
@@ -372,60 +201,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
     }
 
     @Test
-    void undispatchedReservedCallAllowsRetryButDispatchedReservedCallRemainsHeld() {
-        UUID userId = createUser("journal-reserved-dispatch");
-        UUID subjectId = UUID.randomUUID();
-        OverviewGenerationCoordinator.Acquisition owner = coordinator.acquire(
-                request(userId, subjectId, UUID.randomUUID(), HASH_A));
-        AiUsageQueryService exactUsage = mock(AiUsageQueryService.class);
-        Map<UUID, AiInvocationState> states = new HashMap<>();
-        when(exactUsage.invocationStateForOwner(org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.anySet())).thenAnswer(invocation ->
-                Optional.ofNullable(states.get(invocation.getArgument(2))));
-        OverviewExecutionJournal isolatedJournal = new OverviewExecutionJournal(jdbc, transactionManager, clock, exactUsage);
-        String planJson = "{\"profile\":\"reserved-dispatch\"}";
-        var plan = isolatedJournal.openPlan(owner.lease(), sha256(planJson), "OUTLINE", planJson,
-                List.of(spec("reserved-dispatch-node")));
-        UUID budgetTaskId = owner.budgetTaskId();
-        UUID ledgerTaskId = AiTaskContext.overviewLedgerTaskId(userId, AiFeature.SUBJECT_OVERVIEW, budgetTaskId);
-
-        var firstAttempt = isolatedJournal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-        UUID undispatchedReservation = UUID.randomUUID();
-        states.put(undispatchedReservation, new AiInvocationState(undispatchedReservation, ledgerTaskId,
-                AiOperationKind.SUBJECT_OVERVIEW, "RESERVED", false, null, null, 0));
-        isolatedJournal.bindReservation(owner.lease(), ledgerTaskId, AiOperationKind.SUBJECT_OVERVIEW,
-                firstAttempt, undispatchedReservation);
-        isolatedJournal.failNode(owner.lease(), firstAttempt, "MODEL_PROVIDER_ERROR");
-
-        var safeRetry = isolatedJournal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-        assertThat(safeRetry.number()).isEqualTo(2);
-        assertThat(safeRetry.recoveryRequired()).isFalse();
-        assertThat(budgetTaskId).isEqualTo(owner.budgetTaskId());
-
-        UUID dispatchedReservation = UUID.randomUUID();
-        states.put(dispatchedReservation, new AiInvocationState(dispatchedReservation, ledgerTaskId,
-                AiOperationKind.SUBJECT_OVERVIEW, "RESERVED", false, null, null, 0));
-        isolatedJournal.bindReservation(owner.lease(), ledgerTaskId, AiOperationKind.SUBJECT_OVERVIEW,
-                safeRetry, dispatchedReservation);
-        states.put(dispatchedReservation, new AiInvocationState(dispatchedReservation, ledgerTaskId,
-                AiOperationKind.SUBJECT_OVERVIEW, "RESERVED", true, null, null, 0));
-        isolatedJournal.failNode(owner.lease(), safeRetry, "MODEL_PROVIDER_ERROR");
-
-        var held = isolatedJournal.beginAttempt(owner.lease(), plan.nodes().getFirst());
-        assertThat(held.number()).isEqualTo(2);
-        assertThat(held.recoveryRequired()).isTrue();
-        assertThat(jdbc.queryForObject("select state from overview_execution_nodes where id=?", String.class,
-                safeRetry.nodeId())).isEqualTo("RECOVERY_REQUIRED");
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where plan_id=? and task_id=?",
-                Integer.class, plan.planId(), ledgerTaskId)).isEqualTo(2);
-        assertThat(budgetTaskId).isEqualTo(owner.budgetTaskId());
-        coordinator.fail(owner.lease(), "OVERVIEW_RECOVERY_EXHAUSTED",
-                (com.auralis.app.ai.usage.OverviewTaskUsageSummary) null, 0, List.of());
-    }
-
-    @Test
-    void realUsageReservationBindsBothOverviewJournalsToTheLedgerTaskAndRetainsTheBudgetAcrossRetry() {
+    void generationInvocationBindsToTheLedgerTaskAndRetainsTheBudgetAcrossRetry() {
         UUID userId = createUser("journal-ledger-identity");
         UUID subjectId = UUID.randomUUID();
         OverviewGenerationCoordinator.Acquisition owner = coordinator.acquire(
@@ -437,20 +213,12 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         UUID ledgerTaskId = AiTaskContext.overviewLedgerTaskId(userId, AiFeature.SUBJECT_OVERVIEW, budgetTaskId);
         assertThat(task.taskId()).isEqualTo(ledgerTaskId).isNotEqualTo(budgetTaskId);
 
-        var plan = journal.openPlan(owner.lease(), sha256("{\"nodes\":[\"ledger\"]}"), "OUTLINE",
-                "{\"nodes\":[\"ledger\"]}", List.of(spec("ledger-identity-node")));
-        var attempt = journal.beginAttempt(owner.lease(), plan.nodes().getFirst());
         AiUsageGuard.CallReservation reservation = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
         var binding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_INDEX", "INTERMEDIATE");
         binding.onReserved(reservation.id());
-        journal.bindReservation(owner.lease(), task.taskId(), AiOperationKind.SUBJECT_OVERVIEW,
-                attempt, reservation.id());
-
         assertThat(jdbc.queryForObject("select task_id from overview_generation_invocations where reservation_id=?",
-                UUID.class, reservation.id())).isEqualTo(ledgerTaskId);
-        assertThat(jdbc.queryForObject("select task_id from overview_execution_calls where reservation_id=?",
                 UUID.class, reservation.id())).isEqualTo(ledgerTaskId);
         assertThat(jdbc.queryForObject("select budget_task_id from overview_generations where id=?",
                 UUID.class, owner.generationId())).isEqualTo(budgetTaskId);
@@ -470,6 +238,27 @@ class OverviewExecutionJournalPostgresIntegrationTests {
                 0, List.of());
     }
 
+    private UUID insertHistoricalWriterNode(OverviewGenerationCoordinator.GenerationLease lease) {
+        UUID planId = UUID.randomUUID();
+        UUID nodeId = UUID.randomUUID();
+        jdbc.update("insert into overview_execution_plans (id,generation_id,input_fingerprint,profile_fingerprint,"
+                        + "algorithm_version,plan_fingerprint,mode,state,payload_json) values (?,?,?,?,?,?,'OUTLINE','WRITING','{}')",
+                planId, lease.generationId(), lease.inputFingerprint(), lease.profileFingerprint(),
+                lease.algorithmVersion(), HASH_A);
+        jdbc.update("insert into overview_execution_nodes (id,plan_id,generation_id,node_ordinal,descriptor_json,"
+                        + "descriptor_sha256,checkpoint_step,state,attempt) values (?,?,?,0,'{}',?,'writer-step','FAILED',1)",
+                nodeId, planId, lease.generationId(), HASH_A);
+        return nodeId;
+    }
+
+    private void bindHistoricalCall(OverviewGenerationCoordinator.GenerationLease lease, UUID nodeId,
+                                    UUID taskId, int attempt, UUID reservationId) {
+        jdbc.update("insert into overview_execution_calls (id,generation_id,plan_id,node_id,attempt,reservation_id,"
+                        + "task_id,user_id,operation_kind) select ?,generation_id,plan_id,id,?,?,?,?,'SUBJECT_OVERVIEW'"
+                        + " from overview_execution_nodes where id=?",
+                UUID.randomUUID(), attempt, reservationId, taskId, lease.userId(), nodeId);
+    }
+
     private UUID createUser(String label) {
         UUID userId = UUID.randomUUID();
         String username = "m3-journal-" + label + "-" + userId.toString().substring(0, 8);
@@ -481,20 +270,6 @@ class OverviewExecutionJournalPostgresIntegrationTests {
     private OverviewGenerationCoordinator.Request request(UUID userId, UUID subjectId, UUID requestId, String profileFingerprint) {
         return new OverviewGenerationCoordinator.Request(userId, requestId, "SUBJECT", subjectId, null,
                 HASH_A, HASH_B, profileFingerprint, "overview-adaptive-v4-execution-journal");
-    }
-
-    private OverviewExecutionJournal.NodeSpec spec(String value) {
-        String json = "{\"key\":\"" + value + "\"}";
-        return new OverviewExecutionJournal.NodeSpec(json, sha256(json), "step_" + value);
-    }
-
-    private String sha256(String value) {
-        try {
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException exception) {
-            throw new IllegalStateException(exception);
-        }
     }
 
     private static String requirePostgresUrl() {

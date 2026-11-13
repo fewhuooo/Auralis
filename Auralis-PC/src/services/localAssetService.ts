@@ -1,6 +1,7 @@
 import {
   importLocalAsset,
   importLocalAssetBytes,
+  isTauriEnvironment,
   MAX_LOCAL_ASSET_BYTES,
   resolveLocalAssetNative,
   downloadLocalAsset,
@@ -455,8 +456,7 @@ export class LocalAssetService {
     if (options.nativeAdapter) {
       this.adapter = options.nativeAdapter
     } else {
-      const isTauri = typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ || (window as unknown as { __TAURI__?: unknown }).__TAURI__)
-      this.adapter = isTauri ? new TauriLocalAssetNativeAdapter() : new TransientBrowserAssetAdapter()
+      this.adapter = isTauriEnvironment() ? new TauriLocalAssetNativeAdapter() : new TransientBrowserAssetAdapter()
     }
   }
 

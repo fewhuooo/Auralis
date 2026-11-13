@@ -1,11 +1,12 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.AiMessageRole;
-import com.auralis.app.ai.AiMessageStatus;
+import com.auralis.app.ai.AiMessageCommand;
+import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.ConversationCommand;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
-import com.auralis.app.ai.MessageView;
+import com.auralis.app.ai.internal.chat.ChatRuntimePersistenceService;
 import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,9 @@ class R1ConcurrencyTests {
 
     @Autowired
     private ConversationService conversationService;
+
+    @Autowired
+    private ChatRuntimePersistenceService chatRuntime;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -49,24 +53,6 @@ class R1ConcurrencyTests {
     }
 
     @Test
-    void concurrentAppendsAllocateUniqueSequences() throws Exception {
-        UUID userId = insertUser("r1-message-" + UUID.randomUUID());
-        ConversationView conversation = conversationService.create(
-                userId, new ConversationCommand("Concurrent", 0L));
-
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            var first = executor.submit(() -> append(userId, conversation.id(), "first"));
-            var second = executor.submit(() -> append(userId, conversation.id(), "second"));
-            assertThat(first.get().messageSequence()).isNotEqualTo(second.get().messageSequence());
-        }
-        markMessagesAsProtocolOne(conversation.id());
-
-        assertThat(conversationService.get(userId, conversation.id()).messages())
-                .extracting(MessageView::messageSequence)
-                .containsExactly(1L, 2L);
-    }
-
-    @Test
     void conversationCreateReplaysTheSameClientRequestIdAfterLostResponse() {
         UUID userId = insertUser("r1-conversation-retry-" + UUID.randomUUID());
         ConversationCommand command = new ConversationCommand("Recovered", 0L, "conversation-retry");
@@ -79,30 +65,27 @@ class R1ConcurrencyTests {
     }
 
     @Test
-    void concurrentDuplicateAiRequestReservesOneUserMessageAndOneProviderOwner() throws Exception {
+    void concurrentDuplicateTurnAdmitsOneRunAndReplaysTheSameUserMessage() throws Exception {
         UUID userId = insertUser("r1-ai-idempotency-" + UUID.randomUUID());
         ConversationView conversation = conversationService.create(
                 userId, new ConversationCommand("Idempotent", 0L));
 
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            var first = executor.submit(() -> conversationService.reserveUserMessage(
-                    userId, conversation.id(), "Idempotent", "hello", "request-concurrent"));
-            var second = executor.submit(() -> conversationService.reserveUserMessage(
-                    userId, conversation.id(), "Idempotent", "hello", "request-concurrent"));
+        var command = new AiMessageCommand(1, "turn", conversation.id(), "request-concurrent", "hello",
+                null, null, null, null, null, null);
+        var profile = new ChatRuntimePersistenceService.ExecutionProfile(
+                AiProviderType.DEEPSEEK, "test-model", "test-endpoint");
 
-            assertThat(first.get().started()).isNotEqualTo(second.get().started());
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> chatRuntime.admit(userId, command, profile));
+            var second = executor.submit(() -> chatRuntime.admit(userId, command, profile));
+            assertThat(first.get().replay()).isNotEqualTo(second.get().replay());
+            assertThat(first.get().run().getId()).isEqualTo(second.get().run().getId());
+            assertThat(first.get().userMessageId()).isEqualTo(second.get().userMessageId());
         }
-        markMessagesAsProtocolOne(conversation.id());
 
         assertThat(conversationService.get(userId, conversation.id()).messages())
                 .filteredOn(message -> message.role() == AiMessageRole.USER)
                 .hasSize(1);
-    }
-
-    private MessageView append(UUID userId, UUID conversationId, String content) {
-        return conversationService.appendMessage(
-                userId, conversationId, AiMessageRole.USER, content,
-                AiMessageStatus.COMPLETED, null, null);
     }
 
     private UUID insertUser(String username) {
@@ -114,7 +97,4 @@ class R1ConcurrencyTests {
         return id;
     }
 
-    private void markMessagesAsProtocolOne(UUID conversationId) {
-        jdbcTemplate.update("update messages set chat_protocol_version = 1 where conversation_id = ?", conversationId);
-    }
 }

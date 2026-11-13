@@ -1,7 +1,6 @@
 package com.auralis.app.ai;
 
 import com.auralis.app.ai.usage.AiProviderUsage;
-import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.shared.error.DomainException;
 import org.flywaydb.core.Flyway;
@@ -145,8 +144,6 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         assertThat(waiter.generationId()).isEqualTo(owner.generationId());
         assertThat(jdbc.queryForObject("select count(*) from overview_generation_requests where generation_id=?",
                 Integer.class, owner.generationId())).isEqualTo(2);
-        firstCoordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"map\"}");
         assertThat(firstCoordinator.fail(owner.lease(), "MODEL_TIMEOUT",
                 new AiProviderUsage(10, 20, null, null, 30, false), 1, List.of("REPACK"))).isTrue();
 
@@ -155,20 +152,8 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         assertThat(retry.generationId()).isEqualTo(owner.generationId());
         assertThat(retry.budgetTaskId()).isEqualTo(owner.budgetTaskId());
         assertThat(retry.lease().fence()).isGreaterThan(owner.lease().fence());
-        assertThat(otherCoordinator.loadCheckpoint(retry.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1))
-                .extracting(OverviewGenerationCoordinator.Checkpoint::payloadJson)
-                .isEqualTo("{\"schemaVersion\":1,\"title\":\"map\"}");
         assertThat(firstCoordinator.complete(owner.lease(), "{\"schemaVersion\":1}",
                 new AiProviderUsage(0, 0, 0L, 0L, 0, true), 0, List.of())).isFalse();
-        assertThatThrownBy(() -> firstCoordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C,
-                "overview-v1", 1, "{\"schemaVersion\":1}"))
-                .isInstanceOf(AiUsageLimitException.class)
-                .satisfies(error -> {
-                    var limit = (AiUsageLimitException) error;
-                    assertThat(limit.code()).isEqualTo("AI_CONCURRENCY_LIMIT");
-                    assertThat(limit.status()).isEqualTo(429);
-                    assertThat(limit.retryAfterSeconds()).isPositive();
-                });
 
         assertThat(otherCoordinator.complete(retry.lease(), "{\"schemaVersion\":1}",
                 new AiProviderUsage(10, 20, 9L, 18L, 27, true), 0, List.of())).isTrue();
@@ -321,8 +306,6 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
                     userId, username, username.toLowerCase(java.util.Locale.ROOT));
             var originalRequest = request(userId, subjectId, UUID.randomUUID());
             var oldOwner = firstCoordinator.acquire(originalRequest);
-            firstCoordinator.saveCheckpoint(oldOwner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                    "{\"schemaVersion\":1,\"title\":\"checkpoint\"}");
             jdbc.update("update overview_generations set lease_until=? where id=?",
                     java.time.OffsetDateTime.now().minusSeconds(1), oldOwner.generationId());
 

@@ -21,7 +21,6 @@ function createTestLockManager() {
   const tails = new Map()
   let enabled = true
   return {
-    setEnabled(value) { enabled = value },
     request(name, _options, operation) {
       if (!enabled) return operation()
       const previous = tails.get(name) ?? Promise.resolve()
@@ -29,11 +28,9 @@ function createTestLockManager() {
       const held = new Promise(resolve => { release = resolve })
       const tail = previous.then(() => held, () => held)
       tails.set(name, tail)
-      return previous.then(operation).finally(() => {
-        release()
-        if (tails.get(name) === tail) tails.delete(name)
-      })
+      return previous.then(operation).finally(() => { release(); if (tails.get(name) === tail) tails.delete(name) })
     },
+    setEnabled(value) { enabled = value },
   }
 }
 
@@ -42,11 +39,14 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { lo
 
 const { createMemoryStorage } = await import('../src/services/localRepository.ts')
 const { OverviewRepository, computeSubjectInputFingerprint } = await import('../src/services/overviewRepository.ts')
-const { OverviewRepository: OverviewRepositoryOtherTab } = await import('../src/services/overviewRepository.ts?overview-tab')
+const { OverviewRepository: OverviewRepositoryOtherTab } = await import(`../src/services/overviewRepository.ts?tab=2`)
 const { createVersionedLocalSchema, LOCAL_SCHEMA_VERSION } = await import('../src/services/localSchema.ts')
 
 class TemporarySqlite {
-  constructor() { this.database = new DatabaseSync(':memory:'); this.transactionCount = 0 }
+  constructor() {
+    this.database = new DatabaseSync(':memory:')
+    this.transactionCount = 0
+  }
   async execute(sql, bindValues = []) { this.database.prepare(sql.replace(/\$\d+/g, '?')).run(...bindValues) }
   async select(sql, bindValues = []) { return this.database.prepare(sql.replace(/\$\d+/g, '?')).all(...bindValues) }
   async transaction(operation) {
@@ -58,8 +58,8 @@ class TemporarySqlite {
   close() { this.database.close() }
 }
 
-const outline = [{ title: 'Limits', sections: [{ title: 'Sequence limits', summary: 'Definition', sourceIds: ['source-1'], locator: null }] }]
-const summary = { overview: 'Calculus overview', keyPoints: ['Limits'], learningPath: ['Limits', 'Derivatives'] }
+const outlineMarkdown = '## Limits\n- Sequence limits'
+const summaryMarkdown = 'Calculus overview'
 
 test('browser overview cache isolates user and device scopes', async () => {
   const storage = createMemoryStorage()
@@ -67,7 +67,7 @@ test('browser overview cache isolates user and device scopes', async () => {
   const otherUser = new OverviewRepository('user-b', 'device-a', { storage })
   const otherDevice = new OverviewRepository('user-a', 'device-b', { storage })
 
-  await owner.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File', outline, summary } })
+  await owner.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown } })
 
   assert.equal((await owner.getFileOverview('source-1', 'rev-1'))?.title, 'File')
   assert.equal(await otherUser.getFileOverview('source-1', 'rev-1'), null)
@@ -92,19 +92,19 @@ test('independent browser tabs serialize overview generation against saved edits
     const deviceId = `cross-tab-${scopeKey}-device`
     const savedTab = new OverviewRepository(userId, deviceId, { storage })
     const aiTab = new OverviewRepositoryOtherTab(userId, deviceId, { storage })
-    await savedTab.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Initial', outline, summary } })
+    await savedTab.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Initial', outlineMarkdown, summaryMarkdown } })
     const baseline = await aiTab.captureGenerationBaseline('FILE', 'source-1', 'rev-1', 'OUTLINE')
 
     let aiWrite
     onRead = () => {
       aiWrite = aiTab.saveFileOverviewPart({
         sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE', generationBaseline: baseline,
-        response: { schemaVersion: 1, title: 'AI result', outline: [{ title: 'AI outline', sections: [] }], summary: null },
+        response: { schemaVersion: 2, title: 'AI result', outlineMarkdown: '## AI outline', summaryMarkdown: null },
       })
     }
     await savedTab.saveFileOverviewPart({
       sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE',
-      response: { schemaVersion: 1, title: 'Local edit', outline: [{ title: 'Saved local edit', sections: [] }], summary: null },
+      response: { schemaVersion: 2, title: 'Local edit', outlineMarkdown: '## Saved local edit', summaryMarkdown: null },
     })
     assert.ok(aiWrite)
     const aiSave = await aiWrite
@@ -113,14 +113,14 @@ test('independent browser tabs serialize overview generation against saved edits
   try {
     sharedTestLocks.setEnabled(false)
     const withoutLock = await runInterleavedWrite('without-lock')
-    assert.equal(withoutLock.current?.outline?.[0]?.title, 'AI outline', 'independent module queues without a shared lock reproduce the lost edit')
+    assert.equal(withoutLock.current?.outlineMarkdown, '## AI outline', 'independent module queues without a shared lock reproduce the lost edit')
 
     sharedTestLocks.setEnabled(true)
     const withLock = await runInterleavedWrite('with-lock')
     assert.equal(withLock.aiSave.generationConflicts?.length, 1)
-    assert.equal(withLock.current?.outline?.[0]?.title, 'Saved local edit')
-    assert.equal(withLock.aiSave.generationConflicts?.[0]?.result.outline?.[0]?.title, 'AI outline')
-    assert.ok(withLock.outbox.some(item => item.result.outline?.[0]?.title === 'Saved local edit'))
+    assert.equal(withLock.current?.outlineMarkdown, '## Saved local edit')
+    assert.equal(withLock.aiSave.generationConflicts?.[0]?.result.outlineMarkdown, '## AI outline')
+    assert.ok(withLock.outbox.some(item => item.result.outlineMarkdown === '## Saved local edit'))
     assert.ok(withLock.outbox.some(item => item.state === 'CONFLICT' && item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT'))
   } finally {
     sharedTestLocks.setEnabled(true)
@@ -134,7 +134,7 @@ test('browser overview writes fail closed without Web Locks and leave storage un
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} })
   try {
     await assert.rejects(
-      () => repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Must not save', outline, summary } }),
+      () => repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'Must not save', outlineMarkdown, summaryMarkdown } }),
       error => error?.code === 'OVERVIEW_BROWSER_LOCK_UNAVAILABLE',
     )
     assert.equal(storage.length, 0)
@@ -147,22 +147,22 @@ test('SQLite overview cache isolates revisions and replaces only the requested p
   const sql = new TemporarySqlite()
   try {
     const repository = new OverviewRepository('user-a', 'device-a', { sql, now: () => '2026-09-10T00:00:00.000Z' })
-    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File', outline, summary } })
-    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 1, title: 'File', outline: null, summary: { ...summary, overview: 'New summary' } } })
+    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown } })
+    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 2, title: 'File', outlineMarkdown: null, summaryMarkdown: 'New summary' } })
 
     const stored = await repository.getFileOverview('source-1', 'rev-1')
-    assert.deepEqual(stored?.outline, outline)
-    assert.equal(stored?.summary?.overview, 'New summary')
+    assert.equal(stored?.outlineMarkdown, outlineMarkdown)
+    assert.equal(stored?.summaryMarkdown, 'New summary')
     assert.equal(await repository.getFileOverview('source-1', 'rev-2'), null)
     assert.equal(sql.transactionCount, 2)
   } finally { sql.close() }
 })
 
-test('SQLite v12 overview rows and frozen intents migrate to v13 with metadata columns and idempotent round trips', async () => {
+test('SQLite v12 overview rows and frozen intents migrate to v14 with metadata columns and idempotent round trips', async () => {
   const sql = new TemporarySqlite()
   try {
-    const legacyOutline = JSON.stringify(outline)
-    const legacySummary = JSON.stringify(summary)
+    const legacyOutline = '## Limits\n- Sequence limits'
+    const legacySummary = 'Calculus overview'
     const legacyRequestBody = {
       baseVersion: 4,
       clientWriteId: 'legacy-write-12',
@@ -170,7 +170,7 @@ test('SQLite v12 overview rows and frozen intents migrate to v13 with metadata c
       ingestionRevision: 'rev-12',
       outlineGeneratedAt: '2026-10-18T10:00:00.000Z',
       summaryGeneratedAt: '2026-10-18T10:01:00.000Z',
-      result: { schemaVersion: 1, title: 'Legacy overview', outline, summary },
+      result: { schemaVersion: 1, title: 'Legacy overview', outline: [], summary: {} },
     }
     const legacyIntent = {
       clientWriteId: 'legacy-write-12', scopeType: 'FILE', scopeId: 'source-1', revisionKey: 'rev-12',
@@ -213,19 +213,12 @@ test('SQLite v12 overview rows and frozen intents migrate to v13 with metadata c
 
     const repository = new OverviewRepository('user-a', 'device-a', { sql })
     const legacy = await repository.getFileOverview('source-1', 'rev-12')
-    assert.equal(LOCAL_SCHEMA_VERSION, 13)
-    assert.equal(legacy.title, 'Legacy overview')
-    assert.deepEqual(legacy.outline, outline)
-    assert.deepEqual(legacy.summary, summary)
-    assert.equal(legacy.identityReady, false)
-    assert.equal(legacy.outlineIdentity, null)
-    assert.equal(legacy.updatedAt, '2026-10-18T10:02:00.000Z')
+    assert.equal(LOCAL_SCHEMA_VERSION, 14)
+    // Legacy schema_version = 1 rows are ignored by fromRow (return null)
+    assert.equal(legacy, null)
     const migratedColumns = sql.database.prepare('PRAGMA table_info(ai_overview_cache)').all()
-    assert.deepEqual(migratedColumns.filter(column => ['outline_identity_json','outline_identity_input_json',
-      'outline_provenance_json','outline_provenance_input_json','identity_ready'].includes(column.name)).map(column => column.name).sort(), [
-      'identity_ready','outline_identity_input_json','outline_identity_json','outline_provenance_input_json','outline_provenance_json',
-    ])
-    assert.equal(migratedColumns.find(column => column.name === 'identity_ready').dflt_value, '0')
+    assert.ok(migratedColumns.some(c => c.name === 'outline_markdown'))
+    assert.ok(migratedColumns.some(c => c.name === 'summary_markdown'))
     const queued = await repository.listOverviewOutbox()
     assert.equal(queued.length, 1)
     assert.equal(queued[0].clientWriteId, 'legacy-write-12')
@@ -233,45 +226,34 @@ test('SQLite v12 overview rows and frozen intents migrate to v13 with metadata c
     assert.deepEqual(queued[0].requestBody, legacyRequestBody)
 
     await createVersionedLocalSchema(sql)
-    assert.equal((await repository.getFileOverview('source-1', 'rev-12')).identityReady, false)
+    assert.equal(await repository.getFileOverview('source-1', 'rev-12'), null)
     assert.equal((await repository.listOverviewOutbox()).length, 1)
-    assert.deepEqual(sql.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map(row => row.version), [12, 13])
+    assert.deepEqual(sql.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map(row => row.version), [12, 14])
 
-    const identityInput = { schemaVersion: 1, nodes: [{ path: [0], nodeId: null }, { path: [0, 0], nodeId: null }] }
-    const provenanceView = { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: [{
-      sourceId: 'source-1', ingestionRevision: 'rev-13', chunkId: 'chunk-1', generation: 'gen-1',
-      charStart: 2, charEnd: 8, contentHash: 'hash', precision: 'CHUNK', parsedDocumentId: 'parsed-1', parserId: 'parser-1',
-      locations: [{ blockOrdinal: 0, charStart: 2, charEnd: 8, blockCharStart: 0, blockCharEnd: 12 }],
-    }] }] }
-    const provenanceInput = { schemaVersion: 1, sections: [{ path: [0, 0], sourceRefs: [{
-      sourceId: 'source-1', ingestionRevision: 'rev-13', chunkId: 'chunk-1', generation: 'gen-1', charStart: 2, charEnd: 8,
-    }] }] }
-    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-13', mode: 'ALL',
-      response: { schemaVersion: 1, title: 'Metadata round trip', outline, summary, outlineProvenance: provenanceView },
-      outlineIdentityInput: identityInput, outlineProvenanceInput: provenanceInput })
-    const metadataRoundTrip = await repository.getFileOverview('source-1', 'rev-13')
-    assert.equal(metadataRoundTrip.identityReady, false)
-    assert.deepEqual(metadataRoundTrip.outlineIdentityInput, identityInput)
-    assert.deepEqual(metadataRoundTrip.outlineProvenance, provenanceView)
-    assert.deepEqual(metadataRoundTrip.outlineProvenanceInput, provenanceInput)
+    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-14', mode: 'ALL',
+      response: { schemaVersion: 2, title: 'Markdown round trip', outlineMarkdown, summaryMarkdown } })
+    const roundTrip = await repository.getFileOverview('source-1', 'rev-14')
+    assert.equal(roundTrip.schemaVersion, 2)
+    assert.equal(roundTrip.outlineMarkdown, outlineMarkdown)
+    assert.equal(roundTrip.summaryMarkdown, summaryMarkdown)
   } finally { sql.close() }
 })
 
 test('failed regeneration preserves successful content and records safe diagnostics', async () => {
   const repository = new OverviewRepository('user-a', 'device-a', { storage: createMemoryStorage() })
-  await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'ALL', inputFingerprint: 'fingerprint-1', response: { schemaVersion: 1, title: 'Subject', outline, summary } })
+  await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'ALL', inputFingerprint: 'fingerprint-1', response: { schemaVersion: 2, title: 'Subject', outlineMarkdown, summaryMarkdown } })
   await repository.markSubjectOverviewFailed('subject-1', 'SUMMARY', 'MODEL_UNAVAILABLE', 'Try again later')
 
   const stored = await repository.getSubjectOverview('subject-1')
-  assert.deepEqual(stored?.outline, outline)
-  assert.deepEqual(stored?.summary, summary)
+  assert.equal(stored?.outlineMarkdown, outlineMarkdown)
+  assert.equal(stored?.summaryMarkdown, summaryMarkdown)
   assert.equal(stored?.status, 'FAILED')
   assert.equal(stored?.errorCode, 'MODEL_UNAVAILABLE')
 })
 
 test('subject fingerprint is stable across file order and changes with content', async () => {
-  const first = { sourceId: 'b', ingestionRevision: '2', outline, summary }
-  const second = { sourceId: 'a', ingestionRevision: '1', outline, summary }
+  const first = { sourceId: 'b', ingestionRevision: '2', outlineMarkdown, summaryMarkdown }
+  const second = { sourceId: 'a', ingestionRevision: '1', outlineMarkdown, summaryMarkdown }
   const forward = await computeSubjectInputFingerprint([first, second])
   const reverse = await computeSubjectInputFingerprint([second, first])
   const changed = await computeSubjectInputFingerprint([second, { ...first, ingestionRevision: '3' }])
@@ -281,8 +263,8 @@ test('subject fingerprint is stable across file order and changes with content',
 
 test('scoped deletion removes only the requested overview', async () => {
   const repository = new OverviewRepository('user-a', 'device-a', { storage: createMemoryStorage() })
-  await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File 1', outline, summary } })
-  await repository.saveFileOverviewPart({ sourceId: 'source-2', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File 2', outline, summary } })
+  await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'File 1', outlineMarkdown, summaryMarkdown } })
+  await repository.saveFileOverviewPart({ sourceId: 'source-2', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'File 2', outlineMarkdown, summaryMarkdown } })
   await repository.removeFileOverviews('source-1')
   assert.equal(await repository.getFileOverview('source-1', 'rev-1'), null)
   assert.equal((await repository.getFileOverview('source-2', 'rev-1'))?.title, 'File 2')
@@ -290,8 +272,8 @@ test('scoped deletion removes only the requested overview', async () => {
 
 test('concurrent outline and summary saves preserve both successful parts', async () => {
   const repository = new OverviewRepository('user-a', 'device-a', { storage: createMemoryStorage() })
-  const outlineResponse = { schemaVersion: 1, title: 'File', outline, summary: null }
-  const summaryResponse = { schemaVersion: 1, title: 'File', outline: null, summary }
+  const outlineResponse = { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown: null }
+  const summaryResponse = { schemaVersion: 2, title: 'File', outlineMarkdown: null, summaryMarkdown }
 
   await Promise.all([
     repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE', response: outlineResponse }),
@@ -299,8 +281,8 @@ test('concurrent outline and summary saves preserve both successful parts', asyn
   ])
 
   const stored = await repository.getFileOverview('source-1', 'rev-1')
-  assert.deepEqual(stored?.outline, outline)
-  assert.deepEqual(stored?.summary, summary)
+  assert.equal(stored?.outlineMarkdown, outlineMarkdown)
+  assert.equal(stored?.summaryMarkdown, summaryMarkdown)
 })
 
 test('two repository instances serialize writes to the same browser scope', async () => {
@@ -308,50 +290,28 @@ test('two repository instances serialize writes to the same browser scope', asyn
   const first = new OverviewRepository('user-a', 'device-a', { storage })
   const second = new OverviewRepository('user-a', 'device-a', { storage })
   await Promise.all([
-    first.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE', response: { schemaVersion: 1, title: 'File', outline, summary: null } }),
-    second.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 1, title: 'File', outline: null, summary } }),
+    first.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'OUTLINE', response: { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown: null } }),
+    second.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 2, title: 'File', outlineMarkdown: null, summaryMarkdown } }),
   ])
   const stored = await first.getFileOverview('source-1', 'rev-1')
-  assert.deepEqual(stored?.outline, outline)
-  assert.deepEqual(stored?.summary, summary)
+  assert.equal(stored?.outlineMarkdown, outlineMarkdown)
+  assert.equal(stored?.summaryMarkdown, summaryMarkdown)
 })
 
 test('a queued delete after a save cannot be undone by that older save', async () => {
   const storage = createMemoryStorage()
   const repository = new OverviewRepository('user-a', 'device-a', { storage })
-  const saving = repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File', outline, summary } })
+  const saving = repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 2, title: 'File', outlineMarkdown, summaryMarkdown } })
   const removing = repository.removeFileOverviews('source-1')
   await Promise.all([saving, removing])
   assert.equal(await repository.getFileOverview('source-1', 'rev-1'), null)
 })
 
-test('corrupt cached JSON is reported and is not overwritten by a partial save', async () => {
-  const sql = new TemporarySqlite()
-  try {
-    const repository = new OverviewRepository('user-a', 'device-a', { sql })
-    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File', outline, summary } })
-    await sql.execute("UPDATE ai_overview_cache SET outline_json = '{bad' WHERE scope_id = 'source-1'")
-    await assert.rejects(() => repository.getFileOverview('source-1', 'rev-1'), /OVERVIEW_CACHE_CORRUPT/)
-    await assert.rejects(() => repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'SUMMARY', response: { schemaVersion: 1, title: 'File', outline: null, summary } }), /OVERVIEW_CACHE_CORRUPT/)
-  } finally { sql.close() }
-})
-
-test('empty-string JSON columns are treated as corrupt rather than absent', async () => {
-  const sql = new TemporarySqlite()
-  try {
-    const repository = new OverviewRepository('user-a', 'device-a', { sql })
-    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'File', outline, summary } })
-    await sql.execute("UPDATE ai_overview_cache SET summary_json = '' WHERE scope_id = 'source-1'")
-    await assert.rejects(() => repository.getFileOverview('source-1', 'rev-1'), /OVERVIEW_CACHE_CORRUPT/)
-  } finally { sql.close() }
-})
-
 test('browser cache rejects structurally invalid records with a stable corruption error', async () => {
   for (const payload of [
-    '[null]',
-    JSON.stringify([{ scopeType: 'FILE', scopeId: 'source-1', revisionKey: 'rev-1', schemaVersion: 1,
-      title: 'File', outline: 'bad', summary: null, outlineGeneratedAt: null, summaryGeneratedAt: null,
-      inputFingerprint: null, status: 'READY', errorCode: null, errorDetail: null, updatedAt: '2026-09-10T00:00:00.000Z' }]),
+    '{bad json',
+    JSON.stringify({ records: 'not-an-array' }),
+    JSON.stringify({ records: [], states: 'not-an-array' }),
   ]) {
     const storage = createMemoryStorage()
     storage.setItem('auralis:v1:overviews:user-a:device-a', payload)
@@ -381,7 +341,7 @@ test('first file generation failure persists bounded diagnostics without success
   await repository.markFileOverviewFailed('source-1', 'rev-1', 'SUMMARY', 'MODEL_UNAVAILABLE', 'retry later')
   const stored = await repository.getFileOverview('source-1', 'rev-1')
   assert.equal(stored?.status, 'FAILED')
-  assert.equal(stored?.outline, null)
+  assert.equal(stored?.outlineMarkdown, null)
   assert.equal(stored?.errorCode, 'MODEL_UNAVAILABLE')
   assert.equal(stored?.errorDetail, 'retry later')
 })

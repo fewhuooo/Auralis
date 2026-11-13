@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 
 import {
   dedupeEventKey,
@@ -109,7 +108,6 @@ const {
   getWeeklyStats,
 } = await import('../src/api/useStatsApi.ts');
 const {
-  useAssetApi,
   createUploadIntent,
   completeUpload,
   getDownloadUrl,
@@ -781,12 +779,12 @@ test('parseSseStream parses events, multiline data, comments, chunk splits, and 
 
   // 1. Basic SSE stream with multiple event types
   const chunks = [
-    'event: message.started\ndata: {"conversationId":"conv-1","messageId":"m-1"}\n\n',
+    'event: feed.started\ndata: {"conversationId":"conv-1","messageId":"m-1"}\n\n',
     ': keepalive ping\n',
     'event: citation\ndata: {"sourceId":"s-10","chunkId":"c-10","ordinal":1,"similarity":0.92}\n\n',
-    'event: message.delta\ndata: Hello \n\n',
-    'event: message.delta\ndata: World!\n\n',
-    'event: message.completed\ndata: {"conversationId":"conv-1","messageId":"m-1","content":"Hello World!"}\n\n',
+    'event: feed.fragment\ndata: Hello \n\n',
+    'event: feed.fragment\ndata: World!\n\n',
+    'event: feed.completed\ndata: {"conversationId":"conv-1","messageId":"m-1","content":"Hello World!"}\n\n',
   ];
 
   const events = [];
@@ -795,21 +793,21 @@ test('parseSseStream parses events, multiline data, comments, chunk splits, and 
   }
 
   assert.equal(events.length, 5);
-  assert.equal(events[0].event, 'message.started');
+  assert.equal(events[0].event, 'feed.started');
   assert.deepEqual(events[0].data, { conversationId: 'conv-1', messageId: 'm-1' });
   assert.equal(events[1].event, 'citation');
   assert.deepEqual(events[1].data, { sourceId: 's-10', chunkId: 'c-10', ordinal: 1, similarity: 0.92 });
-  assert.equal(events[2].event, 'message.delta');
+  assert.equal(events[2].event, 'feed.fragment');
   assert.equal(events[2].data, 'Hello ');
-  assert.equal(events[3].event, 'message.delta');
+  assert.equal(events[3].event, 'feed.fragment');
   assert.equal(events[3].data, 'World!');
-  assert.equal(events[4].event, 'message.completed');
+  assert.equal(events[4].event, 'feed.completed');
   assert.deepEqual(events[4].data, { conversationId: 'conv-1', messageId: 'm-1', content: 'Hello World!' });
 
   // 2. Chunks split across field and line boundaries
   const splitChunks = [
-    'event: message.',
-    'delta\ndata: split-',
+    'event: feed.',
+    'fragment\ndata: split-',
     'chunk\n',
     '\n',
   ];
@@ -818,12 +816,12 @@ test('parseSseStream parses events, multiline data, comments, chunk splits, and 
     splitEvents.push(ev);
   }
   assert.equal(splitEvents.length, 1);
-  assert.equal(splitEvents[0].event, 'message.delta');
+  assert.equal(splitEvents[0].event, 'feed.fragment');
   assert.equal(splitEvents[0].data, 'split-chunk');
 
   const crlfSplitEvents = [];
   for await (const ev of parseSseStream(makeChunks([
-    'event: message.delta\r',
+    'event: feed.fragment\r',
     '\ndata: CRLF\r\n\r',
     '\n',
   ]))) {
@@ -846,7 +844,7 @@ test('parseSseStream parses events, multiline data, comments, chunk splits, and 
   async function* infiniteStream() {
     let count = 0;
     while (true) {
-      yield `event: message.delta\ndata: ${count++}\n\n`;
+      yield `event: feed.fragment\ndata: ${count++}\n\n`;
     }
   }
   const receivedWhileAborting = [];
@@ -1258,10 +1256,11 @@ test('Asset API upload-intent, complete, download-url and size validation contra
           uploadUrl: 'https://minio.auralis.test/bucket/ast-100',
           headers: { 'Content-Type': 'application/pdf' },
           expiresAt: '2026-08-20T13:00:00Z',
+          uploadStatus: 'UPLOADING',
         };
       }
       if (url.endsWith('/complete')) {
-        return { id: 'ast-100', status: 'READY', version: 1 };
+        return { id: 'ast-100', uploadStatus: 'READY' };
       }
       if (url.endsWith('/download-url')) {
         return { url: 'https://minio.auralis.test/bucket/ast-100?sign=xyz', expiresAt: '2026-08-20T13:00:00Z' };
@@ -1270,14 +1269,17 @@ test('Asset API upload-intent, complete, download-url and size validation contra
     };
 
     // createUploadIntent
-    const intent = await createUploadIntent({
+    const intentPayload = {
       baseVersion: 0,
+      clientImportId: '00000000-0000-4000-8000-000000000001',
       originalName: 'notes.pdf',
       mimeType: 'application/pdf',
       sizeBytes: 2048,
-    });
+    };
+    const intent = await createUploadIntent(intentPayload);
     assert.equal(calls[0].method, 'POST');
     assert.equal(calls[0].url, '/api/assets/upload-intents');
+    assert.deepEqual(calls[0].data, intentPayload);
     assert.equal(intent.assetId, 'ast-100');
 
     // completeUpload
@@ -1285,6 +1287,7 @@ test('Asset API upload-intent, complete, download-url and size validation contra
     assert.equal(calls[1].method, 'POST');
     assert.equal(calls[1].url, '/api/assets/ast-100/complete');
     assert.equal(completed.id, 'ast-100');
+    assert.equal(completed.uploadStatus, 'READY');
 
     // getDownloadUrl
     const download = await getDownloadUrl('ast-100');
@@ -1372,24 +1375,45 @@ test('AI Client calls settings, conversations, and health without legacy paths',
   }
 });
 
-test('AI Client streams the current message endpoint as parsed SSE events', async () => {
+test('AI Client streams protocol-1 envelopes from the message endpoint', async () => {
+  const { createPinia, setActivePinia } = await import('pinia');
+  setActivePinia(createPinia());
   const originalFetch = globalThis.fetch;
   let requestUrl;
   let requestInit;
+  const command = {
+    protocolVersion: 1,
+    action: 'turn',
+    conversationId: 'conv-1',
+    requestId: 'req-1',
+    content: 'Hi',
+  };
+  const identifiers = {
+    protocolVersion: 1,
+    conversationId: 'conv-1',
+    requestId: 'req-1',
+    runId: 'run-1',
+    attemptId: 'attempt-1',
+    userMessageId: 'msg-user',
+    replyMessageId: 'msg-reply',
+  };
+  const envelopes = [
+    { ...identifiers, sequence: 1, event: 'run.started', payload: {} },
+    { ...identifiers, sequence: 2, event: 'text.delta', payload: { text: 'Hello', publicTextDelta: 'Hello' } },
+  ];
 
   globalThis.fetch = async (url, init) => {
     requestUrl = url;
     requestInit = init;
     return new Response(
-      'id: msg-1\nevent: message.started\ndata: {"conversationId":"conv-1","messageId":"msg-1"}\n\n'
-      + 'event: message.delta\ndata: Hello\n\n',
+      envelopes.map((envelope) => 'event: ' + envelope.event + '\ndata: ' + JSON.stringify(envelope) + '\n\n').join(''),
       { status: 200, headers: { 'content-type': 'text/event-stream' } },
     );
   };
 
   try {
     const events = [];
-    for await (const event of streamAiMessage({ conversationId: 'conv-1', content: 'Hi' })) {
+    for await (const event of streamAiMessage(command)) {
       events.push(event);
     }
 
@@ -1397,20 +1421,58 @@ test('AI Client streams the current message endpoint as parsed SSE events', asyn
     assert.equal(requestInit.method, 'POST');
     assert.equal(requestInit.headers.Accept, 'text/event-stream');
     // Provider is intentionally omitted; the server resolves AURALIS_AI_DEFAULT_PROVIDER.
-    assert.deepEqual(JSON.parse(requestInit.body), { conversationId: 'conv-1', content: 'Hi' });
-    assert.equal(events[0].event, 'message.started');
-    assert.equal(events[1].event, 'message.delta');
-    assert.equal(events[1].data, 'Hello');
+    assert.deepEqual(JSON.parse(requestInit.body), command);
+    assert.deepEqual(events, envelopes);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('subject workspace starts a fresh AI session instead of restoring history', () => {
-  const source = readFileSync(new URL('../src/views/SubjectWorkspace/index.vue', import.meta.url), 'utf8');
+test('subject chat restores its bound history and explicitly starts a new unbound conversation', async (t) => {
+  const { createPinia, setActivePinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  const { useChatStore } = await import('../src/store/useChatStore.ts');
+  const previousStorage = globalThis.localStorage;
+  const storage = new Map([['auralis.chat.protocol1.user-1.subject-1', 'conv-1']]);
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+  t.after(() => {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+    setActivePinia(undefined);
+  });
+  setActivePinia(createPinia());
+  useAuthStore().user = { id: 'user-1' };
+  const boundConversation = {
+    id: 'conv-1',
+    title: 'Subject history',
+    purpose: 'GENERAL',
+    version: 1,
+    chatProtocolVersion: 1,
+    chatSupported: true,
+    chatScopeState: 'BOUND',
+    chatScope: { subjectId: 'subject-1', retrievalMode: 'SUBJECT', currentSourceId: null, sourceIds: [] },
+  };
+  t.mock.method(request, 'get', async (url) => {
+    if (url === '/api/ai/conversations') return [boundConversation];
+    assert.equal(url, '/api/ai/conversations/conv-1');
+    return { ...boundConversation, messages: [{ id: 'msg-1', role: 'USER', content: 'Earlier question' }] };
+  });
+  const create = t.mock.method(request, 'post', async (url) => {
+    assert.equal(url, '/api/ai/conversations');
+    return { id: 'conv-2', purpose: 'GENERAL', chatScopeState: 'UNBOUND' };
+  });
 
-  assert.match(source, /await chatStore\.endActiveSession\(\)/);
-  assert.match(source, /await chatStore\.startReadingSession\(/);
-  assert.doesNotMatch(source, /await chatStore\.loadSessions\(\)/);
-  assert.doesNotMatch(source, /await chatStore\.loadMessages\(chatStore\.activeSessionId\)/);
+  const chat = useChatStore();
+  assert.equal(await chat.startSubjectConversation('subject-1'), 'conv-1');
+  assert.equal(create.mock.callCount(), 0);
+  assert.equal(chat.isBoundSession, true);
+  assert.equal(chat.messages[0]?.content, 'Earlier question');
+  assert.equal(await chat.startNewSubjectConversation('subject-1'), 'conv-2');
+  assert.equal(create.mock.callCount(), 1);
+  assert.equal(chat.activeSession.chatScopeState, 'UNBOUND');
+  assert.deepEqual(chat.messages, []);
+  assert.equal(storage.get('auralis.chat.protocol1.user-1.subject-1'), 'conv-2');
 });

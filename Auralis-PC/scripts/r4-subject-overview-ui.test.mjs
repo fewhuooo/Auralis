@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { test } from 'node:test'
+import { parse } from '@vue/compiler-sfc'
+import ts from 'typescript'
+import { computed, reactive, ref } from 'vue'
 
 const root = path.resolve(import.meta.dirname, '..')
 const read = file => readFile(path.join(root, file), 'utf8')
@@ -37,7 +40,7 @@ test('file outlines render inline with summary and regeneration entry points', a
   assert.match(source, /select-summary/)
   assert.match(source, /重新生成大纲/)
   assert.match(source, /重新生成全部/)
-  assert.match(source, /select-outline-node/)
+  assert.match(source, /renderMarkdown\(file\.outlineMarkdown\)/)
   assert.doesNotMatch(source, /outline-subtabs|tab-bar/)
 })
 
@@ -46,9 +49,7 @@ test('middle summary view preserves old content during regeneration or error', a
   assert.doesNotMatch(source, /正在生成新版本，当前总结继续保留/)
   assert.match(source, /error/)
   assert.match(source, /当前内容仍可查看/)
-  assert.match(source, /内容概述/)
-  assert.match(source, /核心要点/)
-  assert.match(source, /推荐学习路径/)
+  assert.match(source, /renderMarkdown\(summaryMarkdown\)/)
   assert.doesNotMatch(source, /调整要求/)
 })
 
@@ -104,7 +105,7 @@ test('manual overview handlers branch on structured results and refresh only aft
 test('file outline preserves old content with an actionable retry message', async () => {
   const source = await read('src/components/subject/FileOutlineList.vue')
   assert.match(source, /当前内容仍可查看/)
-  assert.match(source, /file\.error\s*&&\s*\(file\.outline\?\.length\s*\|\|\s*file\.summary\)/)
+  assert.match(source, /file\.error\s*&&\s*\(file\.outlineMarkdown\s*\|\|\s*file\.summaryMarkdown\)/)
   assert.match(source, /重新生成/)
 })
 
@@ -117,8 +118,8 @@ test('generation edit conflicts appear only with a persisted candidate and expos
   for (const source of [file, subject]) {
     assert.match(source, /保留我的修改/)
     assert.match(source, /使用AI结果/)
-    assert.match(source, /conflict\.result\.summary\?\.overview/)
-    assert.doesNotMatch(source, /v-html/)
+    assert.match(source, /conflict\.result\.summaryMarkdown/)
+    assert.doesNotMatch(source, /v-html="(?!renderMarkdown\()/)
   }
   assert.match(workspace, /const resolveGenerationEditConflict = async \(scopeType:/)
   assert.match(workspace, /capturedRepository\.isScopeFenceTokenCurrent\(capturedFenceToken\)/)
@@ -126,11 +127,11 @@ test('generation edit conflicts appear only with a persisted candidate and expos
   assert.match(workspace, /capturedRepository\.resolveGenerationEditConflict\(clientWriteId,choice,isCurrent,validateInputs\)/)
 })
 
-test('SubjectWorkspace keeps chat failures in the chat region and retries the same pending request', async () => {
+test('SubjectWorkspace keeps chat failures in the chat region and retries the pending message', async () => {
   const source = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(source, /class="ai-messages"[\s\S]*role="alert"/)
   assert.match(source, /chatStore\.lastError/)
-  assert.match(source, /pendingRequestId:\s*pending\.clientRequestId/)
+  assert.match(source, /chatStore\.retryPendingMessage\(pending\.id\)/)
   assert.match(source, /@click="retryChat"/)
 })
 
@@ -140,7 +141,7 @@ test('file overview failures expose direct retry actions with classified copy', 
   const workspaceSource = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(fileOutlineSource, />重新生成</)
   assert.match(fileOutlineSource, /emit\('regenerate'/)
-  assert.match(fileOutlineSource, /summary\s*\?\s*['"]OUTLINE['"]\s*:\s*['"]ALL['"]/)
+  assert.match(fileOutlineSource, /summaryMarkdown\s*\?\s*['"]OUTLINE['"]\s*:\s*['"]ALL['"]/)
   assert.match(summaryViewSource, />重新生成</)
   assert.match(summaryViewSource, /emit\('regenerate'/)
   assert.match(summaryViewSource, /summary-notice--error[\s\S]*重新生成/)
@@ -150,7 +151,7 @@ test('file overview failures expose direct retry actions with classified copy', 
 
 test('file overview failure notice and retry buttons enforce mutual exclusion and disabled state', async () => {
   const source = await read('src/components/subject/FileOutlineList.vue')
-  assert.match(source, /v-if="file\.error\s*&&\s*\(file\.outline\?\.length\s*\|\|\s*file\.summary\)"/)
+  assert.match(source, /v-if="file\.error\s*&&\s*\(file\.outlineMarkdown\s*\|\|\s*file\.summaryMarkdown\)"/)
   assert.doesNotMatch(source, /<p\s+v-if="file\.error"\s+class="file-outline__notice"/)
 
   const retryButtons = [...source.matchAll(/<button\b[\s\S]*?>/g)]
@@ -177,35 +178,24 @@ test('overview summary view guarantees exactly one retry action on failure and d
   assert.doesNotMatch(source, /class="summary-empty"[\s\S]*?重新生成/)
 })
 
-test('subject outline composer preserves section summary, sourceIds, locator and isolates drafts on subject switch', async () => {
+test('Markdown composer isolates drafts on subject switch and refuses blank edits', async () => {
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
-  assert.match(workspace, /summary:\s*sec\.summary\s*\?\?\s*null/)
-  assert.match(workspace, /locator:\s*sec\.locator\s*\?\?\s*null/)
-  assert.match(workspace, /sourceIds:\s*Array\.isArray\(sec\.sourceIds\)/)
-  assert.match(workspace, /watch\(subjectId,\s*async\s*\(newId\)\s*=>\s*\{[\s\S]*?subjectOutline\.value\s*=\s*\[\][\s\S]*?await startFreshChatSession/)
-  assert.match(workspace, /const saveCurrentOutline = async \(\) => \{[\s\S]*?!subjectOutline\.value\.length/)
-  assert.match(workspace, /if\s*\(subjectId\.value\s*!==\s*targetSubjectId\)\s*return/)
-  assert.doesNotMatch(workspace, /syncOutlineFileLinks/)
+  assert.match(workspace, /v-model="subjectOutlineDraft"/)
+  assert.match(workspace, /subjectOutlineDraft\.value = ''/)
+  assert.match(workspace, /subjectOutlineDraft\.value\.trim\(\)/)
+  assert.match(workspace, /if \(subjectId\.value !== targetSubjectId\) return/)
 })
 
-test('late file results preserve edited drafts and subject unlinking removes stale provenance before save', async () => {
+test('late file results preserve unsaved Markdown drafts', async () => {
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
-  const outlineHelpers = await read('src/services/outlineIdentity.ts')
-  const fileWatcherStart = workspace.indexOf('watch(fileOverviewItems,')
-  const fileWatcherEnd = workspace.indexOf('\nwatch(activeSourceFiles', fileWatcherStart)
-  const unlinkStart = workspace.indexOf('const unlinkFile =')
-  const unlinkEnd = workspace.indexOf('\nconst handleOutlineAi', unlinkStart)
-  assert.ok(fileWatcherStart >= 0 && fileWatcherEnd > fileWatcherStart)
-  assert.ok(unlinkStart >= 0 && unlinkEnd > unlinkStart)
-  assert.match(workspace.slice(fileWatcherStart, fileWatcherEnd), /shouldAdoptGeneratedOutline\(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges\(item\.id\)\)/)
-  assert.match(outlineHelpers, /previousGeneratedAt !== nextGeneratedAt && !hasUnsavedDraftChanges/)
-  assert.match(workspace.slice(unlinkStart, unlinkEnd), /section\.sourceRefs = filterOutlineSourceRefs\(section\.sourceRefs \?\? \[\], section\.sourceIds \?\? \[\]\)/)
-  assert.match(workspace, /outlineProvenanceInput: createOutlineProvenanceInputForLinkedSources\(/)
+  assert.match(workspace, /shouldAdoptGeneratedOutline\(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges\(item\.id\)\)/)
+  assert.match(workspace, /if \(!force && subjectOutlineHasUnsavedChanges\(\)\) return/)
+  assert.doesNotMatch(workspace, /outlineProvenanceInput/)
 })
 
 test('subject switch synchronously clears selectedFileId and chat guards against cross-subject file IDs', async () => {
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
-  assert.match(workspace, /watch\(subjectId,\s*async\s*\(newId\)\s*=>\s*\{[\s\S]*?selectedFileId\.value\s*=\s*null[\s\S]*?await startFreshChatSession/)
+  assert.match(workspace, /watch\(subjectId,\s*async\s*\(newId\)\s*=>\s*\{[\s\S]*?selectedFileId\.value\s*=\s*null[\s\S]*?startFreshChatSession\(\)/)
   assert.ok(workspace.includes("file.id === selectedFileId.value && file.subjectId === subjectId.value && file.ingestionStatus === 'READY'"),
     'current-file chat context must be limited to a READY source in the active subject')
   assert.ok(workspace.includes("file.id === id && file.subjectId === subjectId.value && file.ingestionStatus === 'READY'"),
@@ -217,16 +207,155 @@ test('subject switch synchronously clears selectedFileId and chat guards against
   assert.match(workspace, /fileOverviewManualErrors\.value\s*=\s*\{\}/)
 })
 
-test('subject workspace lifecycle guards against session race, unmount leakage, and starts refresh timer immediately on mount', async () => {
+test('workspace mounts and switches local files and knowledge blocks while Chat is pending', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  const { descriptor, errors } = parse(workspace, { filename: 'SubjectWorkspace/index.vue' })
+  assert.deepEqual(errors, [])
+  const script = ts.createSourceFile('workspace.ts', descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true)
+  const names = new Set([
+    'selectFile', 'chatSessionInitialization', 'startFreshChatSession',
+    'isComponentMounted', 'currentSubjectSwitchGen', 'workspaceChatSession', 'canUseWorkspaceChat',
+    'sendChat', 'sendPreset', 'sendSelectionQuestion', 'askSelection', 'clearChat',
+  ])
+  const lifecycle = script.statements.filter(statement => {
+    if (ts.isVariableStatement(statement)) {
+      return statement.declarationList.declarations.some(declaration => names.has(declaration.name.getText(script)))
+    }
+    if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) return false
+    const call = statement.expression
+    return call.expression.getText(script) === 'onMounted'
+      || (call.expression.getText(script) === 'watch' && call.arguments[0].getText(script) === 'subjectId')
+  }).map(statement => statement.getText(script)).join('\n')
+  const subjectId = ref('a')
+  const activeSourceFiles = ref([])
+  const selectedFileId = ref(null)
+  const centerView = ref('overview')
+  const chatInput = ref('draft')
+  const quotedSelection = ref('quote')
+  const knowledgeReads = []
+  const chatRequests = []
+  const sentMessages = []
+  const notifications = []
+  const chatStore = reactive({
+    activeSession: null,
+    startSubjectConversation(id) { return this.startNewSubjectConversation(id) },
+    startNewSubjectConversation(id) {
+      const request = Promise.withResolvers()
+      chatRequests.push({ id, ...request })
+      return request.promise
+    },
+    async sendMessage(content) { sentMessages.push([this.activeSession?.id, content]) },
+  })
+  const context = {
+    subjectId, activeSourceFiles, selectedFileId, centerView, chatStore, chatInput, quotedSelection, ref, computed,
+    authStore: { loginGeneration: Symbol('login') },
+    ElNotification: notification => notifications.push(notification),
+    activeSubject: ref(null),
+    isScopeLocked: ref(false),
+    isOutlineComposer: ref(false),
+    selectedText: ref('selection'),
+    isAiStreaming: ref(false),
+    showProcessingRequired: ref(false),
+    chatInputRef: ref(null),
+    isAutoScrollLocked: ref(false),
+    aiChatReferenceOptions: () => ({}),
+    nextTick() {},
+    scrollChatToBottom() {},
+    route: { query: {} },
+    subjectStore: {
+      setActiveSubject() {},
+      async loadSourceFiles(id) {
+        activeSourceFiles.value = [{ id: `${id}-1`, name: 'first.pdf' }, { id: `${id}-2`, name: 'second.pdf' }]
+      },
+    },
+    sourceStore: { clearActiveSourceFiles: () => { activeSourceFiles.value = [] } },
+    blockStore: { async fetchBlocks(_subject, id) { knowledgeReads.push(id) } },
+    async ensureOverviewRuntime() {},
+    startProcessingRefresh() {},
+    stopAllManualOverviews() {},
+  }
+  for (const name of [
+    'selectionPosition', 'selectedAiSourceIds', 'aiReferenceScope',
+    'subjectOutlineDraft', 'subjectOutlineBaseline', 'fileOutlineDrafts', 'fileDraftBaselines', 'fileDraftOutlineGeneratedAt',
+    'chapterDraft', 'chapterDrafts', 'fileSectionDrafts', 'fileChapterDrafts', 'selectedSummaryScope',
+    'subjectOverviewRecord', 'fileOverviewRecords', 'isSubjectOverviewStale', 'subjectOverviewManualError',
+    'fileOverviewManualErrors', 'subjectOverviewGenerating', 'generatingFileIds',
+  ]) context[name] = ref(null)
+  const execute = new Function(...Object.keys(context), ts.transpileModule(`
+    let mount, switchSubject
+    const onMounted = callback => { mount = callback }
+    const watch = (_source, callback) => { switchSubject = callback }
+    ${lifecycle}
+    return { mount, switchSubject, selectFile, sendChat, sendPreset, sendSelectionQuestion, askSelection, clearChat }
+  `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
+  const { mount, switchSubject, selectFile, sendChat, sendPreset, sendSelectionQuestion, askSelection, clearChat } = execute(...Object.values(context))
+  const mounted = mount()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(knowledgeReads, ['a'])
+  assert.equal(selectedFileId.value, 'a-1')
+  assert.equal(centerView.value, 'preview')
+  await sendChat()
+  sendPreset('preset')
+  await sendSelectionQuestion('selection question')
+  askSelection()
+  assert.equal(chatInput.value, 'draft')
+  assert.equal(quotedSelection.value, 'quote')
+  assert.deepEqual(sentMessages, [])
+
+  chatStore.activeSession = { id: 'conversation-a' }
+  chatRequests[0].resolve('conversation-a')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(chatRequests.map(request => request.id), ['a'])
+  await mounted
+
+  subjectId.value = 'b'
+  const switched = switchSubject('b')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(knowledgeReads, ['a', 'b'])
+  assert.equal(selectedFileId.value, 'b-1')
+  assert.deepEqual(chatRequests.map(request => request.id), ['a', 'b'])
+
+  await sendChat()
+  assert.equal(chatInput.value, 'draft')
+  assert.deepEqual(sentMessages, [])
+
+  await selectFile('b-2')
+  assert.equal(selectedFileId.value, 'b-2')
+  chatRequests[1].reject(new Error('offline'))
+  await switched
+  assert.deepEqual(chatRequests.map(request => request.id), ['a', 'b'])
+  await sendChat()
+  assert.equal(chatInput.value, 'draft')
+  assert.deepEqual(sentMessages, [])
+
+  clearChat()
+  assert.deepEqual(chatRequests.map(request => request.id), ['a', 'b', 'b'])
+  chatStore.activeSession = { id: 'conversation-b' }
+  chatRequests[2].resolve('conversation-b')
+  await new Promise(resolve => setImmediate(resolve))
+  await sendChat()
+  assert.deepEqual(sentMessages, [['conversation-b', 'draft']])
+  assert.equal(chatInput.value, '')
+
+  chatInput.value = 'preserved draft'
+  clearChat()
+  await sendChat()
+  assert.equal(sentMessages.length, 1)
+  chatRequests[3].reject(new Error('new conversation unavailable'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(chatInput.value, 'preserved draft')
+  assert.equal(chatStore.activeSession.id, 'conversation-b')
+  assert.equal(notifications.at(-1).message, 'new conversation unavailable')
+  await sendChat()
+  assert.deepEqual(sentMessages.at(-1), ['conversation-b', 'preserved draft'])
+})
+
+test('subject workspace starts the refresh timer on mount and releases timer and chat transport on unmount', async () => {
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
   // 1. 立即在 onMounted 启动轮询，解耦于特定学科异步链路
   assert.match(workspace, /onMounted\(async \(\) => \{[\s\S]*?isComponentMounted = true[\s\S]*?startProcessingRefresh\(\)/)
   // 2. 组件卸载时使代次失效并清理定时器
-  assert.match(workspace, /onUnmounted\(\(\) => \{[\s\S]*?isComponentMounted = false[\s\S]*?currentSubjectSwitchGen\+\+[\s\S]*?stopProcessingRefresh\(\)[\s\S]*?chatStore\.endActiveSession\(\)/)
-  // 3. 阅读会话启动后的后置代次与组件存活保护（onMounted 与 watch）
-  assert.match(workspace, /const readingSessionId = await chatStore\.startReadingSession\(firstFile\.id,\s*newId,\s*firstFile\.name\)\.catch\(\(\) => undefined\)[\s\S]*?if\s*\(!isComponentMounted\s*\|\|\s*currentSubjectSwitchGen\s*!==\s*switchGen\s*\|\|\s*subjectId\.value\s*!==\s*newId\s*\|\|\s*selectedFileId\.value\s*!==\s*firstFile\.id\)[\s\S]*?chatStore\.endSessionById\(readingSessionId\)/)
-  // 4. selectFile 中的代次与阅读会话保护
-  assert.match(workspace, /const selectFile = async \(id: string\) => \{[\s\S]*?\+\+currentSubjectSwitchGen[\s\S]*?const readingSessionId = await chatStore\.startReadingSession\(id,\s*targetSubjectId,\s*file\.name\)\.catch\(\(\) => undefined\)[\s\S]*?if\s*\(!isComponentMounted\s*\|\|\s*currentSubjectSwitchGen\s*!==\s*fileSelectGen[\s\S]*?chatStore\.endSessionById\(readingSessionId\)/)
+  assert.match(workspace, /onUnmounted\(\(\) => \{[\s\S]*?isComponentMounted = false[\s\S]*?currentSubjectSwitchGen\+\+[\s\S]*?stopProcessingRefresh\(\)[\s\S]*?chatStore\.abortStream\(\)/)
 })
 
 test('SubjectWorkspace subscribes to overview cache updates and refreshes view reactively', async () => {
@@ -247,7 +376,7 @@ test('subject outline composer keeps subject outline independent when ungenerate
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
   assert.doesNotMatch(workspace, /filesWithOutline\.length === 1/)
   assert.doesNotMatch(workspace, /singleFile\.outline/)
-  assert.match(workspace, /if \(force \|\| !subjectOutline\.value\.length\) \{[\s\S]*?第一章 · 新建章节/)
+  assert.match(workspace, /const remote = subjectOverviewRecord\.value\?\.outlineMarkdown \?\? \'\'/)
 })
 
 

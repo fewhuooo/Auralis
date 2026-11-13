@@ -26,7 +26,6 @@ import static com.auralis.app.ai.OverviewJobDtos.Status;
 public class OverviewJobRepository {
     private static final String COLUMNS = "id,user_id,client_request_id,generation_request_id,scope_type,scope_id,mode,"
             + "request_hash,request_json,source_manifest_json,input_fingerprint,profile_fingerprint,algorithm_version,"
-            + "publication_base_version,publication_base_result_id,publication_base_result_version,"
             + "generation_id,budget_task_id,status,stage,verified_nodes,total_nodes,version,worker_owner_id,worker_fence,"
             + "lease_until,deadline_at,pause_requested,cancel_requested,candidate_json,safe_error_code,created_at,updated_at,completed_at";
     private final JdbcTemplate jdbc;
@@ -57,12 +56,6 @@ public class OverviewJobRepository {
 
     @Transactional
     public JobRow enqueue(UUID userId, OverviewJobDtos.StartRequest request, Snapshot snapshot) {
-        return enqueue(userId, request, snapshot, new PublicationBaseline(0, null, null));
-    }
-
-    @Transactional
-    public JobRow enqueue(UUID userId, OverviewJobDtos.StartRequest request, Snapshot snapshot,
-                          PublicationBaseline baseline) {
         validateSnapshotPayload(snapshot);
         requireActiveUserLocked(userId);
         JobRow replay = jdbc.query("select " + COLUMNS + " from overview_generation_jobs "
@@ -85,12 +78,11 @@ public class OverviewJobRepository {
         UUID generationRequestId = UUID.randomUUID();
         jdbc.update("insert into overview_generation_jobs (id,user_id,client_request_id,generation_request_id,scope_type,scope_id,mode,"
                         + "request_hash,request_json,source_manifest_json,input_fingerprint,profile_fingerprint,algorithm_version,"
-                        + "publication_base_version,publication_base_result_id,publication_base_result_version,"
-                        + "status,stage,version,created_at,updated_at) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'QUEUED','QUEUED',1,?,?)",
+                        + "status,stage,version,created_at,updated_at) values (?,?,?,?,?,?,?,?,?,?,?,?,?,'QUEUED','QUEUED',1,?,?)",
                 id, userId, request.clientRequestId(), generationRequestId, request.scope().name(), snapshot.scopeId(),
                 request.mode().name(), snapshot.requestHash(), snapshot.requestJson(), snapshot.sourceManifestJson(),
                 snapshot.inputFingerprint(), snapshot.profileFingerprint(), snapshot.algorithmVersion(),
-                baseline.logicalVersion(), baseline.resultId(), baseline.physicalVersion(), timestamp(now), timestamp(now));
+                timestamp(now), timestamp(now));
         return getOwnedLocked(userId, id);
     }
 
@@ -518,9 +510,7 @@ public class OverviewJobRepository {
                 rs.getObject("total_nodes", Integer.class), rs.getInt("version"), rs.getObject("worker_owner_id", UUID.class),
                 rs.getLong("worker_fence"), instant(rs, "lease_until"), instant(rs, "deadline_at"),
                 rs.getBoolean("pause_requested"), rs.getBoolean("cancel_requested"), rs.getString("candidate_json"),
-                rs.getString("safe_error_code"), instant(rs, "created_at"), instant(rs, "updated_at"), instant(rs, "completed_at"),
-                rs.getLong("publication_base_version"), rs.getObject("publication_base_result_id", UUID.class),
-                rs.getObject("publication_base_result_version", Long.class));
+                rs.getString("safe_error_code"), instant(rs, "created_at"), instant(rs, "updated_at"), instant(rs, "completed_at"));
     }
 
     private Cursor decodeCursor(String value, UUID userId, OverviewJobDtos.Scope scope, UUID scopeId) {
@@ -555,7 +545,6 @@ public class OverviewJobRepository {
     public enum Control { PAUSE, RESUME, CANCEL, RECONCILE }
     public record Snapshot(UUID scopeId, String requestHash, String requestJson, String sourceManifestJson,
                            String inputFingerprint, String profileFingerprint, String algorithmVersion) { }
-    public record PublicationBaseline(long logicalVersion, UUID resultId, Long physicalVersion) { }
     public record JobLease(UUID jobId, UUID userId, UUID workerId, long fence, Instant deadlineAt,
                            String inputFingerprint, String profileFingerprint, String algorithmVersion) { }
     public record InvocationRow(UUID reservationId, UUID taskId, UUID generationId, UUID userId, String purpose,
@@ -567,8 +556,7 @@ public class OverviewJobRepository {
                          UUID generationId, UUID budgetTaskId, Status status, Stage stage, int verifiedNodes,
                          Integer totalNodes, int version, UUID workerOwnerId, long workerFence, Instant leaseUntil,
                          Instant deadlineAt, boolean pauseRequested, boolean cancelRequested, String candidateJson,
-                         String safeErrorCode, Instant createdAt, Instant updatedAt, Instant completedAt,
-                         long publicationBaseVersion, UUID publicationBaseResultId, Long publicationBaseResultVersion) {
+                         String safeErrorCode, Instant createdAt, Instant updatedAt, Instant completedAt) {
         public JobLease lease() { return new JobLease(id, userId, workerOwnerId, workerFence, deadlineAt,
                 inputFingerprint, profileFingerprint, algorithmVersion); }
     }

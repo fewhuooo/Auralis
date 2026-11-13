@@ -164,8 +164,16 @@ class ParsedDocumentControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(intentJson(fixture.source().ingestionRevision(), SHA256, 0)))
                 .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/sources/{sourceId}/parsed-documents/upload-intents", fixture.source().id())
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(intentJson(fixture.source().ingestionRevision(), SHA256, 2048)
+                                .replace("\"sourceAssetSha256\":\"" + SHA256 + "\",", "")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
         assertThat(assetStorage.lastObjectKey).isNull();
+        assertThat(parsedDocumentRepository.count()).isZero();
     }
 
     private Fixture createReadyFile(String suffix) {

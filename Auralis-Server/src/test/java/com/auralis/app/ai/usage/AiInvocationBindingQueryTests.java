@@ -52,7 +52,7 @@ class AiInvocationBindingQueryTests {
         provider.beforeComplete = () -> assertThat(callbackDone.get()).isTrue();
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
                 "binding-order-" + UUID.randomUUID()))) {
-            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(), credential(),
+            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(), credential(),
                     AiCredentialSource.PLATFORM, 1_000L, AiOutputRole.INTERMEDIATE, null, id -> {
                         reservationId.set(id);
                         AiInvocationState observed = guard.invocationStateForOwner(userId, scope.taskId(), id,
@@ -110,7 +110,7 @@ class AiInvocationBindingQueryTests {
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
                 "before-dispatch-order-" + UUID.randomUUID()))) {
             taskId.set(scope.taskId());
-            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(), credential(),
+            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(), credential(),
                     AiCredentialSource.PLATFORM, 1_000L, AiOutputRole.INTERMEDIATE, null, binding);
         } finally {
             heartbeat.shutdownNow();
@@ -145,7 +145,7 @@ class AiInvocationBindingQueryTests {
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
                 "before-dispatch-failure-" + UUID.randomUUID()))) {
             taskId.set(scope.taskId());
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), credential(), AiCredentialSource.PLATFORM, 1_000L,
                     AiOutputRole.INTERMEDIATE, null, binding))
                     .isInstanceOf(IllegalStateException.class)
@@ -174,7 +174,7 @@ class AiInvocationBindingQueryTests {
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
                 "unbound-dispatch-" + UUID.randomUUID()))) {
             taskId.set(scope.taskId());
-            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(), credential(),
+            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(), credential(),
                     AiCredentialSource.PLATFORM, 1_000L, AiOutputRole.INTERMEDIATE, null);
         } finally {
             heartbeat.shutdownNow();
@@ -198,7 +198,7 @@ class AiInvocationBindingQueryTests {
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
                 "binding-failure-" + UUID.randomUUID()))) {
             taskId = scope.taskId();
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), credential(), AiCredentialSource.PLATFORM, 1_000L,
                     AiOutputRole.INTERMEDIATE, null, id -> {
                         reservationId.set(id);
@@ -232,7 +232,7 @@ class AiInvocationBindingQueryTests {
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
                 "provider-failure-" + UUID.randomUUID()))) {
             taskId = scope.taskId();
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), credential(), AiCredentialSource.PLATFORM, 1_000L,
                     AiOutputRole.INTERMEDIATE, null, reservationId::set))
                     .isInstanceOf(IllegalStateException.class);
@@ -261,7 +261,7 @@ class AiInvocationBindingQueryTests {
         AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(owner, AiFeature.SOURCE_OVERVIEW,
                 "query-scope-" + UUID.randomUUID()));
         AiUsageGuard.CallReservation reservation = guard.reserve(task, AiStage.OVERVIEW_MAP,
-                AiProviderType.DEEPSEEK, "synthetic-model", AiCredentialSource.PLATFORM,
+                AiProviderType.OPENAI_COMPATIBLE, "synthetic-model", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 10, 5);
         var before = guard.invocationStateForOwner(owner, task.taskId(), reservation.id(), OVERVIEW_KINDS)
                 .orElseThrow();
@@ -303,7 +303,7 @@ class AiInvocationBindingQueryTests {
         boolean failNext;
         Runnable beforeComplete = () -> { };
 
-        @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+        @Override public AiProviderType type() { return AiProviderType.OPENAI_COMPATIBLE; }
 
         @Override
         public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
@@ -325,12 +325,6 @@ class AiInvocationBindingQueryTests {
         public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
                                            long timeoutMillis, OverviewCancellation cancellation) {
             return complete(request, credential, timeoutMillis);
-        }
-
-        @Override
-        public void streamInto(AiProviderRequest request, AiCredential credential,
-                               java.util.function.Consumer<com.auralis.app.ai.AiProviderChunk> sink) {
-            throw new UnsupportedOperationException();
         }
     }
 
@@ -378,13 +372,14 @@ class AiInvocationBindingQueryTests {
 
         AiInvocationGateway gateway(AiUsageGuard guard, SyntheticProvider provider,
                                     ScheduledExecutorService heartbeat) {
-            AuralisProperties.Ai ai = new AuralisProperties.Ai(false, "", "DEEPSEEK",
-                    new AuralisProperties.Defaults(null, null, null), 3_000, 10_000, 120_000,
+            AuralisProperties.Ai ai = new AuralisProperties.Ai(false, "", new AuralisProperties.GenerationEndpoint(
+                    "https://provider.test/v1", "synthetic-model", "synthetic-test-key", 100_000, 16_384),
+                    null, 3_000, 10_000, 120_000,
                     240_000, 12_000, 8, 5_242_880, 32, 32_768, 3_000, 10_000, 3,
-                    1_048_576, List.of(), false, 1_000, 60_000, 3, limits, true, true,
-                    "legacy-bytes", List.of(new AuralisProperties.OverviewModelCapacity(
-                    AiProviderType.DEEPSEEK.name(), "https://provider.test/v1", "synthetic-model", 100_000, 16_384)),
-                    AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
+                    1_048_576, List.of(), false, 1_000, 60_000, 3, limits, true,
+                    List.of(new AuralisProperties.OverviewModelCapacity(
+                    AiProviderType.OPENAI_COMPATIBLE.name(), "https://provider.test/v1", "synthetic-model", 100_000, 16_384)),
+                    AuralisProperties.OverviewLimits.withoutAdditionalCaps());
             return new AiUsageGatewayService(guard, new AiProviderRegistry(List.of(provider)),
                     new EmbeddingProviderRegistry(List.of(new SyntheticEmbeddingProvider())), ai,
                     heartbeat, transactions);

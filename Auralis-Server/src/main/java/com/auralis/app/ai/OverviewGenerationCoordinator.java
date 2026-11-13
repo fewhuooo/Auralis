@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -57,7 +56,6 @@ public class OverviewGenerationCoordinator {
             "AI_DAILY_QUOTA_EXCEEDED", 429,
             "AI_GLOBAL_QUOTA_EXCEEDED", 503);
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
-    private static final Pattern STEP_KEY = Pattern.compile("[A-Za-z0-9_.:-]{1,160}");
     private static final Pattern SAFE_ACTION = Pattern.compile("[A-Z0-9_]{1,48}");
 
     private final JdbcTemplate jdbc;
@@ -756,259 +754,6 @@ public class OverviewGenerationCoordinator {
                 Boolean.class, lease.generationId(), lease.userId(), lease.ownerId(), lease.fence(), sqlTimestamp(now)));
     }
 
-    public Checkpoint loadCheckpoint(GenerationLease lease, String stepKey, String inputFingerprint,
-                                     String profileFingerprint, String algorithmVersion, int schemaVersion) {
-        validateStep(stepKey, inputFingerprint, profileFingerprint, algorithmVersion, schemaVersion);
-        requireLeaseBinding(lease, profileFingerprint, algorithmVersion);
-        return transactions.execute(status -> {
-            requireLeaseLocked(lease);
-            return jdbc.query("select payload_json,payload_sha256,schema_version from overview_generation_checkpoints "
-                            + "where generation_id=? and step_key=? and input_fingerprint=? and profile_fingerprint=? "
-                            + "and algorithm_version=?",
-                    rs -> rs.next() ? verifiedCheckpoint(rs.getString("payload_json"), rs.getString("payload_sha256"),
-                            rs.getInt("schema_version"), schemaVersion) : null,
-                    lease.generationId(), stepKey, inputFingerprint, profileFingerprint, algorithmVersion);
-        });
-    }
-
-    /** Read-only index reuse from a successful generation with the exact same authorized input. */
-    Checkpoint findReusableIndexCheckpoint(GenerationLease lease, String stepKey, int schemaVersion) {
-        return findReusableIndexCheckpoint(lease, stepKey, schemaVersion, false);
-    }
-
-    Checkpoint findReusableIndexBatchCheckpoint(GenerationLease lease, String stepKey, int schemaVersion) {
-        if (stepKey == null || !stepKey.matches("index_batch_v1_[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("Index batch reuse requires a dependency-bound key");
-        }
-        return findReusableIndexCheckpoint(lease, stepKey, schemaVersion, true);
-    }
-
-    /** Read-only adaptive planning reuse for an exact generation input and exact prompt-derived step. */
-    Checkpoint findReusableAdaptivePlanCheckpoint(GenerationLease lease, String stepKey, int schemaVersion) {
-        if (stepKey == null || !stepKey.matches("step_[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("Adaptive plan reuse requires an exact prompt-derived step");
-        }
-        validateStep(stepKey, lease.inputFingerprint(), lease.profileFingerprint(), lease.algorithmVersion(), schemaVersion);
-        return transactions.execute(status -> {
-            requireLeaseLocked(lease);
-            List<UUID> ancestors = retryAncestorIds(lease.generationId());
-            String ancestorPredicate = idPredicate("g.id", ancestors.size());
-            return jdbc.query("select c.payload_json,c.payload_sha256,c.schema_version "
-                            + "from overview_generation_checkpoints c join overview_generations g on g.id=c.generation_id "
-                            + "where g.user_id=? and g.scope_type=? and g.scope_id=? and g.id<>? "
-                            + "and ((g.status='SUCCESS' and g.result_expires_at>?) or " + ancestorPredicate + ") "
-                            + "and g.input_fingerprint=? and g.profile_fingerprint=? and g.algorithm_version=? "
-                            + "and c.step_key=? and c.input_fingerprint=g.input_fingerprint and c.profile_fingerprint=? "
-                            + "and c.algorithm_version=? and c.created_at>? "
-                            + "order by g.updated_at desc,g.id desc limit 1",
-                    rs -> rs.next() ? verifiedCheckpoint(rs.getString("payload_json"), rs.getString("payload_sha256"),
-                            rs.getInt("schema_version"), schemaVersion) : null,
-                    queryArgs(lease.userId(), lease.scopeType(), lease.scopeId(), lease.generationId(),
-                            sqlTimestamp(clock.instant()), ancestors, lease.inputFingerprint(), lease.profileFingerprint(),
-                            lease.algorithmVersion(), stepKey, lease.profileFingerprint(), lease.algorithmVersion(),
-                            sqlTimestamp(clock.instant().minus(Duration.ofDays(CHECKPOINT_RETENTION_DAYS)))));
-        });
-    }
-
-    /** Read-only exact adaptive writer reuse from a successful generation with a dispatched reservation on its verified node. */
-    ReusableCheckpoint findReusableAdaptiveWriterCheckpoint(GenerationLease lease, String stepKey, int schemaVersion) {
-        if (stepKey == null || !stepKey.matches("step_[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("Adaptive writer reuse requires an exact prompt-derived step");
-        }
-        validateStep(stepKey, lease.inputFingerprint(), lease.profileFingerprint(), lease.algorithmVersion(), schemaVersion);
-        return transactions.execute(status -> {
-            requireLeaseLocked(lease);
-            List<UUID> ancestors = retryAncestorIds(lease.generationId());
-            String ancestorPredicate = idPredicate("g.id", ancestors.size());
-            String reusablePlanState = ancestors.isEmpty() ? "p.state='ASSEMBLED'"
-                    : "(p.state='ASSEMBLED' or " + ancestorPredicate + ")";
-            return jdbc.query("select c.payload_json,c.payload_sha256,c.schema_version,g.id as donor_generation_id, "
-                            + "p.payload_json as plan_payload_json,p.plan_fingerprint,n.descriptor_json,n.descriptor_sha256 "
-                            + "from overview_generation_checkpoints c "
-                            + "join overview_generations g on g.id=c.generation_id "
-                            + "join overview_execution_nodes n on n.generation_id=g.id and n.checkpoint_step=c.step_key "
-                            + "join overview_execution_plans p on p.id=n.plan_id and p.generation_id=g.id "
-                            + "where g.user_id=? and g.scope_type=? and g.scope_id=? and g.id<>? "
-                            + "and ((g.status='SUCCESS' and g.result_expires_at>?) or " + ancestorPredicate + ") "
-                            + "and g.input_fingerprint=? and g.profile_fingerprint=? and g.algorithm_version=? "
-                            + "and c.step_key=? and c.input_fingerprint=g.input_fingerprint "
-                            + "and c.profile_fingerprint=g.profile_fingerprint and c.algorithm_version=g.algorithm_version "
-                            + "and c.created_at>? and n.state='VERIFIED' and n.checkpoint_sha256=c.payload_sha256 "
-                            + "and p.input_fingerprint=g.input_fingerprint and p.profile_fingerprint=g.profile_fingerprint "
-                            + "and p.algorithm_version=g.algorithm_version and " + reusablePlanState
-                            + " and p.state<>'SUPERSEDED' "
-                            + "and exists (select 1 from overview_execution_calls ec "
-                            + "join ai_usage_reservations r on r.id=ec.reservation_id "
-                            + "where ec.generation_id=g.id and ec.plan_id=p.id and ec.node_id=n.id "
-                            + "and ec.attempt=n.attempt and ec.reservation_id is not null "
-                            + "and ec.user_id=g.user_id and r.user_id=g.user_id and r.request_dispatched=true) "
-                            + "order by g.updated_at desc,g.id desc limit 1",
-                    rs -> {
-                        if (!rs.next()) return null;
-                        String planPayload = rs.getString("plan_payload_json");
-                        String planFingerprint = rs.getString("plan_fingerprint");
-                        String descriptor = rs.getString("descriptor_json");
-                        String descriptorHash = rs.getString("descriptor_sha256");
-                        if (planPayload == null || planFingerprint == null || !sha256(planPayload).equals(planFingerprint.trim())
-                                || descriptor == null || descriptorHash == null
-                                || !sha256(descriptor).equals(descriptorHash.trim()) || !planPayload.contains(descriptor)) {
-                            throw new DomainException("VALIDATION_FAILED", "Stored Overview writer plan failed integrity validation");
-                        }
-                        return new ReusableCheckpoint(verifiedCheckpoint(rs.getString("payload_json"),
-                                rs.getString("payload_sha256"), rs.getInt("schema_version"), schemaVersion),
-                                rs.getObject("donor_generation_id", UUID.class));
-                    },
-                    queryArgs(lease.userId(), lease.scopeType(), lease.scopeId(), lease.generationId(),
-                            sqlTimestamp(clock.instant()), ancestors, lease.inputFingerprint(), lease.profileFingerprint(),
-                            lease.algorithmVersion(), stepKey,
-                            sqlTimestamp(clock.instant().minus(Duration.ofDays(CHECKPOINT_RETENTION_DAYS))), ancestors));
-        });
-    }
-
-    /** Strict descriptor-bound writer reuse; cross-input donors are enabled only for the caller's exact node contract. */
-    ReusableCheckpoint findReusableAdaptiveWriterCheckpoint(GenerationLease lease, String stepKey, int schemaVersion,
-                                                              String expectedDescriptorJson, boolean allowCrossInput) {
-        if (stepKey == null || !stepKey.matches("step_[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("Adaptive writer reuse requires an exact prompt-derived step");
-        }
-        if (expectedDescriptorJson == null || expectedDescriptorJson.length() < 2
-                || exceeds(overviewLimits.maxNodeDescriptorChars(), expectedDescriptorJson.length())) {
-            throw new IllegalArgumentException("Adaptive writer reuse requires an exact node descriptor");
-        }
-        validateStep(stepKey, lease.inputFingerprint(), lease.profileFingerprint(), lease.algorithmVersion(), schemaVersion);
-        return transactions.execute(status -> {
-            requireLeaseLocked(lease);
-            List<UUID> ancestors = retryAncestorIds(lease.generationId());
-            String ancestorPredicate = idPredicate("g.id", ancestors.size());
-            String reusablePlanState = ancestors.isEmpty() ? "p.state='ASSEMBLED'"
-                    : "(p.state='ASSEMBLED' or " + ancestorPredicate + ")";
-            return jdbc.query("select c.payload_json,c.payload_sha256,c.schema_version,g.id as donor_generation_id, "
-                            + "p.payload_json as plan_payload_json,p.plan_fingerprint,n.descriptor_json,n.descriptor_sha256 "
-                            + "from overview_generation_checkpoints c "
-                            + "join overview_generations g on g.id=c.generation_id "
-                            + "join overview_execution_nodes n on n.generation_id=g.id and n.checkpoint_step=c.step_key "
-                            + "join overview_execution_plans p on p.id=n.plan_id and p.generation_id=g.id "
-                            + "where g.user_id=? and g.scope_type=? and g.scope_id=? and g.id<>? "
-                            + "and ((g.status='SUCCESS' and g.result_expires_at>?) or " + ancestorPredicate + ") "
-                            + "and (? or g.input_fingerprint=?) and g.profile_fingerprint=? and g.algorithm_version=? "
-                            + "and c.step_key=? and c.input_fingerprint=g.input_fingerprint "
-                            + "and c.profile_fingerprint=g.profile_fingerprint and c.algorithm_version=g.algorithm_version "
-                            + "and c.created_at>? and n.state='VERIFIED' and n.checkpoint_sha256=c.payload_sha256 "
-                            + "and n.descriptor_json=? "
-                            + "and p.input_fingerprint=g.input_fingerprint and p.profile_fingerprint=g.profile_fingerprint "
-                            + "and p.algorithm_version=g.algorithm_version and " + reusablePlanState
-                            + " and p.state<>'SUPERSEDED' "
-                            + "and exists (select 1 from overview_execution_calls ec "
-                            + "join ai_usage_reservations r on r.id=ec.reservation_id "
-                            + "where ec.generation_id=g.id and ec.plan_id=p.id and ec.node_id=n.id "
-                            + "and ec.attempt=n.attempt and ec.reservation_id is not null "
-                            + "and ec.user_id=g.user_id and r.user_id=g.user_id and r.request_dispatched=true) "
-                            + "order by g.updated_at desc,g.id desc limit 1",
-                    rs -> {
-                        if (!rs.next()) return null;
-                        String planPayload = rs.getString("plan_payload_json");
-                        String planFingerprint = rs.getString("plan_fingerprint");
-                        String descriptor = rs.getString("descriptor_json");
-                        String descriptorHash = rs.getString("descriptor_sha256");
-                        if (planPayload == null || planFingerprint == null || !sha256(planPayload).equals(planFingerprint.trim())
-                                || descriptor == null || descriptorHash == null
-                                || !sha256(descriptor).equals(descriptorHash.trim())
-                                || !descriptor.equals(expectedDescriptorJson) || !planPayload.contains(descriptor)) {
-                            throw new DomainException("VALIDATION_FAILED", "Stored Overview writer plan failed integrity validation");
-                        }
-                        return new ReusableCheckpoint(verifiedCheckpoint(rs.getString("payload_json"),
-                                rs.getString("payload_sha256"), rs.getInt("schema_version"), schemaVersion),
-                                rs.getObject("donor_generation_id", UUID.class));
-                    },
-                    queryArgs(lease.userId(), lease.scopeType(), lease.scopeId(), lease.generationId(),
-                            sqlTimestamp(clock.instant()), ancestors, allowCrossInput, lease.inputFingerprint(),
-                            lease.profileFingerprint(), lease.algorithmVersion(), stepKey,
-                            sqlTimestamp(clock.instant().minus(Duration.ofDays(CHECKPOINT_RETENTION_DAYS))),
-                            expectedDescriptorJson, ancestors));
-        });
-    }
-
-    private Checkpoint findReusableIndexCheckpoint(GenerationLease lease, String stepKey, int schemaVersion,
-                                                   boolean batchIdentity) {
-        validateStep(stepKey, lease.inputFingerprint(), lease.profileFingerprint(), lease.algorithmVersion(), schemaVersion);
-        return transactions.execute(status -> {
-            requireLeaseLocked(lease);
-            List<UUID> ancestors = retryAncestorIds(lease.generationId());
-            String ancestorPredicate = idPredicate("g.id", ancestors.size());
-            return jdbc.query("select c.payload_json,c.payload_sha256,c.schema_version "
-                            + "from overview_generation_checkpoints c join overview_generations g on g.id=c.generation_id "
-                            + "where g.user_id=? and g.scope_type=? and g.scope_id=? and g.id<>? "
-                            + "and ((g.status='SUCCESS' and g.result_expires_at>?) or " + ancestorPredicate + ") "
-                            + "and (? or g.input_fingerprint=?) and g.profile_fingerprint=? and g.algorithm_version=? "
-                            + "and c.step_key=? and c.input_fingerprint=g.input_fingerprint and c.profile_fingerprint=? "
-                            + "and c.algorithm_version=? and c.created_at>? "
-                            + "order by g.updated_at desc,g.id desc limit 1",
-                    rs -> rs.next() ? verifiedCheckpoint(rs.getString("payload_json"), rs.getString("payload_sha256"),
-                            rs.getInt("schema_version"), schemaVersion) : null,
-                    queryArgs(lease.userId(), lease.scopeType(), lease.scopeId(), lease.generationId(),
-                            sqlTimestamp(clock.instant()), ancestors, batchIdentity, lease.inputFingerprint(),
-                            lease.profileFingerprint(), lease.algorithmVersion(), stepKey, lease.profileFingerprint(),
-                            lease.algorithmVersion(), sqlTimestamp(clock.instant().minus(Duration.ofDays(CHECKPOINT_RETENTION_DAYS)))));
-        });
-    }
-
-    private List<UUID> retryAncestorIds(UUID generationId) {
-        List<UUID> ancestors = new java.util.ArrayList<>();
-        java.util.Set<UUID> seen = new java.util.HashSet<>();
-        UUID cursor = generationId;
-        while (cursor != null) {
-            UUID parent = jdbc.query("select retry_of_generation_id from overview_generations where id=?",
-                    rs -> rs.next() ? rs.getObject(1, UUID.class) : null, cursor);
-            if (parent == null) break;
-            if (!seen.add(parent)) throw new DomainException("VALIDATION_FAILED", "Overview retry lineage is invalid");
-            ancestors.add(parent);
-            cursor = parent;
-        }
-        return List.copyOf(ancestors);
-    }
-
-    private String idPredicate(String column, int count) {
-        return count == 0 ? "1=0" : column + " in ("
-                + String.join(",", java.util.Collections.nCopies(count, "?")) + ")";
-    }
-
-    private Object[] queryArgs(Object... args) {
-        List<Object> flattened = new java.util.ArrayList<>();
-        for (Object arg : args) {
-            if (arg instanceof List<?> values) flattened.addAll(values);
-            else flattened.add(arg);
-        }
-        return flattened.toArray();
-    }
-
-    public void saveCheckpoint(GenerationLease lease, String stepKey, String inputFingerprint,
-                               String profileFingerprint, String algorithmVersion, int schemaVersion, String payloadJson) {
-        validateStep(stepKey, inputFingerprint, profileFingerprint, algorithmVersion, schemaVersion);
-        requireLeaseBinding(lease, profileFingerprint, algorithmVersion);
-        String payload = requirePayload(payloadJson, overviewLimits.maxCheckpointChars(), "checkpoint");
-        String payloadHash = sha256(payload);
-        transactions.executeWithoutResult(status -> {
-            requireLeaseLocked(lease);
-            Checkpoint existing = jdbc.query("select payload_json,payload_sha256,schema_version "
-                            + "from overview_generation_checkpoints where generation_id=? and step_key=? "
-                            + "and input_fingerprint=? and profile_fingerprint=? and algorithm_version=? for update",
-                    rs -> rs.next() ? verifiedCheckpoint(rs.getString("payload_json"), rs.getString("payload_sha256"),
-                            rs.getInt("schema_version"), schemaVersion) : null,
-                    lease.generationId(), stepKey, inputFingerprint, profileFingerprint, algorithmVersion);
-            if (existing != null) {
-                if (!existing.payloadJson().equals(payload) || !existing.payloadSha256().equals(payloadHash)) {
-                    throw requestConflict("A different checkpoint already exists for this generation step");
-                }
-                return;
-            }
-            jdbc.update("insert into overview_generation_checkpoints (id,generation_id,step_key,input_fingerprint,"
-                            + "profile_fingerprint,algorithm_version,payload_json,payload_sha256,schema_version,created_at) "
-                            + "values (?,?,?,?,?,?,?,?,?,?)",
-                    UUID.randomUUID(), lease.generationId(), stepKey, inputFingerprint, profileFingerprint,
-                    algorithmVersion, payload, payloadHash, schemaVersion, sqlTimestamp(clock.instant()));
-        });
-    }
-
     public boolean complete(GenerationLease lease, String resultJson, AiProviderUsage usage,
                             int recoveryCount, List<String> recoveryActions) {
         return complete(lease, resultJson, summary(usage), recoveryCount, recoveryActions);
@@ -1238,37 +983,11 @@ public class OverviewGenerationCoordinator {
                 usage.chargedTokens(), complete ? 0 : 1, 0, complete);
     }
 
-    private void requireLeaseLocked(GenerationLease lease) {
-        Instant now = clock.instant();
-        boolean owned = jdbc.query("select id from overview_generations where id=? and user_id=? "
-                        + "and status='ACTIVE' and owner_id=? and fence=? and lease_until>? for update",
-                (ResultSetExtractor<Boolean>) rs -> rs.next(), lease.generationId(), lease.userId(), lease.ownerId(),
-                lease.fence(), sqlTimestamp(now));
-        if (!owned) throw leaseLost(lease.leaseUntil());
-    }
-
     private AiUsageLimitException leaseLost(Instant leaseUntil) {
         Instant now = clock.instant();
         Instant resetAt = leaseUntil != null && leaseUntil.isAfter(now) ? leaseUntil : now.plusSeconds(1);
         long retryAfterSeconds = Math.max(1, Duration.between(now, resetAt).toSeconds());
         return new AiUsageLimitException("AI_CONCURRENCY_LIMIT", 429, retryAfterSeconds, resetAt);
-    }
-
-    private void requireLeaseBinding(GenerationLease lease, String profileFingerprint, String algorithmVersion) {
-        Objects.requireNonNull(lease);
-        if (!lease.profileFingerprint().equals(normalizeHash(profileFingerprint))
-                || !lease.algorithmVersion().equals(algorithmVersion)) {
-            throw new IllegalArgumentException("Checkpoint does not match the active generation profile");
-        }
-    }
-
-    private Checkpoint verifiedCheckpoint(String payload, String hash, int storedSchemaVersion, int expectedSchemaVersion) {
-        if (payload == null || exceeds(overviewLimits.maxCheckpointChars(), payload.length())
-                || storedSchemaVersion != expectedSchemaVersion
-                || !sha256(payload).equals(hash == null ? null : hash.trim())) {
-            throw new DomainException("VALIDATION_FAILED", "Stored Overview checkpoint failed integrity validation");
-        }
-        return new Checkpoint(payload, hash.trim(), storedSchemaVersion);
     }
 
     private void verifyResult(String payload, String hash) {
@@ -1340,15 +1059,6 @@ public class OverviewGenerationCoordinator {
                 || request.algorithmVersion().length() > 64) {
             throw new IllegalArgumentException("Overview algorithm version is invalid");
         }
-    }
-
-    private void validateStep(String stepKey, String inputHash, String profileHash, String algorithmVersion, int schemaVersion) {
-        if (stepKey == null || !STEP_KEY.matcher(stepKey).matches() || schemaVersion <= 0
-                || algorithmVersion == null || algorithmVersion.isBlank() || algorithmVersion.length() > 64) {
-            throw new IllegalArgumentException("Overview checkpoint identity is invalid");
-        }
-        normalizeHash(inputHash);
-        normalizeHash(profileHash);
     }
 
     private String normalizeHash(String hash) {
@@ -1462,8 +1172,6 @@ public class OverviewGenerationCoordinator {
         }
     }
 
-    public record Checkpoint(String payloadJson, String payloadSha256, int schemaVersion) { }
-    record ReusableCheckpoint(Checkpoint checkpoint, UUID donorGenerationId) { }
 
     private record RequestRow(UUID generationId, String inputFingerprint, String payloadFingerprint,
                               String profileFingerprint, String algorithmVersion, UUID retryOfRequestId) { }

@@ -82,6 +82,15 @@ class AiOperationPolicyTests {
     }
 
     @Test
+    void chatIterationAndToolBoundsAllowTwelveAndTwentyButRejectLargerValues() {
+        assertThat(new ChatAgentProperties(0, 0, 12, 20, 65_536, 524_288, 300).maxIterations()).isEqualTo(12);
+        assertThatThrownBy(() -> new ChatAgentProperties(0, 0, 13, 20, 65_536, 524_288, 300))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ChatAgentProperties(0, 0, 12, 21, 65_536, 524_288, 300))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void chatBudgetIdentityIsStableAndNamespacedByOwnerAndRun() {
         var user = java.util.UUID.randomUUID();
         var run = java.util.UUID.randomUUID();

@@ -21,11 +21,33 @@ import static org.mockito.Mockito.when;
 
 class AiSettingsJobProfileMetadataTests {
     @Test
+    void platformGenerationKeyChangeFencesAnEnqueuedJob() {
+        UUID userId = UUID.randomUUID();
+        AuralisProperties properties = mock(AuralisProperties.class);
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(properties.ai()).thenReturn(ai);
+        when(ai.generation()).thenReturn(
+                new AuralisProperties.GenerationEndpoint("https://generation.test/v1", "model", "key-one", 0, 0),
+                new AuralisProperties.GenerationEndpoint("https://generation.test/v1", "model", "key-two", 0, 0));
+        AiSettingsService service = new AiSettingsService(mock(AiCredentialRepository.class),
+                mock(AiKeyCipher.class), mock(ProviderEndpointPolicy.class), properties);
+
+        var queued = service.jobProfileMetadata(userId, AiProviderType.OPENAI_COMPATIBLE);
+
+        assertThat(queued.source()).isEqualTo(AiCredentialSource.PLATFORM);
+        assertThatThrownBy(() -> service.resolveJobSettings(userId, AiProviderType.OPENAI_COMPATIBLE,
+                queued.fingerprint()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+    }
+
+    @Test
     void savedByokMetadataIsStableAndDoesNotDecryptOrExposeCiphertext() {
         UUID userId = UUID.randomUUID();
         AiCredentialEntity credential = new AiCredentialEntity(UUID.randomUUID(), userId,
                 AiProviderType.DEEPSEEK, "https://api.deepseek.com/v1/", "deepseek-chat",
-                "server-managed", "ciphertext-one");
+                "ciphertext-one");
         AiCredentialRepository repository = mock(AiCredentialRepository.class);
         AiKeyCipher cipher = mock(AiKeyCipher.class);
         when(repository.findByUserIdAndProvider(userId, AiProviderType.DEEPSEEK))
@@ -39,7 +61,7 @@ class AiSettingsJobProfileMetadataTests {
         assertThat(first).isEqualTo(second);
         assertThat(first.provider()).isEqualTo(AiProviderType.DEEPSEEK);
         assertThat(first.source()).isEqualTo(AiCredentialSource.USER_SUPPLIED);
-        assertThat(first.normalizedEndpoint()).isEqualTo("https://api.deepseek.com/v1");
+        assertThat(first.endpoint()).isEqualTo("https://api.deepseek.com/v1/");
         assertThat(first.fingerprint()).doesNotContain("ciphertext-one");
         assertThat(service.matchesResolvedSettings(first, new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://api.deepseek.com/v1", "resolved-key"),

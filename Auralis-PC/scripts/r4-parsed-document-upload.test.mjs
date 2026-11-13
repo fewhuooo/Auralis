@@ -20,6 +20,7 @@ register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64
 const { ParsedDocumentUploadCoordinator } = await import('../src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts')
 const { DocumentProcessingJobRepository, createMemoryStorage } = await import('../src/services/localRepository.ts')
 const { normalizeInvokeError } = await import('../src/api/tauri.ts')
+const { createApiProblemError } = await import('../src/api/httpError.ts')
 const root = path.resolve(import.meta.dirname, '..')
 
 const receipt = {
@@ -390,6 +391,23 @@ test('network pause leaves the job resumable and does not call complete', async 
   await assert.rejects(() => coordinator.upload('job-1', receipt), /NETWORK_OFFLINE/)
   assert.equal(repository.value.phase, 'PAUSED_NETWORK')
   assert.equal(api.calls.completes.length, 0)
+})
+
+test('missing HTTP responses during intent and completion pause the upload with its receipt', async () => {
+  for (const operation of ['createParsedDocumentUploadIntent', 'completeParsedDocument']) {
+    const repository = new FakeRepository()
+    const api = apiStub()
+    const networkError = createApiProblemError({ request: {}, message: 'Network Error' })
+    api[operation] = async () => { throw networkError }
+    const coordinator = new ParsedDocumentUploadCoordinator({
+      repository, api,
+      put: async () => ({ bytesSent: 128, payloadSha256: receipt.payloadSha256 }),
+    })
+    await assert.rejects(() => coordinator.upload('job-1', receipt), networkError)
+    assert.equal(repository.value.phase, 'PAUSED_NETWORK', operation)
+    assert.equal(repository.value.errorCode, 'NETWORK_OFFLINE', operation)
+    assert.equal(repository.value.payloadReceipt, receipt, operation)
+  }
 })
 
 test('network upload failures preserve only bounded allowlisted reasons', async () => {

@@ -3,8 +3,8 @@ import type {
   FileOverviewRecord, OverviewCacheRecord, OverviewMode,
   OverviewResultCommand, OverviewResultView, OverviewSourceManifestEntry, OverviewSyncState,
   OverviewSubjectStatusItem, OverviewSubjectStatusesResponse,
+  OverviewConflictMetadata,
 } from '@/types/overview'
-import { createOutlineIdentityInput, hasCompleteOutlineIdentityInput } from './outlineIdentity.ts'
 import { computeSubjectInputFingerprint, isOverviewGenerationEditConflict, type OverviewRepository, type OverviewScopeFenceToken } from './overviewRepository.ts'
 
 export interface OverviewSyncSource {
@@ -81,8 +81,12 @@ async function mapBounded<T>(items: T[], concurrency: number, task: (item: T) =>
 }
 
 function validCompleteRecord(record: OverviewCacheRecord | null): record is OverviewCacheRecord {
-  return Boolean(record?.status === 'READY' && Array.isArray(record.outline) && record.outline.length > 0
-    && record.summary && record.summary.overview.trim())
+  return Boolean(
+    record?.status === 'READY'
+    && record.schemaVersion === 2
+    && typeof record.outlineMarkdown === 'string' && record.outlineMarkdown.trim().length > 0
+    && typeof record.summaryMarkdown === 'string' && record.summaryMarkdown.trim().length > 0
+  )
 }
 
 function versionOrNull(value: number): number | null { return Number.isInteger(value) && value >= 0 ? value : null }
@@ -105,13 +109,8 @@ async function remoteCacheRecord(
   inputFingerprint: string | null = null,
 ): Promise<OverviewCacheRecord> {
   return {
-    scopeType, scopeId, revisionKey, schemaVersion: 1, title: view.title,
-    outline: view.outline, summary: view.summary,
-    identityReady: view.identityReady === true && Boolean(view.outlineIdentity),
-    outlineIdentity: view.outlineIdentity ?? null,
-    outlineIdentityInput: null,
-    outlineProvenance: view.outlineProvenance ?? null,
-    outlineProvenanceInput: null,
+    scopeType, scopeId, revisionKey, schemaVersion: 2, title: view.title,
+    outlineMarkdown: view.outlineMarkdown, summaryMarkdown: view.summaryMarkdown,
     outlineGeneratedAt: view.outlineGeneratedAt ?? null,
     summaryGeneratedAt: view.summaryGeneratedAt ?? null,
     inputFingerprint, status: 'READY', errorCode: null, errorDetail: null, updatedAt: view.updatedAt,
@@ -121,12 +120,16 @@ async function remoteCacheRecord(
 function matchesFileView(view: OverviewResultView, source: OverviewSyncSource): boolean {
   return view.scopeType === 'SOURCE' && view.sourceId === source.id
     && view.ingestionRevision === source.ingestionRevision
-    && Array.isArray(view.outline) && view.outline.length > 0 && Boolean(view.summary)
+    && view.schemaVersion === 2
+    && typeof view.outlineMarkdown === 'string' && view.outlineMarkdown.trim().length > 0
+    && typeof view.summaryMarkdown === 'string' && view.summaryMarkdown.trim().length > 0
 }
 
 function matchesSubjectView(view: OverviewResultView, subjectId: string): boolean {
   return view.scopeType === 'SUBJECT' && view.subjectId === subjectId
-    && Array.isArray(view.outline) && view.outline.length > 0 && Boolean(view.summary)
+    && view.schemaVersion === 2
+    && typeof view.outlineMarkdown === 'string' && view.outlineMarkdown.trim().length > 0
+    && typeof view.summaryMarkdown === 'string' && view.summaryMarkdown.trim().length > 0
 }
 
 export async function computeOverviewManifestFingerprint(entries: OverviewSourceManifestEntry[]): Promise<string> {
@@ -226,7 +229,10 @@ export class OverviewResultsSyncService {
           throw new Error('OVERVIEW_SCOPE_CHANGED')
         }
       } else {
-        if (!await this.repository.clearOverviewSyncState('FILE',scopeId,revisionKey,fenceToken)) throw new Error('OVERVIEW_SCOPE_CHANGED')
+        const existingState = await this.repository.getOverviewSyncState('FILE', scopeId, revisionKey)
+        if (!existingState) {
+          if (!await this.repository.clearOverviewSyncState('FILE',scopeId,revisionKey,fenceToken)) throw new Error('OVERVIEW_SCOPE_CHANGED')
+        }
       }
     } else {
       if (!await this.isSubjectCurrent(scopeId, options)) throw new Error('OVERVIEW_SUBJECT_STALE')
@@ -253,7 +259,10 @@ export class OverviewResultsSyncService {
         if (!await this.repository.installRemoteOverview(await remoteCacheRecord(remote,'SUBJECT',scopeId,'subject-v1',fingerprint),
           stateFromView(remote,'SUBJECT',scopeId,'subject-v1'),false,fenceToken)) throw new Error('OVERVIEW_SCOPE_CHANGED')
       } else {
-        if (!await this.repository.clearOverviewSyncState('SUBJECT',scopeId,'subject-v1',fenceToken)) throw new Error('OVERVIEW_SCOPE_CHANGED')
+        const existingState = await this.repository.getOverviewSyncState('SUBJECT', scopeId, 'subject-v1')
+        if (!existingState) {
+          if (!await this.repository.clearOverviewSyncState('SUBJECT',scopeId,'subject-v1',fenceToken)) throw new Error('OVERVIEW_SCOPE_CHANGED')
+        }
       }
     }
     if (!await this.repository.retryOverviewConflictLocally(scopeType,scopeId,revisionKey)) throw new Error('OVERVIEW_SCOPE_CHANGED')
@@ -268,6 +277,10 @@ export class OverviewResultsSyncService {
     const outbox = await this.repository.listOverviewOutbox()
     for (const intent of outbox) {
       if (intent.state === 'STALE') continue
+      if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
+        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
+        continue
+      }
       if (intent.scopeType === 'FILE') {
         const current = readyById.get(intent.scopeId)
         if (!current || current.ingestionRevision !== intent.revisionKey) {
@@ -290,8 +303,7 @@ export class OverviewResultsSyncService {
       for (const source of sources.filter(item => item.type === 'FILE' && item.subjectId === intent.scopeId && item.ingestionStatus === 'READY' && !item.deletedAt)) {
         if (!source.ingestionRevision) continue
         const record = await this.repository.getFileOverview(source.id,source.ingestionRevision)
-        if (record && (Array.isArray(record.outline) && record.outline.some(chapter => chapter.sections.length > 0)
-          || Boolean(record.summary?.overview.trim()))) files.push(record)
+        if (record && (Boolean(record.outlineMarkdown?.trim()) || Boolean(record.summaryMarkdown?.trim()))) files.push(record)
       }
       const fingerprint = files.length ? await computeSubjectInputFingerprint(files) : null
       if (!fingerprint || !intent.inputFingerprint || fingerprint !== intent.inputFingerprint) {
@@ -409,29 +421,27 @@ export class OverviewResultsSyncService {
     for (const intent of intents) {
       if (!await this.isSourceCurrent(source, options)) return
       if (intent.state === 'CONFLICT' || intent.state === 'ERROR') return
+      if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
+        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
+        continue
+      }
       let requestBody = intent.requestBody
       if (!requestBody) {
-        const result = { schemaVersion: 1 as const, title: intent.result.title, outline: intent.result.outline, summary: intent.result.summary }
-        if (!result.outline?.length || !result.summary?.overview.trim()) return
+        const result = {
+          schemaVersion: 2 as const,
+          title: intent.result.title,
+          outlineMarkdown: intent.result.outlineMarkdown,
+          summaryMarkdown: intent.result.summaryMarkdown,
+        }
+        if (!result.outlineMarkdown?.trim() || !result.summaryMarkdown?.trim()) return
         const mode: OverviewMode = !state ? 'ALL' : intent.mode
-        if (intent.origin === 'LEGACY_SEED' && !intent.outlineIdentityInput) {
-          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INITIALIZATION_REQUIRED')
-          return
-        }
-        const identity = mode === 'SUMMARY' ? undefined : intent.outlineIdentityInput ?? createOutlineIdentityInput(result.outline)
-        if (identity && !hasCompleteOutlineIdentityInput(result.outline, identity)) {
-          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INVALID')
-          return
-        }
         requestBody = {
           baseVersion: state?.version ?? 0,
           clientWriteId: intent.clientWriteId,
           mode,
           ingestionRevision: revision,
-          outlineGeneratedAt: intent.outlineGeneratedAt,
-          summaryGeneratedAt: intent.summaryGeneratedAt,
-          ...(identity ? { outlineIdentity: identity } : {}),
-          ...(mode === 'SUMMARY' || !intent.outlineProvenanceInput ? {} : { outlineProvenance: intent.outlineProvenanceInput }),
+          outlineGeneratedAt: mode !== 'SUMMARY' ? intent.outlineGeneratedAt : null,
+          summaryGeneratedAt: mode !== 'OUTLINE' ? intent.summaryGeneratedAt : null,
           result,
         }
         const materialized = await this.repository.materializeOverviewIntent(intent.clientWriteId, requestBody)
@@ -451,6 +461,24 @@ export class OverviewResultsSyncService {
         await this.repository.setOverviewIntentState(intent.clientWriteId, status, status === 'CONFLICT' ? 'OVERVIEW_VERSION_CONFLICT'
           : status === 'STALE' ? 'OVERVIEW_SOURCE_STALE' : status === 'PENDING' ? 'OVERVIEW_TRANSPORT_RETRY' : 'OVERVIEW_SYNC_FAILED')
         if (status === 'CONFLICT' && this.repository.isScopeFenceTokenCurrent(fenceToken) && await this.isSourceCurrent(source, options)) {
+          const problem = error instanceof ApiProblemError ? error.problem : null
+          const currentMeta = (problem as unknown as { current?: OverviewConflictMetadata })?.current
+          if (currentMeta && currentMeta.schemaVersion === 1) {
+            await this.repository.saveOverviewSyncState({
+              scopeType: 'FILE',
+              scopeId: source.id,
+              revisionKey: revision,
+              version: currentMeta.version,
+              outlineVersion: null,
+              summaryVersion: null,
+              outlineSourceManifest: null,
+              summarySourceManifest: null,
+              outlineInputFingerprint: null,
+              summaryInputFingerprint: null,
+              updatedAt: new Date().toISOString(),
+            })
+            return
+          }
           const remote = await this.api.getFile(source.id, revision).catch(() => null)
           if (remote && await this.isSourceCurrent(source, options) && matchesFileView(remote, source)) {
             await this.repository.installRemoteOverview(await remoteCacheRecord(remote,'FILE',source.id,revision), stateFromView(remote,'FILE',source.id,revision),false,fenceToken)
@@ -578,10 +606,19 @@ export class OverviewResultsSyncService {
     for (const intent of intents) {
       if (!await this.isSubjectCurrent(subjectId, options) || !await this.subjectInputsCurrent(subjectId, sources, options)) return
       if (intent.state === 'CONFLICT' || intent.state === 'ERROR') return
+      if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
+        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
+        continue
+      }
       let requestBody = intent.requestBody
       if (!requestBody) {
-        const result = { schemaVersion: 1 as const, title: intent.result.title, outline: intent.result.outline, summary: intent.result.summary }
-        if (!result.outline?.length || !result.summary?.overview.trim()) return
+        const result = {
+          schemaVersion: 2 as const,
+          title: intent.result.title,
+          outlineMarkdown: intent.result.outlineMarkdown,
+          summaryMarkdown: intent.result.summaryMarkdown,
+        }
+        if (!result.outlineMarkdown?.trim() || !result.summaryMarkdown?.trim()) return
         const currentContentFingerprint = await this.subjectContentFingerprint(sources)
         if (!currentContentFingerprint || !intent.inputFingerprint || intent.inputFingerprint !== currentContentFingerprint) {
           await this.repository.setOverviewIntentState(intent.clientWriteId, 'CONFLICT', 'OVERVIEW_INPUT_CHANGED')
@@ -599,25 +636,14 @@ export class OverviewResultsSyncService {
         if (!modeInputsAvailable(allEntries, mode)) return
         const sourceManifest = projectManifest(allEntries,mode)
         const inputFingerprint = await computeOverviewManifestFingerprint(sourceManifest)
-        if (intent.origin === 'LEGACY_SEED' && !intent.outlineIdentityInput) {
-          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INITIALIZATION_REQUIRED')
-          return
-        }
-        const identity = mode === 'SUMMARY' ? undefined : intent.outlineIdentityInput ?? createOutlineIdentityInput(result.outline)
-        if (identity && !hasCompleteOutlineIdentityInput(result.outline, identity)) {
-          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INVALID')
-          return
-        }
         requestBody = {
           baseVersion: state?.version ?? 0,
           clientWriteId: intent.clientWriteId,
           mode,
           sourceManifest,
           inputFingerprint,
-          outlineGeneratedAt: intent.outlineGeneratedAt,
-          summaryGeneratedAt: intent.summaryGeneratedAt,
-          ...(identity ? { outlineIdentity: identity } : {}),
-          ...(mode === 'SUMMARY' || !intent.outlineProvenanceInput ? {} : { outlineProvenance: intent.outlineProvenanceInput }),
+          outlineGeneratedAt: mode !== 'SUMMARY' ? intent.outlineGeneratedAt : null,
+          summaryGeneratedAt: mode !== 'OUTLINE' ? intent.summaryGeneratedAt : null,
           result,
         }
         const materialized = await this.repository.materializeOverviewIntent(intent.clientWriteId, requestBody)
@@ -638,6 +664,24 @@ export class OverviewResultsSyncService {
           : status === 'PENDING' ? 'OVERVIEW_TRANSPORT_RETRY' : 'OVERVIEW_SYNC_FAILED')
         if (status === 'CONFLICT' && this.repository.isScopeFenceTokenCurrent(fenceToken) && await this.isSubjectCurrent(subjectId, options)
           && await this.subjectInputsCurrent(subjectId, sources, options)) {
+          const problem = error instanceof ApiProblemError ? error.problem : null
+          const currentMeta = (problem as unknown as { current?: OverviewConflictMetadata })?.current
+          if (currentMeta && currentMeta.schemaVersion === 1) {
+            await this.repository.saveOverviewSyncState({
+              scopeType: 'SUBJECT',
+              scopeId: subjectId,
+              revisionKey: 'subject-v1',
+              version: currentMeta.version,
+              outlineVersion: null,
+              summaryVersion: null,
+              outlineSourceManifest: null,
+              summarySourceManifest: null,
+              outlineInputFingerprint: null,
+              summaryInputFingerprint: null,
+              updatedAt: new Date().toISOString(),
+            })
+            return
+          }
           const remote = await this.api.getSubject(subjectId).catch(() => null)
           if (remote && await this.isSubjectCurrent(subjectId, options) && await this.subjectInputsCurrent(subjectId, sources, options)
             && matchesSubjectView(remote, subjectId)) {

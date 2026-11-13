@@ -2,15 +2,48 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-test('Profile provides a logout button that properly calls the auth store and handles errors', async () => {
+test('Profile confirms logout and only reports or navigates for the active login', async () => {
   const profileSource = await readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8')
 
   assert.match(profileSource, /@click="handleLogout"/, 'Must bind handleLogout to a button')
   assert.match(profileSource, /退出登录/, 'Must contain Chinese text for logout')
-  assert.match(profileSource, /ElMessageBox\.confirm\(/, 'Must prompt for confirmation before logging out')
-  assert.match(profileSource, /await authStore\.logout\(\)/, 'Must call authStore.logout()')
-  assert.match(profileSource, /catch\s*\([^)]*\)\s*\{[\s\S]*?ElNotification/, 'Must provide UI feedback on failure')
-  assert.match(profileSource, /finally\s*\{[\s\S]*?router\.push\(['"`]\/login['"`]\)/, 'Must redirect to /login regardless of success or failure')
+  const handlerSource = profileSource.match(/^const handleLogout = async \(\) => \{[\s\S]*?^\}/m)?.[0]
+  assert.ok(handlerSource)
+  class SyncScopeChangedError extends Error {}
+  const createHandler = new Function('authStore', 'ElMessageBox', 'ElNotification', 'router', 'SyncScopeChangedError', 'console',
+    `${handlerSource}\nreturn handleLogout`)
+  const cases = [
+    { label: 'current logout succeeds', authenticated: false, effects: ['已退出登录', '/login'] },
+    { label: 'current logout fails on the server', authenticated: false, error: new Error('network'), effects: ['登出异常', '/login'] },
+    { label: 'logout is rejected after the login changes', authenticated: true, error: new SyncScopeChangedError(), effects: [] },
+    { label: 'login changes just before an old logout continuation', authenticated: true, effects: [] },
+    { label: 'login changes during confirmation', authenticated: true, switchOnConfirm: true, effects: [] },
+  ]
+  for (const scenario of cases) {
+    const effects = []
+    let logoutCalls = 0
+    const authStore = {
+      loginGeneration: Symbol('active-login'),
+      isAuthenticated: true,
+      async logout() {
+        logoutCalls += 1
+        authStore.isAuthenticated = scenario.authenticated
+        if (scenario.error) throw scenario.error
+      },
+    }
+    const confirm = async () => {
+      if (scenario.switchOnConfirm) authStore.loginGeneration = Symbol('new-login')
+      return 'confirm'
+    }
+    const handleLogout = createHandler(authStore, { confirm }, ({ title }) => effects.push(title), {
+      async push(path) { effects.push(path) },
+    }, SyncScopeChangedError, { warn() {} })
+
+    await handleLogout()
+
+    assert.equal(logoutCalls, scenario.switchOnConfirm ? 0 : 1, scenario.label)
+    assert.deepEqual(effects, scenario.effects, scenario.label)
+  }
 })
 
 test('authStore.logout rethrows errors for the UI to handle', async () => {
@@ -26,6 +59,6 @@ test('authStore.logout rethrows errors for the UI to handle', async () => {
 test('auth refresh failure enters re-authentication without recursively calling protected logout', async () => {
   const requestSource = await readFile(new URL('../src/api/request.ts', import.meta.url), 'utf8')
 
-  assert.match(requestSource, /useAuthStore\(\)\.requireReauthentication\(/)
+  assert.match(requestSource, /authStore\.requireReauthentication\(/)
   assert.doesNotMatch(requestSource, /void useAuthStore\(\)\.logout\(\)\.catch\(/)
 })

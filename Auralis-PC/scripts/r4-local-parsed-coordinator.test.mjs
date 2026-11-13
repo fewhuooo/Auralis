@@ -678,11 +678,50 @@ test('LocalParsedDocumentCoordinator: network error transitions to PAUSED_NETWOR
   }
 })
 
-// =======================================================
-// 3. SourceJobScheduler Integration & Rebinding Tests
-// =======================================================
+test('LocalParsedDocumentCoordinator retries timeouts from text extraction and OCR with the existing attempt limit', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const parsedRepo = new LocalParsedDocumentRepository('user-timeout', 'device-timeout', { sql: sqlite })
+    for (const kind of ['page', 'ocr-page']) {
+      const input = {
+        localSourceId: `src-timeout-${kind}`,
+        localContentRevision: 'revision-timeout',
+        localAssetId: 'asset-timeout',
+        sourceAssetSha256: 'a'.repeat(64),
+      }
+      const starts = []
+      const coordinator = new LocalParsedDocumentCoordinator({
+        repository: parsedRepo,
+        readAssetBytes: async () => ({
+          receipt: { localAssetId: input.localAssetId, safeExtension: 'pdf', sizeBytes: 10, sha256: input.sourceAssetSha256 },
+          bytes: new Uint8Array(10),
+        }),
+        packager: {
+          begin: async () => 'pkg-timeout',
+          append: async () => {},
+          finish: async () => { throw new Error('SHOULD_NOT_FINISH') },
+          abort: async () => {},
+        },
+        parserFactory: (record) => async (sink) => {
+          starts.push([record.phase, record.attempt, record.checkpointPage])
+          await sink({ ordinal: 0, kind, text: 'first page', pageNumber: 1 })
+          throw new Error('OCR_TIMEOUT')
+        },
+      })
 
-test('SourceJobScheduler: offline draft scheduling coordinates local parse and returns WAITING_SERVER_REVISION with 0 HTTP calls', async () => {
+      const result = await coordinator.coordinate(input)
+
+      assert.deepEqual(starts, [['EXTRACTING', 0, 0], ['EXTRACTING', 1, 0], ['EXTRACTING', 2, 0]], kind)
+      assert.equal(result.phase, 'FAILED_LOCAL', kind)
+      assert.equal(result.safeErrorCode, 'OCR_RETRY_EXHAUSTED', kind)
+    }
+  } finally {
+    sqlite.close()
+  }
+})
+
+test('SourceJobScheduler only continues a paused offline draft after an explicit action and makes no HTTP calls', async () => {
   const sqlite = new TemporarySqlite()
   try {
     await createVersionedLocalSchema(sqlite)
@@ -718,7 +757,7 @@ test('SourceJobScheduler: offline draft scheduling coordinates local parse and r
       localContentRevision,
     })
 
-    let coordinateCalled = false
+    let parserCalls = 0
     const coordinator = new LocalParsedDocumentCoordinator({
       repository: parsedRepo,
       readAssetBytes: async () => ({
@@ -737,8 +776,9 @@ test('SourceJobScheduler: offline draft scheduling coordinates local parse and r
         }),
       },
       parserFactory: () => {
-        coordinateCalled = true
         return async (sink) => {
+          parserCalls += 1
+          if (parserCalls === 1) throw new Error('NETWORK_OFFLINE')
           await sink({ ordinal: 0, kind: 'page', text: 'quantum mechanics page' })
         }
       },
@@ -773,10 +813,13 @@ test('SourceJobScheduler: offline draft scheduling coordinates local parse and r
       runJob: async () => {},
     })
 
-    const result = await scheduler.schedule('source-draft-1')
+    assert.equal((await scheduler.schedule('source-draft-1')).status, 'PAUSED_NETWORK')
+    assert.equal((await scheduler.resume(['source-draft-1']))[0].status, 'PAUSED_NETWORK')
+    assert.equal(parserCalls, 1)
+    const result = await scheduler.resumePausedDraft('source-draft-1')
 
     assert.equal(result.status, 'WAITING_SERVER_REVISION')
-    assert.equal(coordinateCalled, true)
+    assert.equal(parserCalls, 2)
     assert.equal(httpGetCalls, 0, 'Zero HTTP calls must be made while scheduling offline draft')
 
     const localRecord = await parsedRepo.get('source-draft-1', localContentRevision)
@@ -1151,7 +1194,9 @@ test('SourceJobScheduler: resumed rebound upload advances the local parsed recor
       runJob: async () => { throw new Error('SHOULD_NOT_PARSE') },
     })
 
-    const result = await scheduler.schedule('source-resume')
+    assert.equal((await scheduler.schedule('source-resume')).status, 'PAUSED_NETWORK')
+    assert.equal(uploadCalls, 0)
+    const result = await scheduler.retry(job.jobId)
     assert.equal(result.status, 'READY')
     assert.equal(uploadCalls, 1)
     assert.equal((await parsedRepo.get('source-resume', 'revision-resume'))?.phase, 'READY')

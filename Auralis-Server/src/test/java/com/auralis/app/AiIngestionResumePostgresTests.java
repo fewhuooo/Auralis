@@ -74,9 +74,9 @@ class AiIngestionResumePostgresTests {
         registry.add("auralis.identity.jwt-secret", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.encryption-key", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.ingestion-worker-enabled", () -> "false");
-        registry.add("auralis.ai.defaults.siliconflow.base-url", () -> "https://api.siliconflow.cn/v1");
-        registry.add("auralis.ai.defaults.siliconflow.embedding-model", () -> "bge-m3");
-        registry.add("auralis.ai.defaults.siliconflow.api-key", () -> "synthetic-test-key");
+        registry.add("auralis.ai.embedding.base-url", () -> "https://api.siliconflow.cn/v1");
+        registry.add("auralis.ai.embedding.model", () -> "bge-m3");
+        registry.add("auralis.ai.embedding.api-key", () -> "synthetic-test-key");
         registry.add("auralis.ai.limits.per-user-hourly-tokens", () -> "33000");
         registry.add("auralis.ai.limits.per-user-daily-tokens", () -> "100000");
         registry.add("auralis.ai.limits.global-daily-tokens", () -> "200000");
@@ -265,7 +265,7 @@ class AiIngestionResumePostgresTests {
     static final class RecordingEmbeddingProvider implements EmbeddingProviderPort {
         private final List<List<String>> calls = new CopyOnWriteArrayList<>();
 
-        @Override public AiProviderType type() { return AiProviderType.SILICONFLOW; }
+        @Override public AiProviderType type() { return AiProviderType.OPENAI_COMPATIBLE; }
 
         @Override
         public EmbeddingResult embed(List<String> texts, AiCredential credential) {

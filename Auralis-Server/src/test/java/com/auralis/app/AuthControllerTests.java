@@ -131,7 +131,7 @@ class AuthControllerTests {
         assetRepository.deleteAll();
         taskRepository.deleteAll();
         subjectRepository.deleteAll();
-        refreshSessionRepository.deleteAll();
+        refreshSessionRepository.deleteAllInBatch();
         deviceRepository.deleteAll();
         userRepository.deleteAll();
     }
@@ -276,6 +276,81 @@ class AuthControllerTests {
     }
 
     @Test
+    void deviceRevocationFollowsRotationsAndKeepsTheCallingDeviceActive() throws Exception {
+        JsonNode caller = register("alice@example.com", "browser-1", "Alice's browser");
+        JsonNode remote = login("alice@example.com", "browser-2");
+        String callerAccess = bearer(caller.path("tokens").path("accessToken").asText());
+        JsonNode listed = json(mockMvc.perform(get("/api/auth/sessions")
+                        .header(HttpHeaders.AUTHORIZATION, callerAccess))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andReturn());
+        String listedRemoteId = listed.path("items").get(1).path("id").asText();
+        assertThat(listedRemoteId).isEqualTo(remote.path("sessionId").asText());
+
+        JsonNode callerRotated = json(mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + caller.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk()).andReturn());
+        JsonNode remoteRotated = json(mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + remote.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk()).andReturn());
+        assertThat(remoteRotated.path("sessionId").asText()).isNotEqualTo(listedRemoteId);
+        mockMvc.perform(delete("/api/auth/sessions/{id}", listedRemoteId).header(HttpHeaders.AUTHORIZATION, callerAccess))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + remoteRotated.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/sessions").header(HttpHeaders.AUTHORIZATION, callerAccess))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(callerRotated.path("sessionId").asText()))
+                .andExpect(jsonPath("$.items[0].current").value(true));
+
+        JsonNode remoteNewLogin = login("alice@example.com", "browser-2");
+        mockMvc.perform(delete("/api/auth/sessions/others").header(HttpHeaders.AUTHORIZATION, callerAccess))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + remoteNewLogin.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + callerRotated.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void deviceRevocationWaitsForInFlightRotationAndRevokesTheCommittedReplacement() throws Exception {
+        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
+        UUID userId = UUID.fromString(registered.path("user").path("id").asText());
+        UUID listedSessionId = UUID.fromString(registered.path("sessionId").asText());
+        String originalRefreshToken = registered.path("tokens").path("refreshToken").asText();
+        CountDownLatch started = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            AtomicReference<Future<?>> revocation = new AtomicReference<>();
+            AuthResult rotated = new TransactionTemplate(transactionManager).execute(status -> {
+                AuthResult replacement = identityService.refresh(originalRefreshToken);
+                Future<?> pending = executor.submit(() -> {
+                    started.countDown();
+                    identityService.revokeSession(userId, listedSessionId);
+                });
+                revocation.set(pending);
+                try {
+                    assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+                    assertThatThrownBy(() -> pending.get(300, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+                return replacement;
+            });
+            revocation.get().get(5, TimeUnit.SECONDS);
+            assertThatThrownBy(() -> identityService.refresh(rotated.tokens().refreshToken()))
+                    .isInstanceOf(IdentityException.class);
+        }
+    }
+
+    @Test
     void protectsPrivateRoutesAndDoesNotAcceptRefreshTokensAsAccessTokens() throws Exception {
         JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
         String refreshToken = registered.path("tokens").path("refreshToken").asText();
@@ -367,6 +442,41 @@ class AuthControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"alice@example.com\",\"password\":\"a longer new password\","
                                 + "\"clientDeviceKey\":\"password-alice-next\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void registerAndPasswordChangeEnforceTheEncoderByteLimit() throws Exception {
+        String username = "password-limit@example.com";
+        String maxLength = "界".repeat(24);
+        for (String tooLong : new String[] {"a".repeat(73), maxLength + "界"}) {
+            mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                            .content(registerJson(username, tooLong, "browser-1", "Alice")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+        JsonNode registered = json(mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                        .content(registerJson(username, maxLength, "browser-1", "Alice")))
+                .andExpect(status().isCreated()).andReturn());
+        String accessToken = bearer(registered.path("tokens").path("accessToken").asText());
+        mockMvc.perform(put("/api/auth/password").header(HttpHeaders.AUTHORIZATION, accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"" + maxLength
+                                + "\",\"newPassword\":\"" + maxLength + "a\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.detail").value("Password must not exceed 72 UTF-8 bytes"));
+        mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(username, maxLength, "browser-2")))
+                .andExpect(status().isOk());
+        String newPassword = "b".repeat(72);
+        mockMvc.perform(put("/api/auth/password").header(HttpHeaders.AUTHORIZATION, accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"" + maxLength
+                                + "\",\"newPassword\":\"" + newPassword + "\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(username, newPassword, "browser-3")))
                 .andExpect(status().isOk());
     }
 

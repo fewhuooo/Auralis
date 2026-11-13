@@ -39,7 +39,6 @@ test('Step 4 handoff: buildReadingContext produces canonical readingContext matc
     retrievalMode: 'SUBJECT',
     currentSourceId: null,
     sourceIds: [],
-    selectionText: 'selected text',
   })
 
   // 2. AUTO mode with current document
@@ -54,7 +53,6 @@ test('Step 4 handoff: buildReadingContext produces canonical readingContext matc
     retrievalMode: 'AUTO',
     currentSourceId: 'source-current',
     sourceIds: [],
-    selectionText: undefined,
   })
 
   // 3. AUTO mode fallback when sourceId is missing: currentSourceId is null, sourceIds is []
@@ -67,7 +65,6 @@ test('Step 4 handoff: buildReadingContext produces canonical readingContext matc
     retrievalMode: 'AUTO',
     currentSourceId: null,
     sourceIds: [],
-    selectionText: undefined,
   })
 
   // 4. SELECTED_SOURCES mode: exact sourceIds list, currentSourceId is null
@@ -82,7 +79,6 @@ test('Step 4 handoff: buildReadingContext produces canonical readingContext matc
     retrievalMode: 'SELECTED_SOURCES',
     currentSourceId: null,
     sourceIds: ['src-a', 'src-b'],
-    selectionText: undefined,
   })
 
   // 5. Default inference: subjectId only -> SUBJECT
@@ -94,7 +90,6 @@ test('Step 4 handoff: buildReadingContext produces canonical readingContext matc
     retrievalMode: 'SUBJECT',
     currentSourceId: null,
     sourceIds: [],
-    selectionText: undefined,
   })
 
   // 6. Default inference: subjectId + sourceId -> AUTO
@@ -107,7 +102,6 @@ test('Step 4 handoff: buildReadingContext produces canonical readingContext matc
     retrievalMode: 'AUTO',
     currentSourceId: 'src-123',
     sourceIds: [],
-    selectionText: undefined,
   })
 
   // 7. Missing subjectId -> undefined
@@ -448,11 +442,14 @@ test('Chat reading-scope handoff: first turn binds scope, ordinary later turns o
     await chatStore.sendMessage('First turn on unbound session', {
       subjectId: 'sub-math',
       retrievalMode: 'SUBJECT',
+      selectionText: 'A'.repeat(4001),
     })
 
     assert.ok(lastSentBody.readingContext)
     assert.equal(lastSentBody.readingContext.retrievalMode, 'SUBJECT')
     assert.equal(lastSentBody.readingContext.subjectId, 'sub-math')
+    assert.equal('selectionText' in lastSentBody.readingContext, false)
+    assert.equal(lastSentBody.selectionText, 'A'.repeat(4000))
 
     // Session has transitioned to BOUND
     assert.equal(chatStore.isBoundSession, true)
@@ -470,9 +467,11 @@ test('Chat reading-scope handoff: first turn binds scope, ordinary later turns o
     await chatStore.sendMessage('Second turn inherits bound scope', {
       subjectId: 'sub-math',
       retrievalMode: 'SUBJECT',
+      selectionText: 'A separate quotation',
     })
 
     assert.equal(lastSentBody.readingContext, undefined)
+    assert.equal(lastSentBody.selectionText, 'A separate quotation')
   } finally {
     globalThis.fetch = origFetch
   }
@@ -727,4 +726,122 @@ test('Chat reading-scope handoff: workspace file switching does not mutate locke
   selectedFileId = 'file-2-workspace'
   assert.equal(getAiSourceSummaryText(), '未绑定资料', 'Legacy session summary text must remain fixed')
   assert.equal(getAiChatReferenceOptions().sourceId, undefined, 'Legacy session options must not leak workspace sourceId')
+})
+
+for (const scenario of ['bound turn', 'first scoped turn', 'activity submission']) {
+  test(`Chat no-run replay preserves the exact ${scenario} command after a first-frame disconnect`, async () => {
+    setActivePinia(createPinia())
+    const store = useChatStore()
+    store.sessions = [{
+      id: 'replay-conversation', remoteId: 'replay-conversation', title: 'Replay', version: 1,
+      chatProtocolVersion: 1, chatSupported: true,
+      chatScopeState: scenario === 'first scoped turn' ? 'UNBOUND' : 'BOUND',
+      chatScope: { retrievalMode: 'SUBJECT', subjectId: 'subject-replay', currentSourceId: null, sourceIds: [] },
+    }]
+    store.activeSessionId = 'replay-conversation'
+    const options = { subjectId: 'subject-replay', retrievalMode: 'SUBJECT', selectionText: 'Original quotation' }
+    const commands = []
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = async (_url, init) => {
+        commands.push(JSON.parse(init.body))
+        throw new TypeError('Connection lost before first event')
+      }
+      const sending = scenario === 'activity submission'
+        ? store.submitActivity('activity-replay', ['A'], {
+          id: 'block-replay', componentId: 'block-replay', kind: 'block', component: 'quiz',
+          state: 'READY', questionId: 'activity-replay',
+          meta: { question: 'Which answer?', questionType: 'single' },
+          items: [{ key: 'A', text: 'One' }, { key: 'B', text: 'Two' }],
+        })
+        : store.sendMessage('Original question', options)
+      await assert.rejects(sending, /Connection lost before first event/)
+      const message = store.messages[0]
+      assert.equal(message.runId, undefined)
+      assert.equal(commands.length, 1)
+      if (scenario === 'bound turn') assert.equal('readingContext' in commands[0], false)
+      if (scenario === 'first scoped turn') assert.equal(commands[0].readingContext.subjectId, 'subject-replay')
+      if (scenario === 'activity submission') {
+        assert.equal(commands[0].action, 'activity_submission')
+        assert.ok(commands[0].submissionId)
+        assert.deepEqual(commands[0].answer, ['A'])
+      }
+      // Later edits to display/request metadata must not alter an already sent command.
+      options.selectionText = 'A different quotation'
+      message.content = 'Edited local display'
+      if (message.answerPayload) message.answerPayload.push('B')
+      await assert.rejects(store.retryPendingMessage(message.id), /Connection lost before first event/)
+      await assert.rejects(store.retryPendingMessage(message.id), /Connection lost before first event/)
+      assert.equal(commands.length, 3)
+      assert.deepEqual(commands[1], commands[0])
+      assert.deepEqual(commands[2], commands[0])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+}
+
+test('Chat retry with a known run uses the run-attempt endpoint instead of replaying its turn', async () => {
+  setActivePinia(createPinia())
+  const store = useChatStore()
+  store.sessions = [{
+    id: 'known-conversation', remoteId: 'known-conversation', title: 'Known run', version: 1,
+    chatProtocolVersion: 1, chatSupported: true, chatScopeState: 'UNBOUND', chatScope: null,
+  }]
+  store.activeSessionId = 'known-conversation'
+  const requests = []
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = async (url, init) => {
+      const body = JSON.parse(init.body)
+      requests.push({ url: String(url), body })
+      const terminal = requests.length === 1 ? 'run.failed' : 'run.completed'
+      const events = ['run.started', terminal].map((event, index) => ({
+        protocolVersion: 1, conversationId: 'known-conversation', requestId: body.requestId,
+        runId: 'known-run', attemptId: `attempt-${requests.length}`, userMessageId: 'known-user',
+        replyMessageId: `reply-${requests.length}`, sequence: index + 1, event,
+        payload: event === 'run.failed' ? { safeErrorCode: 'MODEL_UNAVAILABLE' } : {},
+      }))
+      return new Response(events.map(event => `event: ${event.event}\ndata: ${JSON.stringify(event)}\n\n`).join(''), {
+        status: 200, headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }
+    await store.sendMessage('Known run question', { subjectId: 'subject-known', retrievalMode: 'SUBJECT' })
+    const message = store.messages.find(item => item.role === 'USER')
+    assert.equal(message.runId, 'known-run')
+    await store.retryPendingMessage(message.id)
+    assert.equal(requests.length, 2)
+    assert.ok(requests[1].url.endsWith('/api/ai/conversations/known-conversation/runs/known-run/attempts'))
+    assert.deepEqual(Object.keys(requests[1].body), ['requestId'])
+    assert.notEqual(requests[1].body.requestId, requests[0].body.requestId)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('Chat does not invent a replay command when neither run identity nor original command is available', async () => {
+  setActivePinia(createPinia())
+  const store = useChatStore()
+  store.sessions = [{
+    id: 'history-conversation', remoteId: 'history-conversation', title: 'History', version: 1,
+    chatProtocolVersion: 1, chatSupported: true, chatScopeState: 'BOUND', chatScope: null,
+  }]
+  store.activeSessionId = 'history-conversation'
+  store.messages = [
+    { id: 'history-user', conversationId: 'history-conversation', role: 'USER', status: 'FAILED', content: 'Question', parts: [] },
+    { id: 'history-reply', conversationId: 'history-conversation', role: 'ASSISTANT', status: 'FAILED', content: 'Partial', parts: [] },
+  ]
+  const originalFetch = globalThis.fetch
+  let calls = 0
+  try {
+    globalThis.fetch = async () => { calls += 1; throw new Error('Unexpected transport call') }
+    await store.retryPendingMessage('history-reply')
+    assert.equal(calls, 0)
+    assert.deepEqual(store.messages.map(message => [message.id, message.status]), [
+      ['history-user', 'FAILED'], ['history-reply', 'FAILED'],
+    ])
+    assert.equal(store.lastError, '原始请求已不可用，无法安全重试。请重新提问。')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })

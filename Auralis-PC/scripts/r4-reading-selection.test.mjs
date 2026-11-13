@@ -19,11 +19,9 @@ test('selection actions support explain, ask and saving a bounded knowledge bloc
   assert.match(editor, /emit\('save'/)
 })
 
-test('workspace retrieval sends the chosen source scope instead of only the preview source', async () => {
+test('workspace retrieval offers the chosen source scope', async () => {
   const workspaceSource = await source('src/views/SubjectWorkspace/index.vue')
   const workspace = workspaceSource.slice(workspaceSource.indexOf('// ===== AI Chat (Right Panel) ====='))
-  const chatStoreSource = await source('src/store/useChatStore.ts')
-  const chatStore = chatStoreSource.slice(chatStoreSource.indexOf('async function dispatchPendingMessage'))
 
   assert.ok(workspace.includes("retrievalMode: sourceIds.length ? 'SELECTED_SOURCES' as const : (current ? 'AUTO' as const : 'SUBJECT' as const)"),
     'explicit selections must fall back to AUTO when current READY file exists, or SUBJECT')
@@ -35,12 +33,6 @@ test('workspace retrieval sends the chosen source scope instead of only the prev
     'whole-subject retrieval must be an explicit mode')
   assert.ok(!workspace.includes("retrievalMode: 'NONE'"),
     'no-reference NONE mode must be removed from workspace')
-  assert.ok(chatStore.includes("sourceIds: referenceMode === 'SELECTED_SOURCES' ? options.sourceIds : undefined"),
-    'the chat store must include selected source IDs in the API request')
-  assert.ok(chatStore.includes("options.sourceId && options.subjectId ? 'AUTO' : options.subjectId ? 'SUBJECT' : undefined"),
-    'existing current-file messages must remain compatible with AUTO retrieval')
-  assert.ok(!chatStore.includes('retrievalEnabled'),
-    'retrievalEnabled must be omitted entirely from chat store request')
 })
 
 test('an opened pending file retains its processing gate and becomes AUTO when READY', async () => {
@@ -66,9 +58,9 @@ test('an opened pending file retains its processing gate and becomes AUTO when R
   assert.equal(checked, 2, 'mount and subject-switch initialization must both be checked')
   const gateStart = workspace.indexOf('const showProcessingRequired =')
   const gateEnd = workspace.indexOf('const showFileMenu', gateStart)
-  const gate = new Function('computed', 'aiReferenceScope', 'selectedFileId', 'selectedAiSourceIds', 'activeSourceFiles', 'documentProcessingStore',
+  const gate = new Function('computed', 'aiReferenceScope', 'selectedFileId', 'selectedAiSourceIds', 'activeSourceFiles', 'documentProcessingStore', 'chatStore',
     `${workspace.slice(gateStart, gateEnd)}; return showProcessingRequired`)(
-    fn => ({ get value() { return fn() } }), scope, selectedFileId, selectedIds, { value: [file] }, { jobs: [] },
+    fn => ({ get value() { return fn() } }), scope, selectedFileId, selectedIds, { value: [file] }, { jobs: [] }, { isLegacySession: false },
   )
   assert.equal(gate.value, true)
   file.ingestionStatus = 'READY'
@@ -121,15 +113,15 @@ test('last-source removal executes the workspace fallback and produces matching 
   const options = (fileList, selected, currentFileId, scope, subject) => evaluate(
     'const aiChatReferenceOptions =',
     'const aiSourceSummaryText =',
-    ['activeSourceFiles', 'selectedAiSourceIds', 'selectedFileId', 'aiReferenceScope', 'subjectId'],
-    [{ value: fileList }, { value: selected }, { value: currentFileId }, { value: scope }, { value: subject }],
+    ['activeSourceFiles', 'selectedAiSourceIds', 'selectedFileId', 'aiReferenceScope', 'subjectId', 'chatStore'],
+    [{ value: fileList }, { value: selected }, { value: currentFileId }, { value: scope }, { value: subject }, { isLegacySession: false }],
     'aiChatReferenceOptions',
   )
   const summary = (selected, currentFile, scope, fileList) => evaluate(
     'const aiSourceSummaryText =',
     'const aiSourceSummaryTitle =',
-    ['computed', 'aiReferenceScope', 'selectedFile', 'selectedAiSourceIds', 'activeSourceFiles'],
-    [fn => ({ value: fn() }), { value: scope }, { value: currentFile }, { value: selected }, { value: fileList }],
+    ['computed', 'aiReferenceScope', 'selectedFile', 'selectedAiSourceIds', 'activeSourceFiles', 'chatStore'],
+    [fn => ({ value: fn() }), { value: scope }, { value: currentFile }, { value: selected }, { value: fileList }, { isLegacySession: false }],
     'aiSourceSummaryText.value',
   )
 
@@ -156,8 +148,8 @@ test('last-source removal executes the workspace fallback and produces matching 
   assert.deepEqual(withPending.ids.value, ['current'])
   const gate = evaluate(
     'const showProcessingRequired =', 'const showFileMenu',
-    ['computed', 'aiReferenceScope', 'selectedFileId', 'selectedAiSourceIds', 'activeSourceFiles', 'documentProcessingStore'],
-    [fn => ({ get value() { return fn() } }), withPending.scope, withPending.current, withPending.ids, { value: pendingFiles }, { jobs: [] }],
+    ['computed', 'aiReferenceScope', 'selectedFileId', 'selectedAiSourceIds', 'activeSourceFiles', 'documentProcessingStore', 'chatStore'],
+    [fn => ({ get value() { return fn() } }), withPending.scope, withPending.current, withPending.ids, { value: pendingFiles }, { jobs: [] }, { isLegacySession: false }],
     'showProcessingRequired',
   )
   assert.equal(gate.value, true, 'the pending current-file processing gate must remain active')
@@ -190,9 +182,9 @@ test('whole-subject indicators include only READY sources from the current subje
     const end = workspace.indexOf(endMarker, start)
     assert.ok(start >= 0 && end > start)
     const declaration = workspace.slice(start, end).replace('(id: string)', '(id)')
-    return new Function('computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFile',
+    return new Function('computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFile', 'chatStore',
       `${declaration}; return ${variable}`)(
-      fn => ({ value: fn() }), { value: 'SUBJECT' }, { value: [] }, { value: files }, { value: 'subject-a' }, { value: null },
+      fn => ({ value: fn() }), { value: 'SUBJECT' }, { value: [] }, { value: files }, { value: 'subject-a' }, { value: null }, { isLegacySession: false },
     )
   }
   const selected = evaluate('const isAiSourceSelected =', 'const toggleAiSource =', 'isAiSourceSelected')
@@ -226,10 +218,10 @@ test('source list changes remove missing or moved selections and retain pending 
       const sectionStart = workspace.indexOf(startMarker)
       const sectionEnd = workspace.indexOf(endMarker, sectionStart)
       const declaration = workspace.slice(sectionStart, sectionEnd).replaceAll(' as const', '')
-      return new Function('computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFileId', 'selectedFile', 'documentProcessingStore',
+      return new Function('computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFileId', 'selectedFile', 'documentProcessingStore', 'chatStore',
         `${declaration}; return ${variable}`)(
         fn => ({ value: fn() }), scope, selected, files, { value: 'subject-a' }, current,
-        { value: files.value.find(file => file.id === currentId) }, { jobs: [] },
+        { value: files.value.find(file => file.id === currentId) }, { jobs: [] }, { isLegacySession: false },
       )
     }
     assert.equal(evaluate('const showProcessingRequired =', 'const showFileMenu', 'showProcessingRequired.value'), expectedGate)

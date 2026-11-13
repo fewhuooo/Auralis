@@ -163,50 +163,6 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
     }
 
     @Override
-    public void streamInto(
-            AiProviderRequest request,
-            AiCredential credential,
-            Consumer<AiProviderChunk> sink) {
-        validateCredential(credential);
-        Objects.requireNonNull(sink, "sink");
-        try {
-            ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
-                    providerType, URI.create(credential.baseUrl().trim()));
-            Map<String, Object> body = new LinkedHashMap<>(requestBody(request, credential));
-            body.put("stream", true);
-            if (providerType == AiProviderType.OPENAI_COMPATIBLE) {
-                body.put("stream_options", Map.of("include_usage", true));
-            }
-            httpClient.postStream(
-                    endpoint, "/chat/completions", credential.apiKey(), body,
-                    line -> parseLegacyStreamLine(line, sink));
-        } catch (AiStreamAbortException exception) {
-            throw exception;
-        } catch (DomainException exception) {
-            throw exception;
-        } catch (ProviderStreamDiagnosticException exception) {
-            if ("consumer_callback".equals(exception.phase())
-                    && exception.getCause() instanceof DomainException domainException) {
-                throw domainException;
-            }
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event", null,
-                    exception);
-        } catch (ProviderHttpException exception) {
-            throw providerError(exception.status(), exception);
-        } catch (ProviderResponseTooLargeException exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
-                    exception);
-        } catch (SocketTimeoutException exception) {
-            throw new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
-        } catch (IOException exception) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
-        } catch (Exception exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
-                    exception);
-        }
-    }
-
-    @Override
     public void streamInto(AiProviderRequest request, AiCredential credential,
                            AiProviderCallCancellation cancellation, Consumer<AiProviderChunk> sink) {
         validateCredential(credential);
@@ -326,7 +282,8 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         if (providerType != AiProviderType.OPENAI_COMPATIBLE || credential == null
                 || credential.baseUrl() == null) return false;
         try {
-            return "api.xiaomimimo.com".equalsIgnoreCase(URI.create(credential.baseUrl().trim()).getHost());
+            String host = URI.create(credential.baseUrl().trim()).getHost();
+            return "api.deepseek.com".equalsIgnoreCase(host) || "api.xiaomimimo.com".equalsIgnoreCase(host);
         } catch (IllegalArgumentException exception) {
             return false;
         }
@@ -609,47 +566,6 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
 
     private boolean nonemptyText(JsonNode value) {
         return value != null && value.isTextual() && !value.asString().isEmpty();
-    }
-
-    private void parseLegacyStreamLine(String line, Consumer<AiProviderChunk> sink) {
-        if (line == null || line.isBlank() || !line.startsWith("data:")) return;
-        String payload = line.substring("data:".length()).trim();
-        if (payload.equals("[DONE]")) {
-            sink.accept(new AiProviderChunk("", true));
-            return;
-        }
-        try {
-            JsonNode body = STREAM_OBJECT_MAPPER.readTree(payload);
-            AiProviderModelIdentity modelIdentity = responseModelIdentity(body);
-            AiTokenUsage usage = parseUsage(body == null ? null : body.path("usage"));
-            JsonNode choices = body == null ? null : body.path("choices");
-            if ((choices == null || !choices.isArray() || choices.isEmpty()) && usage != null) {
-                sink.accept(new AiProviderChunk("", false, usage, modelIdentity));
-                return;
-            }
-            JsonNode choice = body.path("choices").path(0);
-            JsonNode content = choice.path("delta").path("content");
-            boolean emitted = false;
-            if (content.isTextual() && !content.asText().isEmpty()) {
-                sink.accept(new AiProviderChunk(content.asText(), false, null, modelIdentity));
-                emitted = true;
-            }
-            JsonNode finishReason = choice.path("finish_reason");
-            if (!finishReason.isMissingNode() && !finishReason.isNull()) {
-                sink.accept(new AiProviderChunk("", true, usage, modelIdentity));
-                emitted = true;
-            } else if (usage != null) {
-                sink.accept(new AiProviderChunk("", false, usage, modelIdentity));
-                emitted = true;
-            }
-            if (!emitted && modelIdentity.status() != AiProviderModelIdentity.Status.MISSING) {
-                sink.accept(new AiProviderChunk("", false, null, modelIdentity));
-            }
-        } catch (AiStreamAbortException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event");
-        }
     }
 
     private AiTokenUsage parseUsage(JsonNode usage) {

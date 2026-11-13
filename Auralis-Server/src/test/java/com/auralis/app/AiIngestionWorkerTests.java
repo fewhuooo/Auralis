@@ -197,11 +197,11 @@ class AiIngestionWorkerTests {
         when(parser.parse(userId, source)).thenReturn("source text");
         when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.SILICONFLOW, "embedding-model",
+                        AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
-        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(embeddingProviderRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(embeddingProvider);
         when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of(vector())));
-        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(completionService.markIndexing(IngestionClaim.from(job), revision)).thenReturn(true);
         when(completionService.complete(any(), eq(revision), anyList(), anyList(), isNull(), eq(clock.instant())))
                 .thenReturn(true);
 
@@ -222,7 +222,7 @@ class AiIngestionWorkerTests {
         when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
         when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
         when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
-        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(completionService.markIndexing(IngestionClaim.from(job), revision)).thenReturn(true);
         when(parser.supports(SourceType.TEXT)).thenReturn(true);
         when(parser.parse(userId, source)).thenReturn(text);
         when(completionService.loadCheckpoint(eq(IngestionClaim.from(job)), eq(revision), eq(chunks)))
@@ -252,10 +252,10 @@ class AiIngestionWorkerTests {
         when(parser.parse(userId, source)).thenReturn(text);
         when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.SILICONFLOW, "embedding-model",
+                        AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
-        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
-        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(embeddingProviderRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(embeddingProvider);
+        when(completionService.markIndexing(IngestionClaim.from(job), revision)).thenReturn(true);
         doAnswer(invocation -> {
             List<String> batch = List.copyOf(invocation.getArgument(0));
             submittedBatches.add(batch);
@@ -303,10 +303,10 @@ class AiIngestionWorkerTests {
         when(parser.parse(userId, source)).thenReturn("x".repeat(36_000));
         when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.SILICONFLOW, "embedding-model",
+                        AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
-        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
-        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(embeddingProviderRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(embeddingProvider);
+        when(completionService.markIndexing(IngestionClaim.from(job), revision)).thenReturn(true);
         doAnswer(invocation -> {
             List<String> batch = invocation.getArgument(0);
             now.set(now.get().plusMillis(101));
@@ -338,10 +338,10 @@ class AiIngestionWorkerTests {
         when(parser.parse(userId, source)).thenReturn("one chunk");
         when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.SILICONFLOW, "embedding-model",
+                        AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
-        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
-        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(embeddingProviderRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(embeddingProvider);
+        when(completionService.markIndexing(IngestionClaim.from(job), revision)).thenReturn(true);
         when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of()));
 
         assertThat(worker.processNext()).isTrue();
@@ -376,10 +376,10 @@ class AiIngestionWorkerTests {
         when(parser.parse(userId, source)).thenReturn(text);
         when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.SILICONFLOW, "embedding-model",
+                        AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
-        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
-        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(embeddingProviderRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(embeddingProvider);
+        when(completionService.markIndexing(IngestionClaim.from(job), revision)).thenReturn(true);
         doAnswer(invocation -> {
             List<String> batch = invocation.getArgument(0);
             now.set(now.get().plusMillis(101));
@@ -411,7 +411,7 @@ class AiIngestionWorkerTests {
                         parsedDocumentId, sourceId, revision, generation,
                         List.of(new ParsedDocumentValidator.ValidatedBlock(0, "page", "OCR text"))));
         configureEmbeddingProvider();
-        when(sourceService.markIndexingIfRevision(userId, sourceId, parsedRevision)).thenReturn(true);
+        when(completionService.markIndexing(IngestionClaim.from(job), parsedRevision)).thenReturn(true);
         when(completionService.complete(any(), eq(parsedRevision), anyList(), anyList(), anyList(), eq(clock.instant())))
                 .thenReturn(true);
 
@@ -452,9 +452,9 @@ class AiIngestionWorkerTests {
         EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
         when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.SILICONFLOW, "embedding-model",
+                        AiProviderType.OPENAI_COMPATIBLE, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
-        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(embeddingProviderRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(embeddingProvider);
         when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of(vector())));
     }
 

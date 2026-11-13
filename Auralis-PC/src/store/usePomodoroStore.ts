@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { SyncRequestScopeTicket } from '@/api/request'
+import { ApiProblemError } from '@/api/httpError'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusSessionApi } from '@/api/useFocusSessionApi'
 import { getFocusSessionRepository } from '@/services/localDb'
@@ -17,11 +18,7 @@ import {
   tickPomodoro,
 } from '@/services/pomodoroSessionRuntime'
 import type { FocusSessionRecord, FocusSessionRepository } from '@/services/focusSessionRepository'
-
-function createSessionId(): string {
-  if (!globalThis.crypto?.randomUUID) throw new Error('FOCUS_SESSION_UUID_UNAVAILABLE')
-  return globalThis.crypto.randomUUID()
-}
+import { uuidv7 } from '@/utils/uuid'
 
 function currentScope(authStore: ReturnType<typeof useAuthStore>): { token: string; userId: string; deviceId: string; sessionId: string } | null {
   const userId = authStore.user?.id
@@ -29,6 +26,12 @@ function currentScope(authStore: ReturnType<typeof useAuthStore>): { token: stri
   const sessionId = authStore.sessionId
   if (!authStore.isAuthenticated || !userId || !deviceId || !sessionId) return null
   return { token: `${userId}\u0000${deviceId}\u0000${sessionId}`, userId, deviceId, sessionId }
+}
+
+interface FocusFlushFlight {
+  scopeToken: string
+  requested: boolean
+  promise: Promise<number>
 }
 
 export const usePomodoroStore = defineStore('pomodoro', () => {
@@ -47,8 +50,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
   let scopeQueue: Promise<void> = Promise.resolve()
   let transitionInProgress = false
   let transitionQueue: Promise<void> = Promise.resolve()
-  let isFlushing = false
-  let flushRequested = false
+  let flushFlight: FocusFlushFlight | null = null
 
   const isRunning = computed(() => runtime.value.runStartedAtMs !== null)
   const isBreakPhase = computed(() => runtime.value.phase === 'break')
@@ -84,8 +86,11 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
   }
 
   function refreshLocalSessions(): Promise<void> {
-    if (!repository) return Promise.resolve()
-    return repository.listSessions().then((sessions) => {
+    const scopedRepository = repository
+    const scopeToken = activeScopeToken
+    if (!scopedRepository) return Promise.resolve()
+    return scopedRepository.listSessions().then((sessions) => {
+      if (activeScopeToken !== scopeToken || currentScope(authStore)?.token !== scopeToken) return
       localSessions.value = sessions
       pendingSessions.value = sessions
         .filter((session) => session.syncStatus === 'pending')
@@ -102,7 +107,9 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     await refreshLocalSessions()
     if (nextRuntime.runStartedAtMs === null) stopTicker()
     else startTicker()
-    if (finalizedSession) void flushPending()
+    if (finalizedSession) {
+      void flushPending().catch((error) => console.error('Failed to sync focus sessions:', error))
+    }
   }
 
   async function processTick(): Promise<void> {
@@ -179,7 +186,6 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
         await persistTransition(restoredTransition.runtime, restoredTransition.finalizedSession)
       }
       if (runtime.value.runStartedAtMs !== null) startTicker()
-      void flushPending()
     })
   }
 
@@ -204,43 +210,53 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
   }
 
   async function flushPending(): Promise<number> {
+    const scopeToken = currentScope(authStore)?.token
+    if (!scopeToken || (typeof navigator !== 'undefined' && navigator.onLine === false)) return 0
     await initialize()
-    if (isFlushing) {
-      flushRequested = true
-      return 0
-    }
-    if (!repository || !authStore.isAuthenticated) return 0
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0
-    const scopeToken = activeScopeToken
+    const scopedRepository = repository
     const requestScope: SyncRequestScopeTicket = {
       key: Symbol('focus-session-sync-scope'),
       isCurrent: () => activeScopeToken === scopeToken && currentScope(authStore)?.token === scopeToken,
     }
-    isFlushing = true
-    let sent = 0
-    try {
-      for (const event of await repository.listPending()) {
-        if (activeScopeToken !== scopeToken || currentScope(authStore)?.token !== scopeToken) break
-        try {
-          await useFocusSessionApi.create(event, requestScope)
-          if (activeScopeToken !== scopeToken || currentScope(authStore)?.token !== scopeToken) break
-          await repository.acknowledge(event.clientSessionId)
-          sent += 1
-          syncRevision.value += 1
-          await refreshLocalSessions()
-        } catch {
-          // Keep the immutable row in the durable outbox; retry with the same session ID later.
-          break
-        }
-      }
-    } finally {
-      isFlushing = false
-      if (flushRequested) {
-        flushRequested = false
-        void flushPending()
-      }
+    if (!scopedRepository || !requestScope.isCurrent()) return 0
+    if (flushFlight?.scopeToken === scopeToken) {
+      flushFlight.requested = true
+      return flushFlight.promise
     }
-    return sent
+    const flight: FocusFlushFlight = {
+      scopeToken,
+      requested: false,
+      promise: Promise.resolve().then(async () => {
+        let sent = 0
+        do {
+          flight.requested = false
+          const sentBeforeBatch = sent
+          for (const event of await scopedRepository.listPending()) {
+            if (!requestScope.isCurrent()) break
+            try {
+              await useFocusSessionApi.create(event, requestScope)
+            } catch (error) {
+              // Row-specific rejections keep the original event pending while independent events can upload.
+              if (error instanceof ApiProblemError && ['RESOURCE_NOT_FOUND', 'RESOURCE_VERSION_CONFLICT', 'VALIDATION_FAILED']
+                .includes(error.problem.code ?? '')) continue
+              break
+            }
+            if (!requestScope.isCurrent()) break
+            await scopedRepository.acknowledge(event.clientSessionId)
+            sent += 1
+          }
+          if (sent > sentBeforeBatch && requestScope.isCurrent()) {
+            await refreshLocalSessions()
+            if (requestScope.isCurrent()) syncRevision.value += sent - sentBeforeBatch
+          }
+        } while (flight.requested && requestScope.isCurrent())
+        return sent
+      }).finally(() => {
+        if (flushFlight === flight) flushFlight = null
+      }),
+    }
+    flushFlight = flight
+    return flight.promise
   }
 
   async function start(taskId: string | null = null): Promise<void> {
@@ -252,7 +268,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
       const nextRuntime = startPomodoro(runtime.value, {
         nowMs: Date.now(),
         taskId,
-        clientSessionId: createSessionId(),
+        clientSessionId: globalThis.crypto?.randomUUID?.() ?? uuidv7(),
       })
       await repository.saveRuntime(nextRuntime)
       runtime.value = nextRuntime
@@ -338,7 +354,6 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
 
   if (typeof window !== 'undefined') {
     setInterval(() => { clockNow.value = Date.now() }, 60_000)
-    window.addEventListener('online', () => { void flushPending() })
   }
 
   return {

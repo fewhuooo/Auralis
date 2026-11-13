@@ -2,7 +2,7 @@ import { getClientRuntimeConfig } from '@/config/runtime'
 import { useAuthStore } from '@/store/useAuthStore'
 import { ApiProblemError, toApiProblem } from './httpError.ts'
 import { refreshAccessToken, SyncScopeChangedError, type SyncRequestScopeTicket } from './request.ts'
-import { validateOverviewResponse } from './overviewResponseValidator.ts'
+import { validateGeneratedOverviewResponse } from './overviewResponseValidator.ts'
 import type { GeneratedOverviewResponse, OverviewMode, OverviewRequestContext } from '@/types/overview'
 
 export interface OverviewSseTransportOptions {
@@ -288,7 +288,7 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
             const rawData = currentDataLines.join('\n')
             const parsed = parseDataValue(rawData)
             if (currentEvent === 'result') {
-              terminalResult = validateOverviewResponse(parsed, request.mode)
+              terminalResult = validateGeneratedOverviewResponse(parsed, request.mode)
             } else if (currentEvent === 'error') {
               terminalError = (parsed && typeof parsed === 'object') ? parsed as SseErrorEventData : { detail: String(parsed) }
             }

@@ -8,11 +8,11 @@
       <button type="button" class="processing-refresh" :disabled="store.loading || !store.isRuntimeAvailable" @click="refresh">刷新</button>
     </div>
     <div v-if="!store.isRuntimeAvailable" class="processing-empty">文件解析仅可在 Auralis 桌面端运行。请在桌面端打开本文件，解析完成后即可提问。</div>
-    <div v-else-if="!jobs.length && !serverProcessingSources.length" class="processing-empty">暂无文件解析任务</div>
+    <div v-else-if="!jobs.length && !pausedDraftSourceIds.length && !serverProcessingSources.length" class="processing-empty">暂无文件解析任务</div>
     <div v-else class="processing-list">
       <article v-for="job in jobs" :key="job.jobId" class="processing-item">
         <div class="processing-item-main">
-          <strong>{{ sourceName(job.sourceId) }}</strong>
+          <strong :title="sourceName(job.sourceId)">{{ sourceName(job.sourceId) }}</strong>
           <span class="processing-phase">{{ phaseLabel(job.phase) }}</span>
         </div>
         <div class="processing-item-meta">
@@ -37,9 +37,21 @@
           <button type="button" @click="copyDiagnostics(job.jobId, viewFor(job).clipboardText)">{{ copyFeedback[job.jobId] || '复制诊断' }}</button>
         </details>
       </article>
+      <article v-for="sourceId in pausedDraftSourceIds" :key="`paused-draft-${sourceId}`" class="processing-item">
+        <div class="processing-item-main">
+          <strong :title="sourceName(sourceId)">{{ sourceName(sourceId) }}</strong>
+          <span class="processing-phase">{{ phaseLabel('PAUSED_NETWORK') }}</span>
+        </div>
+        <div class="processing-item-meta">
+          <span>{{ pausedNetworkDetail }}</span>
+          <div class="processing-actions">
+            <button type="button" @click="resumeDraft(sourceId)">继续</button>
+          </div>
+        </div>
+      </article>
       <article v-for="source in serverProcessingSources" :key="source.id" class="processing-item">
         <div class="processing-item-main">
-          <strong>{{ source.name }}</strong>
+          <strong :title="source.name">{{ source.name }}</strong>
           <span class="processing-phase">{{ sourcePhaseLabel(source.ingestionStatus) }}</span>
         </div>
         <div class="processing-item-meta">
@@ -83,10 +95,17 @@ import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback, type OcrD
 const store = useDocumentProcessingStore()
 const sourceStore = useSourceStore()
 const authStore = useAuthStore()
-const jobs = computed(() => store.jobs.filter((job) => job.phase !== 'READY'))
+const pausedDraftSourceIds = computed(() => store.pausedDraftSourceIds)
+const sourceRevisions = computed(() => new Map(sourceStore.sources.map((source) => [source.id, source.ingestionRevision])))
+const jobs = computed(() => store.jobs.filter((job) => {
+  if (job.phase === 'READY' || pausedDraftSourceIds.value.includes(job.sourceId)) return false
+  const revision = sourceRevisions.value.get(job.sourceId)
+  return !revision || job.ingestionRevision === revision
+}))
 const serverProcessingSources = computed(() => sourceStore.sources
   .filter((source) => source.type === 'FILE' && source.ingestionStatus && source.ingestionStatus !== 'READY')
-  .filter((source) => !store.jobs.some((job) => job.sourceId === source.id)))
+  .filter((source) => !jobs.value.some((job) => job.sourceId === source.id) && !pausedDraftSourceIds.value.includes(source.id)))
+const pausedNetworkDetail = '网络恢复后，请点击继续处理。'
 const sourceActionErrors = ref<Record<string, string>>({})
 const sourceActionResults = ref<Record<string, string>>({})
 const resumingSourceIds = ref<Set<string>>(new Set())
@@ -149,7 +168,7 @@ const resumeProgressLabel = (sourceId: string) => resumeStages.value[sourceId] =
 const resumeResultLabel = (result: { status?: string; reason?: string }): string => {
   if (result.status === 'READY' || result.status === 'LOCAL_READY' || result.reason === 'ALREADY_READY') return '处理完成'
   if (result.status === 'WAITING_SERVER_REVISION') return '本机处理完成，等待资料版本同步。'
-  if (result.status === 'PAUSED_NETWORK') return '等待网络恢复后继续处理。'
+  if (result.status === 'PAUSED_NETWORK') return pausedNetworkDetail
   if (result.status === 'FAILED_LOCAL') return '本机处理失败，请重试。'
   if (result.status === 'FAILED_SERVER') return '服务端处理失败，请重试。'
   if (result.reason === 'SOURCE_NOT_FOUND') return '服务端暂时无法读取这份资料，请刷新后重试。'
@@ -169,6 +188,7 @@ const refresh = async () => {
   await Promise.all([store.refresh().catch(() => undefined), refreshSources()])
 }
 const retry = async (jobId: string) => { await store.retry(jobId).catch(() => undefined); await refresh() }
+const resumeDraft = async (sourceId: string) => { await store.resumePausedDraft(sourceId).catch(() => undefined); await refresh() }
 const cancel = async (jobId: string) => { await store.cancel(jobId).catch(() => undefined); await refresh() }
 const resumeSource = async (sourceId: string) => {
   if (resumingSourceIds.value.has(sourceId)) return
@@ -245,24 +265,25 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
 <style scoped>
-.processing-center { padding: 20px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-card, rgba(255,255,255,.45)); }
-.processing-center-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.processing-center { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 20px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-card, rgba(255,255,255,.45)); }
+.processing-center-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
 .processing-center h3 { margin: 0; font-size: 16px; color: var(--text-primary); }
 .processing-center p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; }
-.processing-refresh, .processing-actions button { border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1)); border-radius: 9999px; padding: 4px 10px; background: var(--color-bg-card, #ffffff); color: var(--text-secondary); cursor: pointer; font-size: 11.5px; font-weight: 500; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.processing-refresh, .processing-actions button { border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1)); border-radius: 9999px; padding: 4px 10px; background: var(--color-bg-card, #ffffff); color: var(--text-secondary); cursor: pointer; font-size: 11.5px; font-weight: 500; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); white-space: nowrap; flex-shrink: 0; }
 .processing-refresh:hover:not(:disabled), .processing-actions button:hover:not(:disabled) { border-color: var(--color-zen-sage, #8b9a6e); color: var(--text-primary); transform: translateY(-0.5px); }
 .processing-empty { padding: 20px 0 4px; color: var(--text-muted); font-size: 13px; }
-.processing-list { display: grid; gap: 10px; margin-top: 16px; }
-.processing-item { padding: 12px 14px; border-radius: 12px; background: var(--color-bg-primary, #FAF7F2); border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06)); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); transition: background 0.3s ease, border-color 0.3s ease; }
-.processing-item-main, .processing-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.processing-list { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; min-width: 0; gap: 10px; margin-top: 16px; }
+.processing-item { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 12px 14px; border-radius: 12px; background: var(--color-bg-primary, #FAF7F2); border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06)); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); transition: background 0.3s ease, border-color 0.3s ease; }
+.processing-item-main, .processing-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; width: 100%; }
 .processing-item-main strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 13px; }
 .processing-phase { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0; background: rgba(217, 119, 6, 0.08); color: #B45309; border: 0.5px solid rgba(217, 119, 6, 0.22); }
 .processing-item-meta { margin-top: 7px; color: var(--text-muted); font-size: 11px; }
-.processing-error { flex: 1; min-width: 0; color: #dc2626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.processing-item-meta > span, .processing-error { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.processing-error { color: #dc2626; }
 .processing-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .processing-actions button.danger { color: #b4534d; }
 .processing-warning { margin-top: 8px; color: #9b742e; font-size: 11px; }
-.processing-diagnostics { margin-top: 10px; padding-top: 8px; border-top: 0.5px dashed var(--border-subtle, rgba(0, 0, 0, 0.08)); color: var(--text-secondary); font-size: 11px; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }
+.processing-diagnostics { margin-top: 10px; padding-top: 8px; border-top: 0.5px dashed var(--border-subtle, rgba(0, 0, 0, 0.08)); color: var(--text-secondary); font-size: 11px; max-height: 220px; overflow-y: auto; overflow-x: hidden; min-width: 0; max-width: 100%; scrollbar-width: thin; }
 .processing-diagnostics summary { cursor: pointer; color: var(--text-secondary); margin-bottom: 4px; }
 .diagnostic-group h4 { margin: 8px 0 4px 0; color: #9b742e; font-size: 11px; font-weight: 500; }
 .diagnostic-group dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 4px 0 8px 0; }

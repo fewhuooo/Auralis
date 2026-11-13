@@ -7,7 +7,7 @@ import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.usage.AiTokenUsage;
 import com.auralis.app.ai.internal.provider.OpenAiCompatibleProvider;
-import com.auralis.app.ai.internal.provider.SiliconFlowEmbeddingProvider;
+import com.auralis.app.ai.internal.provider.OpenAiCompatibleEmbeddingProvider;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
@@ -165,6 +165,7 @@ class AiProviderSecurityTests {
                         null,
                         null),
                 new AiCredential("https://provider.test/v1", "sk-secret-value"),
+                null,
                 chunk -> { }))
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).code())
@@ -176,7 +177,7 @@ class AiProviderSecurityTests {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "embedding.test", 443, List.of(), "/v1");
-        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create("https://embedding.test/v1")))
                 .thenReturn(endpoint);
         AtomicLong connectTimeout = new AtomicLong();
         AtomicLong responseTimeout = new AtomicLong();
@@ -196,7 +197,7 @@ class AiProviderSecurityTests {
                         .getBytes(java.nio.charset.StandardCharsets.UTF_8);
             }
         };
-        SiliconFlowEmbeddingProvider provider = new SiliconFlowEmbeddingProvider(
+        OpenAiCompatibleEmbeddingProvider provider = new OpenAiCompatibleEmbeddingProvider(
                 policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
 
         provider.embed(List.of("hello"), new AiCredential("https://embedding.test/v1", "sk-secret-value", "embed"));
@@ -209,7 +210,7 @@ class AiProviderSecurityTests {
     void restoresEmbeddingVectorsToRequestOrderUsingProviderIndices() {
         String first = String.join(",", java.util.Collections.nCopies(1024, "0.1"));
         String second = String.join(",", java.util.Collections.nCopies(1024, "0.2"));
-        SiliconFlowEmbeddingProvider provider = embeddingProviderResponse(
+        OpenAiCompatibleEmbeddingProvider provider = embeddingProviderResponse(
                 "{\"data\":[{\"index\":1,\"embedding\":[" + second + "]},"
                         + "{\"index\":0,\"embedding\":[" + first + "]}]}");
 
@@ -224,7 +225,7 @@ class AiProviderSecurityTests {
     @Test
     void parsesSiliconFlowEmbeddingCompletionTokensIncludingZero() {
         String vector = String.join(",", java.util.Collections.nCopies(1024, "0.1"));
-        SiliconFlowEmbeddingProvider provider = embeddingProviderResponse(
+        OpenAiCompatibleEmbeddingProvider provider = embeddingProviderResponse(
                 "{\"data\":[{\"index\":0,\"embedding\":[" + vector + "]}],"
                         + "\"usage\":{\"prompt_tokens\":7454,\"completion_tokens\":0,\"total_tokens\":7454}}");
 
@@ -282,7 +283,7 @@ class AiProviderSecurityTests {
     @Test
     void rejectsNonNumericEmbeddingValuesInsteadOfCoercingThemToZero() {
         String vector = String.join(",", java.util.Collections.nCopies(1023, "0.1")) + ",\"not-a-number\"";
-        SiliconFlowEmbeddingProvider provider = embeddingProviderResponse(
+        OpenAiCompatibleEmbeddingProvider provider = embeddingProviderResponse(
                 "{\"data\":[{\"index\":0,\"embedding\":[" + vector + "]}]}");
 
         assertThatThrownBy(() -> provider.embed(List.of("one"),
@@ -292,15 +293,15 @@ class AiProviderSecurityTests {
                 .isEqualTo("MODEL_PROVIDER_ERROR");
     }
 
-    private SiliconFlowEmbeddingProvider embeddingProviderResponse(String responseBody) {
+    private OpenAiCompatibleEmbeddingProvider embeddingProviderResponse(String responseBody) {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "embedding.test", 443, List.of(), "/v1");
-        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create("https://embedding.test/v1")))
                 .thenReturn(endpoint);
         ProviderHttpTransport transport = (resolved, path, apiKey, body) ->
                 responseBody.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        return new SiliconFlowEmbeddingProvider(
+        return new OpenAiCompatibleEmbeddingProvider(
                 policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
     }
 
@@ -309,11 +310,11 @@ class AiProviderSecurityTests {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "embedding.test", 443, List.of(), "/v1");
-        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create("https://embedding.test/v1")))
                 .thenReturn(endpoint);
         SocketTimeoutException timeout = new SocketTimeoutException("embedding timeout");
         ProviderHttpTransport transport = (resolved, path, apiKey, body) -> { throw timeout; };
-        SiliconFlowEmbeddingProvider provider = new SiliconFlowEmbeddingProvider(
+        OpenAiCompatibleEmbeddingProvider provider = new OpenAiCompatibleEmbeddingProvider(
                 policy, new ProviderHttpClient(new ObjectMapper(), transport, 1024));
 
         assertThatThrownBy(() -> provider.embed(List.of("hello"),
@@ -330,11 +331,11 @@ class AiProviderSecurityTests {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "embedding.test", 443, List.of(), "/v1");
-        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create("https://embedding.test/v1")))
                 .thenReturn(endpoint);
         IOException failure = new IOException("embedding transport failed");
         ProviderHttpTransport transport = (resolved, path, apiKey, body) -> { throw failure; };
-        SiliconFlowEmbeddingProvider provider = new SiliconFlowEmbeddingProvider(
+        OpenAiCompatibleEmbeddingProvider provider = new OpenAiCompatibleEmbeddingProvider(
                 policy, new ProviderHttpClient(new ObjectMapper(), transport, 1024));
 
         assertThatThrownBy(() -> provider.embed(List.of("hello"),
@@ -363,7 +364,7 @@ class AiProviderSecurityTests {
             public void postStream(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] body,
                                    java.util.function.Consumer<String> lineConsumer) {
                 lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}");
-                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}");
+                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}");
                 lineConsumer.accept("data: [DONE]");
             }
         };
@@ -378,6 +379,7 @@ class AiProviderSecurityTests {
                         null,
                         null),
                 new AiCredential("https://provider.test/v1", "sk-secret-value"),
+                null,
                 chunks::add);
 
         assertThat(chunks).extracting(AiProviderChunk::content)
@@ -407,7 +409,7 @@ class AiProviderSecurityTests {
                 if (request.contains("\"stream_options\":{\"include_usage\":true}")) {
                     requestHasUsageOption.set(1);
                 }
-                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"answer\"}}]}");
+                lineConsumer.accept("data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}");
                 lineConsumer.accept("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":3,\"total_tokens\":20}}");
                 lineConsumer.accept("data: [DONE]");
             }
@@ -418,12 +420,12 @@ class AiProviderSecurityTests {
 
         provider.streamInto(new AiProviderRequest(
                         "model", List.of(new AiProviderRequest.Message(AiMessageRole.USER, "hello")), null, null),
-                new AiCredential("https://provider.test/v1", "sk-secret-value"), chunks::add);
+                new AiCredential("https://provider.test/v1", "sk-secret-value"), null, chunks::add);
 
         assertThat(requestHasUsageOption).hasValue(1);
-        assertThat(chunks).extracting(AiProviderChunk::complete).containsExactly(false, false, true);
-        assertThat(chunks.get(1).usage()).isEqualTo(new AiTokenUsage(17L, 3L));
-        assertThat(chunks.get(2).usage()).isNull();
+        assertThat(chunks).extracting(AiProviderChunk::complete).containsExactly(false, true);
+        assertThat(chunks.getFirst().usage()).isNull();
+        assertThat(chunks.getLast().usage()).isEqualTo(new AiTokenUsage(17L, 3L));
     }
 
     @Test

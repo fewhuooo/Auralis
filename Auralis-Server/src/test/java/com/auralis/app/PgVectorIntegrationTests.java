@@ -4,6 +4,7 @@ import com.auralis.app.ai.ingestion.TextChunk;
 import com.auralis.app.ai.retrieval.Citation;
 import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.ai.retrieval.SourceChunkService;
+import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -102,11 +103,17 @@ class PgVectorIntegrationTests {
                 userId,
                 sourceId)).isEqualTo(1);
 
-        List<Citation> privateResults = retrievalService.retrieve(userId, query, 5);
+        List<Citation> privateResults = retrievalService.retrieveWithinSources(
+                userId, query, 5, List.of(sourceId), subjectId, null);
         assertThat(privateResults).singleElement()
                 .extracting(Citation::sourceId, Citation::title, Citation::similarity)
                 .containsExactly(sourceId, "Private vector source", 1.0);
-        assertThat(retrievalService.retrieve(userId, vector(0.0, 1.0, 0.0), 5)).isEmpty();
+        assertThat(retrievalService.retrieveWithinSources(
+                userId, vector(0.0, 1.0, 0.0), 5, List.of(sourceId), subjectId, null)).isEmpty();
+        assertThatThrownBy(() -> retrievalService.retrieveWithinSources(
+                userId, query, 5, List.of(sourceId, otherSourceId), null, null))
+                .isInstanceOfSatisfying(DomainException.class,
+                        error -> assertThat(error.code()).isEqualTo("RESOURCE_NOT_FOUND"));
 
         sourceChunkService.replace(
                 userId,
@@ -149,7 +156,10 @@ class PgVectorIntegrationTests {
                 generation)).isEqualTo(1);
 
         jdbcTemplate.update("update sources set deleted_at = current_timestamp where id = ?", sourceId);
-        assertThat(retrievalService.retrieve(userId, query, 5)).isEmpty();
+        assertThatThrownBy(() -> retrievalService.retrieveWithinSources(
+                userId, query, 5, List.of(sourceId), subjectId, null))
+                .isInstanceOfSatisfying(DomainException.class,
+                        error -> assertThat(error.code()).isEqualTo("RESOURCE_NOT_FOUND"));
     }
 
     @Test
@@ -174,7 +184,8 @@ class PgVectorIntegrationTests {
 
         jdbcTemplate.update("update sources set deleted_at = current_timestamp where id = ?", deletedSourceId);
 
-        assertThat(retrievalService.retrieve(userId, exact, 1)).singleElement()
+        assertThat(retrievalService.retrieveWithinSources(
+                userId, exact, 1, List.of(activeSourceId), subjectId, null)).singleElement()
                 .extracting(Citation::sourceId, Citation::title, Citation::excerpt)
                 .containsExactly(activeSourceId, "Active source", "active source chunk");
 
@@ -182,7 +193,12 @@ class PgVectorIntegrationTests {
         sourceChunkService.replace(userId, deletedSourceId, restoredGeneration,
                 List.of(new TextChunk(0, "restored reingest chunk", 0, 22)), List.of(exact));
 
-        assertThat(retrievalService.retrieve(userId, exact, 1)).singleElement()
+        assertThat(retrievalService.retrieveWithinSources(
+                userId, exact, 1, List.of(activeSourceId), subjectId, null)).singleElement()
+                .extracting(Citation::sourceId)
+                .isEqualTo(activeSourceId);
+        assertThat(retrievalService.retrieveWithinSources(
+                userId, exact, 1, List.of(activeSourceId, deletedSourceId), subjectId, null)).singleElement()
                 .extracting(Citation::sourceId, Citation::excerpt)
                 .containsExactly(deletedSourceId, "restored reingest chunk");
         assertThat(jdbcTemplate.queryForObject(

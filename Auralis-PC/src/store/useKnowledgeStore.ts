@@ -144,10 +144,11 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       version: block.version,
       createdAt: block.createdAt,
       updatedAt: new Date().toISOString(),
-      deletedAt: block.deletedAt ?? undefined,
     }
     await repo.commitMutation({
-      resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id, value: localView, version: block.version, deletedAt: block.deletedAt,
+      resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id, value: localView, version: block.version, deletedAt: null,
+      expectedLocalVersion: block.version,
+      requireActiveResource: true,
       mutation: createStableMutation({
         clientMutationId: uuidv7(), resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id, mutationType: 'UPDATE', baseVersion: block.version,
         payload: payload as unknown as Record<string, unknown>,

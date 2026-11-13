@@ -19,7 +19,7 @@ import {
   type LocalParsedDocumentRecord,
 } from '@/types/localParsedDocument'
 
-export const LOCAL_SCHEMA_VERSION = 13
+export const LOCAL_SCHEMA_VERSION = 14
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -248,8 +248,9 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
     user_id TEXT NOT NULL, device_id TEXT NOT NULL,
     scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')),
     scope_id TEXT NOT NULL, revision_key TEXT NOT NULL CHECK (length(trim(revision_key)) > 0),
-    schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version = 1), title TEXT NOT NULL,
-    outline_json TEXT, summary_json TEXT, outline_generated_at TEXT, summary_generated_at TEXT,
+    schema_version INTEGER NOT NULL DEFAULT 2 CHECK (schema_version IN (1, 2)), title TEXT NOT NULL,
+    outline_json TEXT, summary_json TEXT,
+    outline_markdown TEXT, summary_markdown TEXT, outline_generated_at TEXT, summary_generated_at TEXT,
     outline_identity_json TEXT, outline_identity_input_json TEXT,
     outline_provenance_json TEXT, outline_provenance_input_json TEXT,
     identity_ready INTEGER NOT NULL DEFAULT 0 CHECK (identity_ready IN (0, 1)),
@@ -501,6 +502,49 @@ async function migrateOverviewIdentityColumns(db: LocalSqlDatabase): Promise<voi
   if (!columns.has('identity_ready')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN identity_ready INTEGER NOT NULL DEFAULT 0')
 }
 
+async function migrateOverviewMarkdownColumns(db: LocalSqlDatabase): Promise<void> {
+  if (!(await tableExists(db, 'ai_overview_cache'))) return
+  const columns = await tableColumns(db, 'ai_overview_cache')
+  if (!columns.has('outline_markdown')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN outline_markdown TEXT')
+  if (!columns.has('summary_markdown')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN summary_markdown TEXT')
+  const masterRows = await db.select<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_overview_cache'")
+  const tableSql = masterRows[0]?.sql || ''
+  if (tableSql.includes('schema_version = 1')) {
+    await db.execute(`CREATE TABLE IF NOT EXISTS ai_overview_cache_v2 (
+      user_id TEXT NOT NULL, device_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')),
+      scope_id TEXT NOT NULL, revision_key TEXT NOT NULL CHECK (length(trim(revision_key)) > 0),
+      schema_version INTEGER NOT NULL DEFAULT 2 CHECK (schema_version IN (1, 2)), title TEXT NOT NULL,
+      outline_json TEXT, summary_json TEXT,
+      outline_markdown TEXT, summary_markdown TEXT,
+      outline_generated_at TEXT, summary_generated_at TEXT,
+      outline_identity_json TEXT, outline_identity_input_json TEXT,
+      outline_provenance_json TEXT, outline_provenance_input_json TEXT,
+      identity_ready INTEGER NOT NULL DEFAULT 0 CHECK (identity_ready IN (0, 1)),
+      input_fingerprint TEXT, status TEXT NOT NULL CHECK (status IN ('READY', 'FAILED')),
+      error_code TEXT, error_detail TEXT, updated_at TEXT NOT NULL,
+      CHECK ((scope_type = 'SUBJECT' AND revision_key = 'subject-v1') OR (scope_type = 'FILE' AND revision_key <> 'subject-v1')),
+      PRIMARY KEY (user_id, device_id, scope_type, scope_id, revision_key)
+    )`)
+    await db.execute(`INSERT OR IGNORE INTO ai_overview_cache_v2
+      (user_id, device_id, scope_type, scope_id, revision_key, schema_version, title,
+       outline_json, summary_json, outline_markdown, summary_markdown,
+       outline_generated_at, summary_generated_at,
+       outline_identity_json, outline_identity_input_json, outline_provenance_json, outline_provenance_input_json,
+       identity_ready, input_fingerprint, status, error_code, error_detail, updated_at)
+      SELECT user_id, device_id, scope_type, scope_id, revision_key, schema_version, title,
+       outline_json, summary_json, outline_markdown, summary_markdown,
+       outline_generated_at, summary_generated_at,
+       outline_identity_json, outline_identity_input_json, outline_provenance_json, outline_provenance_input_json,
+       identity_ready, input_fingerprint, status, error_code, error_detail, updated_at
+      FROM ai_overview_cache`)
+    await db.execute('DROP TABLE ai_overview_cache')
+    await db.execute('ALTER TABLE ai_overview_cache_v2 RENAME TO ai_overview_cache')
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_ai_overview_cache_scope
+      ON ai_overview_cache (user_id, device_id, scope_type, scope_id, updated_at)`)
+  }
+}
+
 async function moveLegacyTable(
   db: LocalSqlDatabase,
   tableName: string,
@@ -682,6 +726,7 @@ export async function createVersionedLocalSchema(db: LocalSqlDatabase): Promise<
   }
   await migrateLocalMutationColumns(db)
   await migrateOverviewIdentityColumns(db)
+  await migrateOverviewMarkdownColumns(db)
   await sanitizeTaskCognitiveLoad(db)
   await sanitizeTaskColors(db)
   await backupLegacySqlResources(db)

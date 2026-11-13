@@ -3,6 +3,7 @@ package com.auralis.app.ai.usage;
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiChatRequestCapacity;
 import com.auralis.app.ai.AiMessageRole;
+import com.auralis.app.ai.AiProviderCallCancellation;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderToolCall;
@@ -16,7 +17,7 @@ import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.ai.internal.chat.AiChatRequestMapper;
 import com.auralis.app.ai.internal.chat.ChatEvidenceHistoryProjector;
-import com.auralis.app.ai.internal.provider.SiliconFlowEmbeddingProvider;
+import com.auralis.app.ai.internal.provider.OpenAiCompatibleEmbeddingProvider;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
@@ -79,7 +80,7 @@ class AiInvocationGatewayTests {
         ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
         var gateway = gateway(guard, provider, Clock.systemUTC(), policy, heartbeat, db.transactions());
         var blocker = guard.beginTask(new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "blocker"));
-        var active = guard.reserve(blocker, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, "test-model",
+        var active = guard.reserve(blocker, AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, "test-model",
                 AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10);
         CountDownLatch waiting = new CountDownLatch(1);
         AtomicInteger validations = new AtomicInteger();
@@ -87,7 +88,7 @@ class AiInvocationGatewayTests {
         AtomicInteger timeouts = new AtomicInteger();
         try (var executor = Executors.newSingleThreadExecutor();
              var scope = gateway.beginTask(new AiTaskContext(user, AiFeature.SUBJECT_OVERVIEW, "waiting"))) {
-            var future = executor.submit(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            var future = executor.submit(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "test-key"),
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE,
                     new OverviewCancellation(), new AiInvocationBinding() {
@@ -130,7 +131,7 @@ class AiInvocationGatewayTests {
         ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(1);
         try (var scope = gateway(guard, provider, Clock.systemUTC(), policy, heartbeat, db.transactions())
                 .beginTask(new AiTaskContext(db.user(), AiFeature.SOURCE_OVERVIEW, "provider-failure"))) {
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(),
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(),
                     new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM,
                     1_000, AiOutputRole.INTERMEDIATE, new OverviewCancellation()))
                     .isInstanceOf(AiUsageLimitException.class);
@@ -204,7 +205,7 @@ class AiInvocationGatewayTests {
         AiTaskContext context = new AiTaskContext(userId, AiFeature.CHAT, "chat-agent:" + runId,
                 runId, AiOperationKind.CHAT_AGENT_TURN);
         try (AiTaskScope scope = gateway.beginTask(context)) {
-            scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, projected,
+            scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, projected,
                     new AiCredential("https://provider.test/v1", "synthetic-key"),
                     AiCredentialSource.PLATFORM, ignored -> { });
         } finally {
@@ -260,7 +261,7 @@ class AiInvocationGatewayTests {
     }
 
     private void assertChatRequestRejected(AiTaskScope scope, AiProviderRequest request) {
-        assertThatThrownBy(() -> scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request,
+        assertThatThrownBy(() -> scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request,
                 new AiCredential("https://provider.test/v1", "synthetic-key"),
                 AiCredentialSource.PLATFORM, ignored -> { }))
                 .isInstanceOf(AiUsageLimitException.class)
@@ -290,9 +291,9 @@ class AiInvocationGatewayTests {
                 scope.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
                         "embedding-model", List.of("text"), credential, AiCredentialSource.PLATFORM);
             }
-            scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+            scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request(), credential,
                     AiCredentialSource.PLATFORM, 1_000, null);
-            assertThatThrownBy(() -> scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     request(), credential, AiCredentialSource.PLATFORM, 1_000, null))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
@@ -339,7 +340,7 @@ class AiInvocationGatewayTests {
                         .isInstanceOf(AiUsageLimitException.class)
                         .extracting(error -> ((AiUsageLimitException) error).code())
                         .isEqualTo("AI_TASK_BUDGET_EXCEEDED");
-                retry.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+                retry.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request(), credential,
                         AiCredentialSource.PLATFORM, 1_000, null);
             }
         } finally {
@@ -381,13 +382,13 @@ class AiInvocationGatewayTests {
         var executor = Executors.newFixedThreadPool(2);
         Future<?> chat = executor.submit(() -> {
             try (AiTaskScope scope = gateway.beginTask(chatContext)) {
-                scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+                scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request(), credential,
                         AiCredentialSource.PLATFORM, 1_000, null);
             }
         });
         Future<?> overview = executor.submit(() -> {
             try (AiTaskScope scope = gateway.beginTask(overviewContext)) {
-                scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(), credential,
+                scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(), credential,
                         AiCredentialSource.PLATFORM, 1_000, AiOutputRole.FINAL);
             }
         });
@@ -429,9 +430,9 @@ class AiInvocationGatewayTests {
         UUID scopeTaskId;
         try (AiTaskScope scope = gateway.beginTask(context)) {
             scopeTaskId = scope.taskId();
-            scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+            scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request(), credential,
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
-            scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+            scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request(), credential,
                     AiCredentialSource.USER_SUPPLIED, 1_000, AiOutputRole.GENERAL);
         } finally {
             heartbeat.shutdownNow();
@@ -465,7 +466,7 @@ class AiInvocationGatewayTests {
         AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
         AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.CHAT, "missing-source"))) {
-            assertThatThrownBy(() -> scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "synthetic-test-key"), 120_000L))
                     .isInstanceOf(AiPolicyContractException.class);
         } finally {
@@ -495,12 +496,12 @@ class AiInvocationGatewayTests {
                 "logical-input-generation", budgetTaskId);
 
         try (AiTaskScope firstAttempt = gateway.beginTask(context)) {
-            firstAttempt.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(),
+            firstAttempt.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(),
                     new AiCredential("https://provider.test/v1", "synthetic-test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE);
         }
         try (AiTaskScope retry = gateway.beginTask(context)) {
-            assertThatThrownBy(() -> retry.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
-                    request(), new AiCredential("https://other-provider.test/v1", "different-profile-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
+            assertThatThrownBy(() -> retry.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
+                    request(), new AiCredential("https://provider.test/v1", "different-profile-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
                     .isEqualTo("AI_TASK_BUDGET_EXCEEDED");
@@ -533,13 +534,13 @@ class AiInvocationGatewayTests {
         AiProviderUsage successfulUsage;
         try {
             try (AiTaskScope failed = gateway.beginTask(context)) {
-                assertThatThrownBy(() -> failed.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                assertThatThrownBy(() -> failed.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                         request(), new AiCredential("https://provider.test/v1", "synthetic-test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
                         .isInstanceOf(IllegalStateException.class);
                 failedUsage = failed.usage();
             }
             try (AiTaskScope retry = gateway.beginTask(context)) {
-                retry.complete(AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK, request(),
+                retry.complete(AiStage.OVERVIEW_REDUCE, AiProviderType.OPENAI_COMPATIBLE, request(),
                         new AiCredential("https://provider.test/v1", "synthetic-test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE);
                 successfulUsage = retry.usage();
             }
@@ -586,7 +587,7 @@ class AiInvocationGatewayTests {
         try {
             for (AiTaskContext context : List.of(firstOwnerSource, secondOwnerSource, firstOwnerSubject)) {
                 try (AiTaskScope scope = gateway.beginTask(context)) {
-                    scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(),
+                    scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, request(),
                             new AiCredential("https://provider.test/v1", "synthetic-test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE);
                 }
             }
@@ -626,12 +627,12 @@ class AiInvocationGatewayTests {
 
         try (AiTaskScope scope = gateway.beginTask(
                 new AiTaskContext(userId, AiFeature.SUBJECT_OVERVIEW, "subject-output-cap"))) {
-            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, accepted, credential,
+            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, accepted, credential,
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.FINAL);
         }
         try (AiTaskScope scope = gateway.beginTask(
                 new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "source-output-over-cap"))) {
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     excessive, credential, AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
@@ -660,7 +661,7 @@ class AiInvocationGatewayTests {
 
         try (AiTaskScope scope = gateway.beginTask(
                 new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "overview-large-input"))) {
-            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, large, credential,
+            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE, large, credential,
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE);
         } finally {
             heartbeat.shutdownNow();
@@ -670,7 +671,7 @@ class AiInvocationGatewayTests {
         assertThat(provider.lastRequest.overviewCapacityRequest()).isTrue();
         assertThat(provider.lastRequest.maxTokens()).isEqualTo(8_192);
         assertThat(db.jdbc().queryForObject("select estimated_input_tokens from ai_usage_reservations", Long.class))
-                .isEqualTo(60_004L);
+                .isEqualTo(60_072L);
         assertThat(db.jdbc().queryForObject("select reserved_output_tokens from ai_usage_reservations", Long.class))
                 .isEqualTo(8_192L);
     }
@@ -686,29 +687,27 @@ class AiInvocationGatewayTests {
         AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
         AuralisProperties.OverviewLimits overviewLimits = new AuralisProperties.OverviewLimits(
                 12, 100, 100, 1_000, 12_345,
-                0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0);
+                0, 0,
+                0, 0, 0, 0);
         AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions(),
                 ai(limits, overviewLimits));
         AiCredential credential = new AiCredential("https://provider.test/v1", "synthetic-test-key");
 
         try (AiTaskScope scope = gateway.beginTask(
                 new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "overview-positive-caps"))) {
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     requestWithText("x".repeat(13), 1_000), credential,
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
                     .isEqualTo("AI_REQUEST_BUDGET_EXCEEDED");
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     requestWithText("x".repeat(10), 1_001), credential,
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
                     .isEqualTo("AI_REQUEST_BUDGET_EXCEEDED");
-            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     requestWithText("x".repeat(10), 1_000), credential,
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE);
         } finally {
@@ -730,11 +729,11 @@ class AiInvocationGatewayTests {
         TestProvider provider = new TestProvider();
         ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
         AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
-        AuralisProperties.Ai ai = new AuralisProperties.Ai(false, "", "DEEPSEEK",
-                new AuralisProperties.Defaults(null, null, null), 3_000, 10_000, 120_000, 240_000,
+        AuralisProperties.Ai ai = new AuralisProperties.Ai(false, "", null,
+                null, 3_000, 10_000, 120_000, 240_000,
                 12_000, 8, 5_242_880, 32, 32_768, 3_000, 10_000, 3, 1_048_576,
-                List.of(), false, 1_000, 60_000, 3, limits, true, true, "legacy-bytes", List.of(),
-                AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
+                List.of(), false, 1_000, 60_000, 3, limits, true, List.of(),
+                AuralisProperties.OverviewLimits.withoutAdditionalCaps());
         AiInvocationGateway gateway = new AiUsageGatewayService(guard,
                 new AiProviderRegistry(List.of(provider)),
                 new EmbeddingProviderRegistry(List.of(new TestEmbeddingProvider())), ai, heartbeat,
@@ -742,7 +741,7 @@ class AiInvocationGatewayTests {
 
         try (AiTaskScope scope = gateway.beginTask(
                 new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "overview-unknown-model"))) {
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://unconfigured.test/v1", "synthetic-test-key"),
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE))
                     .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
@@ -769,11 +768,11 @@ class AiInvocationGatewayTests {
         AiCredential credential = new AiCredential("https://provider.test/v1", "synthetic-test-key");
 
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.CHAT, "chat-4096"))) {
-            scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, requestWithOutput(4_096),
+            scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, requestWithOutput(4_096),
                     credential, AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
         }
         try (AiTaskScope scope = gateway.beginTask(new AiTaskContext(userId, AiFeature.CHAT, "chat-4097"))) {
-            assertThatThrownBy(() -> scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("test-model",
                             List.of(new AiProviderRequest.Message(AiMessageRole.USER, "x")),
                             0.0, 4_097, false, true, Long.MAX_VALUE),
@@ -807,7 +806,7 @@ class AiInvocationGatewayTests {
 
         try (AiTaskScope first = gateway.beginTask(firstContext)) {
             AiInvocationResult<AiProviderResponse> result = first.complete(
-                    AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request,
+                    AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request,
                     new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
             assertThat(result.usage().chargedTokens()).isEqualTo(8);
             assertThat(result.usage().providerUsageComplete()).isTrue();
@@ -815,7 +814,7 @@ class AiInvocationGatewayTests {
 
         assertThatThrownBy(() -> {
             try (AiTaskScope second = gateway.beginTask(secondContext)) {
-                second.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request,
+                second.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE, request,
                         new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
             }
         }).isInstanceOf(AiUsageLimitException.class)
@@ -847,7 +846,7 @@ class AiInvocationGatewayTests {
                 new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "overview-owner-lost"))) {
             db.jdbc().update("update ai_usage_locks set owner_id=? where current_task_id=?",
                     UUID.randomUUID(), task.taskId());
-            assertThatThrownBy(() -> task.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> task.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "synthetic-key"),
                     AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE, cancellation))
                     .isInstanceOf(AiUsageLimitException.class)
@@ -880,7 +879,7 @@ class AiInvocationGatewayTests {
         AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
 
         try (AiTaskScope task = gateway.beginTask(new AiTaskContext(userId, AiFeature.CHAT, "disable-before-dispatch"))) {
-            assertThatThrownBy(() -> task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL))
                     .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
                     .extracting(error -> ((com.auralis.app.shared.error.DomainException) error).code())
@@ -909,7 +908,7 @@ class AiInvocationGatewayTests {
         cancellation.cancel(OverviewCancellation.Reason.DEADLINE);
 
         try {
-            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE, cancellation))
                     .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
                     .extracting(failure -> ((com.auralis.app.shared.error.DomainException) failure).code())
@@ -944,7 +943,7 @@ class AiInvocationGatewayTests {
         };
 
         try (AiTaskScope task = gateway.beginTask(context)) {
-            assertThatThrownBy(() -> task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
@@ -985,7 +984,7 @@ class AiInvocationGatewayTests {
         var caller = Executors.newSingleThreadExecutor();
         try {
             var result = caller.submit(() -> scope.complete(AiStage.CHAT_COMPLETION,
-                    AiProviderType.DEEPSEEK, request(),
+                    AiProviderType.OPENAI_COMPATIBLE, request(),
                     new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL));
             assertThat(providerStarted.await(2, TimeUnit.SECONDS)).isTrue();
             clock.advanceSeconds(59);
@@ -1027,7 +1026,7 @@ class AiInvocationGatewayTests {
         List<String> streamed = new ArrayList<>();
 
         try (AiTaskScope scope = gateway.beginTask(context)) {
-            assertThat(scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThat(scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, chunk -> streamed.add(chunk.content())).usage().providerUsageComplete()).isTrue();
             assertThat(streamed).containsExactly("streamed");
             assertThat(scope.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
@@ -1039,7 +1038,7 @@ class AiInvocationGatewayTests {
     }
 
     @Test
-    void chargesSiliconFlowReportedEmbeddingUsageThroughGatewayAndLedger() throws Exception {
+    void chargesOpenAiCompatibleEmbeddingUsageThroughGatewayAndLedger() throws Exception {
         TestDb db = database();
         UUID userId = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
@@ -1048,12 +1047,12 @@ class AiInvocationGatewayTests {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "embedding.test", 443, List.of(), "/v1");
-        when(policy.resolve(AiProviderType.SILICONFLOW, baseUri)).thenReturn(endpoint);
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, baseUri)).thenReturn(endpoint);
         String vector = String.join(",", java.util.Collections.nCopies(1024, "0.1"));
         String response = "{\"data\":[{\"index\":0,\"embedding\":[" + vector + "]}],"
                 + "\"usage\":{\"prompt_tokens\":7454,\"completion_tokens\":0,\"total_tokens\":7454}}";
         ProviderHttpTransport transport = (resolved, path, apiKey, body) -> response.getBytes(StandardCharsets.UTF_8);
-        SiliconFlowEmbeddingProvider embeddingProvider = new SiliconFlowEmbeddingProvider(
+        OpenAiCompatibleEmbeddingProvider embeddingProvider = new OpenAiCompatibleEmbeddingProvider(
                 policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
         ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
         AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
@@ -1064,7 +1063,7 @@ class AiInvocationGatewayTests {
 
         try (AiTaskScope scope = gateway.beginTask(
                 new AiTaskContext(userId, AiFeature.INGESTION, "controlled-embedding-usage"))) {
-            var result = scope.embed(AiStage.INGESTION_EMBEDDING, AiProviderType.SILICONFLOW,
+            var result = scope.embed(AiStage.INGESTION_EMBEDDING, AiProviderType.OPENAI_COMPATIBLE,
                     "BAAI/bge-m3", List.of("x".repeat(31_487)),
                     new AiCredential(baseUri.toString(), "synthetic-key", "BAAI/bge-m3"), AiCredentialSource.PLATFORM);
 
@@ -1120,7 +1119,7 @@ class AiInvocationGatewayTests {
         gatewayRef.set(gateway);
 
         try (AiTaskScope task = gateway.beginTask(context)) {
-            assertThatThrownBy(() -> task.complete(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+            assertThatThrownBy(() -> task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     request(), new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL))
                     .isInstanceOf(AiUsageLimitException.class)
                     .extracting(error -> ((AiUsageLimitException) error).code())
@@ -1150,15 +1149,11 @@ class AiInvocationGatewayTests {
 
     private AuralisProperties.Ai ai(AuralisProperties.Limits limits,
                                    AuralisProperties.OverviewLimits overviewLimits) {
-        return new AuralisProperties.Ai(false, "", "DEEPSEEK", new AuralisProperties.Defaults(null, null, null),
+        return new AuralisProperties.Ai(false, "", new AuralisProperties.GenerationEndpoint(
+                "https://provider.test/v1", "test-model", "synthetic-key", 100_000, 16_384), null,
                 3_000, 10_000, 120_000, 240_000, 12_000, 8, 5_242_880,
                 32, 32_768, 3_000, 10_000, 3, 1_048_576, List.of(), false,
-                1_000, 60_000, 3, limits, true, true, "legacy-bytes", List.of(
-                        new AuralisProperties.OverviewModelCapacity(AiProviderType.DEEPSEEK.name(),
-                                "https://provider.test/v1", "test-model", 100_000, 16_384),
-                        new AuralisProperties.OverviewModelCapacity(AiProviderType.DEEPSEEK.name(),
-                                "https://other-provider.test/v1", "test-model", 100_000, 16_384)),
-                overviewLimits, 0);
+                1_000, 60_000, 3, limits, true, List.of(), overviewLimits);
     }
 
     private AiInvocationGateway gateway(AiUsageGuard guard, TestProvider provider, Clock clock,
@@ -1221,7 +1216,7 @@ class AiInvocationGatewayTests {
         private volatile Runnable beforeComplete = () -> { };
         private volatile AiProviderRequest lastRequest;
 
-        @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+        @Override public AiProviderType type() { return AiProviderType.OPENAI_COMPATIBLE; }
         @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
             return complete(request, credential, 0);
         }
@@ -1242,6 +1237,7 @@ class AiInvocationGatewayTests {
             return complete(request, credential, timeoutMillis);
         }
         @Override public void streamInto(AiProviderRequest request, AiCredential credential,
+                                        AiProviderCallCancellation cancellation,
                                         java.util.function.Consumer<com.auralis.app.ai.AiProviderChunk> sink) {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             sink.accept(new com.auralis.app.ai.AiProviderChunk("streamed", true,

@@ -1,8 +1,17 @@
 # Auralis 系统架构
 
+### 2026-11-12 Overview 生成边界替换
+
+新生成职责收敛为来源输入准备、范围清理、Markdown 大纲、Markdown 总结。清理副本保持原文坐标，不修改解析资产；生成与正式保存继续复用现有凭据、费用、取消与来源身份边界。公开结果不再表达章/节树或逐节来源。PC 独立渲染两项 Markdown，大纲可直接编辑保存；接口契约见 API 顶部本轮条目。旧计划只作历史记录，不是新运行路径。源码已替换，部署与验收状态见当前状态。
+
+
+### 2026-11-10 Overview 动态窗口重写分支
+
+详细总览的新数据流以单来源原文快照为输入。INDEX 在连续原文中提取各段首摘录，后端将摘录定位回原文 UTF-16 坐标，闭合 Segment 和公开来源引用共用这一坐标。ROUTE 将完整 Segment ID 唯一分配到正文章节或附带理由的排除清单。WRITER 按章回读正文范围。`ALL` 额外用一次 WRITER 按源序读取全部排除段原文和正文覆盖提要，生成总导读。运行入口、容量策略和发布状态见[分批实施文档](../plans/2026-11-10-overview-dynamic-window-implementation.md)。分支中间状态用于开发和验证。
+
 ### 2026-10-31 Chat display-tool 生成数据流（现行后端实现）
 
-Chat Agent 以 provider `render_*` function tools 生成结构化展示；typed tool-argument deltas 进入独立的 bounded assembler 与严格 payload validator，合法预览按事件首次出现次序进入有序 public parts。Data tools 使用 conversation 固定的策略/ID及每 attempt 重新捕获的 owner/source revision scope；模型参数请求越界可安全纠正，但不会读取或返回范围外资料。Visual tools 本地生成并经 owner/source revision fence 持久化，Activity tools 以 source/fence 校验和锁内 RUNNING 检查原子保存 READY 后终止该轮。普通 provider content 仍按 Markdown text segment 保序，展示协议不再从正文解析 marker/NDJSON。字段与边界见 [Chat Runtime API](../contracts/chat-runtime-api.md)，范围与顺序语义见[重写计划](../plans/2026-10-31-chat-display-tools.md)。后端 focused suite 126/126，review B0/I0；受限 full 与 package 状态见[当前状态](../current/Status.md)。PC consumer 由用户修改与验收。
+Chat Agent 以 provider `render_*` function tools 生成结构化展示；typed tool-argument deltas 进入独立的 bounded assembler 与严格 payload validator，合法预览按事件首次出现次序进入有序 public parts。Data tools 使用会话绑定的策略和 ID。每次 attempt 捕获 owner、范围内的 READY 来源和 revision，`search` 默认查询全部捕获来源，显式来源 ID 只能缩窄查询。空快照直接返回空 evidence。模型请求快照外 ID 时可纠正参数。Visual tools 本地生成并经 owner/source revision fence 持久化，Activity tools 以 source/fence 校验和锁内 RUNNING 检查原子保存 READY 后终止该轮。普通 provider content 仍按 Markdown text segment 保序，展示协议不再从正文解析 marker/NDJSON。字段与边界见 [Chat Runtime API](../contracts/chat-runtime-api.md)，范围与顺序语义见[重写计划](../plans/2026-10-31-chat-display-tools.md)。后端 focused suite 126/126，review B0/I0；受限 full 与 package 状态见[当前状态](../current/Status.md)。PC 已接入协议，真实客户端业务验收待完成。
 
 ### 2026-10-29 Chat Agent 与流式可视化教学（历史方案，已由 10-31 重写替代）
 

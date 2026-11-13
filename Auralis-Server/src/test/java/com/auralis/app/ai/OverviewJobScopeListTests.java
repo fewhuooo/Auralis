@@ -20,8 +20,7 @@ class OverviewJobScopeListTests {
     void scopeFilterRequiresPairAndForwardsTheExactDomain() {
         OverviewJobRepository repository = mock(OverviewJobRepository.class);
         OverviewJobService service = new OverviewJobService(repository, mock(OverviewGenerationService.class),
-                mock(OverviewJobInvocationJournal.class), mock(ObjectMapper.class), Clock.systemUTC(),
-                mock(OverviewResultService.class));
+                mock(OverviewJobInvocationJournal.class), mock(ObjectMapper.class), Clock.systemUTC());
         UUID userId = UUID.randomUUID();
         UUID scopeId = UUID.randomUUID();
 

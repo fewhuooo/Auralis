@@ -10,16 +10,22 @@ export async function* streamWithAccessTokenRefresh<T>(
   open: SseStreamFactory<T>,
   refreshAccessToken: () => Promise<string>,
   signal?: AbortSignal,
+  assertSessionCurrent?: () => void,
 ): AsyncIterable<T> {
   let accessToken = initialAccessToken
   let retriedAfterRefresh = false
   while (true) {
+    assertSessionCurrent?.()
     try {
       yield* open(accessToken)
+      assertSessionCurrent?.()
       return
     } catch (error) {
-      if (!isUnauthorized(error) || retriedAfterRefresh || signal?.aborted) throw error
+      if (signal?.aborted) throw error
+      assertSessionCurrent?.()
+      if (!isUnauthorized(error) || retriedAfterRefresh) throw error
       accessToken = await refreshAccessToken()
+      if (signal?.aborted) return
       retriedAfterRefresh = true
     }
   }

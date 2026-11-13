@@ -60,6 +60,7 @@ import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { IconSearch } from '@tabler/icons-vue'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
+import type { KnowledgeBlockModel } from '@/services/domainMappers'
 
 const router = useRouter()
 const knowledgeStore = useKnowledgeStore()
@@ -68,46 +69,46 @@ const isVisible = ref(false)
 const query = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
 
-const searchResults = ref<any[]>([])
+const searchResults = ref<KnowledgeBlockModel[]>([])
 const isSearching = ref(false)
 const selectedIndex = ref(-1)
 
-let searchTimeout: any = null
-const doSearch = (q: string) => {
-  if (searchTimeout) clearTimeout(searchTimeout)
-  if (!q.trim()) {
+watch([query, isVisible], ([value, visible], _, onCleanup) => {
+  selectedIndex.value = -1
+  if (!visible || !value.trim()) {
     searchResults.value = []
+    isSearching.value = false
     return
   }
+  const keyword = value.toLowerCase()
   isSearching.value = true
-  searchTimeout = setTimeout(async () => {
+  let active = true
+  const searchTimeout = setTimeout(async () => {
     try {
-      await knowledgeStore.loadLocalBlocks()
-      const all = knowledgeStore.recentBlocks || []
-      searchResults.value = all.filter((b: any) =>
-        (b.title && b.title.toLowerCase().includes(q.toLowerCase())) ||
-        (b.subject && b.subject.toLowerCase().includes(q.toLowerCase())) ||
-        (b.content && b.content.toLowerCase().includes(q.toLowerCase()))
+      const blocks = await knowledgeStore.loadLocalBlocks()
+      if (!active) return
+      searchResults.value = blocks.filter((block) =>
+        block.title.toLowerCase().includes(keyword) ||
+        block.subject.toLowerCase().includes(keyword) ||
+        block.content.toLowerCase().includes(keyword)
       ).slice(0, 6)
     } catch (e) {
+      if (!active) return
       console.error(e)
       searchResults.value = []
     } finally {
-      isSearching.value = false
+      if (active) isSearching.value = false
     }
   }, 300)
-}
-
-watch(query, (newVal) => {
-  selectedIndex.value = -1
-  doSearch(newVal)
-})
+  onCleanup(() => {
+    active = false
+    clearTimeout(searchTimeout)
+  })
+}, { flush: 'sync' })
 
 const open = () => {
-  isVisible.value = true
   query.value = ''
-  searchResults.value = []
-  selectedIndex.value = -1
+  isVisible.value = true
   nextTick(() => {
     searchInput.value?.focus()
   })
@@ -117,12 +118,14 @@ const close = () => {
   isVisible.value = false
 }
 
-const selectResult = (block: any) => {
+const selectResult = (block: KnowledgeBlockModel) => {
+  if (!isVisible.value || isSearching.value || !searchResults.value.includes(block)) return
   close()
   void router.push({ path: '/', query: { openBlock: block.id } })
 }
 
 const handleKeyNav = (e: KeyboardEvent) => {
+  if (e.isComposing || !isVisible.value || isSearching.value) return
   const resultCount = searchResults.value.length
   if (resultCount === 0) return
   if (e.key === 'ArrowDown') {

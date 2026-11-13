@@ -1,7 +1,6 @@
 package com.auralis.app.ai;
 
 import com.auralis.app.ai.usage.AiProviderUsage;
-import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.ai.usage.OverviewTaskUsageSummary;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
@@ -292,45 +291,6 @@ class OverviewGenerationCoordinatorTests {
                 Integer.class, parent.generationId())).isZero();
     }
 
-    @Test
-    void retryChainReusesVerifiedIndexCheckpointFromOlderAncestor() {
-        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
-        var parent = coordinator.acquire(parentRequest);
-        String step = "step_" + HASH_D;
-        coordinator.saveCheckpoint(parent.lease(), step, HASH_A, HASH_C, "overview-v1", 1, "{\"valid\":true}");
-        assertThat(coordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
-
-        var childRequest = retryRequest(UUID.randomUUID(), parentRequest.requestId(), HASH_A, HASH_B, HASH_C);
-        var child = coordinator.acquireDirect(childRequest);
-        assertThat(coordinator.fail(child.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
-        var grandchild = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), childRequest.requestId(),
-                HASH_A, HASH_B, HASH_C));
-        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
-                UUID.class, grandchild.generationId())).isEqualTo(child.generationId());
-        assertThat(coordinator.findReusableIndexCheckpoint(grandchild.lease(), step, 1).payloadJson())
-                .isEqualTo("{\"valid\":true}");
-    }
-
-    @Test
-    void directRetryReusesVerifiedWriterFromFailedParentWithUnassembledPlan() {
-        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
-        var parent = coordinator.acquire(parentRequest);
-        String step = "step_" + HASH_A;
-        String descriptor = "{\"checkpointStep\":\"" + step + "\",\"globalRoutingFingerprint\":\"route-a\"}";
-        String payload = "{\"writer\":\"verified\"}";
-        coordinator.saveCheckpoint(parent.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
-        addVerifiedWriterNode(parent.lease(), step, payload, true, descriptor);
-        jdbc.update("update overview_execution_plans set state='WRITING' where generation_id=?", parent.generationId());
-        assertThat(coordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
-
-        var child = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), parentRequest.requestId(),
-                HASH_A, HASH_B, HASH_C));
-        var reusable = coordinator.findReusableAdaptiveWriterCheckpoint(child.lease(), step, 1, descriptor, false);
-
-        assertThat(reusable).isNotNull();
-        assertThat(reusable.checkpoint().payloadJson()).isEqualTo(payload);
-        assertThat(reusable.donorGenerationId()).isEqualTo(parent.generationId());
-    }
 
     @Test
     void waiterSupportsVeryLargeDurationsWithoutNanoDeadlineOverflow() {
@@ -368,7 +328,7 @@ class OverviewGenerationCoordinatorTests {
         OverviewGenerationCoordinator limited = capacityCoordinator(128, 1);
         var firstRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var first = limited.acquire(firstRequest);
-        limited.saveCheckpoint(first.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1, "{\"value\":\"一\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, first.lease(), "MAP:1", "{\"value\":\"一\"}");
         assertThat(limited.complete(first.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
 
         var second = limited.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
@@ -606,8 +566,7 @@ class OverviewGenerationCoordinatorTests {
     void cleanupRetainsCheckpointForActiveGenerationEvenAfterLeaseExpiredBeyondRetention() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var original = coordinator.acquire(originalRequest);
-        coordinator.saveCheckpoint(original.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"private map\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, original.lease(), "MAP:1", "{\"schemaVersion\":1,\"title\":\"private map\"}");
         jdbc.update("update overview_generations set lease_until=?,updated_at=? where id=?",
                 OffsetDateTime.now().minusDays(15), OffsetDateTime.now().minusDays(15), original.generationId());
 
@@ -621,8 +580,8 @@ class OverviewGenerationCoordinatorTests {
         assertThat(takeover.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
         assertThat(takeover.generationId()).isEqualTo(original.generationId());
         assertThat(takeover.budgetTaskId()).isEqualTo(original.budgetTaskId());
-        assertThat(coordinator.loadCheckpoint(takeover.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1))
-                .isNotNull().extracting(OverviewGenerationCoordinator.Checkpoint::payloadJson)
+        assertThat(jdbc.queryForObject("select payload_json from overview_generation_checkpoints where generation_id=?",
+                String.class, takeover.generationId()))
                 .isEqualTo("{\"schemaVersion\":1,\"title\":\"private map\"}");
     }
 
@@ -630,10 +589,8 @@ class OverviewGenerationCoordinatorTests {
     void cleanupOfFailedCheckpointRetainsCumulativeBudgetForProviderChangeRetry() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var original = coordinator.acquire(originalRequest);
-        coordinator.saveCheckpoint(original.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"private map\"}");
-        coordinator.saveCheckpoint(original.lease(), "MAP:2", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"new private map\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, original.lease(), "MAP:1", "{\"schemaVersion\":1,\"title\":\"private map\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, original.lease(), "MAP:2", "{\"schemaVersion\":1,\"title\":\"new private map\"}");
         var failedUsage = new OverviewTaskUsageSummary(120, 300, null, null, 420, 2, 0, false);
         assertThat(coordinator.fail(original.lease(), "MODEL_TIMEOUT", failedUsage, 1, List.of("REPACK"))).isTrue();
         jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=? and step_key=?",
@@ -654,15 +611,13 @@ class OverviewGenerationCoordinatorTests {
         var retry = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_D));
         assertThat(retry.generationId()).isEqualTo(original.generationId());
         assertThat(retry.budgetTaskId()).isEqualTo(original.budgetTaskId());
-        assertThat(coordinator.loadCheckpoint(retry.lease(), "MAP:1", HASH_A, HASH_D, "overview-v1", 1)).isNull();
     }
 
     @Test
     void cleanupExpiresResultAndOldCheckpointIndependentlyWhileKeepingExecutionAndBudgetLineage() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var owner = coordinator.acquire(originalRequest);
-        coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"private map\"}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:1", "{\"schemaVersion\":1,\"title\":\"private map\"}");
         assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
         jdbc.update("update overview_generations set result_expires_at=? where id=?",
                 Instant.now().minusSeconds(1), owner.generationId());
@@ -714,8 +669,7 @@ class OverviewGenerationCoordinatorTests {
         for (int index = 0; index < 101; index++) {
             String distinctInput = String.format("%064x", index + 1);
             var owner = coordinator.acquire(request(UUID.randomUUID(), distinctInput, HASH_B, HASH_C));
-            coordinator.saveCheckpoint(owner.lease(), "MAP:" + index, HASH_A, HASH_C, "overview-v1", 1,
-                    "{\"schemaVersion\":1}");
+            OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:" + index, "{\"schemaVersion\":1}");
             assertThat(coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usageSummary(), 0, List.of())).isTrue();
             jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
                     OffsetDateTime.now().minusDays(15), owner.generationId());
@@ -731,8 +685,7 @@ class OverviewGenerationCoordinatorTests {
     @Test
     void cleanupDeletesExpiredCheckpointWithoutClearingUnexpiredSuccessResult() {
         var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:1", "{\"schemaVersion\":1}");
         assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
         jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
                 OffsetDateTime.now().minusDays(15), owner.generationId());
@@ -749,8 +702,7 @@ class OverviewGenerationCoordinatorTests {
     @Test
     void cleanupSkipsLockedGenerationThatIsBeingRecovered() throws Exception {
         var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1}");
+        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:1", "{\"schemaVersion\":1}");
         assertThat(coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usageSummary(), 0, List.of())).isTrue();
         heartbeat.shutdownNow();
 
@@ -792,11 +744,9 @@ class OverviewGenerationCoordinatorTests {
     }
 
     @Test
-    void failedRetryKeepsBudgetIdentityAndOnlyReusesCheckpointForBoundProfile() {
+    void failedRetryKeepsBudgetIdentityAndFencesOldOwner() {
         var firstRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var first = coordinator.acquire(firstRequest);
-        coordinator.saveCheckpoint(first.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"map\"}");
         assertThat(coordinator.fail(first.lease(), "MODEL_TIMEOUT", usage(), 1,
                 List.of("LOCAL_NORMALIZE", "REPACK"))).isTrue();
 
@@ -805,17 +755,10 @@ class OverviewGenerationCoordinatorTests {
         assertThat(retry.generationId()).isEqualTo(first.generationId());
         assertThat(retry.budgetTaskId()).isEqualTo(first.budgetTaskId());
         assertThat(retry.lease().fence()).isGreaterThan(first.lease().fence());
-        assertThat(coordinator.loadCheckpoint(retry.lease(), "MAP:1", HASH_A, HASH_D, "overview-v1", 1))
-                .isNull();
 
-        assertThatThrownBy(() -> coordinator.saveCheckpoint(first.lease(), "MAP:2", HASH_A, HASH_C,
-                "overview-v1", 1, "{\"schemaVersion\":1}"))
-                .isInstanceOf(AiUsageLimitException.class);
         assertThat(coordinator.complete(first.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of()))
                 .isFalse();
 
-        coordinator.saveCheckpoint(retry.lease(), "MAP:1", HASH_A, HASH_D, "overview-v1", 1,
-                "{\"schemaVersion\":1,\"title\":\"new map\"}");
         assertThat(coordinator.complete(retry.lease(), "{\"schemaVersion\":1,\"title\":\"final\"}",
                 usage(), 0, List.of())).isTrue();
         assertThatThrownBy(() -> coordinator.acquire(firstRequest))
@@ -952,18 +895,14 @@ class OverviewGenerationCoordinatorTests {
     }
 
     @Test
-    void appliesConfiguredPrivatePayloadCapAndKeepsRecoveryMetadataAndExpiryBehavior() {
+    void appliesConfiguredResultCapAndKeepsRecoveryMetadataAndExpiryBehavior() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var limitedCoordinator = new OverviewGenerationCoordinator(jdbc, transactionManager,
                 Clock.systemUTC(), 1_000, 100, heartbeat, 268_435_456L, 1_000,
                 new AuralisProperties.OverviewLimits(0, 0, 0, 0, 0,
-                        0, 8, 0, 0, 0,
-                        0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0));
+                        24, 0, 0, 0, 0, 0));
         var owner = limitedCoordinator.acquire(originalRequest);
-        assertThatThrownBy(() -> limitedCoordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C,
-                "overview-v1", 1, "x".repeat(9)))
+        assertThatThrownBy(() -> limitedCoordinator.complete(owner.lease(), "x".repeat(25), usage(), 0, List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> limitedCoordinator.fail(owner.lease(), "MODEL_TIMEOUT", usage(), 0,
                 List.of("provider secret"))).isInstanceOf(IllegalArgumentException.class);
@@ -1025,235 +964,12 @@ class OverviewGenerationCoordinatorTests {
             assertThat(takeover.lease().fence()).isGreaterThan(original.lease().fence());
             assertThat(coordinator.complete(original.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of()))
                     .isFalse();
-            assertThatThrownBy(() -> coordinator.saveCheckpoint(original.lease(), "MAP:1", HASH_A, HASH_C,
-                    "overview-v1", 1, "{\"schemaVersion\":1}"))
-                    .isInstanceOf(AiUsageLimitException.class)
-                    .satisfies(error -> {
-                        var limit = (AiUsageLimitException) error;
-                        assertThat(limit.code()).isEqualTo("AI_CONCURRENCY_LIMIT");
-                        assertThat(limit.status()).isEqualTo(429);
-                        assertThat(limit.retryAfterSeconds()).isPositive();
-                    });
             assertThat(secondCoordinator.complete(takeover.lease(), "{\"schemaVersion\":1}", usage(), 0,
                     List.of())).isTrue();
         } finally {
             secondHeartbeat.shutdownNow();
         }
     }
-
-    @Test
-    void reusesIndexOnlyFromSuccessfulGenerationWithMatchingScopeInputAndProfile() {
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), "index-step", HASH_A, HASH_C, "overview-v1", 1, "{}");
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1).payloadJson()).isEqualTo("{}");
-        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "another-step", 1)).isNull();
-        assertThat(coordinator.loadCheckpoint(current.lease(), "index-step", HASH_A, HASH_C, "overview-v1", 1)).isNull();
-        var changed = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableIndexCheckpoint(changed.lease(), "index-step", 1)).isNull();
-        UUID otherUser = UUID.randomUUID();
-        jdbc.update("insert into users(id,status) values (?, 'ACTIVE')", otherUser);
-        var other = coordinator.acquire(request(otherUser, UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableIndexCheckpoint(other.lease(), "index-step", 1)).isNull();
-        jdbc.update("update overview_generations set profile_fingerprint=? where id=?", HASH_D, donor.generationId());
-        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1)).isNull();
-    }
-
-    @Test
-    void reusableIndexExpiresWithoutWaitingForCleanupAndRejectsCorruption() {
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), "index-step", HASH_A, HASH_C, "overview-v1", 1, "{}");
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        jdbc.update("update overview_generation_checkpoints set payload_json='corrupted' where generation_id=?", donor.generationId());
-        assertThatThrownBy(() -> coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1))
-                .isInstanceOf(DomainException.class);
-        jdbc.update("update overview_generations set result_expires_at=? where id=?",
-                OffsetDateTime.now().minusDays(1), donor.generationId());
-        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1)).isNull();
-    }
-
-    @Test
-    void adaptivePlanReuseRequiresExactOwnerScopeInputProfileAlgorithmAndLivePayload() {
-        String step = "step_" + HASH_A;
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, "{}");
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(current.lease(), step, 1).payloadJson()).isEqualTo("{}");
-        assertThatThrownBy(() -> coordinator.findReusableAdaptivePlanCheckpoint(current.lease(), "arbitrary-step", 1))
-                .isInstanceOf(IllegalArgumentException.class);
-        coordinator.fail(current.lease(), "TEST_FAILURE", usage(), 0, List.of());
-
-        var changedInput = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedInput.lease(), step, 1)).isNull();
-        coordinator.fail(changedInput.lease(), "TEST_FAILURE", usage(), 0, List.of());
-        var changedProfile = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_D));
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedProfile.lease(), step, 1)).isNull();
-        coordinator.fail(changedProfile.lease(), "TEST_FAILURE", usage(), 0, List.of());
-        var changedAlgorithmRequest = new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SUBJECT",
-                subjectId, null, HASH_A, HASH_B, HASH_C, "overview-v2");
-        var changedAlgorithm = coordinator.acquire(changedAlgorithmRequest);
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedAlgorithm.lease(), step, 1)).isNull();
-        coordinator.fail(changedAlgorithm.lease(), "TEST_FAILURE", usage(), 0, List.of());
-        var changedScope = coordinator.acquire(new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(),
-                "SUBJECT", UUID.randomUUID(), null, HASH_A, HASH_B, HASH_C, "overview-v1"));
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedScope.lease(), step, 1)).isNull();
-        coordinator.fail(changedScope.lease(), "TEST_FAILURE", usage(), 0, List.of());
-
-        var expiryCurrent = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
-                OffsetDateTime.now().minusDays(15), donor.generationId());
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(expiryCurrent.lease(), step, 1)).isNull();
-        jdbc.update("update overview_generation_checkpoints set created_at=?,payload_json='corrupted' where generation_id=?",
-                OffsetDateTime.now(), donor.generationId());
-        assertThatThrownBy(() -> coordinator.findReusableAdaptivePlanCheckpoint(expiryCurrent.lease(), step, 1))
-                .isInstanceOf(DomainException.class);
-        jdbc.update("update overview_generations set result_expires_at=? where id=?",
-                OffsetDateTime.now().minusDays(1), donor.generationId());
-        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(expiryCurrent.lease(), step, 1)).isNull();
-    }
-
-    @Test
-    void adaptiveWriterReuseRequiresVerifiedDispatchedNodeAndCannotChainMaterializedCheckpoints() {
-        String step = "step_" + HASH_A;
-        String payload = "{\"writer\":\"verified\"}";
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        addVerifiedWriterNode(donor.lease(), step, payload, true);
-
-        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        var reusable = coordinator.findReusableAdaptiveWriterCheckpoint(current.lease(), step, 1);
-        assertThat(reusable).isNotNull();
-        assertThat(reusable.checkpoint().payloadJson()).isEqualTo(payload);
-        assertThat(reusable.donorGenerationId()).isEqualTo(donor.generationId());
-        coordinator.fail(current.lease(), "TEST_FAILURE", usage(), 0, List.of());
-
-        var materialized = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(materialized.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
-        coordinator.complete(materialized.lease(), "{}", usage(), 0, List.of());
-        addVerifiedWriterNode(materialized.lease(), step, payload, null);
-        jdbc.update("update overview_generations set result_expires_at=? where id=?",
-                OffsetDateTime.now().minusDays(1), donor.generationId());
-
-        var next = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(next.lease(), step, 1)).isNull();
-    }
-
-    @Test
-    void adaptiveWriterReuseRejectsUndispatchedReservation() {
-        String step = "step_" + HASH_A;
-        String payload = "{\"writer\":\"reserved-only\"}";
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        addVerifiedWriterNode(donor.lease(), step, payload, false);
-
-        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(current.lease(), step, 1)).isNull();
-    }
-
-    @Test
-    void adaptiveWriterReuseAcrossInputsRequiresExactCurrentDescriptorAndDispatchedDonor() {
-        String step = "step_" + HASH_A;
-        String descriptor = "{\"checkpointStep\":\"" + step + "\",\"globalRoutingFingerprint\":\"route-a\"}";
-        String payload = "{\"writer\":\"reusable\"}";
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        addVerifiedWriterNode(donor.lease(), step, payload, true, descriptor);
-
-        var changedInput = coordinator.acquire(request(donor.lease().userId(), HASH_D, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(changedInput.lease(), step, 1,
-                descriptor, false)).isNull();
-        var reusable = coordinator.findReusableAdaptiveWriterCheckpoint(changedInput.lease(), step, 1,
-                descriptor, true);
-        assertThat(reusable).isNotNull();
-        assertThat(reusable.checkpoint().payloadJson()).isEqualTo(payload);
-        assertThat(reusable.donorGenerationId()).isEqualTo(donor.generationId());
-        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(changedInput.lease(), step, 1,
-                descriptor.replace("route-a", "route-b"), true)).isNull();
-        coordinator.fail(changedInput.lease(), "TEST_FAILURE", usage(), 0, List.of());
-
-        var changedRoute = coordinator.acquire(request(donor.lease().userId(), UUID.randomUUID(),
-                HASH_A, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(changedRoute.lease(), step, 1,
-                descriptor.replace("route-a", "route-b"), false)).isNull();
-        coordinator.fail(changedRoute.lease(), "TEST_FAILURE", usage(), 0, List.of());
-
-        String undispatchedStep = "step_" + HASH_B;
-        String undispatchedDescriptor = "{\"checkpointStep\":\"" + undispatchedStep
-                + "\",\"globalRoutingFingerprint\":\"route-a\"}";
-        var undispatched = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(undispatched.lease(), undispatchedStep, HASH_A, HASH_C, "overview-v1", 1, payload);
-        coordinator.complete(undispatched.lease(), "{}", usage(), 0, List.of());
-        addVerifiedWriterNode(undispatched.lease(), undispatchedStep, payload, false, undispatchedDescriptor);
-        var afterUndispatched = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(afterUndispatched.lease(), undispatchedStep, 1,
-                undispatchedDescriptor, true)).isNull();
-    }
-
-    private void addVerifiedWriterNode(OverviewGenerationCoordinator.GenerationLease lease, String step,
-                                       String payload, Boolean dispatched) {
-        addVerifiedWriterNode(lease, step, payload, dispatched, "{\"checkpointStep\":\"" + step + "\"}");
-    }
-
-    private void addVerifiedWriterNode(OverviewGenerationCoordinator.GenerationLease lease, String step,
-                                       String payload, Boolean dispatched, String descriptorJson) {
-        UUID planId = UUID.randomUUID();
-        UUID nodeId = UUID.randomUUID();
-        UUID reservationId = UUID.randomUUID();
-        String planJson = "{\"nodes\":[" + descriptorJson + "]}";
-        String descriptorHash = sha256(descriptorJson);
-        String planHash = sha256(planJson);
-        String payloadHash = sha256(payload);
-        jdbc.update("insert into overview_execution_plans (id,generation_id,input_fingerprint,profile_fingerprint,"
-                        + "algorithm_version,plan_fingerprint,mode,state,payload_json) values (?,?,?,?,?,?,?,'ASSEMBLED',?)",
-                planId, lease.generationId(), lease.inputFingerprint(), lease.profileFingerprint(),
-                lease.algorithmVersion(), planHash, "ALL", planJson);
-        jdbc.update("insert into overview_execution_nodes (id,plan_id,generation_id,node_ordinal,descriptor_json,"
-                        + "descriptor_sha256,checkpoint_step,state,attempt,checkpoint_sha256) "
-                        + "values (?,?,?,?,?,?,?,'VERIFIED',1,?)",
-                nodeId, planId, lease.generationId(), 0, descriptorJson, descriptorHash, step, payloadHash);
-        if (dispatched != null) {
-            jdbc.update("insert into ai_usage_reservations (id,user_id,request_dispatched) values (?,?,?)",
-                    reservationId, lease.userId(), dispatched);
-            jdbc.update("insert into overview_execution_calls (id,generation_id,plan_id,node_id,attempt,reservation_id,"
-                            + "task_id,user_id,operation_kind) values (?,?,?,?,1,?,?,?,'SUBJECT_OVERVIEW')",
-                    UUID.randomUUID(), lease.generationId(), planId, nodeId, reservationId, UUID.randomUUID(), lease.userId());
-        }
-    }
-
-    private static String sha256(String value) {
-        try {
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException exception) {
-            throw new IllegalStateException(exception);
-        }
-    }
-
-    @Test
-    void batchReuseAllowsChangedTaskInputButRequiresExactDependencyKeyAndSuccessfulDonor() {
-        String key = "index_batch_v1_" + HASH_A;
-        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        coordinator.saveCheckpoint(donor.lease(), key, HASH_A, HASH_C, "overview-v1", 1, "{}");
-        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableIndexBatchCheckpoint(current.lease(), key, 1)).isNull();
-        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
-        assertThat(coordinator.findReusableIndexBatchCheckpoint(current.lease(), key, 1).payloadJson()).isEqualTo("{}");
-        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), key, 1)).isNull();
-        assertThat(coordinator.findReusableIndexBatchCheckpoint(current.lease(), "index_batch_v1_" + HASH_B, 1)).isNull();
-        assertThatThrownBy(() -> coordinator.findReusableIndexBatchCheckpoint(current.lease(), "arbitrary-step", 1))
-                .isInstanceOf(IllegalArgumentException.class);
-        UUID otherUser = UUID.randomUUID();
-        jdbc.update("insert into users(id,status) values (?, 'ACTIVE')", otherUser);
-        var other = coordinator.acquire(request(otherUser, UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
-        assertThat(coordinator.findReusableIndexBatchCheckpoint(other.lease(), key, 1)).isNull();
-    }
-
     private OverviewGenerationCoordinator capacityCoordinator(long maxBytes, int maxGenerations) {
         return new OverviewGenerationCoordinator(jdbc, transactionManager, Clock.systemUTC(),
                 1_000, 100, heartbeat, maxBytes, maxGenerations);

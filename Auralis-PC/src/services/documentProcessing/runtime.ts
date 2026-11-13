@@ -72,24 +72,6 @@ function extensionOf(fileName: string): string {
   return dot < 0 ? '' : fileName.slice(dot + 1).toLowerCase()
 }
 
-function mimeTypeForSource(source: SourceView, assetMimeType?: string): string {
-  if (assetMimeType) return assetMimeType
-  const extension = extensionOf(source.title || '')
-  const known: Record<string, string> = {
-    pdf: 'application/pdf',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    json: 'application/json',
-    xml: 'application/xml',
-    csv: 'text/csv',
-  }
-  return known[extension] || 'application/octet-stream'
-}
-
 async function sha256File(file: SourceInput['file']): Promise<string> {
   const runtimeFile = asRuntimeFile(file)
   const subtle = globalThis.crypto?.subtle
@@ -245,7 +227,7 @@ export class DocumentProcessingRuntime {
   private snapshot: DocumentProcessingRuntimeSnapshot | null = null
   private starting: Promise<void> | null = null
   private lifecycleGeneration = 0
-  private readonly parserInputs = new Map<string, RuntimeFile>()
+  private parserInputs = new Map<string, RuntimeFile>()
   private sourceReconciliation: Promise<Map<string, ProcessingSourceReconciliationResult>> | null = null
   private sourceReconciliationController: AbortController | null = null
   private readonly sourceReconciliationMaxAttempts: number
@@ -310,6 +292,7 @@ export class DocumentProcessingRuntime {
     this.snapshot = null
     this.key = null
     this.parserInputs.clear()
+    this.parserInputs = new Map()
     this.sourceReconciliationController?.abort()
     this.sourceReconciliationController = null
     this.sourceReconciliation = null
@@ -480,10 +463,11 @@ export class DocumentProcessingRuntime {
       append: documentPackageAppend,
       finish: documentPackageFinish,
     }
+    const parserInputs = this.parserInputs
     const runner = new DocumentJobRunner({
       repository,
       packager,
-      parserFactory: async (job) => this.createParser(job),
+      parserFactory: async (job) => this.createParser(job, parserInputs),
     })
     const upload = new ParsedDocumentUploadCoordinator({
       repository,
@@ -499,24 +483,16 @@ export class DocumentProcessingRuntime {
       localParsedRepo,
       localAssetRepo,
       localParsedCoordinator,
-      resolveLocalInput: (assetId, source) => assetStore.resolveLocalFile(
-        assetId,
-        source.title || `asset-${assetId}`,
-        mimeTypeForSource(source),
-      ),
-      downloadAsset: (assetId, source) => assetStore.resolveSourceInput(
-        assetId,
-        source.title || `asset-${assetId}`,
-        mimeTypeForSource(source),
-      ),
+      resolveLocalInput: (assetId) => assetStore.resolveLocalFile(assetId),
+      downloadAsset: (assetId) => assetStore.resolveSourceInput(assetId),
       hashFile: sha256File,
       expectedAssetSha256: (assetId) => assetStore.getAssetSha256(assetId),
       prepareInput: async (job, _source, file) => {
-        this.parserInputs.set(job.jobId, asRuntimeFile(file))
+        if (this.parserInputs !== parserInputs) throw new Error('DOCUMENT_INPUT_UNAVAILABLE')
+        parserInputs.set(job.jobId, asRuntimeFile(file))
       },
       runJob: async (jobId, metadata) => {
-        const input = this.parserInputs.get(jobId)
-        if (!input) throw new Error('DOCUMENT_INPUT_UNAVAILABLE')
+        if (!parserInputs.has(jobId)) throw new Error('DOCUMENT_INPUT_UNAVAILABLE')
         if (!metadata || !/^[a-f0-9]{64}$/.test(metadata.sourceAssetSha256)) {
           throw new Error('SOURCE_ASSET_SHA_INVALID')
         }
@@ -526,7 +502,7 @@ export class DocumentProcessingRuntime {
         })
       },
       cancelJob: (jobId) => runner.cancel(jobId),
-      discardPreparedInput: (jobId) => { this.parserInputs.delete(jobId) },
+      discardPreparedInput: (jobId) => { parserInputs.delete(jobId) },
       deleteCache: async (cacheId) => { await documentCacheDelete(cacheId) },
       deleteLocalCache: async (cacheId) => { await documentLocalCacheDelete(cacheId) },
       onJobChanged: async () => {
@@ -548,11 +524,15 @@ export class DocumentProcessingRuntime {
     processingStore.attachRunner(runner)
     processingStore.attachScheduler(scheduler)
     processingStore.attachLocalOcrProgressReader({
-      list: async () => (await localParsedRepo.listByPhase('OCR_RUNNING')).map((record) => ({
+      list: async () => (await Promise.all([
+        localParsedRepo.listByPhase('OCR_RUNNING'),
+        localParsedRepo.listByPhase('PAUSED_NETWORK'),
+      ])).flat().map((record) => ({
         localSourceId: record.localSourceId,
         attempt: record.attempt,
         localContentRevision: record.localContentRevision,
         checkpointJson: record.checkpointJson,
+        pausedDraft: record.phase === 'PAUSED_NETWORK' && !record.localReceipt,
       })),
     })
 
@@ -597,8 +577,8 @@ export class DocumentProcessingRuntime {
     }
   }
 
-  private async createParser(job: DocumentProcessingJob): Promise<(sink: Parameters<typeof parseDocument>[1], onProgress: (event: DocumentParserProgress) => Promise<void>) => Promise<void>> {
-    const file = this.parserInputs.get(job.jobId)
+  private async createParser(job: DocumentProcessingJob, parserInputs: ReadonlyMap<string, RuntimeFile>): Promise<(sink: Parameters<typeof parseDocument>[1], onProgress: (event: DocumentParserProgress) => Promise<void>) => Promise<void>> {
+    const file = parserInputs.get(job.jobId)
     if (!file) throw new Error('DOCUMENT_INPUT_UNAVAILABLE')
     return (sink, onProgress) => serialized(async () => {
       const extension = extensionOf(file.name)
@@ -625,11 +605,7 @@ export class DocumentProcessingRuntime {
       } else {
         throw new Error('DOCUMENT_FILE_TYPE_UNSUPPORTED')
       }
-      try {
-        await parseDocument(input, sink, { onProgress })
-      } finally {
-        this.parserInputs.delete(job.jobId)
-      }
+      await parseDocument(input, sink, { onProgress })
     })
   }
 

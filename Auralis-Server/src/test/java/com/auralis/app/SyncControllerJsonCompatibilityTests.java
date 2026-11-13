@@ -17,6 +17,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.UUID;
 
@@ -31,6 +32,9 @@ class SyncControllerJsonCompatibilityTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private IdentityService identityService;
@@ -62,6 +66,90 @@ class SyncControllerJsonCompatibilityTests {
                                 """.formatted(auth.serverDeviceId(), subjectId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.results[0].decision").value("APPLIED"));
+    }
+
+    @Test
+    void duplicateCreateReturnsAnItemRejectionWithoutInterruptingTheHttpBatch() throws Exception {
+        AuthResult auth = identityService.register("sync-duplicate-" + UUID.randomUUID(), "sync-json-password",
+                "Sync JSON", new DeviceCommand("sync-duplicate", "Sync JSON", DevicePlatform.WEB));
+        UUID userId = auth.user().id();
+        var existing = subjectService.create(userId, new SubjectCommand("Original", null, null, "001"));
+        UUID followingId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/sync/push")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"serverDeviceId":"%s","mutations":[{
+                                  "clientMutationId":"duplicate","resourceType":"SUBJECT",
+                                  "resourceId":"%s","mutationType":"CREATE","baseVersion":0,
+                                  "payload":{"name":"Replacement"}
+                                },{
+                                  "clientMutationId":"following","resourceType":"SUBJECT",
+                                  "resourceId":"%s","mutationType":"CREATE","baseVersion":0,
+                                  "payload":{"name":"Following"}
+                                }]}
+                                """.formatted(auth.serverDeviceId(), existing.id(), followingId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].decision").value("REJECTED"))
+                .andExpect(jsonPath("$.results[0].code").value("MUTATION_REJECTED"))
+                .andExpect(jsonPath("$.results[0].current").doesNotExist())
+                .andExpect(jsonPath("$.results[0].changeCursor").doesNotExist())
+                .andExpect(jsonPath("$.results[1].decision").value("APPLIED"));
+
+        org.assertj.core.api.Assertions.assertThat(subjectService.get(userId, existing.id()).name())
+                .isEqualTo("Original");
+        org.assertj.core.api.Assertions.assertThat(subjectService.get(userId, followingId).name())
+                .isEqualTo("Following");
+    }
+
+    @Test
+    void rollbackOnlyDomainFailuresBecomeReplayableItemReceiptsAndTheBatchContinues() throws Exception {
+        AuthResult auth = identityService.register("sync-rejections-" + UUID.randomUUID(), "sync-json-password",
+                "Sync JSON", new DeviceCommand("sync-rejections", "Sync JSON", DevicePlatform.WEB));
+        UUID userId = auth.user().id();
+        var initial = subjectService.create(userId, new SubjectCommand("Original", null, null, "001"));
+        var latest = subjectService.update(userId, initial.id(), initial.version(),
+                new SubjectCommand("Edited elsewhere", null, null, "001"));
+        UUID followingId = UUID.randomUUID();
+        String authorization = "Bearer " + auth.tokens().accessToken();
+        String body = """
+                {"serverDeviceId":"%s","mutations":[{
+                  "clientMutationId":"stale-delete","resourceType":"SUBJECT",
+                  "resourceId":"%s","mutationType":"DELETE","baseVersion":%d
+                },{
+                  "clientMutationId":"missing-update","resourceType":"SUBJECT",
+                  "resourceId":"%s","mutationType":"UPDATE","baseVersion":0,
+                  "payload":{"name":"Missing"}
+                },{
+                  "clientMutationId":"following-create","resourceType":"SUBJECT",
+                  "resourceId":"%s","mutationType":"CREATE","baseVersion":0,
+                  "payload":{"name":"Following"}
+                }]}
+                """.formatted(auth.serverDeviceId(), initial.id(), initial.version(), UUID.randomUUID(), followingId);
+
+        var first = mockMvc.perform(post("/api/sync/push").header(HttpHeaders.AUTHORIZATION, authorization)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].decision").value("CONFLICT"))
+                .andExpect(jsonPath("$.results[0].code").value("RESOURCE_VERSION_CONFLICT"))
+                .andExpect(jsonPath("$.results[0].current.version").value(latest.version()))
+                .andExpect(jsonPath("$.results[0].changeCursor").doesNotExist())
+                .andExpect(jsonPath("$.results[1].decision").value("REJECTED"))
+                .andExpect(jsonPath("$.results[1].code").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.results[1].changeCursor").doesNotExist())
+                .andExpect(jsonPath("$.results[2].decision").value("APPLIED"))
+                .andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(subjectService.get(userId, initial.id()).version())
+                .isEqualTo(latest.version());
+        org.assertj.core.api.Assertions.assertThat(subjectService.get(userId, followingId).name()).isEqualTo("Following");
+
+        subjectService.update(userId, initial.id(), latest.version(), new SubjectCommand("Edited again", null, null, "001"));
+        var replay = mockMvc.perform(post("/api/sync/push").header(HttpHeaders.AUTHORIZATION, authorization)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(objectMapper.readTree(replay).get("results"))
+                .isEqualTo(objectMapper.readTree(first).get("results"));
     }
 
     @Test

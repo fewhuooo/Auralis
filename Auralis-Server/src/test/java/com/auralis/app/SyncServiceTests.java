@@ -2,6 +2,7 @@ package com.auralis.app;
 
 import com.auralis.app.sync.ChangeLogPage;
 import com.auralis.app.sync.ChangeLogService;
+import com.auralis.app.sync.MutationDecision;
 import com.auralis.app.sync.SyncRetentionService;
 import com.auralis.app.sync.SyncCursor;
 import com.auralis.app.sync.SyncMutation;
@@ -12,6 +13,11 @@ import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
+import com.auralis.app.knowledge.KnowledgeBlockCommand;
+import com.auralis.app.knowledge.KnowledgeBlockService;
+import com.auralis.app.source.SourceCommand;
+import com.auralis.app.source.SourceService;
+import com.auralis.app.source.SourceType;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.task.TaskCommand;
@@ -28,6 +34,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.util.List;
 import java.time.Instant;
 import java.util.concurrent.Executors;
 
@@ -54,6 +61,12 @@ class SyncServiceTests {
 
     @Autowired
     private SubjectService subjectService;
+
+    @Autowired
+    private KnowledgeBlockService knowledgeBlockService;
+
+    @Autowired
+    private SourceService sourceService;
 
     @Autowired
     private TaskService taskService;
@@ -144,6 +157,68 @@ class SyncServiceTests {
         assertThat(replay.recordedAt()).isEqualTo(first.recordedAt());
         assertThat(conflict.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.CONFLICT);
         assertThat(changeLogService.latestCursor(auth.user().id()).value()).isEqualTo(2);
+    }
+
+    @Test
+    void editsKnowledgeBlockWithDeletedSourceWhileRejectingInvalidNewLinks() {
+        AuthResult auth = register("sync-knowledge");
+        UUID userId = auth.user().id();
+        UUID subjectId = subjectService.create(userId, new SubjectCommand("Notes", null, null, "001")).id();
+        UUID sourceSubjectId = subjectService.create(userId, new SubjectCommand("Sources", null, null, "002")).id();
+        var source = sourceService.create(userId, new SourceCommand(
+                sourceSubjectId, SourceType.TEXT, "Source", null, null, "Original text", null));
+        var linkedBlock = knowledgeBlockService.create(userId, new KnowledgeBlockCommand(
+                subjectId, source.id(), "Original", "Original text", null));
+        var unlinkedBlock = knowledgeBlockService.create(userId, new KnowledgeBlockCommand(
+                subjectId, null, "Unlinked", "Standalone text", null));
+        UUID otherUserId = register("sync-knowledge-other").user().id();
+        UUID otherSubjectId = subjectService.create(otherUserId,
+                new SubjectCommand("Private notes", null, null, "001")).id();
+        var otherSource = sourceService.create(otherUserId, new SourceCommand(
+                otherSubjectId, SourceType.TEXT, "Private source", null, null, "Private text", null));
+
+        sourceService.delete(userId, source.id(), source.version());
+        String beforeEditCursor = syncService.latestCursor(userId).encode();
+        var editedPayload = objectMapper.createObjectNode()
+                .put("subjectId", subjectId.toString())
+                .put("sourceId", source.id().toString())
+                .put("title", "Edited")
+                .put("content", "Edited text")
+                .put("colorOverride", "#112233");
+        var applied = syncService.push(userId, auth.serverDeviceId(), List.of(
+                new SyncMutation("edit", SyncResourceType.KNOWLEDGE_BLOCK, linkedBlock.id(),
+                        SyncMutationType.UPDATE, linkedBlock.version(), editedPayload))).getFirst();
+
+        assertThat(applied.decision()).isEqualTo(MutationDecision.APPLIED);
+        var updated = knowledgeBlockService.get(userId, linkedBlock.id());
+        assertThat(updated.sourceId()).isEqualTo(source.id());
+        assertThat(updated.title()).isEqualTo("Edited");
+        assertThat(updated.content()).isEqualTo("Edited text");
+        assertThat(updated.colorOverride()).isEqualTo("#112233");
+        assertThat(syncService.pull(userId, beforeEditCursor, 10).changes()).singleElement().satisfies(change -> {
+            assertThat(change.resourceId()).isEqualTo(linkedBlock.id());
+            assertThat(change.mutationType()).isEqualTo(SyncMutationType.UPDATE);
+            assertThat(objectMapper.readTree(change.payload()).path("content").asText()).isEqualTo("Edited text");
+        });
+
+        var foreignPayload = editedPayload.deepCopy().put("sourceId", otherSource.id().toString());
+        var movePayload = editedPayload.deepCopy().put("subjectId", sourceSubjectId.toString());
+        var rejections = syncService.push(userId, auth.serverDeviceId(), List.of(
+                new SyncMutation("create-deleted-source", SyncResourceType.KNOWLEDGE_BLOCK, UUID.randomUUID(),
+                        SyncMutationType.CREATE, 0, editedPayload),
+                new SyncMutation("create-foreign-source", SyncResourceType.KNOWLEDGE_BLOCK, UUID.randomUUID(),
+                        SyncMutationType.CREATE, 0, foreignPayload),
+                new SyncMutation("link-deleted-source", SyncResourceType.KNOWLEDGE_BLOCK, unlinkedBlock.id(),
+                        SyncMutationType.UPDATE, unlinkedBlock.version(), editedPayload),
+                new SyncMutation("link-foreign-source", SyncResourceType.KNOWLEDGE_BLOCK, unlinkedBlock.id(),
+                        SyncMutationType.UPDATE, unlinkedBlock.version(), foreignPayload),
+                new SyncMutation("move-with-deleted-source", SyncResourceType.KNOWLEDGE_BLOCK, linkedBlock.id(),
+                        SyncMutationType.UPDATE, updated.version(), movePayload)));
+
+        assertThat(rejections).allSatisfy(result -> {
+            assertThat(result.decision()).isEqualTo(MutationDecision.REJECTED);
+            assertThat(result.code()).isEqualTo("RESOURCE_NOT_FOUND");
+        });
     }
 
     @Test

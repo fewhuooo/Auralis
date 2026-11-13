@@ -60,9 +60,13 @@ public final class AssetDtos {
     }
 
     @Schema(name = "AssetDownloadUrlResponse")
-    public record DownloadUrlResponse(String url, Instant expiresAt) {
+    public record DownloadUrlResponse(
+            String url,
+            Instant expiresAt,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String originalName,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String mimeType) {
         static DownloadUrlResponse from(AssetDownloadUrlView view) {
-            return new DownloadUrlResponse(view.url(), view.expiresAt());
+            return new DownloadUrlResponse(view.url(), view.expiresAt(), view.originalName(), view.mimeType());
         }
     }
 }

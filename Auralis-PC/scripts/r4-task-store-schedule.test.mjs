@@ -1173,6 +1173,27 @@ test('date-fix 3: moving an existing scheduled task to a week-view day writes th
     'the old slot must not retain the moved task')
 })
 
+test('week-column drop queues the first free slot after a pending unschedule', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const task = deadlineTask('cancel-then-week-drop', { scheduledAt: d('2099-10-06', '10:00'), dueAt: undefined, durationMinutes: 30 })
+  const occupied = deadlineTask('week-drop-occupied', { scheduledAt: d('2099-10-07', '08:00'), dueAt: undefined, durationMinutes: 30 })
+  const fixture = await createTaskStoreFixture([task, occupied])
+  await fixture.taskStore.loadLocalTasks()
+
+  await fixture.taskStore.unscheduleTask(task.id)
+  await fixture.taskStore.scheduleTaskToDay(task.id, '2099-10-07')
+
+  const pending = await fixture.repository.listUnresolved('TASK')
+  assert.deepEqual(pending.map((item) => [item.mutationType, item.resourceId]), [
+    ['SCHEDULE_UNSCHEDULE', task.id],
+    ['SCHEDULE_INSERTION', task.id],
+  ])
+  const expected = d('2099-10-07', '08:30')
+  assert.equal(pending[1].payload.scheduledAt, expected)
+  assert.equal((await fixture.repository.read('TASK', task.id)).value.scheduledAt, expected)
+  assert.equal((await fixture.repository.read('TASK', occupied.id)).value.scheduledAt, occupied.scheduledAt)
+})
+
 test('date-fix 4: remounted Timeline header and active day resolve to the Store-projected full date', async () => {
   const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
   const targetDate = '2026-10-14'

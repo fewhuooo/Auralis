@@ -1,5 +1,77 @@
 # Spring Boot 后端模块
 
+### 2026-11-13 学科总览直接生成
+
+学科总览的 JSON 和 SSE 直接入口支持 ALL、OUTLINE 和 SUMMARY。预检继续校验学科和来源归属，生成读取请求提供的资料 Markdown，经统一 Overview 流程按容量决定是否分批。
+
+### 2026-11-13 Overview 超长输入自动分批
+
+文件和学科的生成入口在派发前用现有估算器检查完整请求与最低输出预留。整篇适配时继续执行 CLEAN → OUTLINE → SUMMARY。CLEAN 整篇放不下时进入多批流程。清理后也会检查大纲和总结各自的请求容量，已完成的阶段可继续使用。
+
+分批清理使用连续核心行与相邻上下文，仅应用排除区间与核心行的交集。局部大纲以清理正文行号关联原文，归并后回读对应窗口并提取关键结论和必要解释，最后统一成文。大纲和总结的中间材料仍超限时按容量分组归并，无法继续缩减时沿用 `OVERVIEW_PROMPT_BUDGET_EXCEEDED`。单个物理行超出清理容量时保留该行，后续分析可按 Unicode 边界切开。批次核心软上限为 32,000 个 UTF-16 单元，实际大小受模型窗口、请求限制和输出预留约束。多批总结按内容取舍，不指定成稿字数。
+
+所有批次共用原任务的 Gateway、用量额度、截止时间和来源复核。公开结果仍为 Markdown v2，沿用现行保存流程。
+
+### 2026-11-12 Overview 退役路径清理
+
+移除旧 Writer 计划写入、节点检查点装配、无调用的中间载荷读写和内容预算规划，以及旧 preview/publication/candidateInput 接口链。新清理、大纲、总结的模型提示词与执行行为保持；正式结果继续按当前输入描述、来源修订、CAS 和回执保存。
+
+后台作业仍有当前调用，保留候选获取、租约、用量安全检查及资源生命周期清理。旧执行数据相关的安全读取与保留期清理不属于兼容生成路径，历史表和迁移保留。下方历史 candidateInput、preview/publication 描述不再作为当前接口能力。
+
+### 2026-11-11 知识块来源删除后的编辑
+
+单独删除 Source 保留关联知识块及其来源 ID。`KnowledgeBlockService.update` 在所属学科和来源均未改变时允许保留已软删除的来源，标题、正文和颜色修改通过原 REST/Sync 写入入口保存。来源所有权与知识块活动、版本检查保持；新建、改绑和移科继续要求所选来源活动有效；知识块恢复保留原有学科、版本和墓碑校验。预读来源关联用于确定所需锁，知识块加锁后重新核对，避免并发改绑绕过校验。无接口字段、数据库结构或历史数据迁移变化。
+
+### 2026-11-11 资料恢复、解析接收与下载元数据
+
+`SourceService.restore` 为处理中的 FILE 查找当前 owner/revision 的 ACCEPTED ParsedDocument，复用 generation 并确保有索引任务；已有活跃任务不重复入队。无可复用结果时轮换 revision 并返回 AWAITING_CLIENT。READY 来源与既有非 FILE 路径保持。
+
+复查补充：恢复将已领取的 PARSING/INDEXING job 撤销租约并置回 PENDING，保留当前 job、revision、generation、ParsedDocument 和失败计数；未领取和延后任务保留既有调度规则。worker 的 INDEXING 写入与 checkpoint/complete/fail 一样经过 claim 校验，按 Subject→Source→job 的现有锁序处理，旧执行不能覆盖恢复后的状态或新执行的 READY。
+
+`ParsedDocumentService.complete` 在接受前核对 intent 中的源 Asset SHA 与服务端确定的实际 SHA，不匹配沿既有 PARSED_DOCUMENT_INVALID 路径拒绝，避免留下接受后不能读取的结果。既有 ACCEPTED 记录不迁移。
+
+upload-intent DTO 在签发前要求源 SHA 非空且符合格式，OpenAPI 与双端类型同步。`AssetService.ensureSha256` 的事务对预期 DomainException 不标记回滚，使 complete 能提交 REJECTED 并返回原领域错误；未知异常仍沿现有回滚处理。此项修复不回填客户端缺失声明，也不修改历史 ACCEPTED 数据。
+
+Asset download-url 响应增加原资产的 `originalName/mimeType`，客户端无需从 Source 标题猜测文件格式。授权范围与签名 URL 生命周期保持。接口和生成类型见 [API 契约](../contracts/API.md)，验证结果见 [当前状态](../current/Status.md)。
+
+### 2026-11-11 Chat 错误事件断线后的终态收尾
+
+Provider 失败后的未完成块统一在 finally 失效，逐个错误事件发送采用 best-effort；断线不阻断其他块变为 INVALID 或后续 finish。执行器及 scope 关闭仍在终态持久化之前，原有 owner fence、释放规则与持久化异常处理保持。真实入口和持久化服务回归覆盖双块断线、成功保存 FAILED 并释放槽位，以及仓储故障传播；仓储替身不证明 PostgreSQL 回滚。定向 38/38 通过，未部署或调用真实 Provider。
+
+### 2026-11-11 Chat 迭代与工具额度
+
+`ChatAgentProperties` 的默认及硬上限为 12 轮模型调用、20 次工具执行。`ChatAgentOrchestrator` 在最后允许轮派发前进入 `finishWithoutTools` 并添加收尾指令；工具 schema 保留以验证原生历史配对，但该轮所有新工具均不执行。模型应基于已有证据回答并说明缺口；若继续请求工具，记录未执行结果并给出限制说明后结束。自定义较小轮数也遵循同一规则。提前 STOP/READY 沿原流程结束，不额外调用总结。
+
+工具按实际执行累计，仍支持同轮多个调用。token、费用、独立模型/embedding 调用帽、并发和期限继续独立限制；收尾不保证绕过先耗尽的其他预算。定向有效 163 项、package 通过，全量受限情况见当前状态。无 HTTP、SSE 或数据库结构变化。
+
+### 2026-11-11 Chat 引用与重试历史归属
+
+`ChatAgentOrchestrator` 将每轮问题及保存的引用原文合成一条模型 USER 消息，历史恢复使用相同规则并沿既有轮次裁剪。历史按 USER 顺序组织，通过 run 关联当前 attempt 的回复与工具证据；旧问题重试后的回答仍归原轮，重试原问题时不引入后来问题。旧 attempt 存储记录保留，HTTP DTO、SSE 和数据库结构不变。
+
+定向四类测试最终有效 33 项通过：首批 32 通过，另一项测试夹具缺少工具声明，补齐后仅重跑该项通过。未部署或调用真实 Provider；验证明细见当前状态。
+
+### 2026-11-12 Overview 总结保留核心解释
+
+SUMMARY 根据原文讲清核心概念、机制、区别与权衡。输出从二级标题开始，每段围绕一个要点，较多并列项用简短列表。按清理后 Unicode 字符数给出篇幅参考，10000 字符及以下约 1200～1600 字符，超过约 3000～4000 字符。SUMMARY 最低输出预算使用独立的字符基准。
+
+### 2026-11-12 Overview 通用输入预算
+
+预算规划和 Gateway 准入共享 `unicode-category-v1`，对 Overview 的 system/user 文本按 Unicode 类别估算，代码围栏、高密度结构、长不透明串及未识别字符按 UTF-8 字节计量。请求计入每条消息开销与 CLEAN 的 JSON 响应格式开销。规则对平台与 BYOK 一致，适用于 Overview；Chat 和 Embedding 继续使用各自的计量路径。估算结果用于预留和准入，实际用量仍按现行账本规则结算。旧输入模式配置已退役。
+
+### 2026-11-12 Overview 动态输出预算（源码与定向验证完成）
+
+按阶段估算最低输出 token。CLEAN 为 256 加每 32 个编号行 64 token，OUTLINE 为 512 加每 2000 个清理后 Unicode 字符 256 token，两项都向上取整。SUMMARY 为 512 加 2 倍的有效目标字符数，有效目标取清理后字符数和该分支预算基准的较小值，基准在清理后不超过 10000 字符时为 1800，否则为 5000。目标预留在最低值上增加 50% 裕量，再受模型上限、可选输出上限、上下文余量约束。平台调用读取任务已结算与预留量，余额可收紧裕量，低于最低值时拒绝。BYOK 使用技术上限，最终准入和小时、每日窗口由 Guard 在预留事务内校验。Provider 的 `max_tokens` 与账本预留相同。阶段公式为启发式，输出截断继续返回原错误，输入估算和提示词保持。66 项定向通过，未部署或发起真实模型请求。证据见 `docs/archive/overview-experiments/20261112-output-budget/data/report.md`。
+
+### 2026-11-12 Overview 清理、大纲与总结重写（源码与定向验证完成）
+
+正式生成直接采用原文范围清理 → 重点大纲 → 结合清理原文写总结。原文按行编号，清理只接受五种排除用途和有序不交叠的闭区间；保留原文字符及位置映射。大纲和总结为 Markdown 两个独立分项，不再执行 INDEX、ROUTE 和分节 WRITER。
+
+大纲以一个文档主题开头，使用二级标题归并正文主线，各议题用一至两个简短主题短语标明讨论范围。具体概念、类型、阶段和方法归入相关议题的条目。总结使用原文事实与限定条件，当前篇幅参考与 Markdown 组织要求见上方「Overview 总结保留核心解释」。
+
+新接口为 schemaVersion=2 的 outlineMarkdown/summaryMarkdown，保留来源输入描述、预算结算、取消、deadline、账户/来源修订复核和正式保存的 CAS。范围校验不能识别所有模型语义误删，混合行及预告仍有实测缺口。超容量明确失败，本轮不新增尚未验证的分窗算法。旧正式数据保留但不转换为新契约。
+
+FILE 的 OUTLINE 执行前两阶段，ALL 执行三阶段；SUMMARY 内部生成大纲但仅交付总结。原已支持的 TEXT/URL 与 Subject SUMMARY 入口保持。生成、保存、CAS、Chat 与 API/SSE 定向 139 项通过，TLS deadline 3 项通过；打包成功。非 PostgreSQL 全量 847 项中的范围内失败已修复复验，剩余两个无关断言失败、两个缺 Docker 的错误和两项跳过；未再次全量运行。未运行 PostgreSQL、真实客户端或正式入口的真实模型验收，未部署。完整命令证据见 `D:/Temp/auralis-overview-markdown-v2-implementation-20261112/report.md`，设计见[替换说明](../plans/2026-11-12-overview-markdown-replacement.md)。
+
 ### 2026-11-05 Chat 已保存 Source 总览只读工具（PostgreSQL事务边界修复）
 
 Chat 以 `read_source_overview(sourceId,offset?,limit?,overviewVersion?)` 读取授权范围内已保存且当前有效的正式 SOURCE 总览。读取先通过当前 attempt 的 source scope/READY/revision 校验，再复用 `OverviewResultService` 的完整结果及各输入 descriptor 有效性判断；不读 SUBJECT 聚合、候选或进行中结果，也不触发生成。总览标题、大纲和三类总结信息被确定性渲染为 Markdown，按 Unicode code point 分页，返回完整 JSON；延续页必须带 `overviewVersion`，不匹配以正常 `STALE` 结果要求从第一页读取。缺失或当前无效以正常 `UNAVAILABLE` 返回，调用端可继续检索/读摘录；每页仍受原 `maxToolResultUtf8Bytes` 限制。
@@ -92,7 +164,7 @@ Chat read tools 仅将可识别的 `CHAT_TOOL_ARGUMENT_INVALID` 与 `read_source
 
 Chat 结构化内容现由六个 provider function tools 生成：`render_steps`、`render_compare`、`render_roadmap`、`render_chart`、`render_quiz`、`render_question`。Data search/read 工具保持独立。展示工具只本地校验参数并生成 Markdown/public parts，不查询领域数据；增量 arguments collector 只发布完整且已校验的 meta/stem 与 item/options。完整参数再经严格 JSON、重复键拒绝、字段白名单和组件 schema 校验；final 与 preview 不一致时失败，已公开有效行保留在 INVALID block。普通 content 全部作为 Markdown text segment，marker 字符串不触发解析。
 
-Visual 工具通过现有 owner fence 持久化公开 part 与私有工具证据后发布 `block.completed`，以极简 rendered tool result 接续模型循环。Activity 工具只接受第一张按 provider index 排序的有效题卡，题目及可选 private reference 经 source/fence 校验后与 READY 快照在同一事务落库，再发布 completed/ready 并短路本轮模型调用；其后已 preview 的 display block 持久化为 INVALID。Data/Visual 可在 Activity 前按工具序执行。provider 非正常终态、取消、参数错误、owner/source fence 失败均不发布 READY；run reader 退出后才释放执行 slot。展示工具计入既有每 attempt 12 次 tool-call 上限，不计作额外模型/embedding 请求。
+Visual 工具通过现有 owner fence 持久化公开 part 与私有工具证据后发布 `block.completed`，以极简 rendered tool result 接续模型循环。Activity 工具只接受第一张按 provider index 排序的有效题卡，题目及可选 private reference 经 source/fence 校验后与 READY 快照在同一事务落库，再发布 completed/ready 并短路本轮模型调用；其后已 preview 的 display block 持久化为 INVALID。Data/Visual 可在 Activity 前按工具序执行。provider 非正常终态、取消、参数错误、owner/source fence 失败均不发布 READY；run reader 退出后才释放执行 slot。展示工具计入既有每 attempt 20 次 tool-call 上限，不计作额外模型/embedding 请求。
 
 完整正常 `tool_calls` 批次中，已注册 render tool 的严格 schema/语义 validator 首次拒绝可生成一次 attempt 级修正反馈。反馈只含固定错误码、安全字段路径和缺少的必填字段；JSON 语法、provider/preview/身份门禁、source/fence、取消和预算错误不触发修正。坏 block 保持 `INVALID`，该批更高 index calls 以固定 `not_executed` result 与原调用配对后跳过；其中的 Activity 不会 READY。原 assistant calls/result 一并进入当前和私有历史 evidence。再次出现参数拒绝走原失败路径；反馈轮使用现有 model/iteration/tool/token/deadline限制。无新增 API 或数据库字段。
 
@@ -136,7 +208,7 @@ Compare parser/projection 定向 20/20 通过，package 成功。`ChatAgentProto
 
 ### Chat 通用失败诊断（2026-10-30，候选未部署）
 
-`ChatAgentOrchestrator` 对既有 `FAILED` 收尾记录 `CHAT_RUN_FAILED` WARN，字段限于 run/attempt、iteration/iterationId、stage、safe error code、异常与 cause 类名、cause 链中首个 `com.auralis.app.*` stack frame 的 class/method/line。不会输出 throwable、异常消息、prompt/content/reasoning 或工具原文。现已在该入口为 `AiUsageLimitException` 加稳定码格式校验并保留 `AI_TASK_BUDGET_EXCEEDED` 等预算码；普通本地异常仍为 `CHAT_RUN_FAILED`，其它终态、usage/计费和 fencing 不变。Chat Agent provider reservation 分别由 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS` 与 `AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` 管理，0 表示不设次数帽，负数拒绝启动；两项 all-origin/platform stage 配额均使用独立设置，聚合 task 调用帽关闭，平台 token 预算继续生效。默认模型/embedding 次数不设帽；8 次 iteration 仍限制每个 attempt 的模型循环轮数。retry 沿同一个 run ledger 继续计数。Run status 的 `accountingSummary` 提供跨 retry 的 `modelCalls` / `embeddingCalls`，以及按当前 attempt trace 去重后的 `currentAttemptToolCalls`；工具调用次数仍受独立 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS` 限制，当前12且按 attempt 计。源码及自动验证候选未部署。
+`ChatAgentOrchestrator` 对既有 `FAILED` 收尾记录 `CHAT_RUN_FAILED` WARN，字段限于 run/attempt、iteration/iterationId、stage、safe error code、异常与 cause 类名、cause 链中首个 `com.auralis.app.*` stack frame 的 class/method/line。不会输出 throwable、异常消息、prompt/content/reasoning 或工具原文。现已在该入口为 `AiUsageLimitException` 加稳定码格式校验并保留 `AI_TASK_BUDGET_EXCEEDED` 等预算码；普通本地异常仍为 `CHAT_RUN_FAILED`，其它终态、usage/计费和 fencing 不变。Chat Agent provider reservation 分别由 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS` 与 `AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` 管理，0 表示不设次数帽，负数拒绝启动；两项 all-origin/platform stage 配额均使用独立设置，聚合 task 调用帽关闭，平台 token 预算继续生效。默认模型/embedding 次数不设帽；12 次 iteration（末轮收尾）仍限制每个 attempt 的模型循环轮数。retry 沿同一个 run ledger 继续计数。Run status 的 `accountingSummary` 提供跨 retry 的 `modelCalls` / `embeddingCalls`，以及按当前 attempt trace 去重后的 `currentAttemptToolCalls`；工具调用次数仍受独立 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS` 限制，当前20且按 attempt 计。源码及自动验证候选未部署。
 
 ### 2026-10-30 Chat reasoning 流与按 operation thinking（源码候选，未部署）
 
@@ -375,7 +447,7 @@ Focused backend validation for the selection-budget correction: `PromptAssembler
 自适应路由从不可变 topic catalog 建目录，writer 使用私有 detailedContent 契约并经 `OverviewBodyFormatter` 分段到公开 section；输出容量恢复使用持久 PLAN/RESULT 与 child checkpoint。ALL 导读在正文完成后进行一次同预算根的 ADAPTIVE_GUIDE completion。Preview NodeView 返回带独立 provenance 的全部 fragments。隔离候选中 Adaptive 48/48、Recovery 28/28、Preview PostgreSQL 10/10、Formatter 9/9 通过；末次两个受影响 Adaptive 方法 2/2、package、OpenAPI artifact 与 PC type-check 通过。Mobile type-check 有既有 `EventRequest/EventResponse` 引用缺失失败；受污染 full 855 tests（6 failures/29 errors/1 skipped）不作为通过证据，未在隔离候选重跑 full。未部署或调用真实 Provider。唯一只读 review 为 B0/I0/O0，发现的三项行为问题均已关闭。
 
 更新时间：2026-10-24
-文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；V16 阅读会话 scope、完成历史 Prompt、readingContext 当前 Source 检索和同学科确定性升级已实现；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；Subject 专属颜色已由 V19 移除并在本地 PostgreSQL 升级验证；Overview 阶段一、阶段二自适应索引候选已完成定向验证但未部署；ADAPTIVE_INDEX summary 规范化已部署且 readiness HTTP 200，批次别名提示修正 37/37、runtime review B0/I0，及 ADAPTIVE_METADATA summary 规范化 40/40、review B0/I0/O1 均已部署且 readiness HTTP 200。真实 Provider 与外部验收仍未完成
+文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；Chat 协议 1 使用持久化 run/attempt、V44 会话范围及冻结来源检索；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；Subject 专属颜色已由 V19 移除并在本地 PostgreSQL 升级验证；Overview 阶段一、阶段二自适应索引候选已完成定向验证但未部署；ADAPTIVE_INDEX summary 规范化已部署且 readiness HTTP 200，批次别名提示修正 37/37、runtime review B0/I0，及 ADAPTIVE_METADATA summary 规范化 40/40、review B0/I0/O1 均已部署且 readiness HTTP 200。真实 Provider 与外部验收仍未完成
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 事实来源：当前 Auralis-Server 源码、模块测试和本文所列隔离验证证据。
 
@@ -469,7 +541,7 @@ Focused backend validation for the selection-budget correction: `PromptAssembler
 - 证据：D:/Temp/auralis-overview-m51-20261022/targeted-tests.log 与 handoff.md。更早前端回退的四项失败未由本轮处理；此前范围审计按用户最新要求暂置，尚无完整审计结论。
 ### 2026-10-22 Overview M4 PC candidate adoption（源码、相关验证与唯一审查完成；隔离浏览器后端接口流程完成；未部署）
 
-此处记录的是 Server 侧能力：现行 formal PUT 继续支持 `candidateInput`，durable job/publication、receipt 与 preview/section API 保留。PC M4 consumer 已按用户决定撤回；当前 PC 不消费这些新增接口。回退前隔离浏览器流程只证明当时的 Server API 接线，不能作为当前 PC UI 验收。
+此处仅记录当时的 Server 侧实现与验证。2026-11-12 已移除 candidateInput、publication、preview/section 旧接口，现行契约见本文件顶部及 API 文档。回退前隔离浏览器流程只证明当时的接线，不能作为当前 PC UI 验收。
 
 - 现有 Source/Subject formal result PUT 接受可空 `candidateInput {jobId,jobVersion}`；独立 resolver 按 owner、scope、job version、current raw snapshot、profile/algorithm 与 assembled plan 重建服务端 descriptor。继续使用 active authorization、source revision、identity/provenance、partial summary、CAS、clientWriteId 与 exact receipt；不依赖旧 Subject FILE part versions，不自动发布或 rebase publication intent。
 - M4 无 Server migration；PC local schema v13。backend full 774/771P/1F/2E，affected group 3/3；SQL NULL bind 42P18 fix 的 PG 回归 1/1，post-fix skipTests package Maven/Docker 0/0，新 JAR 93,458,173 bytes，SHA-256 `b3da690b3d9cae5c0d73f13e2f2c0fc44780274773b41533d9621b16ea0fe6ef`。唯一 final source-type-fence delta review B0/I0/O0 new，原 O1 保留。隔离浏览器通过合成 Provider 验证真实后端接口流程；未接用户业务数据库、真实 Provider 或部署。API artifacts 未因 SQL 修复重新生成；先前门禁证据保持独立。
@@ -529,10 +601,10 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 - `scripts/aggregate-ai-token-shadow.mjs` 的 JSON summary、分层 CSV 与 CLI 摘要现在分别输出唯一、无冲突、已派发 ledger 中 actual usage 完整/未知数，以及 missing shadow event、matched shadow usage unknown 和歧义 join 数。actual 完整要求 ledger 的 input 与 output 都非 NULL；NULL 不从日志补填，charged exposure、legacy `unknownUsageCount`、accuracy 样本资格、`INCOMPLETE` 和 exit 2 语义保持。
 - 合成回归覆盖完整 actual 缺 shadow、完整 actual 匹配 unknown shadow、NULL actual 缺/unknown shadow、zero actual、未派发和冲突 duplicate。现有 27 项测试加 2 项新增用例共 29/29 通过。离线 46-ledger / 7-shadow 复算为 actual complete 46/46、actual unknown 0、missing shadow 39、matched unknown 0、ambiguous 0、accuracy sample 7；这些 39 项是比较覆盖缺口，不是实际用量未知。估算仍 uncalibrated，未减少 Provider 消耗；报告在 `D:/Temp/auralis-usage-research-20261016/research-report.md`。
 
-### 2026-10-16 RAG 引用证据片段改为有界 query-aware 选择（定向验证通过；真实 Provider 待验收）
+### 2026-10-16 RAG 引用证据片段改为有界 query-aware 选择（历史验证记录）
 
 - `RetrievalService` 将当前 query 传入 citation 构建；每段仍最多 400 个 Java 字符。遇到通用定义/含义问题或明确引用术语时，会在 chunk 前 65,536 字符内以有界扫描寻找焦点词，并优先选取邻近定义线索的连续原文窗口；没有匹配时保留原前缀行为。截取会避开拆分 UTF-16 surrogate pair。
-- Citation 的 source/chunk ID、排序及相同 `excerpt` 进入 `PromptAssembler` 的行为保持。owner/active/revision/scope 过滤仍先于 TopK；TopK、12000 prompt 字符上限、Gateway 与两次 Chat 调用预算均未改。未新增 API 字段、DTO、DB schema 或 Provider 调用。
+- 当时的验证保留了 `PromptAssembler` 使用相同 `excerpt` 的行为。现行 `ChatReadTools.search` 将 source/chunk ID 和 `excerpt` 作为工具证据返回，检索范围见下方 AI/RAG 实现边界。
 - RED 在修正合成 fixture 的目标偏移后为 17 项中 4 项失败；GREEN 的 `AiRetrievalTests` 与 `PromptAssemblerTests` 共 21/21 通过，包含选定来源隔离、后置单字定义命中及 prompt 接线。完整定向命令与限制见 `D:/Temp/auralis-rag-pass-definition-20261015/implementation-20261016/implementation-report.md`。真实 Provider 回答质量与 GUI 未验收。
 
 ### 2026-10-15 AI 影子观测与离线聚合（代码、定向、full/package 与复审完成）
@@ -590,10 +662,10 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 - 当前工作树中实际 Provider 响应经现有 validator 时，可输出固定拒绝类别、异常类型和 Jackson 行/列/字符偏移；坐标针对 trim/fence 剥离后的 JSON。日志不含 exception message、响应正文、字段值、Jackson path 或 stack。2参数入口与原错误行为保持，checkpoint restore 不走新 sink；本次定向两个测试类 83/83 通过。日志实现当时未由 Codex 部署；其后用户更新镜像并 retry，但请求在 Provider 响应校验前以 no-progress 结束，没有验证诊断输出或运行镜像 class/source provenance，因此 JSON 拒绝原因仍未知。
 - 2026-10-16 诊断增量：validator 在失败路径记录原始响应及实际 Jackson 输入的字符数和 SHA-256、plain/fenced/invalid 包裹类型、固定 parser 分类、Jackson offset 处字符类别，以及行列偏移。Overview 的 `OVERVIEW_VALIDATION_DIAGNOSTIC` 与同 task/generation 关联，记录输出阶段、purpose、`PRIMARY`/`JSON_REPAIR` 尝试、finishReason 与原有显式截断判定；不含正文、片段、原始异常消息或字符值。诊断异常不改变原错误或额外调用 Provider。定向两类测试 92/92 通过，Maven native/container exit 0；唯一 reviewer B0/I0。未部署，JSON 生成根因仍待下一次运行样本确认。
 
-### 2026-10-12 聊天资料检索默认开启（后端实现与定向验证通过；真实 Provider 待验收）
+### 2026-10-12 聊天资料检索默认开启（历史验证记录）
 
-- 新聊天始终进入现有 `AiStreamingService` 检索路径，请求 DTO 不再包含 `retrievalEnabled` 字段。无 `ReadingContext` 时 PostgreSQL 查询按 owner、active chunks、embedding 非空及 Source 未软删除筛选；fallback 按 owner 与活动 Source 筛选，不额外要求 `READY`。提供 `ReadingContext` 时保留现有 scope：`AUTO` 当前文件沿用 `READY` 规则，显式 `SELECTED_SOURCES` / `SUBJECT` 沿用 owner、活动状态和 `READY` 校验。Spring mapper 会忽略额外未知 JSON 字段，因此历史 JSON 中的 `retrievalEnabled:false` 不会关闭检索；不保留兼容分支。
-- 检索无命中时可继续生成并返回空 citations；embedding 配置缺失或 Provider 失败继续返回现有明确错误，不降级为无检索回答。普通配额与预算行为不变。
+- 该批次从 Chat 命令移除了 `retrievalEnabled`。当时的 `AiStreamingService` 默认检索已由协议 1 的 native data tools 取代，现行检索以 attempt 的 READY 来源快照为准。
+- 该批次验证了当时的检索无命中继续生成、Embedding 错误及配额行为。
 - `mvnw -B -ntp clean test -Dtest=AiStreamingTests,AiStreamingControllerTests,AiMessageCommandValidationTests,AiRetrievalTests,OpenApiArtifactTests` 退出码 0，47/47；`scripts/check-openapi.ps1` 退出码 0，包含运行时 artifact 12/12 和 PC/Mobile SDK 标准生成对比。真实 Provider 与客户端联调仍待验收，完整证据见[实施计划](../plans/2026-10-12-rag-always-on.md)。
 - Backend 最终 clean 定向测试与 OpenAPI/SDK 一致性门禁已通过；真实 Provider 和客户端联调仍待完成。计划与验证状态见[实施计划](../plans/2026-10-12-rag-always-on.md)。
 
@@ -669,6 +741,11 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 - 当前没有通用用户偏好同步 API 或完整数据备份/导出 API；PC 偏好保存在端侧，JSON 导出由 PC 汇总有限资源。
 - Suggestions 保持确定性模板基线，真实 LLM、RAG 引用与质量评估仍按 `P1-Phase5-Suggestion-Quality` 开放登记。
 
+### 2026-11-11 复习原回执重放与元信息修订
+
+- `ReviewLifecycleService` 在当前 owner KB 与正文 hash 校验后查找冻结回执。若没有原回执，继续用请求中的 KB 版本及状态版本校验新写入。标题等同学科、同正文更新保留当前核对、纠正和重学的因果目标，后继请求绑定当前 KB 版本。
+- `KnowledgeBlockService` 在移科事务内发布领域事件。Review 保留日期、学习标记、稳定次数、掌握度和已生效历史，清除旧因果 ID 并使未确认初选失效。正文变化沿原失效流程处理。
+
 ### 2026-10-09 PC 离线复习补传协议（代码及相关自动验证通过；真实联调待验收）
 
 - 最小扩展现有生命周期请求的 occurredAt/expectedStateAbsent；前者保留真实操作时间，后者区分无状态与 version0。owner、活动资源、版本、正文 hash、锁序及回执幂等继续校验，无新端点或数据库迁移。
@@ -697,11 +774,11 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 - 恢复先提交时，清理重查后保留对象；清理先提交时，新 FILE 引用与恢复拒绝 ORPHANED。对象删除失败保留该状态，由下一轮幂等重试；批次内按 owner/Asset 去重。
 - 新 PostgreSQL 17.11/Testcontainers 并发集成 5/5，实际观察清理的 Asset 锁等待恢复事务；相关 Service/Controller/Asset/retention 56/56。全量 clean test 为 392 项、1 failure、0 error/skip，唯一失败是既有 TaskColor 测试期待迁移 V21、实际 V28；此前 AccountDeletion 微秒舍入失败本次未复现。生产 MinIO/真实 HTTP 与 GUI 验收独立登记，完整证据见 [实施记录](../plans/2026-10-07-priority-function-fixes.md)。
 
-### 2026-10-01 提问选中文本处理（代码与自动验证通过；真实 Provider 待验收）
+### 2026-10-01 提问选中文本处理（历史验证记录）
 
-- AiMessageCommand 增加可选顶层 selectionText（最大 4000 字符），非 null 时优先；空白取消引用，否则保留现行 readingContext 引用路径。AiStreamingService 将有效引用送入模型请求，不修改普通 USER 消息持久化内容或 citation。
-- 引用作为当前请求的 USER 资料处理；聊天始终执行检索，既有资料范围、owner、READY 与请求回放规则保留。
-- PromptAssembler 完整保留本次问题与引用，优先淘汰旧完整历史对。引用使用 USER 角色、固定 SYSTEM 说明将其视为资料；无法容纳必需内容时抛 VALIDATION_FAILED。AiController 在 SSE 开始前调用同一预算预检，返回 HTTP 400。
+- 该批次引入可选顶层 `selectionText`。现行协议 1 在 Chat 命令顶层接收引用，最长 4000 字符，作为本轮模型上下文。USER 消息正文独立保存。
+- 引用处理与会话绑定分开，后续轮次可继承已绑定的资料范围并附带新的引用。
+- 当时的预算验证覆盖 `PromptAssembler` 对当前问题、引用及历史裁剪的处理。
 - Server clean focused 47/47、OpenAPI export 8/8、SDK 生成和一致性检查退出 0；未新增数据库/迁移/配置。真实 Provider 与 GUI 未验收，完整命令见 [实施记录](../plans/2026-10-01-chat-selected-text.md)。
 
 ### 2026-10-01 学习数据能力调整（整合验证中）
@@ -722,6 +799,8 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 2026-09-26 Source/RAG 修复：PostgreSQL pgvector 检索仍在 LIMIT 前过滤软删除 Source；H2/fallback 现先按 owner 批量解析活动 Source 再排序/TopK，删除 Source 的旧 chunk 不占有效引用名额。Source 列表、分页和含删除项列表的 Asset size 改为 owner-scoped 批量加载；Retrieval citation 复用一次批量 SourceView 查询，不再逐条 `sourceService.get()`。SourceView 排序、Asset 大小、citation 内容及 generation 语义不变。focused clean 8/8、PostgreSQL 17/pgvector 2/2；真实业务数据与负载性能未验收。
 
 2026-09-26 注销运行验收：用户重建后提交的指定账号作业已于 `06:50:10.172777 UTC` 达到 `COMPLETED`，`last_error=NULL`，用户行和该用户归属的 21 张清理表记录均已清空，本作业对象键记录为 0。此证据确认数据库清理链路，MinIO 对象与当时 HTTP/GUI 响应未单独验收。
+
+2026-11-11 Identity 会话与密码约束：活动会话列表按 access JWT 的设备标识标记当前设备。撤销指定设备或其他设备时持有与登录和刷新相同的用户行锁，目标旧 sid 可定位同设备轮换后的活动会话。注册与改密的新密码在 BCrypt 前校验 72 字节的 UTF-8 上限，超限返回 HTTP 400，既有哈希继续由当前密码编码器验证。
 
 2026-09-26 注销运行态与完整链路验证：现运行 backend JAR 的 `IdentityService.requestAccountDeletion()` 字节码确认 `requested_at/not_before` 使用 UTC `OffsetDateTime` 绑定，V25 已安装。独立 Testcontainers PostgreSQL 17/pgvector 定向回归 4/4，涵盖有效确认密码受理后到期清理用户、Subject/Task/Asset 与对象键，以及错误密码保持用户 `ACTIVE` 且不建作业。本轮未改后端生产逻辑，真实账号和 MinIO 未验收。
 
@@ -776,7 +855,7 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 | relation | 通用跨对象关系 | 阶段 2B 已实现端点校验、去重、软删除级联，待 PostgreSQL/人工验收 |
 | review | ReviewState、生命周期命令/有效结果；历史 `review_events` 仅保留统计读取 | 生命周期接口已实现；FSRS Lite 调度与旧写入/读取路由已移除 |
 | sync | Device、mutation、change log、高水位 cursor、snapshot、墓碑 | 阶段 3 已实现，待双设备/过期 cursor/生产验收 |
-| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions、阅读 scope、无状态结构化总览 | 阶段 5 后端基线及 V16 阅读会话/Prompt/当前 Source 检索/同学科升级已实现；Source/Subject overview 定向测试通过；待真实 Provider 与业务验收 |
+| ai | 模型配置、BYOK、Provider、Chat run/attempt、RAG、Suggestions、阅读 scope、结构化总览 | Chat 协议 1、V44 会话绑定与 attempt 冻结来源检索已实现；Source/Subject overview 验证见对应阶段；待真实 Provider 与业务验收 |
 | stats | 强类型统计读取模型 | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | realtime | WebSocket ticket 和用户级事件 | 阶段 4 已实现，待浏览器/跨实例验收 |
 | shared | 错误模型、时钟、ID、分页、最小公共设施 | 配置/错误/OpenAPI 基础 |
@@ -815,11 +894,13 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 - KnowledgeBlock：`POST/GET /api/knowledge-blocks`、`GET/PUT/DELETE /api/knowledge-blocks/{id}`、`POST /api/knowledge-blocks/{id}/restore`。
 - Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`、`POST /api/tasks/schedule-swaps`、`POST /api/tasks/schedule-insertions`；Task 颜色字段已由 V21 从 API、Entity 和历史同步 JSON 中移除，KnowledgeBlock 颜色仍保留。
 
-创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 排期创建、更新、恢复和换位在事务中先悲观锁定所属 User 行，再按既有 Subject→Task 顺序加锁，以序列化同一用户跨学科的排期写入；通过 TaskService 进入的 REST 与 Sync 写入共用该锁。服务端按 `[scheduledAt, scheduledAt + durationMinutes)` 检查同用户所有未取消、未删除 Task，首尾相接允许，`durationMinutes=null` 按 30 分钟比较；update 排除自身，restore 检查恢复后的区间，swap 同时排除双方旧行并校验双方新区间互不重叠且不冲突于第三方。冲突返回 `VALIDATION_FAILED`，Sync 将该 mutation 记为 `REJECTED`，不会部分写入。Task 创建、恢复、排期/有效时长/截止时间变化及取消后重新进入活动排期时，若排期与截止均存在，必须满足 `scheduledAt + effectiveDurationMinutes <= dueAt`，恰好结束允许，无截止不限制。仅标题、备注或状态变化且有效时间值相同的历史越界排期仍可保存（包括自动 DONE），空时长与显式 30 等价；不批量改写旧数据。V23 移除历史排期顺序 CHECK，本轮由领域服务校验，不新增数据库约束或迁移。Task 换位仍以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本及换位结果；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
+创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 排期创建、更新、恢复和换位在事务中先悲观锁定所属 User 行，再按既有 Subject→Task 顺序加锁，以序列化同一用户跨学科的排期写入；通过 TaskService 进入的 REST 与 Sync 写入共用该锁。服务端按 `[scheduledAt, scheduledAt + durationMinutes)` 检查同用户所有未取消、未删除 Task，首尾相接允许，`durationMinutes=null` 按 30 分钟比较；update 排除自身，restore 检查恢复后的区间，swap 同时排除双方旧行并校验双方新区间互不重叠且不冲突于第三方。冲突返回 `VALIDATION_FAILED`，Sync 将该 mutation 记为 `REJECTED`，不会部分写入。Task 创建、恢复、排期/有效时长/截止时间变化及取消后重新进入活动排期时，若排期与截止均存在，必须满足 `scheduledAt + effectiveDurationMinutes <= dueAt`，恰好结束允许，无截止不限制。仅标题、备注或状态变化且有效时间值相同的历史越界排期仍可保存（包括自动 DONE），空时长与显式 30 等价；不批量改写旧数据。V23 移除历史排期顺序 CHECK，本轮由领域服务校验，不新增数据库约束或迁移。Task 换位仍以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本及换位结果；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 新建、改绑和移科时的 `sourceId` 校验同用户活动 Source；所属学科与来源均未改变的普通更新可保留已软删来源。Source 删除通过 shared 事件级联软删除 Relation，知识块保留。
 
 `POST /api/tasks/schedule-insertions` 在不含 `targetTaskId` 时将 Task 插入普通时间槽并顺延发生区间冲突的后续 Task，保留未冲突的空档；含目标 ID 时按本文件最新主体规则严格放置。该请求携带被拖 Task 的 `baseVersion`、目标 `scheduledAt` 及当天 `windowStartAt`/`windowLastStartAt`（08:00 和 22:30 对应的 UTC instants）；服务端按窗口起点向上取整到半小时槽。完成 Task 固定、取消 Task 不占用时间，若需要移动完成 Task 或顺延超出窗口则整体拒绝；被拖任务及全部实际顺延任务均检查新结束时间不晚于各自截止时间；任一超限整组拒绝，校验先于所有任务保存，版本及时间保持原值。所有实际改时的 Task 各增加一次版本并发布普通 `UPDATE` 变更，HTTP 200 响应只返回实际变化的 Task；原子写入失败不保留任何部分变更。REST 路由保留；PC Timeline 使用 `SCHEDULE_INSERTION` inbound Sync 命令承载同一请求语义，离线与在线均经单条幂等 mutation 调用该事务。`SCHEDULE_SWAP` 同样承载双方 Task ID 和 baseVersion，通过现有原子换位事务执行。排期命令类型仅用于 inbound mutations，change log 仍记录每个 Task 的普通 `UPDATE`。
 
 排期命令 payload 的源 Task ID 与源 `baseVersion` 必须分别等于外层 mutation 的 `resourceId` 和 `baseVersion`；换位命令还必须提供目标 Task ID 与 `targetBaseVersion`。缺少必填目标字段或源身份不一致时抛出 `VALIDATION_FAILED`，由 Sync 将该 mutation 的拒绝结果幂等保存，拒绝快照也按外层源 ID 读取。客户端以完整当前 Task 数组原子结算，可接收服务端返回的额外顺延 Task，并在整批检查未解决命令、版本回退和墓碑后合并。
+
+Sync 批次逐条执行。领域写入遇到预期业务异常时结束并回滚原事务，再复用 CREATE 主键碰撞的独立回执事务，按原用户、设备、mutation ID 和指纹结算。版本冲突记录 `CONFLICT`，其他预期业务失败记录 `REJECTED`，同批继续。未预期的基础设施或内部错误继续传播。[同步契约](../contracts/API.md#阶段-3-离线同步已实现契约)
 
 顺延链只移动起始时间位于目标日窗口内的 Task；前一日开始、区间延续到当天的 Task 不会被改期，若与插入结果冲突则整笔拒绝。
 
@@ -854,7 +935,7 @@ Task 2A 统一数据库锁协议：所有涉及 Subject-owned 资源的写事务
 
 阶段 1 绑定身份 token TTL 和 JWT secret 配置；local/test 缺少 secret 时生成进程内随机密钥，prod profile 缺少 `AURALIS_JWT_SECRET` 必须启动失败。提交文件不得包含真实密码、JWT secret、BYOK key、AI key 或 refresh token。
 
-后续生产配置必须从环境变量读取数据库、MinIO、JWT、BYOK、DeepSeek、SiliconFlow 和 CORS 值；生产 profile 对缺失的关键配置执行 fail-fast。所有业务 Repository 必须在查询中带当前 userId；日志过滤 Authorization、Cookie、refresh token、BYOK key、完整 prompt 和模型回复。
+生产配置从环境变量读取数据库、MinIO、JWT、BYOK 加密、平台生成、平台 Embedding 和 CORS 值；生产 profile 对缺失的关键启动配置执行 fail-fast。所有业务 Repository 必须在查询中带当前 userId；日志过滤 Authorization、Cookie、refresh token、BYOK key、完整 prompt 和模型回复。
 
 AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用户消息保留、Provider 选择、成功/中断/失败与耗时，`AI_EMBEDDING_*`/`AI_RETRIEVAL_SUCCESS` 区分向量化和检索阶段，`AI_PROVIDER_HTTP_*` 记录上游 host/path、解析地址数量、请求/响应字节数、SSE 行数、状态和耗时，`AI_SETTINGS_RESOLVED` 标记 BYOK 或 `ENV_DEFAULT` 来源。除 Overview 失败事件外，其它既有失败事件额外记录原始异常类名、单行截断后的 message 及 root cause 类名/message；Authorization、API key、token、secret、password 和 URL query 会脱敏。OpenAI-compatible completion 在响应 envelope 缺少有效文本 content 时记录 `AI_PROVIDER_RESPONSE_INVALID`，仅包含 provider、清洗且最多 64 字符的 modelId、choiceCount、allowlisted finishReason、content/reasoning 类型和字符数、usage/token 数量，不包含 prompt、响应正文、endpoint URL 或 key。资产直传和 Source 登记分别输出 `ASSET_UPLOAD_INTENT_*`、`ASSET_UPLOAD_COMPLETE_*`、`ASSET_UPLOAD_READY`、`ASSET_UPLOAD_REJECTED` 和 `SOURCE_CREATED`，可区分凭证申请、浏览器直传后的 HEAD 校验和登记阶段。未预期 HTTP 异常固定输出 `UNEXPECTED_API_ERROR`，携带 trace ID、HTTP 方法、无 query 的路径、异常类型和堆栈，响应仍保持脱敏的 Problem Details。日志只输出 UUID、host、模型、数量、长度、状态和稳定错误码，不输出完整 prompt、模型回复、文件内容或响应体；Overview 失败事件的 allowlist 见下文。
 
@@ -870,6 +951,7 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 ## 阶段 3/4 实际 HTTP 表面
 
 - Sync：`POST /api/sync/push`、`GET /api/sync/pull`、`GET /api/sync/snapshot`；SyncService 校验活动设备，SyncMutationProcessor 在独立事务内原子完成幂等占位、领域命令、change log 和最终结果，并提供高水位不回退的不透明 cursor；snapshot 包含必要墓碑。`SyncRetentionService` 按配置定时清理 30 天外日志/幂等记录，保留高水位并记录清理与 reset 指标；scheduled 入口自身建立事务，避免同 Bean 调用绕过 `purgeExpired()` 的事务代理。
+- 五类 Sync 资源的领域创建在发布事件或排入 Source 摄入任务前执行 `persist` 和 `flush`。已加载的同 ID 实体或数据库主键碰撞使本条创建事务回滚，SyncService 在事务外捕获该冲突，复用幂等逻辑在新事务内记录 `REJECTED/MUTATION_REJECTED` 后继续批次。隔离 PostgreSQL 验证覆盖同账号和跨账号碰撞、版本与墓碑保留、Source 摄入任务和并发首个写入。
 - Review：`GET /api/reviews/states`、`/api/reviews/lifecycle/*`；ReviewLifecycleService 独立保存学习完成、复习初选/核对/纠正与生命周期历史。
 - Stats：`GET /api/stats/overview`、`GET /api/stats/weekly`；StatsQueryRepository 对所有聚合带 userId 条件，weekly 固定连续 7 天。JDBC repository 边界会把查询参数中的 `Instant` 统一转换为 `java.sql.Timestamp`，避免 PostgreSQL 驱动无法推断时间参数类型；SQL、HTTP response 和数据库 schema 不变。`StatsQueryRepositoryTests` 覆盖 `dueReviews`、`completedReviews`、`reviewed`、`studySeconds`、`completedTasks`、`createdKnowledge` 六个查询的全部时间参数，并断言 UUID 与参数顺序保留；`StatsServiceTests` 覆盖 overview/weekly 与完成时间统计。
 - Realtime：`POST /api/realtime/ticket` 使用 Bearer access JWT 签发短期 ticket；`/ws/events` 仅由 `RealtimeWebSocketConfiguration` 的 WebSocket handler 承接，握手从 query `ticket` 或 `X-Realtime-Ticket` 消费 ticket，不设 MVC `GET` 回退路由。RealtimeService 对 ticket 做 hash-only 存储、一次性消费和设备归属校验，提交后事件监听器向用户级订阅者转发 Sync/Review 通知。
@@ -924,12 +1006,14 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 
 ## 阶段 5 AI/RAG 后端实现边界
 
-- `ai` 模块通过 `AiProviderPort`、`EmbeddingProviderPort` 与统一的 `ProviderHttpClient` 适配 OpenAI-compatible/DeepSeek 聊天和 SiliconFlow embedding；Provider URL 使用 HTTPS 精确 allowlist、DNS 公网地址过滤与固定地址连接（混合解析结果只连接公网地址，全部为私网时拒绝），重定向关闭，并受超时/响应体上限约束。Provider client 将连接超时（`AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS`，默认 3000ms）与 response/read 超时分离；普通非流式 completion、stream、embedding 使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS`（默认 10000ms），Overview 通过 `AiProviderPort` 的显式 timeout overload 使用 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`（默认 120000ms，配置边界 60000–120000ms）。固定地址 TLS Socket 只使用连接超时。`SocketTimeoutException` 映射为 `MODEL_TIMEOUT`，由 API 返回 HTTP 504；其它 IOException 仍映射 `MODEL_UNAVAILABLE`/503。运行时凭据解析遵循“当前用户有效 BYOK → 服务端 env 默认 Provider”顺序；默认聊天 Provider 由 `AURALIS_AI_DEFAULT_PROVIDER` 决定，默认凭据使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY` 及对应模型/Base URL 配置。BYOK 使用 AES-GCM，日志、异常、DTO 与凭据 `toString()` 不回显 key。
+- `ai` 模块通过 `AiProviderPort`、`EmbeddingProviderPort` 与统一的 `ProviderHttpClient` 调用生成和向量端点。聊天流式端口为 `streamInto(request, credential, cancellation, sink)`，DeepSeek 复用 OpenAI 兼容的流式实现。Provider URL 执行公网 HTTPS 校验、DNS 公网地址过滤与固定地址连接（混合解析结果只连接公网地址，全部为私网时拒绝），重定向关闭，并受超时和响应体上限约束。命名的个人 Provider 继续使用 host allowlist。连接超时由 `AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS` 设置（默认 3000ms），普通非流式 completion、stream、embedding 的 response/read 超时由 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 设置（默认 10000ms），Overview 非流式生成使用 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`（默认 120000ms，配置边界 60000–120000ms）。`SocketTimeoutException` 映射为 `MODEL_TIMEOUT`/504，其它 IOException 映射为 `MODEL_UNAVAILABLE`/503。
+- Chat 和 Overview 新请求以 `OPENAI_COMPATIBLE` 解析生成设置，优先使用当前用户该槽位的 BYOK，其次使用 `AURALIS_AI_GENERATION_*`。三种个人槽位均可保存、测试连接和查询模型。入库与检索从 `AURALIS_AI_EMBEDDING_*` 解析平台凭据，向 `/embeddings` 发送 `model`、`input`，沿用 1024 维有限数值校验。各平台端点的 Base URL、模型和 Key 缺省为空，缺项时相应的平台调用返回 `MODEL_UNAVAILABLE`。BYOK 使用 AES-GCM，日志、异常、DTO 与凭据 `toString()` 不回显 key。V45 将历史 `embedding_model` 列改为可空，现行凭据实体省略该列并保留既有值。
+- Overview 依据实际凭据来源解析模型容量。平台凭据读取生成配置中的上下文窗口和最大输出 token。BYOK 凭据读取 `auralis.ai.overview-model-capacities` 中精确匹配 Provider、端点与模型的条目。容量缺失时在派发前返回 `MODEL_UNAVAILABLE`。实际 `max_tokens` 继续受阶段需求、上下文余量和 Overview 预算约束。
 - ingestion 由 Source 提交后事件触发，`IngestionJobService` 做用户/Source 归属和活动任务去重，并通过数据库锁定的 claim-next 分配租约；条件化 `IngestionWorkerScheduler` 自动轮询，lease 过期可恢复，失败按最大次数回到 PENDING，耗尽后进入 FAILED。`IngestionWorker` 负责解析、固定大小重叠切块、1024 维 embedding 和 chunk 替换。
-- `RetrievalService` 只查询当前 userId 的活动 generation chunks。PostgreSQL 通过 `PgVectorRetrievalRepository` 执行带 user/source/active/deleted 过滤的 pgvector cosine SQL，由 HNSW 索引支持 top-k；非 PostgreSQL 环境使用活动 chunk 的 JSON cosine fallback。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
-- Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、会话和 USER 消息的 `clientRequestId` 幂等回放及安全错误/断流状态持久化。流式请求先在短事务中锁定会话并保留唯一 USER 消息，Provider I/O 不持有数据库事务；assistant 以 `reply_to_message_id` 精确关联该 USER 消息。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
-- Chat conversations 持久化 `LEGACY`/`UNBOUND`/`BOUND` 读取范围状态。首次成功 admission 在保存 USER/run 的同一事务内绑定策略和 ID；同会话后续 omitted context 继承绑定，冲突以 HTTP 409 `CHAT_SCOPE_CONFLICT` 拒绝且不保存 USER/run。绑定不含 selectionText 或 revision，每 attempt 重新捕获和校验当前 owner/subject/READY/revision。V44 将既有会话显式保留为 LEGACY；旧会话仅查看，用户需新建会话。详情/list response 返回 scope state 与 bound scope，PC 接入待用户完成。
-- Chat scope/tool 修复的目标测试、OpenAPI export 及 artifact 19/19、`-DskipTests package` 均通过。正确配置 task-owned PostgreSQL 的 backend full 为 1096 tests / 3 failures / 0 errors / 2 skipped；失败是 AiFeaturePolicyParity stage=0、TaskColor 旧断言 V42 vs V44、OverviewIdentity fixture V41 vs V44。未更改这些无关断言。唯一只读 reviewer B0/I0/O0；未部署、未重启、未调用真实 Provider，未执行 GUI/客户端验收。证据与日志见 `D:/Temp/auralis-chat-screenshot-failure-20261105/implementation.md`。
+- `ChatReadTools.search` 通过 `RetrievalService.retrieveWithinSources` 查询每次 attempt 捕获的 READY 来源。模型可传入最多 100 个唯一来源 ID 缩窄查询。空快照返回空 evidence，非空查询由 Gateway 生成一次 query embedding。PostgreSQL 的 `PgVectorRetrievalRepository` 以绑定的来源 UUID 数组和 owner、活动 chunk、未删除且 READY 的 Source 条件执行一次向量 TopK。H2 对同范围内的活动 chunk 执行 JSON cosine 并合并排序。检索前后校验 owner、subject、READY 和 revision。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
+- `ConversationService` 负责 owner-scoped 创建、列表、详情和版本化软删除。`ChatRuntimePersistenceService` 在短事务内准入 turn、锁定会话并写入唯一 USER 消息及 run。Provider I/O 在事务外执行。回复由现行 attempt 路径持久化并关联 USER 消息，公开 SSE 按协议 1 投影。原直接追加消息、旧 Prompt 组装和旧阅读会话清理路径已移除，历史会话与消息按协议支持状态读取。
+- Chat conversations 持久化 `LEGACY`/`UNBOUND`/`BOUND` 读取范围状态。首次成功 admission 在保存 USER/run 的同一事务内绑定策略和 ID；同会话后续 omitted context 继承绑定，冲突以 HTTP 409 `CHAT_SCOPE_CONFLICT` 拒绝且不保存 USER/run。绑定不含 selectionText 或 revision，每 attempt 重新捕获和校验当前 owner/subject/READY/revision。V44 将既有会话显式保留为 LEGACY；旧会话仅查看，用户需新建会话。详情和列表返回范围状态及已绑定范围。PC 已接入继承与切换交互，每轮引用由命令顶层 `selectionText` 传递。
+- 2026-11-05 范围绑定批次的目标测试、OpenAPI export 及 artifact 19/19、`-DskipTests package` 均通过。正确配置 task-owned PostgreSQL 的 backend full 为 1096 tests / 3 failures / 0 errors / 2 skipped；失败是 AiFeaturePolicyParity stage=0、TaskColor 旧断言 V42 vs V44、OverviewIdentity fixture V41 vs V44。未更改这些无关断言。唯一只读 reviewer B0/I0/O0；未部署、未重启、未调用真实 Provider，未执行 GUI/客户端验收。证据与日志见 `D:/Temp/auralis-chat-screenshot-failure-20261105/implementation.md`。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
 - `POST /api/ai/source-overviews` 与 `POST /api/ai/subject-overviews` 是不创建持久作业的结构化生成边界，默认 JSON、可选 SSE。前者经 `SourceService` owner/active/READY 校验后只通过 active 定向查询读取 ai 模块中的 chunks，并按完整 `auralis.ai.max-prompt-chars` prompt 长度分批归纳、分层归并且每次调用前精确检查上限；后者 owner-check Subject，并验证每个输入 Source 归属该 Subject、无重复且按 mode 有可用 part。服务端为模型分配短 alias，固定 SYSTEM 与独立 USER 数据隔离，map/reduce 全程只保留 alias；输出仅接受一个 JSON object/JSON fenced block，经数量、长度、alias 和 mode nullability 校验，当前无可信页码/block alias 因而强制 `locator=null`，仅最终响应回映射真实 Source UUID。Provider 输出解析/结构错误统一为 `502 MODEL_PROVIDER_ERROR`，客户端输入仍为 `400 VALIDATION_FAILED`。它们重用 `AiSettingsService`、`AiProviderRegistry` 和 `AiProviderPort.complete`，不创建 Conversation/Message，不写 sync/change log，也不新增数据库 schema、表或 Flyway migration；PC 先保存本地派生结果，再通过独立 Overview results GET/PUT 持久化完整成功产物；生成接口本身仍保持无状态。Overview 请求可携带 `X-Overview-Request-Id`；服务端将其规范为 UUID（非法或含敏感内容时生成新 UUID），为每次 user/source/revision 生成 `generationId`，并按 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 输出阶段；失败日志只记录规范化 `requestId`、关联字段、阶段、allowlisted `errorCode`（DomainException 或六类已知 AiUsageLimitException code；未知码为 `OVERVIEW_GENERATION_FAILED` 回退）及 exception/cause 类型，不记录原始 exception/cause 文本或 throwable stack。
 - `CACHE_RETURN` 仅是 alias 映射/返回前的诊断阶段，不读取或持久化结果；`X-Overview-Request-Id` 也只做日志关联。Provider 成功但 HTTP 响应未到达 PC 时，客户端尚未执行独立 Overview results PUT，之后手动重新生成会创建新 request/generation ID、再次调用 Provider 并单独结算用量。当前 Controller 同时提供默认 JSON 和明确 opt-in 的 SSE；对不支持的 Accept，`HttpMediaTypeNotAcceptableException` 返回 HTTP 406 `NOT_ACCEPTABLE` Problem Details，不归类成 500。

@@ -64,16 +64,7 @@ public final class OverviewJobDtos {
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant createdAt,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant updatedAt,
             @JsonInclude(JsonInclude.Include.ALWAYS)
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true, types = {"string", "null"}) Instant completedAt,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) long publicationBaseVersion) {
-        public JobView(UUID jobId, Status status, int version, Scope scope, UUID sourceId, UUID subjectId,
-                       List<UUID> sourceIds, Mode mode, Stage stage, int verifiedNodes, Integer totalNodes,
-                       Instant deadlineAt, String safeErrorCode, Instant createdAt, Instant updatedAt,
-                       Instant completedAt) {
-            this(jobId, status, version, scope, sourceId, subjectId, sourceIds, mode, stage, verifiedNodes,
-                    totalNodes, deadlineAt, safeErrorCode, createdAt, updatedAt, completedAt, 0);
-        }
-    }
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true, types = {"string", "null"}) Instant completedAt) { }
 
     public record JobList(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<JobView> jobs,

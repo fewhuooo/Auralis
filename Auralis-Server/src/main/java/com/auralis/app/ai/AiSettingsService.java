@@ -25,7 +25,6 @@ import java.util.UUID;
 public class AiSettingsService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AiSettingsService.class);
-    private static final String SERVER_MANAGED_EMBEDDING_MARKER = "server-managed";
 
     private final AiCredentialRepository credentialRepository;
     private final AiKeyCipher keyCipher;
@@ -58,7 +57,7 @@ public class AiSettingsService {
                 .findByUserIdAndProvider(userId, command.provider())
                 .orElseGet(() -> new AiCredentialEntity(
                         UUID.randomUUID(), userId, command.provider(),
-                        baseUrl, command.chatModel(), SERVER_MANAGED_EMBEDDING_MARKER, null));
+                        baseUrl, command.chatModel(), null));
         String encryptedApiKey = entity.getEncryptedApiKey();
         if (command.apiKey() != null && !command.apiKey().isBlank()) {
             encryptedApiKey = keyCipher.encrypt(command.apiKey().trim());
@@ -83,17 +82,14 @@ public class AiSettingsService {
                     AiCredentialSource.USER_SUPPLIED);
         }
 
-        AuralisProperties.Provider defaults = defaultProvider(provider);
-        if (defaults == null || defaults.apiKey() == null || defaults.apiKey().isBlank()) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
-        }
+        AuralisProperties.GenerationEndpoint generation = requirePlatformGeneration(provider);
 
         LOGGER.info("AI_SETTINGS_RESOLVED userId={} provider={} source=ENV_DEFAULT endpointHost={} chatModel={}",
-                userId, provider, safeHost(defaults.baseUrl()), defaults.chatModel());
+                userId, provider, safeHost(generation.baseUrl()), generation.model());
         return new ResolvedSettings(
                 provider,
-                defaults.chatModel(),
-                new AiCredential(defaults.baseUrl(), defaults.apiKey()), AiCredentialSource.PLATFORM);
+                generation.model(),
+                new AiCredential(generation.baseUrl(), generation.apiKey()), AiCredentialSource.PLATFORM);
     }
 
     /**
@@ -108,11 +104,8 @@ public class AiSettingsService {
             return metadataForSavedCredential(entity);
         }
 
-        AuralisProperties.Provider defaults = defaultProvider(provider);
-        if (defaults == null || blank(defaults.apiKey())) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
-        }
-        return metadataForDefault(provider, defaults);
+        AuralisProperties.GenerationEndpoint generation = requirePlatformGeneration(provider);
+        return metadataForPlatformGeneration(generation);
     }
 
     @Transactional(readOnly = true)
@@ -126,14 +119,11 @@ public class AiSettingsService {
                     AiCredentialSource.USER_SUPPLIED);
             return new JobResolvedSettings(metadata, resolved);
         }
-        AuralisProperties.Provider defaults = defaultProvider(provider);
-        if (defaults == null || blank(defaults.apiKey())) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
-        }
-        JobProfileMetadata metadata = metadataForDefault(provider, defaults);
+        AuralisProperties.GenerationEndpoint generation = requirePlatformGeneration(provider);
+        JobProfileMetadata metadata = metadataForPlatformGeneration(generation);
         requireExpectedFingerprint(expectedFingerprint, metadata);
-        ResolvedSettings resolved = new ResolvedSettings(provider, defaults.chatModel(),
-                new AiCredential(defaults.baseUrl(), defaults.apiKey()), AiCredentialSource.PLATFORM);
+        ResolvedSettings resolved = new ResolvedSettings(provider, generation.model(),
+                new AiCredential(generation.baseUrl(), generation.apiKey()), AiCredentialSource.PLATFORM);
         return new JobResolvedSettings(metadata, resolved);
     }
 
@@ -142,7 +132,7 @@ public class AiSettingsService {
         return metadata.provider() == settings.provider()
                 && metadata.source() == settings.source()
                 && Objects.equals(metadata.chatModel(), Objects.toString(settings.chatModel(), ""))
-                && Objects.equals(metadata.normalizedEndpoint(), normalizeEndpoint(settings.credential().baseUrl()));
+                && Objects.equals(normalizeEndpoint(metadata.endpoint()), normalizeEndpoint(settings.credential().baseUrl()));
     }
 
     @Transactional(readOnly = true)
@@ -159,27 +149,28 @@ public class AiSettingsService {
 
     @Transactional(readOnly = true)
     public ResolvedSettings resolveServerManagedEmbedding() {
-        AuralisProperties.Provider defaults = defaultProvider(AiProviderType.SILICONFLOW);
-        if (defaults == null || blank(defaults.baseUrl()) || blank(defaults.apiKey())
-                || blank(defaults.embeddingModel())) {
+        AuralisProperties.ModelEndpoint embedding = properties.ai().embedding();
+        if (embedding == null || !configured(embedding.baseUrl(), embedding.model(), embedding.apiKey())) {
             throw new DomainException("MODEL_UNAVAILABLE", "Server-managed embedding provider is not configured");
         }
         LOGGER.info("AI_EMBEDDING_SETTINGS_RESOLVED provider={} source=SERVER_DEFAULT endpointHost={} model={}",
-                AiProviderType.SILICONFLOW, safeHost(defaults.baseUrl()), defaults.embeddingModel());
-        return new ResolvedSettings(AiProviderType.SILICONFLOW, null,
-                new AiCredential(defaults.baseUrl(), defaults.apiKey(), defaults.embeddingModel()),
+                AiProviderType.OPENAI_COMPATIBLE, safeHost(embedding.baseUrl()), embedding.model());
+        return new ResolvedSettings(AiProviderType.OPENAI_COMPATIBLE, null,
+                new AiCredential(embedding.baseUrl(), embedding.apiKey(), embedding.model()),
                 AiCredentialSource.PLATFORM);
     }
 
-    private AuralisProperties.Provider defaultProvider(AiProviderType provider) {
-        if (properties == null || properties.ai() == null || properties.ai().defaults() == null) {
-            return null;
+    private AuralisProperties.GenerationEndpoint requirePlatformGeneration(AiProviderType provider) {
+        AuralisProperties.GenerationEndpoint generation = provider == AiProviderType.OPENAI_COMPATIBLE
+                ? properties.ai().generation() : null;
+        if (generation == null || !configured(generation.baseUrl(), generation.model(), generation.apiKey())) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
         }
-        return switch (provider) {
-            case DEEPSEEK -> properties.ai().defaults().deepseek();
-            case OPENAI_COMPATIBLE -> properties.ai().defaults().openaiCompatible();
-            case SILICONFLOW -> properties.ai().defaults().siliconflow();
-        };
+        return generation;
+    }
+
+    private boolean configured(String baseUrl, String model, String apiKey) {
+        return !blank(baseUrl) && !blank(model) && !blank(apiKey);
     }
 
     private java.net.URI validate(AiSettingsCommand command) {
@@ -231,16 +222,16 @@ public class AiSettingsService {
         String endpoint = normalizeEndpoint(entity.getBaseUrl());
         String model = Objects.toString(entity.getChatModel(), "");
         AiCredentialSource source = AiCredentialSource.USER_SUPPLIED;
-        return new JobProfileMetadata(entity.getProvider(), model, endpoint, source,
+        return new JobProfileMetadata(entity.getProvider(), model, entity.getBaseUrl(), source,
                 fingerprint(entity.getProvider(), model, endpoint, source, sha256(entity.getEncryptedApiKey())));
     }
 
-    private JobProfileMetadata metadataForDefault(AiProviderType provider, AuralisProperties.Provider defaults) {
-        String endpoint = normalizeEndpoint(defaults.baseUrl());
-        String model = Objects.toString(defaults.chatModel(), "");
+    private JobProfileMetadata metadataForPlatformGeneration(AuralisProperties.GenerationEndpoint generation) {
+        String endpoint = normalizeEndpoint(generation.baseUrl());
+        AiProviderType provider = AiProviderType.OPENAI_COMPATIBLE;
         AiCredentialSource source = AiCredentialSource.PLATFORM;
-        return new JobProfileMetadata(provider, model, endpoint, source,
-                fingerprint(provider, model, endpoint, source, sha256(defaults.apiKey())));
+        return new JobProfileMetadata(provider, generation.model(), generation.baseUrl(), source,
+                fingerprint(provider, generation.model(), endpoint, source, sha256(generation.apiKey())));
     }
 
     private void requireExpectedFingerprint(String expectedFingerprint, JobProfileMetadata metadata) {
@@ -271,7 +262,7 @@ public class AiSettingsService {
         }
     }
 
-    public record JobProfileMetadata(AiProviderType provider, String chatModel, String normalizedEndpoint,
+    public record JobProfileMetadata(AiProviderType provider, String chatModel, String endpoint,
                                      AiCredentialSource source, String fingerprint) { }
 
     public record JobResolvedSettings(JobProfileMetadata metadata, ResolvedSettings settings) { }

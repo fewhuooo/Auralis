@@ -1,4 +1,4 @@
-import request, { refreshAccessToken } from './request.ts'
+import request, { captureAuthSession, refreshChatAccessToken, SyncScopeChangedError } from './request.ts'
 import { streamWithAccessTokenRefresh } from './authenticatedSse.ts'
 import { getClientRuntimeConfig } from '../config/runtime.ts'
 import { useAuthStore } from '../store/useAuthStore.ts'
@@ -35,7 +35,6 @@ export interface ReadingContextDto {
   currentSourceId?: string | null
   retrievalMode: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
   sourceIds?: string[]
-  selectionText?: string
 }
 
 export interface Protocol1MessageCommand {
@@ -170,20 +169,18 @@ export function deleteConversation(conversationId: string, baseVersion: number):
  * Streams AI message events via Server-Sent Events (SSE).
  * Yields only valid protocolVersion 1 envelopes.
  */
-async function* streamChatRequest(
+function streamChatRequest(
   path: string,
   data: Protocol1MessageCommand | { requestId: string },
   signal?: AbortSignal
 ): AsyncIterable<ChatStreamEnvelope> {
   const runtime = getClientRuntimeConfig()
-  let token: string | null = null
-  try {
-    const authStore = useAuthStore()
-    token = authStore?.token ?? null
-  } catch {
-    // pinia may not be active in non-vue contexts
+  const authStore = useAuthStore()
+  const session = captureAuthSession(authStore)
+  const token = authStore.token
+  const assertSessionCurrent = () => {
+    if (!session.isCurrent()) throw new SyncScopeChangedError()
   }
-
   const url = `${runtime.apiBaseUrl.replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`
 
   const open = (accessToken: string | null) => {
@@ -203,14 +200,18 @@ async function* streamChatRequest(
     )
   }
 
-  for await (const event of streamWithAccessTokenRefresh(token, open, refreshAccessToken, signal)) {
-    if (event.event && event.data && typeof event.data === 'object') {
-      const envelope = event.data as ChatStreamEnvelope
-      if (envelope.protocolVersion === 1 && envelope.event === event.event) {
-        yield envelope
+  return (async function* () {
+    const stream = streamWithAccessTokenRefresh(token, open, () => refreshChatAccessToken(session), signal, assertSessionCurrent)
+    for await (const event of stream) {
+      assertSessionCurrent()
+      if (event.event && event.data && typeof event.data === 'object') {
+        const envelope = event.data as ChatStreamEnvelope
+        if (envelope.protocolVersion === 1 && envelope.event === event.event) {
+          yield envelope
+        }
       }
     }
-  }
+  })()
 }
 
 export function streamAiMessage(data: Protocol1MessageCommand, signal?: AbortSignal): AsyncIterable<ChatStreamEnvelope> {

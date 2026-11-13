@@ -25,7 +25,6 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -179,8 +178,7 @@ class OverviewSseDeadlineSocketIntegrationTests {
     }
 
     private OverviewDtos.OverviewResponse response() {
-        return new OverviewDtos.OverviewResponse(1, "A test overview", null,
-                new OverviewDtos.OverviewSummary("Summary", List.of("point"), List.of("step")));
+        return new OverviewDtos.OverviewResponse(2, "A test overview", "## Test outline", "Summary");
     }
 
     @TestConfiguration(proxyBeanMethods = false)
