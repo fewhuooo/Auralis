@@ -4,7 +4,8 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
-import { computed, reactive, ref } from 'vue'
+import { computed, effectScope, nextTick, reactive, ref, watch } from 'vue'
+import { shouldAdoptGeneratedOutline } from '../src/services/outlineIdentity.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
 const read = file => readFile(path.join(root, file), 'utf8')
@@ -182,15 +183,129 @@ test('Markdown composer isolates drafts on subject switch and refuses blank edit
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(workspace, /v-model="subjectOutlineDraft"/)
   assert.match(workspace, /subjectOutlineDraft\.value = ''/)
-  assert.match(workspace, /subjectOutlineDraft\.value\.trim\(\)/)
-  assert.match(workspace, /if \(subjectId\.value !== targetSubjectId\) return/)
+  assert.match(workspace, /const submittedDraft = subjectOutlineDraft\.value\s+const outlineMarkdown = submittedDraft\.trim\(\)/)
+  assert.match(workspace, /subjectId\.value === targetSubjectId && subjectOutlineSave\.value === save/)
 })
 
-test('late file results preserve unsaved Markdown drafts', async () => {
-  const workspace = await read('src/views/SubjectWorkspace/index.vue')
-  assert.match(workspace, /shouldAdoptGeneratedOutline\(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges\(item\.id\)\)/)
-  assert.match(workspace, /if \(!force && subjectOutlineHasUnsavedChanges\(\)\) return/)
-  assert.doesNotMatch(workspace, /outlineProvenanceInput/)
+async function createOutlineComposer(repository) {
+  const source = await read('src/views/SubjectWorkspace/index.vue')
+  const { descriptor } = parse(source)
+  const script = descriptor.scriptSetup.content
+  const between = (start, end) => script.slice(script.indexOf(start), script.indexOf(end))
+  const subjectId = ref('subject')
+  const activeSourceFiles = ref([{ id: 'file', subjectId: 'subject', name: 'File', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }])
+  const subjectOverviewRecord = ref(null)
+  const fileOverviewRecords = ref({})
+  const messages = []
+  const context = {
+    ref, computed, watch, subjectId, activeSourceFiles, subjectOverviewRecord, fileOverviewRecords,
+    isSubjectOverviewStale: ref(false),
+    authStore: reactive({ user: { id: repository.userId }, serverDeviceId: repository.serverDeviceId, loginGeneration: Symbol() }),
+    fileOverviewManualErrors: ref({}), resolvingGenerationConflicts: ref(new Set()), generatingFileIds: ref(new Set()),
+    ElMessage: { success: message => messages.push(message), warning: message => messages.push(message) },
+    overviewRepository: repository, shouldAdoptGeneratedOutline, hasUsableOverview: () => true,
+  }
+  const execute = new Function(...Object.keys(context), ts.transpileModule(`
+    const isComponentMounted = true
+    ${between('const getFileOverviewRecord', 'const summaryTarget')}
+    ${between('let overviewCacheRefreshGeneration', 'const ensureOverviewRuntime')}
+    ${between('const isOutlineComposer', 'const handleOutlineAi')}
+    return {
+      isOutlineComposer, subjectOutlineDraft, subjectOutlineHasUnsavedChanges, saveCurrentOutline,
+      fileOverviewItems, fileOutlineDrafts, fileOutlineDraftHasUnsavedChanges, saveFileOutline,
+      initFileOutlineDraft, refreshOverviewCache,
+    }
+  `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
+  const scope = effectScope()
+  return {
+    ...context, messages, stop: () => scope.stop(),
+    ...scope.run(() => execute(...Object.values(context))),
+  }
+}
+
+test('the file composer preserves an older draft without using it as the current revision outline', async (t) => {
+  const previous = { sourceId: 'file', ingestionRevision: 'rev-1', title: 'Old title', outlineMarkdown: 'Old outline', summaryMarkdown: 'Old summary' }
+  const writes = []
+  const ui = await createOutlineComposer({
+    userId: 'user', serverDeviceId: 'device',
+    async getFileOverview(_id, revision) { return revision === 'rev-1' ? previous : null },
+    async getLatestFileOverview() { return previous },
+    async getSubjectOverview() { return null },
+    async saveFileOverviewPart(input) {
+      assert.equal(input.isStillCurrent(), true)
+      writes.push(input)
+      return { sourceId: input.sourceId, ingestionRevision: input.ingestionRevision, outlineGeneratedAt: 'saved', ...input.response }
+    },
+  })
+  t.after(ui.stop)
+  await ui.refreshOverviewCache()
+  ui.isOutlineComposer.value = true
+  await nextTick()
+  assert.equal(ui.fileOutlineDrafts.value.file, 'Old outline')
+  ui.fileOutlineDrafts.value.file = 'Unsaved outline'
+
+  ui.activeSourceFiles.value = [{ ...ui.activeSourceFiles.value[0], ingestionRevision: 'rev-2' }]
+  assert.equal(ui.fileOverviewItems.value[0].outlineMarkdown, null)
+  await nextTick()
+  await ui.refreshOverviewCache()
+  assert.equal(ui.fileOverviewItems.value[0].status, 'PENDING')
+  assert.equal(ui.fileOutlineDrafts.value.file, 'Unsaved outline')
+  await ui.saveFileOutline('file')
+  assert.equal(writes.length, 0)
+
+  ui.initFileOutlineDraft(ui.activeSourceFiles.value[0], true)
+  assert.equal(ui.fileOutlineDrafts.value.file, '')
+  ui.fileOutlineDrafts.value.file = 'New outline'
+  await ui.saveFileOutline('file')
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].ingestionRevision, 'rev-2')
+  assert.equal(writes[0].response.title, 'File')
+  assert.equal(writes[0].response.summaryMarkdown, null)
+})
+
+test('an early cache update and save acknowledgement preserve later input in both composers', async (t) => {
+  const records = {
+    file: { sourceId: 'file', ingestionRevision: 'rev-1', outlineMarkdown: 'Original' },
+    subject: { subjectId: 'subject', outlineMarkdown: 'Original' },
+  }
+  const pending = { file: Promise.withResolvers(), subject: Promise.withResolvers() }
+  const writes = {}
+  const ui = await createOutlineComposer({
+    userId: 'user', serverDeviceId: 'device',
+    async getFileOverview() { return records.file },
+    async getSubjectOverview() { return records.subject },
+    async saveFileOverviewPart(input) { writes.file = input; return pending.file.promise },
+    async saveSubjectOverviewPart(input) { writes.subject = input; return pending.subject.promise },
+  })
+  t.after(ui.stop)
+  await ui.refreshOverviewCache()
+  ui.isOutlineComposer.value = true
+  await nextTick()
+
+  ui.fileOutlineDrafts.value.file = '  Submitted  '
+  ui.subjectOutlineDraft.value = '  Submitted  '
+  const saving = Promise.all([ui.saveFileOutline('file'), ui.saveCurrentOutline()])
+  ui.fileOutlineDrafts.value.file = 'Original'
+  ui.subjectOutlineDraft.value = 'Original'
+
+  for (const key of ['file', 'subject']) {
+    assert.equal(writes[key].response.outlineMarkdown, 'Submitted')
+    records[key] = { ...records[key], ...writes[key].response, outlineGeneratedAt: 'saved' }
+  }
+  await ui.refreshOverviewCache()
+  await nextTick()
+  assert.equal(ui.fileOutlineDrafts.value.file, 'Original')
+  assert.equal(ui.subjectOutlineDraft.value, 'Original')
+  for (const key of ['file', 'subject']) pending[key].resolve(records[key])
+  await saving
+  assert.equal(ui.fileOutlineDraftHasUnsavedChanges('file'), true)
+  assert.equal(ui.subjectOutlineHasUnsavedChanges(), true)
+
+  for (const key of ['file', 'subject']) records[key] = { ...records[key], outlineMarkdown: 'Generated', outlineGeneratedAt: 'generated' }
+  await ui.refreshOverviewCache()
+  await nextTick()
+  assert.equal(ui.fileOutlineDrafts.value.file, 'Original')
+  assert.equal(ui.subjectOutlineDraft.value, 'Original')
 })
 
 test('subject switch synchronously clears selectedFileId and chat guards against cross-subject file IDs', async () => {
@@ -276,11 +391,13 @@ test('workspace mounts and switches local files and knowledge blocks while Chat 
   }
   for (const name of [
     'selectionPosition', 'selectedAiSourceIds', 'aiReferenceScope',
-    'subjectOutlineDraft', 'subjectOutlineBaseline', 'fileOutlineDrafts', 'fileDraftBaselines', 'fileDraftOutlineGeneratedAt',
+    'subjectOutlineDraft', 'subjectOutlineBaseline', 'subjectOutlineSave', 'fileOutlineDrafts', 'fileDraftBaselines', 'fileDraftRevisions',
+    'fileDraftOutlineGeneratedAt',
     'chapterDraft', 'chapterDrafts', 'fileSectionDrafts', 'fileChapterDrafts', 'selectedSummaryScope',
     'subjectOverviewRecord', 'fileOverviewRecords', 'isSubjectOverviewStale', 'subjectOverviewManualError',
     'fileOverviewManualErrors', 'subjectOverviewGenerating', 'generatingFileIds',
   ]) context[name] = ref(null)
+  context.fileOutlineSaves = ref(new Map())
   const execute = new Function(...Object.keys(context), ts.transpileModule(`
     let mount, switchSubject
     const onMounted = callback => { mount = callback }

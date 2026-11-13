@@ -183,20 +183,33 @@
                   <button
                     type="button"
                     class="composer-capsule-btn is-primary"
-                    :disabled="savingFileIds.has(file.id)"
+                    :disabled="fileOutlineSaves.has(file.id) || !file.ingestionRevision || fileDraftRevisions[file.id] !== file.ingestionRevision"
                     :title="`保存《${file.name}》大纲修改`"
                     @click="saveFileOutline(file.id)"
                   >
-                    <IconCheck v-if="!savingFileIds.has(file.id)" :size="10.5" :stroke-width="2.2" />
+                    <IconCheck v-if="!fileOutlineSaves.has(file.id)" :size="10.5" :stroke-width="2.2" />
                     <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
-                    <span>{{ savingFileIds.has(file.id) ? '保存中' : '保存' }}</span>
+                    <span>{{ fileOutlineSaves.has(file.id) ? '保存中' : '保存' }}</span>
                   </button>
                 </span>
               </header>
               <div v-show="!fileCardCollapsed[file.id]" class="subject-overview__body">
+                <div v-if="!file.ingestionRevision" class="composer-file-empty-box" role="status">
+                  <span class="empty-hint">文件版本尚未确认，暂不能编辑或保存大纲。</span>
+                </div>
+                <div v-else-if="fileDraftRevisions[file.id] !== file.ingestionRevision && fileOutlineDraftHasUnsavedChanges(file.id)" class="composer-file-empty-box">
+                  <span class="empty-hint" role="status">文件版本已变化。旧版本的未保存草稿仍可复制。</span>
+                  <button
+                    type="button"
+                    class="composer-capsule-btn"
+                    :disabled="fileOutlineSaves.has(file.id)"
+                    @click="initFileOutlineDraft(file, true)"
+                  >放弃草稿并切换版本</button>
+                </div>
                 <textarea
                   v-model="fileOutlineDrafts[file.id]"
                   class="composer-markdown-editor"
+                  :readonly="!file.ingestionRevision || fileDraftRevisions[file.id] !== file.ingestionRevision"
                   :placeholder="`编辑《${file.name}》大纲 Markdown...`"
                   rows="5"
                 />
@@ -1204,8 +1217,14 @@ const subjectOverviewError = computed(() => subjectOverviewManualError.value
     ? overviewFailureMessage(subjectOverviewRecord.value.errorCode)
     : null))
 
-const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.value.map((file) => {
+const getFileOverviewRecord = (file: SourceFileModel, allowUnknownRevision = false) => {
   const record = fileOverviewRecords.value[file.id]
+  const revision = file.ingestionRevision
+  return (revision ? record?.ingestionRevision === revision : allowUnknownRevision) ? record : undefined
+}
+
+const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.value.map((file) => {
+  const record = getFileOverviewRecord(file, true)
   return {
     id: file.id,
     name: file.name,
@@ -1234,14 +1253,14 @@ const summaryTarget = computed(() => {
     error: subjectOverviewError.value,
   }
   const file = activeSourceFiles.value.find(item => item.id === scope.id)
-  const record = fileOverviewRecords.value[scope.id] ?? null
+  const record = file ? getFileOverviewRecord(file, true) ?? null : null
   return file ? {
     kind: 'file' as const,
     id: scope.id,
     title: file.name,
     record,
     isGenerating: generatingFileIds.value.has(scope.id),
-    isStale: Boolean(record && file.ingestionRevision && record.ingestionRevision !== file.ingestionRevision),
+    isStale: false,
     error: fileOverviewManualErrors.value[scope.id]
       || (record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null),
   } : null
@@ -1401,24 +1420,23 @@ const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: Ma
 let overviewCacheRefreshGeneration = 0
 const refreshOverviewCache = async () => {
   const repository = overviewRepository
-  if (!repository) return false
+  if (!repository || repository.userId !== authStore.user?.id
+    || repository.serverDeviceId !== authStore.serverDeviceId) return false
   const generation = ++overviewCacheRefreshGeneration
   const requestedSubjectId = subjectId.value
   const requestedFiles = activeSourceFiles.value
   const loginGeneration = authStore.loginGeneration
-  const records = await Promise.all(requestedFiles.map(async (file) => {
-    if (file.ingestionRevision) {
-      const record = await repository.getFileOverview(file.id, file.ingestionRevision)
-      if (record) return record
-    }
-    return repository.getLatestFileOverview(file.id)
-  }))
+  const records = await Promise.all(requestedFiles.map(file => file.ingestionRevision
+    ? repository.getFileOverview(file.id, file.ingestionRevision)
+    : repository.getLatestFileOverview(file.id)))
   const subjectOverview = await repository.getSubjectOverview(requestedSubjectId)
-  const usable = records.filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
+  const usable = records.filter((record, index): record is FileOverviewRecord =>
+    Boolean(record && record.ingestionRevision === requestedFiles[index]?.ingestionRevision && hasUsableOverview(record)))
   const isStale = Boolean(subjectOverview?.inputFingerprint
     && await computeSubjectInputFingerprint(usable) !== subjectOverview.inputFingerprint)
   if (!isComponentMounted || generation !== overviewCacheRefreshGeneration || subjectId.value !== requestedSubjectId
-    || activeSourceFiles.value !== requestedFiles || authStore.loginGeneration !== loginGeneration) return false
+    || activeSourceFiles.value !== requestedFiles || authStore.loginGeneration !== loginGeneration
+    || overviewRepository !== repository) return false
   fileOverviewRecords.value = Object.fromEntries(records.filter((record): record is FileOverviewRecord => record !== null).map(record => [record.sourceId, record]))
   subjectOverviewRecord.value = subjectOverview
   isSubjectOverviewStale.value = isStale
@@ -1446,9 +1464,13 @@ const ensureOverviewRuntime = async () => {
       sourceApi: useSourceApi,
       isFileGenerationEligible: async () => false,
       getLocalFileGenerationRevision: async () => null,
-      listLocalFileOverviews: async () => {
+      listLocalFileOverviews: async (requestedSubjectId) => {
         await refreshOverviewCache()
-        return Object.values(fileOverviewRecords.value)
+        if (subjectId.value !== requestedSubjectId) return []
+        return activeSourceFiles.value.flatMap(file => {
+          const record = getFileOverviewRecord(file)
+          return record ? [record] : []
+        })
       },
     })
   }
@@ -1680,37 +1702,41 @@ const handlePreviewPageChange = (page: number, total: number) => {
 const isOutlineComposer = ref(false)
 const subjectOutlineDraft = ref('')
 const subjectOutlineBaseline = ref('')
-const isSavingSubjectOutline = ref(false)
+const subjectOutlineSave = ref<symbol | null>(null)
+const isSavingSubjectOutline = computed(() => subjectOutlineSave.value !== null)
 
 const fileOutlineDrafts = ref<Record<string, string>>({})
 const fileDraftBaselines = ref<Record<string, string>>({})
+const fileDraftRevisions = ref<Record<string, string>>({})
 const fileDraftOutlineGeneratedAt = ref<Record<string, string | null>>({})
-const savingFileIds = ref<Set<string>>(new Set())
+const fileOutlineSaves = ref(new Map<string, symbol>())
 const fileCardCollapsed = ref<Record<string, boolean>>({})
 
 const subjectOutlineHasUnsavedChanges = (): boolean => subjectOutlineDraft.value !== subjectOutlineBaseline.value
 const fileOutlineDraftHasUnsavedChanges = (fileId: string): boolean =>
   (fileOutlineDrafts.value[fileId] ?? '') !== (fileDraftBaselines.value[fileId] ?? '')
 
-const initFileOutlineDraft = (fileId: string, force = false) => {
-  const record = fileOverviewRecords.value[fileId]
-  const currentDraft = fileOutlineDrafts.value[fileId]
-  if (!force && currentDraft !== undefined && fileOutlineDraftHasUnsavedChanges(fileId)) return
+const initFileOutlineDraft = (file: SourceFileModel, discardDraft = false) => {
+  const fileId = file.id
+  if (!file.ingestionRevision || fileOutlineSaves.value.has(fileId)) return
+  if (!discardDraft && fileOutlineDraftHasUnsavedChanges(fileId)) return
 
+  const record = getFileOverviewRecord(file)
   const remote = record?.outlineMarkdown ?? ''
   fileOutlineDrafts.value[fileId] = remote
   fileDraftBaselines.value[fileId] = remote
+  fileDraftRevisions.value[fileId] = file.ingestionRevision
   fileDraftOutlineGeneratedAt.value[fileId] = record?.outlineGeneratedAt ?? null
 }
 
-const initAllFileOutlineDrafts = (force = false) => {
+const initAllFileOutlineDrafts = () => {
   for (const file of activeSourceFiles.value) {
-    initFileOutlineDraft(file.id, force)
+    initFileOutlineDraft(file)
   }
 }
 
-const initSubjectOutlineFromExisting = (force = false) => {
-  if (!force && subjectOutlineHasUnsavedChanges()) return
+const initSubjectOutlineFromExisting = () => {
+  if (isSavingSubjectOutline.value || subjectOutlineHasUnsavedChanges()) return
   const remote = subjectOverviewRecord.value?.outlineMarkdown ?? ''
   subjectOutlineDraft.value = remote
   subjectOutlineBaseline.value = remote
@@ -1729,22 +1755,18 @@ watch(() => subjectOverviewRecord.value?.outlineMarkdown, (newOutline) => {
   }
 })
 
-watch(fileOverviewItems, (items) => {
-  if (isOutlineComposer.value) {
-    for (const item of items) {
-      const generatedAt = fileOverviewRecords.value[item.id]?.outlineGeneratedAt ?? null
-      const previousGeneratedAt = fileDraftOutlineGeneratedAt.value[item.id]
-      if (previousGeneratedAt !== undefined && previousGeneratedAt !== generatedAt) {
-        if (shouldAdoptGeneratedOutline(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges(item.id))) {
-          initFileOutlineDraft(item.id, true)
-        } else {
-          fileDraftOutlineGeneratedAt.value[item.id] = generatedAt
-        }
-      } else if (fileOutlineDrafts.value[item.id] === undefined && item.outlineMarkdown) {
-        if (!fileOutlineDraftHasUnsavedChanges(item.id)) initFileOutlineDraft(item.id, true)
-      } else {
-        fileDraftOutlineGeneratedAt.value[item.id] = generatedAt
-      }
+watch([fileOverviewItems, fileOutlineSaves], () => {
+  if (!isOutlineComposer.value) return
+  for (const file of activeSourceFiles.value) {
+    if (fileOutlineSaves.value.has(file.id)) continue
+    if (fileDraftRevisions.value[file.id] !== file.ingestionRevision) {
+      initFileOutlineDraft(file)
+      continue
+    }
+    const generatedAt = getFileOverviewRecord(file)?.outlineGeneratedAt ?? null
+    const previousGeneratedAt = fileDraftOutlineGeneratedAt.value[file.id]
+    if (shouldAdoptGeneratedOutline(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges(file.id))) {
+      initFileOutlineDraft(file)
     }
   }
 }, { deep: true, immediate: true })
@@ -1759,17 +1781,24 @@ watch(activeSourceFiles, async () => {
 }, { deep: true })
 
 const saveCurrentOutline = async () => {
-  if (!subjectId.value || !overviewRepository || isSavingSubjectOutline.value) return
-  const outlineMarkdown = subjectOutlineDraft.value.trim()
+  const repository = overviewRepository
+  const targetSubjectId = subjectId.value
+  if (!targetSubjectId || !repository || isSavingSubjectOutline.value
+    || repository.userId !== authStore.user?.id || repository.serverDeviceId !== authStore.serverDeviceId) return
+  const submittedDraft = subjectOutlineDraft.value
+  const outlineMarkdown = submittedDraft.trim()
   if (!outlineMarkdown) {
     ElMessage.warning('大纲内容不能为空')
     return
   }
-  const targetSubjectId = subjectId.value
-  isSavingSubjectOutline.value = true
+  const loginGeneration = authStore.loginGeneration
+  const save = Symbol()
+  subjectOutlineSave.value = save
+  const isStillCurrent = () => isComponentMounted && authStore.loginGeneration === loginGeneration
+    && overviewRepository === repository && subjectId.value === targetSubjectId && subjectOutlineSave.value === save
   try {
     const fingerprint = subjectOverviewRecord.value?.inputFingerprint || 'manual-edit'
-    const record = await overviewRepository.saveSubjectOverviewPart({
+    const record = await repository.saveSubjectOverviewPart({
       subjectId: targetSubjectId,
       mode: 'OUTLINE',
       response: {
@@ -1779,35 +1808,48 @@ const saveCurrentOutline = async () => {
         summaryMarkdown: subjectOverviewRecord.value?.summaryMarkdown || null,
       },
       inputFingerprint: fingerprint,
+      isStillCurrent,
     })
-    if (subjectId.value !== targetSubjectId) return
+    if (!isStillCurrent()) return
+    subjectOutlineBaseline.value = submittedDraft
     subjectOverviewRecord.value = record
-    subjectOutlineBaseline.value = subjectOutlineDraft.value
     ElMessage.success('大纲已成功保存')
   } catch (err) {
-    if (subjectId.value !== targetSubjectId) return
+    if (!isStillCurrent()) return
     console.error('保存大纲失败:', err)
     ElMessage.error('保存大纲失败，请重试')
   } finally {
-    isSavingSubjectOutline.value = false
+    if (subjectOutlineSave.value === save) subjectOutlineSave.value = null
   }
 }
 
 const saveFileOutline = async (fileId: string) => {
-  const file = activeSourceFiles.value.find(f => f.id === fileId)
-  if (!file || !overviewRepository) return
+  const repository = overviewRepository
+  const targetSubjectId = subjectId.value
+  const file = activeSourceFiles.value.find(f => f.id === fileId && f.subjectId === targetSubjectId)
+  const revision = file?.ingestionRevision
+  if (!file || !revision || fileDraftRevisions.value[fileId] !== revision
+    || !repository || fileOutlineSaves.value.has(fileId)
+    || repository.userId !== authStore.user?.id || repository.serverDeviceId !== authStore.serverDeviceId) return
 
-  const outlineMarkdown = (fileOutlineDrafts.value[fileId] ?? '').trim()
+  const submittedDraft = fileOutlineDrafts.value[fileId] ?? ''
+  const outlineMarkdown = submittedDraft.trim()
   if (!outlineMarkdown) {
     ElMessage.warning('大纲内容不能为空')
     return
   }
-  savingFileIds.value.add(fileId)
+  const loginGeneration = authStore.loginGeneration
+  const save = Symbol()
+  fileOutlineSaves.value.set(fileId, save)
+  const isStillCurrent = () => isComponentMounted && authStore.loginGeneration === loginGeneration
+    && overviewRepository === repository && subjectId.value === targetSubjectId
+    && fileOutlineSaves.value.get(fileId) === save
+    && activeSourceFiles.value.some(file => file.id === fileId && file.subjectId === targetSubjectId
+      && file.ingestionRevision === revision)
   try {
-    const existingRecord = fileOverviewRecords.value[fileId]
-    const revision = file.ingestionRevision || existingRecord?.ingestionRevision || 'manual-edit'
+    const existingRecord = getFileOverviewRecord(file)
 
-    const updatedRecord = await overviewRepository.saveFileOverviewPart({
+    const updatedRecord = await repository.saveFileOverviewPart({
       sourceId: fileId,
       ingestionRevision: revision,
       mode: 'OUTLINE',
@@ -1817,21 +1859,23 @@ const saveFileOutline = async (fileId: string) => {
         outlineMarkdown,
         summaryMarkdown: existingRecord?.summaryMarkdown || null,
       },
+      isStillCurrent,
     })
+    if (!isStillCurrent()) return
 
+    fileDraftBaselines.value[fileId] = submittedDraft
+    fileDraftOutlineGeneratedAt.value[fileId] = updatedRecord.outlineGeneratedAt
     fileOverviewRecords.value = {
       ...fileOverviewRecords.value,
       [fileId]: updatedRecord,
     }
-    fileDraftBaselines.value[fileId] = fileOutlineDrafts.value[fileId] ?? ''
-    fileDraftOutlineGeneratedAt.value[fileId] = updatedRecord.outlineGeneratedAt
-
     ElMessage.success(`《${file.name}》大纲已保存`)
   } catch (err) {
+    if (!isStillCurrent()) return
     console.error(`保存文件大纲失败 [${fileId}]:`, err)
     ElMessage.error(`保存《${file.name}》大纲失败，请重试`)
   } finally {
-    savingFileIds.value.delete(fileId)
+    if (fileOutlineSaves.value.get(fileId) === save) fileOutlineSaves.value.delete(fileId)
   }
 }
 
@@ -3026,7 +3070,8 @@ onMounted(async () => {
       async (detail) => {
         if (!isComponentMounted) return
         const isCurrentSubject = detail.scopeType === 'SUBJECT' && detail.scopeId === subjectId.value
-        const isCurrentFile = detail.scopeType === 'FILE' && activeSourceFiles.value.some(file => file.id === detail.scopeId)
+        const isCurrentFile = detail.scopeType === 'FILE' && activeSourceFiles.value.some(file => file.id === detail.scopeId
+          && (detail.removed || !file.ingestionRevision || !detail.revisionKey || file.ingestionRevision === detail.revisionKey))
         if (isCurrentSubject || isCurrentFile) {
           if (!detail.removed) {
             if (detail.scopeType === 'FILE') setFileGenerating(detail.scopeId, false)
@@ -3083,6 +3128,8 @@ onMounted(async () => {
 watch(subjectId, async (newId) => {
   const switchGen = ++currentSubjectSwitchGen
   stopAllManualOverviews()
+  subjectOutlineSave.value = null
+  fileOutlineSaves.value.clear()
   if (newId) {
     // 立即同步清空草稿、大纲与选中文件状态，杜绝任何异步间隙内新学科携带旧文件或旧草稿
     selectedFileId.value = null
@@ -3096,6 +3143,7 @@ watch(subjectId, async (newId) => {
     subjectOutlineBaseline.value = ''
     fileOutlineDrafts.value = {}
     fileDraftBaselines.value = {}
+    fileDraftRevisions.value = {}
     fileDraftOutlineGeneratedAt.value = {}
     selectedSummaryScope.value = null
     subjectOverviewRecord.value = null
@@ -3119,10 +3167,6 @@ watch(subjectId, async (newId) => {
 
     await blockStore.fetchBlocks(undefined, newId)
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
-    if (isOutlineComposer.value) {
-      initSubjectOutlineFromExisting(true)
-      initAllFileOutlineDrafts(true)
-    }
     if (route.query.view === 'review' || route.query.view === 'stats') {
       centerView.value = route.query.view
       tier2Open.value = false

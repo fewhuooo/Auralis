@@ -347,13 +347,16 @@ test('SubjectWorkspace falls back after local deletion while Overview refresh is
       { success: message => messages.push(message), error: message => messages.push(message) },
       (...args) => { unwatch.push(watch(...args)) },
       {
+        userId: 'user',
+        serverDeviceId: 'device',
         async getLatestFileOverview() { return null },
         async getSubjectOverview() {
           refreshing.resolve()
           return refresh.promise
         },
       },
-      ref({}), ref(null), ref(false), { loginGeneration: 1 }, ref(false), ref(true),
+      ref({}), ref(null), ref(false), { user: { id: 'user' }, serverDeviceId: 'device', loginGeneration: 1 },
+      ref(false), ref(true),
     )
     try {
       const deleting = handleDeleteFile(first)

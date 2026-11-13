@@ -755,6 +755,107 @@ test('source revision changes stale old intents without replaying their content'
   assert.equal(oldIntent?.state, 'STALE')
 })
 
+test('File and Subject writes beyond the first 500 scopes reconcile against every current source', async () => {
+  const repository = new OverviewRepository('tail-user', 'tail-device', { storage: createMemoryStorage() })
+  const tail = source('file-tail', 'rev-current')
+  const subjectIds = [...Array.from({ length: 500 }, (_, index) => `subject-${index}`), tail.subjectId]
+  const first = source('file-first')
+  const sources = [first, ...subjectIds.slice(0, 499).map(id => source(`file-${id}`, 'rev-1', id)), tail]
+  await repository.saveFileOverviewPart({ sourceId: tail.id, ingestionRevision: 'rev-old', mode: 'ALL',
+    response: { schemaVersion: 2, title: 'Previous revision', outlineMarkdown, summaryMarkdown } })
+  await repository.saveFileOverviewPart({ sourceId: tail.id, ingestionRevision: tail.ingestionRevision, mode: 'ALL',
+    response: { schemaVersion: 2, title: 'Current local file', outlineMarkdown, summaryMarkdown } })
+  const currentIntent = (await repository.listOverviewOutbox()).find(item => item.revisionKey === tail.ingestionRevision)
+  const inputFingerprint = await computeSubjectInputFingerprint([first, tail].map(item => ({
+    sourceId: item.id, ingestionRevision: item.ingestionRevision, outlineMarkdown, summaryMarkdown,
+  })))
+  await repository.saveSubjectOverviewPart({ subjectId: tail.subjectId, mode: 'ALL', inputFingerprint,
+    response: { schemaVersion: 2, title: 'Complete subject', outlineMarkdown, summaryMarkdown } })
+  const api = fakeApi({
+    getFile: async (sourceId, revision) => sourceId === tail.id ? null : fileView(sourceId, revision),
+    putFile: async (sourceId, command) => fileView(sourceId, command.ingestionRevision,
+      { title: command.result.title, version: 4, outlineVersion: 5, summaryVersion: 6 }),
+  })
+
+  await service(repository, api).reconcile({ ...options(sources, subjectIds), getCurrentSources: async () => sources })
+
+  assert.equal(api.calls.putFiles.length, 1)
+  const [fileId, fileWrite] = api.calls.putFiles[0]
+  assert.equal(fileId, tail.id)
+  assert.equal(fileWrite.ingestionRevision, tail.ingestionRevision)
+  assert.equal(fileWrite.clientWriteId, currentIntent.clientWriteId)
+  assert.equal((await repository.getFileOverview(tail.id, tail.ingestionRevision))?.syncStatus, 'SYNCED')
+  const outbox = await repository.listOverviewOutbox()
+  assert.deepEqual(outbox.map(item => [item.revisionKey, item.state, item.errorCode]), [
+    ['rev-old', 'STALE', 'OVERVIEW_SOURCE_STALE'],
+  ])
+
+  assert.deepEqual(api.calls.getSubjectStatuses.map(([ids]) => ids.length), [100, 100, 100, 100, 100, 1])
+  assert.equal(api.calls.putSubjects.length, 1)
+  const [subjectId, subjectWrite] = api.calls.putSubjects[0]
+  assert.equal(subjectId, tail.subjectId)
+  assert.deepEqual(subjectWrite.sourceManifest, [
+    { sourceId: first.id, ingestionRevision: first.ingestionRevision, outlineVersion: 2, summaryVersion: 3 },
+    { sourceId: tail.id, ingestionRevision: tail.ingestionRevision, outlineVersion: 5, summaryVersion: 6 },
+  ])
+})
+
+test('a new File revision and its Subject candidate survive reconciliation using the previous snapshot', async () => {
+  const repository = new OverviewRepository('tail-revision-user', 'tail-revision-device', { storage: createMemoryStorage() })
+  const tail = source('file-tail', 'rev-1')
+  const fillers = Array.from({ length: 500 }, (_, index) => source(`file-${index}`, 'rev-1', 'subject-other'))
+  const firstGetStarted = deferred()
+  const releaseFirstGet = deferred()
+  let currentTail = tail
+  const liveChecks = {
+    isSourceCurrent: expected => expected.id !== tail.id || expected.ingestionRevision === currentTail.ingestionRevision,
+    getCurrentSources: async () => [...fillers, currentTail],
+  }
+  const api = fakeApi({
+    getFile: async sourceId => {
+      if (sourceId === fillers[0].id) {
+        firstGetStarted.resolve()
+        await releaseFirstGet.promise
+      }
+      return null
+    },
+  })
+  const sync = service(repository, api)
+  const firstPass = sync.reconcile({ ...options([...fillers, tail], [tail.subjectId]), ...liveChecks })
+  await Promise.race([firstGetStarted.promise, firstPass])
+  try {
+    currentTail = source(tail.id, 'rev-2')
+    const newFile = await repository.saveFileOverviewPart({ sourceId: tail.id, ingestionRevision: currentTail.ingestionRevision, mode: 'ALL',
+      response: { schemaVersion: 2, title: 'New revision', outlineMarkdown, summaryMarkdown } })
+    const inputFingerprint = await computeSubjectInputFingerprint([newFile])
+    const generationBaseline = await repository.captureGenerationBaseline('SUBJECT', tail.subjectId, 'subject-v1', 'OUTLINE')
+    await repository.saveSubjectOverviewPart({ subjectId: tail.subjectId, mode: 'OUTLINE', inputFingerprint,
+      response: { schemaVersion: 2, title: 'Local edit', outlineMarkdown: '## Local outline', summaryMarkdown: null } })
+    await repository.saveSubjectOverviewPart({ subjectId: tail.subjectId, mode: 'OUTLINE', inputFingerprint, generationBaseline,
+      response: { schemaVersion: 2, title: 'Generated candidate', outlineMarkdown, summaryMarkdown: null } })
+  } finally {
+    releaseFirstGet.resolve()
+  }
+  const intent = (await repository.listOverviewOutbox()).find(item => item.scopeType === 'FILE')
+  await firstPass
+  assert.deepEqual((await repository.listOverviewOutbox()).map(item => [item.scopeType, item.state]), [
+    ['FILE', 'PREPARED'], ['SUBJECT', 'CONFLICT'],
+  ])
+
+  await sync.reconcile({ ...options([tail], [tail.subjectId]), ...liveChecks })
+  assert.deepEqual((await repository.listOverviewOutbox()).map(item => [item.scopeType, item.state]), [
+    ['FILE', 'PREPARED'], ['SUBJECT', 'CONFLICT'],
+  ])
+  assert.equal(api.calls.putFiles.length, 0)
+
+  await sync.reconcile({ ...options([currentTail], [tail.subjectId]), ...liveChecks })
+  assert.equal(api.calls.putFiles.length, 1)
+  assert.equal(api.calls.putFiles[0][1].clientWriteId, intent.clientWriteId)
+  assert.equal(api.calls.putFiles[0][1].ingestionRevision, currentTail.ingestionRevision)
+  assert.equal((await repository.getFileOverview(tail.id, currentTail.ingestionRevision))?.syncStatus, 'SYNCED')
+  assert.equal((await repository.listOverviewOutbox())[0]?.errorCode, 'OVERVIEW_GENERATION_EDIT_CONFLICT')
+})
+
 test('Source revision or deletion during an awaited write fences the late response', async () => {
   for (const mutation of ['revision', 'delete']) {
     const repository = new OverviewRepository(`late-${mutation}-user`, `late-${mutation}-device`, { storage: createMemoryStorage() })

@@ -51,7 +51,8 @@ const lazyOverviewResultsApi: OverviewResultsApi = {
   },
 }
 
-const MAX_SYNC_SOURCES = 500
+const FILE_SYNC_BATCH_SIZE = 500
+const SUBJECT_STATUS_BATCH_SIZE = 100
 const inFlightByScope = new Map<string, Promise<void>>()
 const inFlightConflictResolutions = new Map<string, Promise<void>>()
 
@@ -271,60 +272,70 @@ export class OverviewResultsSyncService {
 
   private async reconcileInternal(options: OverviewSyncOptions): Promise<void> {
     if (!options.isCurrent()) return
-    const sources = options.sources.filter(source => source.type === 'FILE' && source.ingestionStatus === 'READY'
-      && !source.deletedAt && source.ingestionRevision).slice(0, MAX_SYNC_SOURCES)
-    const readyById = new Map(sources.map(source => [source.id, source]))
+    const isReadyFile = (source: OverviewSyncSource) => source.type === 'FILE' && source.ingestionStatus === 'READY'
+      && !source.deletedAt && source.ingestionRevision
+    const sources = options.sources.filter(isReadyFile)
+    const readyRevisions = new Map(sources.map(source => [source.id, source.ingestionRevision]))
+    const activeSubjectIds = new Set(options.subjectIds)
     const outbox = await this.repository.listOverviewOutbox()
+    let currentReadyRevisions: typeof readyRevisions | undefined
     for (const intent of outbox) {
+      if (!options.isCurrent()) return
       if (intent.state === 'STALE') continue
       if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
         await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
         continue
       }
       if (intent.scopeType === 'FILE') {
-        const current = readyById.get(intent.scopeId)
-        if (!current || current.ingestionRevision !== intent.revisionKey) {
-          await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SOURCE_STALE')
+        if (readyRevisions.get(intent.scopeId) === intent.revisionKey) continue
+        if (!currentReadyRevisions && options.getCurrentSources) {
+          const currentSources = await options.getCurrentSources()
+          if (!options.isCurrent()) return
+          currentReadyRevisions = new Map(currentSources.filter(isReadyFile).map(source => [source.id, source.ingestionRevision]))
         }
-      } else if (!options.subjectIds.includes(intent.scopeId)) {
+        if (currentReadyRevisions?.get(intent.scopeId) === intent.revisionKey) continue
+        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SOURCE_STALE')
+      } else if (!activeSubjectIds.has(intent.scopeId)) {
         await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SUBJECT_STALE')
       }
     }
 
-    // File versions must settle before a Subject manifest can be formed.
-    await mapBounded(sources,4,async source => {
-      if (options.isCurrent()) await this.syncFile(source,options)
-    })
+    // Process every File batch before using its results in a Subject manifest.
+    for (let i = 0; i < sources.length; i += FILE_SYNC_BATCH_SIZE) {
+      if (!options.isCurrent()) return
+      await mapBounded(sources.slice(i, i + FILE_SYNC_BATCH_SIZE), 4, async source => {
+        if (options.isCurrent()) await this.syncFile(source, options)
+      })
+    }
+    if (!options.isCurrent()) return
     const generationConflicts = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
       && item.state === 'CONFLICT' && isOverviewGenerationEditConflict(item))
     for (const intent of generationConflicts) {
-      if (!options.subjectIds.includes(intent.scopeId)) continue
+      if (!options.isCurrent()) return
+      if (!activeSubjectIds.has(intent.scopeId)) continue
+      const subjectSources = sources.filter(source => source.subjectId === intent.scopeId)
       const files: FileOverviewRecord[] = []
-      for (const source of sources.filter(item => item.type === 'FILE' && item.subjectId === intent.scopeId && item.ingestionStatus === 'READY' && !item.deletedAt)) {
+      for (const source of subjectSources) {
         if (!source.ingestionRevision) continue
         const record = await this.repository.getFileOverview(source.id,source.ingestionRevision)
         if (record && (Boolean(record.outlineMarkdown?.trim()) || Boolean(record.summaryMarkdown?.trim()))) files.push(record)
       }
       const fingerprint = files.length ? await computeSubjectInputFingerprint(files) : null
+      if (!options.isCurrent()) return
       if (!fingerprint || !intent.inputFingerprint || fingerprint !== intent.inputFingerprint) {
+        if (!await this.subjectInputsCurrent(intent.scopeId, subjectSources, options)) continue
+        if (!options.isCurrent()) return
         await this.repository.setOverviewIntentState(intent.clientWriteId,'STALE','OVERVIEW_GENERATION_INPUT_STALE')
       }
     }
-    const subjectIds = [...new Set([...options.subjectIds, ...outbox.filter(item => item.scopeType === 'SUBJECT' && item.state !== 'STALE'
-      && !isOverviewGenerationEditConflict(item)).map(item => item.scopeId)])]
-      .filter(id => options.subjectIds.includes(id)).slice(0, MAX_SYNC_SOURCES)
-
+    const subjectIds = [...activeSubjectIds]
     const statusMap = new Map<string, OverviewSubjectStatusItem>()
-    if (subjectIds.length > 0) {
-      const BATCH_SIZE = 100
-      for (let i = 0; i < subjectIds.length; i += BATCH_SIZE) {
-        if (!options.isCurrent()) return
-        const batchIds = subjectIds.slice(i, i + BATCH_SIZE)
-        const response = await this.api.getSubjectStatuses(batchIds)
-        if (!options.isCurrent()) return
-        for (const item of response.items) {
-          statusMap.set(item.subjectId, item)
-        }
+    for (let i = 0; i < subjectIds.length; i += SUBJECT_STATUS_BATCH_SIZE) {
+      if (!options.isCurrent()) return
+      const response = await this.api.getSubjectStatuses(subjectIds.slice(i, i + SUBJECT_STATUS_BATCH_SIZE))
+      if (!options.isCurrent()) return
+      for (const item of response.items) {
+        statusMap.set(item.subjectId, item)
       }
     }
 
@@ -345,7 +356,6 @@ export class OverviewResultsSyncService {
     if (!revision) return
     const fenceToken = this.repository.captureScopeFenceToken('FILE',source.id)
     if (!this.repository.isScopeFenceTokenCurrent(fenceToken)) return
-    await this.repository.markFileRevisionStale(source.id, revision)
     let intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'FILE'
       && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     const stored = await this.repository.getFileOverview(source.id, revision)
