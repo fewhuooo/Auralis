@@ -745,6 +745,10 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 - 当前没有通用用户偏好同步 API 或完整数据备份/导出 API；PC 偏好保存在端侧，JSON 导出由 PC 汇总有限资源。
 - Suggestions 保持确定性模板基线，真实 LLM、RAG 引用与质量评估仍按 `P1-Phase5-Suggestion-Quality` 开放登记。
 
+### 2026-11-13 复习历史读取
+
+`GET /api/reviews/lifecycle/history` 在只读 `REPEATABLE_READ` 事务中读取知识块、状态、命令和有效结果。另一事务提交核对时，本次响应仍以同一数据库快照构成。
+
 ### 2026-11-11 复习原回执重放与元信息修订
 
 - `ReviewLifecycleService` 在当前 owner KB 与正文 hash 校验后查找冻结回执。若没有原回执，继续用请求中的 KB 版本及状态版本校验新写入。标题等同学科、同正文更新保留当前核对、纠正和重学的因果目标，后继请求绑定当前 KB 版本。

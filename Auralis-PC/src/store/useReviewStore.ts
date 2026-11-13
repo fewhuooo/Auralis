@@ -984,9 +984,12 @@ export const useReviewStore = defineStore('review', () => {
       latestRound.fuzzyQueueIds = latestRound.fuzzyQueueIds.filter((id) => id !== blockId)
       latestRound.phase = 'GROUP_COMPLETE'
     }
-    if (latest && (latest.knowledgeBlockVersion !== expectedKbVersion
-      || latest.contentHash !== pending.request.contentHash)) {
+    if (latest && latest.contentHash !== pending.request.contentHash) {
       clearObsoleteRoundCard('知识块正文已变化；旧正文操作已清除，请结束本轮并同步材料后重新开始。')
+      return
+    }
+    if (latest && latest.knowledgeBlockVersion !== expectedKbVersion) {
+      clearObsoleteRoundCard('知识块版本已变化；旧操作已结束，请同步材料后重新开始。')
       return
     }
     if (pending.action === 'REVIEW_SELECTED' && latest?.pendingReviewId === pending.reviewId) {
@@ -1034,10 +1037,6 @@ export const useReviewStore = defineStore('review', () => {
     }
     if (!latest) {
       clearObsoleteRoundCard('知识块已移出当前学科；旧操作已结束，请结束本轮后重新开始。')
-      return
-    }
-    if (latest.knowledgeBlockVersion !== expectedKbVersion) {
-      clearObsoleteRoundCard('知识块版本已变化；旧操作已结束，请同步材料后重新开始。')
       return
     }
     if (pending.staleResponseDetected) {

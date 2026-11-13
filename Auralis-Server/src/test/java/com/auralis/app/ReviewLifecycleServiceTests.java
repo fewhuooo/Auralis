@@ -11,10 +11,15 @@ import com.auralis.app.review.ReviewLifecycleDtos;
 import com.auralis.app.review.ReviewLifecycleRating;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
+import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,6 +34,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -39,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = AuralisApplication.class)
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
+@Import(ReviewLifecycleServiceTests.HistoryReadGate.class)
 class ReviewLifecycleServiceTests {
     private static final String PASSWORD = "correct horse battery staple";
 
@@ -48,6 +57,7 @@ class ReviewLifecycleServiceTests {
     @Autowired private SubjectService subjectService;
     @Autowired private KnowledgeBlockService knowledgeBlockService;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private HistoryReadGate historyReadGate;
 
     @Test
     void firstLearningCompletionStartsThreeDayScheduleWithoutStableProgress() throws Exception {
@@ -611,6 +621,65 @@ class ReviewLifecycleServiceTests {
     }
 
     @Test
+    void historyKeepsStateAndResultInOneSnapshotDuringConfirmation() throws Exception {
+        Owner owner = owner("review-history-snapshot");
+        UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand(
+                "History snapshot subject", null, null, "001")).id();
+        var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
+                subjectId, null, "History snapshot block", "body", null));
+        Instant learnedAt = Instant.now().minus(4, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        JsonNode learned = postCommand(owner, "/api/reviews/lifecycle/learning-completions", offline(
+                learningCompletion(UUID.randomUUID(), block.id(), block.version(), 0, block.content(), null),
+                learnedAt, true));
+        UUID reviewId = UUID.randomUUID();
+        Instant selectedAt = learnedAt.plus(3, ChronoUnit.DAYS);
+        JsonNode selected = postCommand(owner, "/api/reviews/lifecycle/attempts", offline(attempt(
+                UUID.randomUUID(), block.id(), block.version(), learned.path("state").path("version").longValue(),
+                block.content(), reviewId, ReviewLifecycleRating.GOOD), selectedAt, false));
+
+        CountDownLatch stateRead = new CountDownLatch(1);
+        CountDownLatch confirmationCommitted = new CountDownLatch(1);
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            var historyDuringConfirmation = executor.submit(() -> {
+                historyReadGate.beforeHistoryCommands.set(() -> {
+                    stateRead.countDown();
+                    try {
+                        assertThat(confirmationCommitted.await(10, TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(exception);
+                    }
+                });
+                try {
+                    return history(owner, block.id());
+                } finally {
+                    historyReadGate.beforeHistoryCommands.remove();
+                }
+            });
+            assertThat(stateRead.await(10, TimeUnit.SECONDS)).isTrue();
+            postCommand(owner, "/api/reviews/lifecycle/attempts/" + reviewId + "/confirmations", offline(
+                    resolution(UUID.randomUUID(), block.id(), block.version(),
+                            selected.path("state").path("version").longValue(), block.content()),
+                    selectedAt.plusSeconds(1), false));
+            confirmationCommitted.countDown();
+
+            JsonNode before = historyDuringConfirmation.get(10, TimeUnit.SECONDS);
+            assertThat(before.path("state").path("pendingReviewId").asText()).isEqualTo(reviewId.toString());
+            assertThat(before.path("commands").size()).isEqualTo(2);
+            assertThat(before.path("effectiveReviews").get(0).path("effectiveRating").isNull()).isTrue();
+
+            JsonNode after = history(owner, block.id());
+            assertThat(after.path("state").path("pendingReviewId").isNull()).isTrue();
+            assertThat(after.path("commands").get(2).path("action").asText()).isEqualTo("REVIEW_CONFIRMED");
+            assertThat(after.path("effectiveReviews").get(0).path("effectiveRating").asText()).isEqualTo("GOOD");
+        } finally {
+            confirmationCommitted.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void confirmedReviewCanBeCorrectedOnceAndCorrectionKeepsOriginalReviewDate() throws Exception {
         Owner owner = owner("review-correction");
         UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand(
@@ -917,6 +986,21 @@ class ReviewLifecycleServiceTests {
                 PASSWORD, "Lifecycle Test",
                 new DeviceCommand("device-" + UUID.randomUUID(), "Lifecycle Test", DevicePlatform.WEB));
         return new Owner(result.user().id(), "Bearer " + result.tokens().accessToken());
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class HistoryReadGate {
+        private final ThreadLocal<Runnable> beforeHistoryCommands = new ThreadLocal<>();
+
+        @Bean
+        HibernatePropertiesCustomizer historyReadGateCustomizer() {
+            return properties -> properties.put("hibernate.session_factory.statement_inspector",
+                    (StatementInspector) sql -> {
+                        Runnable gate = beforeHistoryCommands.get();
+                        if (gate != null && sql.contains(" from review_lifecycle_commands ")) gate.run();
+                        return sql;
+                    });
+        }
     }
 
     private record Owner(UUID userId, String authorization) { }

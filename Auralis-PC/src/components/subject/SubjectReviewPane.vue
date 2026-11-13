@@ -10,7 +10,7 @@
       </div>
     </header>
 
-    <!-- 异常状态提示条 (仅在规划总览未进入复习轮次时展示，避免复习中闪现弹条) -->
+    <!-- 规划总览状态提示 -->
     <template v-if="!round">
       <div v-if="stateError" class="subject-review__notice subject-review__notice--error" role="alert">
         <span>复习状态未完整加载：{{ stateError }}</span>
@@ -276,7 +276,24 @@
           </div>
         </div>
 
-        <article v-if="currentBlock" class="subject-review__card" :class="{ 'subject-review__card--revealed': contentVisible }">
+        <div v-if="roundNeedsRestart" class="subject-review__notice subject-review__notice--error" role="alert">
+          <span>{{ round.pendingError && !round.pendingCommand ? round.pendingError : '知识块版本已变化，请返回规划后重新开始。' }}</span>
+          <button type="button" class="subject-review__btn-ghost" @click="endRound">返回规划</button>
+        </div>
+        <div v-else-if="round.pendingCommand && (round.pendingError || localActionError || isRecoveringRound)" class="subject-review__notice subject-review__notice--error" role="alert">
+          <span>{{ isRecoveringRound ? '正在确认本次复习操作…' : localActionError || round.pendingError }}</span>
+          <template v-if="!isRecoveringRound">
+            <button v-if="round.conflictNeedsConfirmation" type="button" class="subject-review__btn-ghost" @click="reconfirmPending">重新确认</button>
+            <button v-else type="button" class="subject-review__btn-ghost" @click="retryPending">原样重试</button>
+          </template>
+        </div>
+        <div v-else-if="localActionError || stateError || (currentBlock && currentLocalBlocksLoadError)" class="subject-review__notice subject-review__notice--error" role="alert">
+          <span>{{ localActionError || stateError || currentLocalBlocksLoadError }}</span>
+          <button v-if="stateError || currentLocalBlocksLoadError" type="button" class="subject-review__btn-ghost" :disabled="isLoading" @click="refresh">重试读取</button>
+          <button v-else type="button" class="subject-review__btn-ghost" @click="localActionError = null">关闭</button>
+        </div>
+
+        <article v-if="currentBlock && !roundNeedsRestart" class="subject-review__card" :class="{ 'subject-review__card--revealed': contentVisible }">
           <div class="subject-review__card-head">
             <div class="subject-review__card-head-left">
               <span class="subject-review__card-mode-badge">{{ round.phase.startsWith('LEARNING') ? '新知学习' : (currentState?.mastered ? '掌握抽查' : '复习自测') }}</span>
@@ -396,7 +413,7 @@
 
         </article>
 
-        <div v-else-if="!localBlocksLoadedForCurrentSubject || currentLocalBlocksLoadError" class="subject-review__card subject-review__card--milestone" :role="currentLocalBlocksLoadError ? 'alert' : 'status'">
+        <div v-else-if="!roundNeedsRestart && (!localBlocksLoadedForCurrentSubject || currentLocalBlocksLoadError)" class="subject-review__card subject-review__card--milestone" :role="currentLocalBlocksLoadError ? 'alert' : 'status'">
           <h3 class="subject-review__milestone-title">
             {{ currentLocalBlocksLoadError ? '无法读取本地知识块' : '正在加载本地知识块…' }}
           </h3>
@@ -409,7 +426,7 @@
             </button>
           </div>
         </div>
-        <div v-else-if="roundHasNoRenderableBlock" class="subject-review__card subject-review__card--milestone" role="alert">
+        <div v-else-if="roundHasNoRenderableBlock && !roundNeedsRestart" class="subject-review__card subject-review__card--milestone" role="alert">
           <h3 class="subject-review__milestone-title">本轮没有可复习知识块</h3>
           <p class="subject-review__milestone-desc">无法显示空轮次的完成结果，请返回规划后重新开始。</p>
           <div class="subject-review__milestone-actions">
@@ -419,7 +436,7 @@
             </button>
           </div>
         </div>
-        <div v-else-if="round.remainingIds.length" class="subject-review__card subject-review__card--milestone">
+        <div v-else-if="!roundNeedsRestart && round.remainingIds.length" class="subject-review__card subject-review__card--milestone">
           <div class="subject-review__milestone-icon">
             <IconCircleCheck :size="28" :stroke-width="2.2" />
           </div>
@@ -437,7 +454,7 @@
             <button type="button" class="subject-review__btn-ghost" @click="endRound">返回规划</button>
           </div>
         </div>
-        <div v-else class="subject-review__card subject-review__card--milestone">
+        <div v-else-if="!roundNeedsRestart" class="subject-review__card subject-review__card--milestone">
           <div class="subject-review__milestone-icon">
             <IconCircleCheck :size="32" :stroke-width="2.2" />
           </div>
@@ -528,6 +545,7 @@ let clockTimer: ReturnType<typeof setInterval> | null = null
 const now = ref(Date.now())
 const localActionError = ref<string | null>(null)
 const hashingBlockId = ref<string | null>(null)
+const recoveringRoundId = ref<string | null>(null)
 const adoptingCloudFor = ref<string | null>(null)
 const conflictAdoptionError = ref<string | null>(null)
 
@@ -598,6 +616,14 @@ const roundHasNoRenderableBlock = computed(() => {
 const currentState = computed<LifecycleReviewStateModel | null>(() => {
   const id = round.value?.currentKnowledgeBlockId
   return id ? stateById.value.get(id) ?? null : null
+})
+const isRecoveringRound = computed(() => round.value !== null && recoveringRoundId.value === round.value.roundId)
+const roundNeedsRestart = computed(() => {
+  const activeRound = round.value
+  if (!activeRound) return false
+  if (activeRound.pendingError && !activeRound.pendingCommand) return true
+  const block = currentBlock.value
+  return !!block && activeRound.knowledgeBlockVersions[block.id] !== block.version
 })
 const unsyncedBlocks = computed(() => activeBlocks.value.filter((block) => unsyncedIds.value.includes(block.id)))
 const conflictedBlocks = computed(() => {
@@ -738,9 +764,9 @@ const canSubmitCurrentBlock = computed(() => {
   const block = currentBlock.value
   const activeRound = round.value
   if (!block || !activeRound || !activeRound.scopeTicket.isCurrent()) return false
+  if (roundNeedsRestart.value) return false
   if (hashingBlockId.value === block.id) return false
   if (!statesLoaded.value && !states.value.length) return false
-  if (activeRound.knowledgeBlockVersions[block.id] !== block.version) return false
   return !currentState.value || currentState.value.knowledgeBlockVersion === block.version
 })
 const firstFeedbackRows = computed(() => {
@@ -1046,6 +1072,7 @@ async function selectRating(rating: LifecycleRating): Promise<void> {
 async function confirmCurrentReview(): Promise<void> {
   if (round.value?.phase === 'FUZZY_CHECK') {
     try {
+      localActionError.value = null
       reviewStore.confirmLifecycleReview(props.subjectId, '')
     } catch (error) {
       localActionError.value = error instanceof Error ? error.message : '无法完成末尾巩固。'
@@ -1082,36 +1109,30 @@ async function reopenMasteredBlock(): Promise<void> {
   await withCurrentContentHash((contentHash) => reviewStore.reopenCurrentLearning(props.subjectId, contentHash))
 }
 async function retryPending(): Promise<void> {
-  const subjectId = props.subjectId
-  const identity = accountKey()
-  try {
-    await reviewStore.retryLifecyclePending(subjectId)
-    if (props.subjectId === subjectId && accountKey() === identity) statsStore.invalidateSubjectStats(subjectId)
-  } catch {
-    // quiet retry
-  }
+  await recoverPending(false)
 }
 
 async function reconfirmPending(): Promise<void> {
+  await recoverPending(true)
+}
+
+async function recoverPending(reconfirm: boolean): Promise<void> {
   const subjectId = props.subjectId
-  const identity = accountKey()
   const activeRound = round.value
-  const block = currentBlock.value
-  const pending = activeRound?.pendingCommand
-  if (!activeRound || !block || !pending) return
+  if (!activeRound?.pendingCommand || !activeRound.scopeTicket.isCurrent() || isRecoveringRound.value
+    || roundNeedsRestart.value || activeRound.conflictNeedsConfirmation !== reconfirm) return
   const roundId = activeRound.roundId
+  const isCurrent = () => props.subjectId === subjectId && activeRound.scopeTicket.isCurrent() && round.value?.roundId === roundId
+  recoveringRoundId.value = roundId
+  localActionError.value = null
   try {
-    const contentHash = await sha256ExactContent(block.content)
-    const latestPending = round.value?.pendingCommand
-    if (accountKey() !== identity || props.subjectId !== subjectId || round.value?.roundId !== roundId
-      || latestPending?.request.clientCommandId !== pending.request.clientCommandId
-      || latestPending.request.contentHash !== contentHash || currentBlock.value?.content !== block.content) {
-      return
-    }
-    await reviewStore.reconfirmLifecyclePending(subjectId)
-    if (props.subjectId === subjectId && accountKey() === identity) statsStore.invalidateSubjectStats(subjectId)
-  } catch {
-    // quiet reconfirm
+    if (reconfirm) await reviewStore.reconfirmLifecyclePending(subjectId)
+    else await reviewStore.retryLifecyclePending(subjectId)
+    if (isCurrent()) statsStore.invalidateSubjectStats(subjectId)
+  } catch (error) {
+    if (isCurrent()) localActionError.value = error instanceof Error ? error.message : '复习操作仍未确认，请重试。'
+  } finally {
+    if (recoveringRoundId.value === roundId) recoveringRoundId.value = null
   }
 }
 
@@ -1161,9 +1182,9 @@ watch(() => props.subjectId, () => {
 })
 
 watch(
-  () => [round.value?.phase, round.value?.fuzzyPendingIds.length, round.value?.pendingCommand] as const,
-  ([phase, fuzzyCount, pendingCommand]) => {
-    if (phase === 'GROUP_COMPLETE' && Number(fuzzyCount) > 0 && !pendingCommand) {
+  () => [round.value?.phase, round.value?.fuzzyPendingIds.length, round.value?.pendingCommand, roundNeedsRestart.value] as const,
+  ([phase, fuzzyCount, pendingCommand, needsRestart]) => {
+    if (phase === 'GROUP_COMPLETE' && Number(fuzzyCount) > 0 && !pendingCommand && !needsRestart) {
       reviewStore.nextLifecycleGroup(props.subjectId)
     }
   },

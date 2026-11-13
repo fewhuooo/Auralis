@@ -370,6 +370,7 @@ PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约�
 - 初选立即保存日期；GOOD/HARD由confirmations确认，corrections关联同reviewId从初选前基准纠正为AGAIN。最终有效结果计一次，未核对GOOD/HARD不计完成。确认沿初选时间锚点，纠正按纠正时间；learning-completions独立记录学习。仅标题等元信息变化时，使用当前 KB 版本和精确正文 hash 的请求可继续处理仍为当前因果目标的初选或重学链。正文变化或移科使旧因果目标失效。
 - 首次学习3天，HARD初始1天，AGAIN及重新学习10分钟；10分钟再回忆GOOD后3天、稳定次数仍0。合法到期跨天GOOD核对后按7/14/30天推进，最终至少30天验证且核对成功持久化mastered。mastered/needsLearning均排除自动due；手动失败、明确重学或正文实质变化可以重新开启。
 - lifecycle/history 返回 `{protocolVersion:2,knowledgeBlockId,knowledgeBlockVersion,state,commands,effectiveReviews}`，state 无记录可空，非空时投影当前 KB 版本。commands 按 occurredAt/commandId 升序，每项为 `commandId,clientCommandId,action,occurredAt,reviewId,rating,durationSeconds,baseVersion,knowledgeBlockVersion`，reviewId/rating/durationSeconds 可空。确认审计的 rating 为初选评分，纠正审计为 `AGAIN`。effectiveReviews 按 selectedAt/reviewId 升序，每项为 `reviewId,selectedRating,effectiveRating,selectedAt,resolvedAt,resolution,schedulingBaseline`。新初选、正文变化或移科使未确认初选失效时标记为 `SUPERSEDED`，无有效结果且不计完成。正式复习量使用有效结果。
+- 同一次 `lifecycle/history` 响应的知识块版本、状态、命令和有效结果来自同一数据库快照。并发提交初选、核对或纠正时，该响应中的各字段对应同一个时间点。
 - 学科overview新增 `pendingLearningCount,reviewingCount,masteredCount`，三类互斥且和为activeKnowledgeBlockCount。dueReviewCount为reviewing已到期子集；newLearningCount仅统计无state，scheduledReviewCount统计reviewing未来到期子集，这两个保留字段不用于新PC三态分区。daily新增 `learningCompletionCount,distinctStudiedKnowledgeBlockCount`；原复习量/不同KB/反馈分布组合旧非SKIP事件与新最终有效结果，确认与纠正归初选本地日期，学习完成归完成日期。专注仍只在个人页。
 
 ### 学科复习状态与统计（2026-10-08，代码、相关自动验证与只读审查通过；真实联调待验收）

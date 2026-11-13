@@ -486,6 +486,7 @@ export class LocalReviewService {
         this.repo.getSubjectResource(tx, userId, subjectId),
       ])
       if (!reread || reread.deleted_at || reread.version !== kbResource.version || reread.payload !== kbResource.payload
+        || reread.version !== requestPayload.knowledgeBlockVersion
         || !rereadSubject || rereadSubject.deleted_at
         || hash !== contentHash) throw localReviewConflict()
 

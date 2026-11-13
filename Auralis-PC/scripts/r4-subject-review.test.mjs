@@ -857,20 +857,89 @@ test('a delayed A subject deletion cannot clear the same subject round after B s
   assert.equal(reviewStore.subjectStatesBySubjectId[subjectId][0].knowledgeBlockId, blockB)
 })
 
-test('subject review UI contains the three state lists and first-rating retry controls', async () => {
+test('subject review UI contains the three state lists and round controls', async () => {
   const source = await readFile(new URL('../src/components/subject/SubjectReviewPane.vue', import.meta.url), 'utf8')
   assert.match(source, /待学习/)
   assert.match(source, /待复习/)
   assert.match(source, /已掌握/)
   assert.match(source, /自测复习/)
-  assert.match(source, /retryPending/)
-  assert.match(source, /reconfirmPending/)
-  assert.match(source, /reviewStore\.retryLifecyclePending/)
-  assert.match(source, /reviewStore\.reconfirmLifecyclePending/)
   assert.match(source, /结束本轮/)
   assert.match(source, /下一组知识块数量/)
   assert.match(source, /round\.firstGroupCount/)
   assert.match(source, /SHA-256/)
+})
+
+test('active review shows a failed rating and replays its exact command from the card', async () => {
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
+  const { authStore, reviewStore, pinia } = fixture('review-pane-retry-user')
+  useSyncStore().requestBackgroundSync = () => undefined
+  const subjectId = 'subject-pane-retry'
+  const blockId = 'kb-pane-retry'
+  const { repository } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{
+    id: blockId, version: 1, state: stateView(blockId, new Date(Date.now() - 3600000).toISOString(), 1),
+  }])
+  await reviewStore.loadSubjectStates(subjectId)
+  const initialRound = reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: blockId, version: 1 }], groupSize: 5 })
+  const { root } = await mountReviewPane(pinia, subjectId)
+  await waitFor(() => findButton(root, '认识') && !findButton(root, '认识').props.disabled, 'rating is ready')
+
+  const requests = []
+  LocalReviewService.prototype.executeCommand = async function (...args) {
+    requests.push(structuredClone(args[9]))
+    if (requests.length === 1) throw new Error('本机暂时无法保存')
+    return originalLocalReviewReads.executeCommand.apply(this, args)
+  }
+
+  await findButton(root, '认识').props.onClick()
+  await settleVue()
+  assert.match(collectText(root), /本机暂时无法保存/)
+  assert.equal(findButton(root, '认识'), null)
+  assert.equal(findButton(root, '重新确认'), null)
+  const retry = findButton(root, '原样重试')
+  assert.ok(retry)
+  assert.equal(reviewStore.getLifecycleRound(subjectId).roundId, initialRound.roundId)
+  assert.deepEqual((await inspectLocalReview(authStore, repository, blockId)).pending, [])
+
+  await retry.props.onClick()
+  await waitFor(() => findButton(root, '下一个'), 'retry returns the current card to checking')
+  assert.deepEqual(requests, [requests[0], requests[0]])
+  assert.equal(reviewStore.getLifecycleRound(subjectId).roundId, initialRound.roundId)
+  assert.equal(findButton(root, '原样重试'), null)
+  assert.doesNotMatch(collectText(root), /本机暂时无法保存/)
+})
+
+test('active review offers confirmation after an atomic version conflict and returns to planning for a changed block', async () => {
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
+  const { authStore, reviewStore, pinia } = fixture('review-pane-version-conflict-user')
+  useSyncStore().requestBackgroundSync = () => undefined
+  const subjectId = 'subject-pane-version-conflict'
+  const blockId = 'kb-pane-version-conflict'
+  const { repository } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{
+    id: blockId, version: 1, state: stateView(blockId, new Date(Date.now() - 3600000).toISOString(), 1),
+  }])
+  await reviewStore.loadSubjectStates(subjectId)
+  reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: blockId, version: 1 }], groupSize: 5 })
+  const { root } = await mountReviewPane(pinia, subjectId)
+  await waitFor(() => findButton(root, '认识') && !findButton(root, '认识').props.disabled, 'rating is ready')
+
+  const current = await repository.read('KNOWLEDGE_BLOCK', blockId)
+  await repository.upsert('KNOWLEDGE_BLOCK', blockId, { ...current.value, title: '新版标题', version: 2 }, { version: 2, syncStatus: 'synced' })
+  await findButton(root, '认识').props.onClick()
+  await settleVue()
+  assert.equal(findButton(root, '原样重试'), null)
+  const reconfirm = findButton(root, '重新确认')
+  assert.ok(reconfirm)
+  assert.deepEqual((await inspectLocalReview(authStore, repository, blockId)).pending, [])
+
+  await reconfirm.props.onClick()
+  await settleVue()
+  assert.match(collectText(root), /知识块版本已变化.*重新开始/)
+  assert.doesNotMatch(collectText(root), /复习已完成/)
+  assert.equal(findButton(root, '重新确认'), null)
+  const back = findButton(root, '返回规划')
+  assert.ok(back)
+  await back.props.onClick()
+  assert.equal(reviewStore.getLifecycleRound(subjectId), null)
 })
 
 test('late local material reads stay scoped to the captured account and do not write the shared knowledge store', async () => {

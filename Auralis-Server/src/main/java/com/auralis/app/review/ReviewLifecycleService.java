@@ -22,6 +22,7 @@ import com.auralis.app.shared.error.DomainException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -288,7 +289,7 @@ public class ReviewLifecycleService {
                 current, request.reviewId() == null ? null : requireReview(userId, block.id(), request.reviewId()));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public LifecycleHistory history(UUID userId, UUID knowledgeBlockId) {
         KnowledgeBlockView block = knowledgeBlockService.get(userId, knowledgeBlockId);
         ReviewStateEntity current = stateRepository.findByUserIdAndKnowledgeBlockId(userId, knowledgeBlockId)

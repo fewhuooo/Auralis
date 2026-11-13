@@ -1326,6 +1326,54 @@ test('SQLite stores the review record and outbox in one rollback-safe transactio
   }
 })
 
+test('SQLite rejects a frozen review command after a title-only knowledge block revision', async () => {
+  const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
+  const { createLocalRepository } = await import('../src/services/localRepository.ts')
+  const { LocalReviewService } = await import('../src/services/localReviewService.ts')
+  const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
+  const raw = new DatabaseSync(':memory:')
+  const sql = sqliteAdapter(raw)
+  try {
+    await createVersionedLocalSchema(sql)
+    const userId = 'sqlite-stale-kb-user'
+    const deviceId = 'sqlite-stale-kb-device'
+    const subject = { id: 'sqlite-stale-kb-subject', name: 'SQLite subject' }
+    const block = { id: 'sqlite-stale-kb', subjectId: subject.id, title: 'Before rename', content: 'Same review body' }
+    const repository = createLocalRepository(userId, deviceId, { sql, schemaReady: Promise.resolve() })
+    await repository.upsert('SUBJECT', subject.id, subject, { version: 1, syncStatus: 'synced' })
+    await repository.upsert('KNOWLEDGE_BLOCK', block.id, block, { version: 1, syncStatus: 'synced' })
+    const service = new LocalReviewService(sql, repository)
+    const reviewRepository = new ReviewRepository(sql, repository)
+    const state = await service.getKnowledgeBlockState(userId, deviceId, block.id, subject.id)
+    const request = {
+      clientCommandId: 'sqlite-stale-kb-command',
+      knowledgeBlockId: block.id,
+      knowledgeBlockVersion: state.knowledgeBlockVersion,
+      baseVersion: state.version,
+      contentHash: state.contentHash,
+      occurredAt: '2026-10-09T04:00:00.000000Z',
+      expectedStateAbsent: true,
+    }
+    await repository.upsert('KNOWLEDGE_BLOCK', block.id, { ...block, title: 'After rename' }, { version: 2, syncStatus: 'synced' })
+    const commit = (body) => service.executeCommand(
+      userId, deviceId, block.id, body.clientCommandId, 'LEARNING_COMPLETED', null,
+      body.occurredAt, body.baseVersion, body.contentHash, body, subject.id,
+    )
+
+    await assert.rejects(commit(request), (error) => error.status === 409 && error.problem?.code === 'RESOURCE_VERSION_CONFLICT')
+    assert.equal(await reviewRepository.getReviewRecord(userId, deviceId, block.id), null)
+    assert.equal(await reviewRepository.getIntent(sql, userId, deviceId, request.clientCommandId), null)
+
+    const freshRequest = { ...request, clientCommandId: 'sqlite-current-kb-command', knowledgeBlockVersion: 2 }
+    const response = await commit(freshRequest)
+    assert.equal(response.knowledgeBlockVersion, 2)
+    const [intent] = await reviewRepository.getPendingIntents(userId, deviceId, block.id)
+    assert.deepEqual(intent.payload, freshRequest)
+  } finally {
+    raw.close()
+  }
+})
+
 test('SQLite rejects a pending row with missing preparation fields before a new review commit', async () => {
   const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
   const { createLocalRepository } = await import('../src/services/localRepository.ts')
