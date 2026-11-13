@@ -254,6 +254,20 @@ public class ChatRuntimePersistenceService {
     }
 
     @Transactional
+    public void rejectDispatch(UUID userId, UUID conversationId, UUID runId, UUID attemptId, long fence) {
+        ConversationEntity conversation = conversations
+                .findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId).orElse(null);
+        if (conversation == null || !runId.equals(conversation.getActiveChatRunId())) return;
+        ChatRunEntity run = lockRun(runId, userId, conversationId);
+        ChatAttemptEntity attempt = lockAttempt(attemptId, runId, userId);
+        if (!owns(conversation, run, attempt, fence) || !"PENDING".equals(attempt.getStatus())) return;
+
+        settleUndispatched(conversation, run, attempt, "FAILED", "CHAT_ATTEMPT_NOT_DISPATCHED", attempt.getLastSequence());
+        conversation.releaseChatRun(runId, fence);
+        conversations.saveAndFlush(conversation);
+    }
+
+    @Transactional
     public void checkpoint(UUID userId, UUID conversationId, UUID runId, UUID attemptId, long fence,
                            Map<UUID, UUID> sourceRevisions, String publicPartsJson, String toolTraceJson, long sequence) {
         checkpoint(userId, conversationId, runId, attemptId, fence, sourceRevisions,

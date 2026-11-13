@@ -159,6 +159,28 @@ test('single-choice submission requires a durable READY state, valid structure, 
   assert.equal(createChatActivitySubmission(block, ['A'], false), null)
 })
 
+test('historical activity parts cannot become actionable through old question or option fields', () => {
+  const parts = projectChatContentParts([
+    quiz({ meta: { stem: 'Old quiz question', questionType: 'single' } }),
+    question({ meta: { title: 'Old open question' } }),
+    quiz({
+      items: [
+        { key: 'A', text: 'Current option' },
+        { key: 'B', text: 'Another current option' },
+        { label: 'C', content: 'Old option' },
+        { key: 'D', title: 'Another old option' },
+      ],
+    }),
+  ])
+
+  assert.equal(parts.length, 3)
+  assert.deepEqual(parts.map((part) => part.state), ['INVALID', 'INVALID', 'INVALID'])
+  assert.equal(parts[0].meta.question, undefined)
+  assert.equal(parts[1].meta.question, undefined)
+  assert.deepEqual(parts[2].items, [{ key: 'A', text: 'Current option' }, { key: 'B', text: 'Another current option' }])
+  assert.deepEqual(parts.map((part) => createChatActivitySubmission(part, 'A', false)), [null, null, null])
+})
+
 test('multiple-choice answer must contain unique keys from the projected options', () => {
   const block = projectChatContentPart(quiz({ meta: { questionType: 'multiple', question: 'Choose all supported paths.' } }))
   assert.ok(block && block.kind === 'block')

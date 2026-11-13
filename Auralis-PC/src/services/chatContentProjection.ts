@@ -61,25 +61,13 @@ function projectMeta(component: ChatComponent, value: unknown): Record<string, u
     }
     case 'quiz': {
       const meta = projectOptionalStrings(value, ['question'])
-      if (typeof value.stem === 'string' && !meta.question) {
-        meta.question = value.stem
-      } else if (typeof value.title === 'string' && !meta.question) {
-        meta.question = value.title
-      }
       if (value.questionType === 'single' || value.questionType === 'multiple') {
         meta.questionType = value.questionType
       }
       return meta
     }
-    case 'question': {
-      const meta = projectOptionalStrings(value, ['question', 'placeholder'])
-      if (typeof value.stem === 'string' && !meta.question) {
-        meta.question = value.stem
-      } else if (typeof value.title === 'string' && !meta.question) {
-        meta.question = value.title
-      }
-      return meta
-    }
+    case 'question':
+      return projectOptionalStrings(value, ['question', 'placeholder'])
   }
 }
 
@@ -122,10 +110,8 @@ function projectItems(component: ChatComponent, value: unknown): Record<string, 
         break
       }
       case 'quiz': {
-        const key = candidate.key ?? candidate.label
-        const text = candidate.text ?? candidate.content ?? candidate.title
-        if (nonEmptyString(key) && nonEmptyString(text)) {
-          result.push({ key, text })
+        if (nonEmptyString(candidate.key) && nonEmptyString(candidate.text)) {
+          result.push({ key: candidate.key, text: candidate.text })
         }
         break
       }
@@ -159,6 +145,10 @@ export function projectChatContentPart(value: unknown): ChatContentPart | null {
   }
   if (component === 'quiz' || component === 'question') {
     if (nonEmptyString(value.questionId)) block.questionId = value.questionId
+    if ((block.state === 'READY' || block.state === 'SUBMITTED') && (
+      !block.questionId || !Array.isArray(value.items) || block.items.length !== value.items.length
+      || !isChatActivityStructurallyValid(block)
+    )) block.state = 'INVALID'
     if (typeof value.submittedAnswer === 'string') {
       block.submittedAnswer = value.submittedAnswer
     } else if (Array.isArray(value.submittedAnswer)
@@ -216,7 +206,8 @@ export function getChatActivityDraft(
 
 export function isChatActivityStructurallyValid(block: ChatBlockPart): boolean {
   if (block.component === 'quiz') {
-    if (!nonEmptyString(block.meta.question) || !['single', 'multiple'].includes(String(block.meta.questionType))) {
+    if (!nonEmptyString(block.meta.question)
+      || (block.meta.questionType !== 'single' && block.meta.questionType !== 'multiple')) {
       return false
     }
     if (block.items.length < 2) return false

@@ -66,6 +66,207 @@ function status(state = 'RUNNING') {
     status: state, executionActive: ['RUNNING', 'UNKNOWN'].includes(state), currentAttemptId: 'attempt-A', attempts: [] }
 }
 
+function cleanStream(requestId, events) {
+  const body = events.map(([event, payload], index) => {
+    const envelope = {
+      protocolVersion: 1, conversationId: 'A', runId: 'run-A', attemptId: 'attempt-A', requestId,
+      userMessageId: 'user-A', replyMessageId: 'reply-A', sequence: index + 1, event, payload,
+    }
+    return `event: ${event}\ndata: ${JSON.stringify(envelope)}\n\n`
+  }).join('')
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+test('empty first stream keeps the original turn available for explicit replay', async (t) => {
+  const { store } = setup()
+  store.sessions[0].chatScopeState = 'UNBOUND'
+  const commands = []
+  const statusRequests = []
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const command = JSON.parse(init.body)
+    commands.push({ url: String(url), command })
+    const events = commands.length === 1 ? [] : [['run.failed', { safeErrorCode: 'CHAT_ATTEMPT_NOT_DISPATCHED' }]]
+    return cleanStream(command.requestId, events)
+  })
+  t.mock.method(request, 'get', async url => {
+    statusRequests.push(String(url))
+    if (String(url).endsWith('/runs/run-A')) {
+      return { ...status('FAILED'), userMessageId: 'user-A', currentReplyMessageId: 'reply-A',
+        attempts: [{ attemptId: 'attempt-A', safeErrorCode: 'CHAT_ATTEMPT_NOT_DISPATCHED' }] }
+    }
+    return { ...detail('A'), messages: [
+      { id: 'user-A', role: 'USER', status: 'COMPLETED', content: 'question', parts: [] },
+      { id: 'reply-A', role: 'ASSISTANT', status: 'FAILED', content: '', parts: [] },
+    ] }
+  })
+  const options = { subjectId: 'subject-A', selectionText: 'original selection' }
+  await store.sendMessage('question', options)
+  assert.equal(store.pendingMessage.status, 'FAILED')
+  assert.equal(store.lastErrorCode, 'STREAM_TRUNCATED')
+  assert.equal(store.isStreaming, false)
+  assert.equal(store.isBoundSession, false)
+  assert.deepEqual(statusRequests, [])
+  options.selectionText = 'new selection'
+  await store.retryPendingMessage(store.pendingMessage.id)
+  assert.deepEqual(commands, [commands[0], commands[0]])
+  assert.deepEqual(statusRequests, ['/api/ai/conversations/A/runs/run-A', '/api/ai/conversations/A'])
+  assert.equal(store.pendingMessage.runId, 'run-A')
+  assert.equal(store.lastErrorCode, 'CHAT_ATTEMPT_NOT_DISPATCHED')
+})
+
+test('clean EOF with a known run keeps Stop until canonical completion is read', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { store } = setup()
+  let reads = 0
+  t.mock.method(globalThis, 'fetch', async (_url, init) => cleanStream(JSON.parse(init.body).requestId, [
+    ['run.started', {}], ['text.delta', { text: 'partial', publicTextDelta: 'partial' }],
+  ]))
+  t.mock.method(request, 'get', async url => {
+    if (!String(url).includes('/runs/')) return detail('A', 'canonical completion')
+    reads += 1
+    if (reads === 1) throw new TypeError('status temporarily unavailable')
+    return status('COMPLETED')
+  })
+  await store.sendMessage('question')
+  assert.equal(store.activeRun.runId, 'run-A')
+  assert.equal(store.activeRun.executionActive, true)
+  assert.equal(store.isStreaming, true)
+  assert.equal(store.messages.find(message => message.role === 'ASSISTANT').status, 'INTERRUPTED')
+  t.mock.timers.tick(1500)
+  await nextTurn()
+  assert.equal(reads, 2)
+  assert.equal(store.activeRun, null)
+  assert.equal(store.isStreaming, false)
+  assert.equal(store.messages[0].content, 'canonical completion')
+})
+
+test('a known-run retry with clean EOF before its first frame reconciles the original run', async (t) => {
+  const { store } = setup()
+  store.messages = [{ id: 'user-A', conversationId: 'A', role: 'USER', status: 'FAILED', content: 'question', parts: [], runId: 'run-A' }]
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    requests.push(String(url))
+    return cleanStream(JSON.parse(init.body).requestId, [])
+  })
+  t.mock.method(request, 'get', async url => {
+    requests.push(String(url))
+    return String(url).includes('/runs/') ? status('COMPLETED') : detail('A', 'canonical retry reply')
+  })
+  await store.retryPendingMessage('user-A')
+  assert.ok(requests[0].endsWith('/api/ai/conversations/A/runs/run-A/attempts'))
+  assert.deepEqual(requests.slice(1), ['/api/ai/conversations/A/runs/run-A', '/api/ai/conversations/A'])
+  assert.equal(store.messages[0].content, 'canonical retry reply')
+  assert.equal(store.activeRun, null)
+})
+
+test('terminal Stop fences a live stream before unlocking the next turn', async (t) => {
+  const { store } = setup()
+  const admitted = deferred()
+  const oldStream = deferred()
+  const terminal = [['run.completed', { executionActive: false }]]
+  let sends = 0
+  let firstSignal
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    const { requestId } = JSON.parse(init.body)
+    if (++sends > 1) return cleanStream(requestId, terminal)
+    firstSignal = init.signal
+    const started = await cleanStream(requestId, [['run.started', {}]]).text()
+    return new Response(new ReadableStream({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode(started))
+        admitted.resolve()
+        await oldStream.promise
+        const lateTerminal = await cleanStream(requestId, terminal).text()
+        controller.enqueue(new TextEncoder().encode(lateTerminal))
+        controller.close()
+      },
+    }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  })
+  t.mock.method(request, 'post', async () => status('CANCELLED'))
+  t.mock.method(request, 'get', async url => String(url).includes('/runs/')
+    ? status('CANCELLED') : detail('A', 'canonical stopped reply'))
+  const sending = store.sendMessage('stop this turn')
+  const aborted = assert.rejects(sending, { name: 'AbortError' })
+  await admitted.promise
+  await nextTurn()
+  assert.equal(store.activeRun.runId, 'run-A')
+  await store.requestCancel()
+  assert.equal(firstSignal.aborted, true)
+  assert.equal(store.messages[0].content, 'canonical stopped reply')
+  assert.equal(store.isStreaming, false)
+  await store.sendMessage('next turn')
+  assert.equal(sends, 2)
+  oldStream.resolve()
+  await aborted
+  assert.equal(store.messages[0].content, 'canonical stopped reply')
+  assert.equal(store.messages.find(message => message.content === 'next turn').status, 'COMPLETED')
+  assert.equal(store.activeRun, null)
+})
+
+test('UNKNOWN recovery keeps the same run retriable and blocks a new turn until history arrives', async (t) => {
+  const { store } = setup()
+  const history = deferred()
+  const detailRequested = deferred()
+  store.activeRun = status('UNKNOWN')
+  t.mock.method(request, 'post', async () => ({
+    ...status('FAILED'), userMessageId: 'user-A', currentReplyMessageId: 'reply-A',
+  }))
+  t.mock.method(request, 'get', async () => {
+    detailRequested.resolve()
+    return history.promise
+  })
+  const attempts = []
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    attempts.push(String(url))
+    return cleanStream(JSON.parse(init.body).requestId, [['run.completed', { executionActive: false }]])
+  })
+  const recovery = store.recoverUnknownAttempt()
+  await detailRequested.promise
+  await store.sendMessage('must wait')
+  assert.equal(store.isRecovering, true)
+  assert.equal(store.activeRun.runId, 'run-A')
+  assert.deepEqual(attempts, [])
+  history.resolve({ ...detail('A'), messages: [
+    { id: 'user-A', role: 'USER', status: 'COMPLETED', content: 'original question', parts: [] },
+    { id: 'later-user', role: 'USER', status: 'COMPLETED', content: 'later question', parts: [] },
+    { id: 'reply-A', role: 'ASSISTANT', status: 'FAILED', content: 'partial reply to original question', parts: [] },
+  ] })
+  assert.equal(await recovery, true)
+  assert.equal(store.isRecovering, false)
+  assert.equal(store.activeRun, null)
+  assert.equal(store.messages.find(message => message.id === 'reply-A').attemptId, 'attempt-A')
+  await store.retryPendingMessage('reply-A')
+  assert.equal(attempts.length, 1)
+  assert.ok(attempts[0].endsWith('/api/ai/conversations/A/runs/run-A/attempts'))
+})
+
+test('late UNKNOWN recovery history cannot overwrite a same-conversation reload or clear its recovery flag', async (t) => {
+  const { store } = setup()
+  store.activeRun = status('UNKNOWN')
+  const oldHistory = deferred()
+  const detailRequested = deferred()
+  const newRecovery = deferred()
+  let posts = 0
+  t.mock.method(request, 'post', async () => ++posts === 1 ? status('FAILED') : newRecovery.promise)
+  t.mock.method(request, 'get', async () => {
+    detailRequested.resolve()
+    return oldHistory.promise
+  })
+  const stale = store.recoverUnknownAttempt()
+  await detailRequested.promise
+  request.get = async () => ({ ...detail('A', 'new history'), activeRun: { ...status('UNKNOWN'), currentAttemptId: 'new-attempt' } })
+  await store.loadMessages('A')
+  const recovery = store.recoverUnknownAttempt()
+  assert.equal(store.isRecovering, true)
+  oldHistory.resolve(detail('A', 'stale history'))
+  assert.equal(await stale, false)
+  assert.equal(store.messages[0].content, 'new history')
+  assert.equal(store.isRecovering, true)
+  newRecovery.resolve(status('UNKNOWN'))
+  assert.equal(await recovery, false)
+  assert.equal(store.isRecovering, false)
+})
+
 test('latest conversation load wins, including two loads of the same conversation', async (t) => {
   const { store } = setup()
   const first = deferred()

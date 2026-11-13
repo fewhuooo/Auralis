@@ -90,6 +90,8 @@ test('reduces block start, item increments, and completed part', () => {
       },
     })
   )
+  assert.deepEqual(state.parts[0].meta, { question: 'What is 1+1?', questionType: 'single' })
+  assert.deepEqual(state.parts[0].items, [{ key: 'A', text: '2' }])
 
   const serverPart = {
     id: 'b-1',
@@ -538,41 +540,60 @@ test('preserves replyMessageId and reasoningText on terminal run.completed', () 
   assert.equal(state.terminal, 'COMPLETED')
 })
 
-test('activity.ready injects questionId and marks block READY', () => {
-  let state = createChatStreamState()
-  state = reduceChatStreamEvent(
-    state,
-    makeEnvelope({
-      sequence: 1,
-      event: 'block.started',
-      payload: {
-        componentId: 'card-1',
-        component: 'quiz',
-        partId: 'part-card-1',
-      },
-    })
-  )
-  assert.equal(state.parts.length, 1)
+test('activity previews use canonical row types and fields without rewriting aliases', () => {
+  const payload = { componentId: 'card-1', component: 'quiz' }
+  let state = reduceChatStreamEvent(createChatStreamState(), makeEnvelope({
+    event: 'block.started',
+    blockId: payload.componentId,
+    payload: { ...payload, partId: 'obsolete-part-id' },
+  }))
+  const preview = state.parts[0]
+  assert.equal(preview.id, payload.componentId)
+  const rows = [
+    { type: 'meta', question: 'Question with an old row type', questionType: 'single' },
+    { type: 'stem', stem: 'Old question field' },
+    { type: 'item', key: 'A', text: 'Option with an old row type' },
+    { type: 'option', label: 'A', content: 'Old option fields' },
+    { type: 'option', text: 'Missing key' },
+    { type: 'option', key: 2, text: 'Non-string key' },
+  ]
+  rows.forEach((row, index) => {
+    state = reduceChatStreamEvent(state, makeEnvelope({
+      sequence: index + 2,
+      event: 'block.item',
+      blockId: payload.componentId,
+      payload: { ...payload, row },
+    }))
+  })
+  assert.deepEqual(state.parts[0], preview)
+})
+
+test('activity.ready acknowledges the completed part and cannot publish a part itself', () => {
+  const part = {
+    id: 'card-1', componentId: 'card-1', kind: 'block', component: 'question', state: 'READY',
+    questionId: 'question-uuid-1', meta: { question: 'Why does it work?' }, items: [],
+  }
+  const ready = {
+    componentId: part.componentId, activityId: part.questionId, questionId: part.questionId,
+    questionVersion: 1, publicTextDelta: '',
+  }
+  const blockId = part.componentId
+  let state = reduceChatStreamEvent(createChatStreamState(), makeEnvelope({
+    event: 'block.started', blockId, payload: { componentId: blockId, component: part.component },
+  }))
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2, event: 'activity.ready', blockId, payload: { ...ready, part },
+  }))
   assert.equal(state.parts[0].state, 'GENERATING')
   assert.equal(state.parts[0].questionId, undefined)
-
-  state = reduceChatStreamEvent(
-    state,
-    makeEnvelope({
-      sequence: 2,
-      event: 'activity.ready',
-      payload: {
-        componentId: 'card-1',
-        activityId: 'activity-uuid-1',
-        questionId: 'question-uuid-1',
-        questionVersion: 1,
-        publicTextDelta: '',
-      },
-    })
-  )
-  assert.equal(state.parts.length, 1)
-  assert.equal(state.parts[0].state, 'READY')
-  assert.equal(state.parts[0].questionId, 'question-uuid-1')
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 3, event: 'block.completed', blockId, payload: { componentId: blockId, part, publicTextDelta: '\n' },
+  }))
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 4, event: 'activity.ready', blockId, payload: ready,
+  }))
+  assert.deepEqual(state.parts, [part])
+  assert.equal(state.lastSequence, 4)
 })
 
 test('text.delta falls back to state replyMessageId for part id when event lacks top-level replyMessageId', () => {

@@ -93,6 +93,10 @@ SQLite schema 升至 14，为缓存追加 Markdown 列并保留旧行；旧格�
 
 类型检查通过；首批 53/53，审查修正后的受影响套件 13/13，其余 41 项未重复运行。源码、真实 Store 的受控传输/虚拟时钟回归及唯一只读审查完成；浏览器/Tauri 与真实服务时序待验收。
 
+### 2026-11-13 PC Chat 断流与恢复
+
+有 run ID 时，SSE 提前结束或断开都查询原 run。状态仍在执行或暂时查不到时保留停止入口，并在现有上限内继续查询。首帧前结束时保留原命令，供用户显式重试。UNKNOWN 恢复按服务端消息 ID 关联原 run 和 attempt，核对会话和操作世代后再更新消息。规范题卡按协议 1 的现行字段显示，旧会话的题卡与回复仅供查看。非规范历史题卡不可作答。
+
 ### 2026-11-11 Chat 首帧前断线的原命令重发
 
 `useChatStore.runCommand` 首次派发时在消息内保存实际命令的独立内存快照。没有 `runId` 的重试复用该快照，保留相同 request ID、readingContext 的省略或存在、引用文本和活动 submission ID/答案，不再根据当前会话或 requestOptions 重建命令。已有 run ID 仍调用现有 attempt 重试接口。既无 run ID 又无快照时，在改变消息状态或清理回复前明确拒绝重发；快照不新增持久化格式。
@@ -195,7 +199,7 @@ SQLite schema 升至 14，为缓存追加 Markdown 列并保留旧行；旧格�
   - `steps` 顺次展示步骤；`compare` 严格保持每个维度的垂直列表和源顺序（不跨维度误横向配对）；`roadmap` 呈现节点与标签/当前位置；`chart` 仅渲染 `bar` 或 `proportion`；
   - 收到 `block.completed` 原位全量替换为最终 part；若遇到 `block.error` 或异常断流，保留已渲染有效项并将卡片置为 `INVALID`，隔离异常不影响其他正文。
 - **题卡交互、草稿保护与重试闭环**：
-  - `quiz` 与 `question` 收到 `block.started` 或题目仅展示生成态骨架，只有收到持久化 `activity.ready` 事务后才解锁单选/多选/文本输入与提交按钮；
+  - `quiz` 与 `question` 收到 `block.started` 时展示生成态骨架，服务端提交 READY 事务并通过 `block.completed` 发布规范题卡后解锁作答；
   - 纯粹输入收集体验：提交后变为 `SUBMITTED`，仅展示已作答项，不渲染红绿对错与分数，不重复生成原题冗长气泡；未提交的输入在端侧本地受保护；
   - 提交携带幂等 `submissionId`、`questionId` 与答案发起请求，服务端持久化后自动接续下一轮助手流式点评；
   - 若点评中断或失败，提供内联“重试回复”按钮，复用同 `submissionId` 发起新 attempt 重试，无需用户重新做题；READY 状态下不锁死底部聊天框。

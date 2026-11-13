@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -53,7 +54,8 @@ class ChatRuntimeControllerTests {
 
     @BeforeEach
     void setUp() {
-        controller = new ChatRuntimeController(orchestrator, textGeneration, JsonMapper.builder().build());
+        controller = new ChatRuntimeController(orchestrator, textGeneration, JsonMapper.builder().build(),
+                new SimpleAsyncTaskExecutor());
         userId = UUID.randomUUID();
         principal = new AuthenticatedUser(userId, UUID.randomUUID(), UUID.randomUUID());
         command = new AiMessageCommand(1, "turn", UUID.randomUUID(), "request-1", "Explain this",

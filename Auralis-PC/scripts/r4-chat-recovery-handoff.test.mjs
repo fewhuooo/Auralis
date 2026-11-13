@@ -543,7 +543,7 @@ test('Chat reading-scope handoff: HTTP 409 CHAT_SCOPE_CONFLICT cleans optimistic
   }
 })
 
-test('Chat reading-scope handoff: LEGACY session blocks new turns and disables retry', async () => {
+test('Chat reading-scope handoff: LEGACY session blocks turns, retry, and activity submission', async () => {
   setActivePinia(createPinia())
   const authStore = useAuthStore()
   authStore.user = { id: 'user-scope-3', username: 'scopeuser3', displayName: 'Scope User 3', version: 1, hasAvatar: false }
@@ -588,11 +588,21 @@ test('Chat reading-scope handoff: LEGACY session blocks new turns and disables r
         conversationId: 'session-legacy-1',
         role: 'USER',
         status: 'FAILED',
+        runId: 'legacy-run',
         content: 'Historical failed message',
         parts: [],
       },
     ]
     assert.equal(chatStore.pendingMessage, null)
+    await chatStore.retryPendingMessage('legacy-msg-failed')
+    await chatStore.submitActivity('legacy-activity', 'answer', {
+      id: 'legacy-block', componentId: 'legacy-block', kind: 'block', component: 'question',
+      state: 'READY', questionId: 'legacy-activity', meta: { question: 'Historical question' }, items: [],
+    })
+    assert.equal(fetchCalled, false)
+    assert.equal(chatStore.messages.length, 1)
+    assert.equal(chatStore.messages[0].status, 'FAILED')
+    assert.equal(chatStore.lastErrorCode, 'CHAT_SCOPE_LEGACY')
   } finally {
     globalThis.fetch = origFetch
   }
@@ -692,8 +702,13 @@ test('Chat reading-scope handoff: workspace file switching does not mutate locke
     globalThis.fetch = async (_url, init) => {
       const body = JSON.parse(init.body)
       streamCalledWithReadingContext = body.readingContext
+      const terminal = {
+        protocolVersion: 1, conversationId: body.conversationId, requestId: body.requestId,
+        runId: 'run-locked', attemptId: 'attempt-locked', userMessageId: 'user-locked',
+        replyMessageId: 'reply-locked', sequence: 1, event: 'run.completed', payload: { executionActive: false },
+      }
       return new Response(
-        'data: {"type":"text.delta","delta":"Answer for file 1"}\n\ndata: {"type":"run.completed","usage":{"totalTokens":10}}\n\n',
+        `event: run.completed\ndata: ${JSON.stringify(terminal)}\n\n`,
         {
           status: 200,
           headers: { 'Content-Type': 'text/event-stream' },

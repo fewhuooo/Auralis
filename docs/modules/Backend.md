@@ -38,6 +38,10 @@ Asset download-url 响应增加原资产的 `originalName/mimeType`，客户端�
 
 Provider 失败后的未完成块统一在 finally 失效，逐个错误事件发送采用 best-effort；断线不阻断其他块变为 INVALID 或后续 finish。执行器及 scope 关闭仍在终态持久化之前，原有 owner fence、释放规则与持久化异常处理保持。真实入口和持久化服务回归覆盖双块断线、成功保存 FAILED 并释放槽位，以及仓储故障传播；仓储替身不证明 PostgreSQL 回滚。定向 38/38 通过，未部署或调用真实 Provider。
 
+### 2026-11-13 Chat 流请求入队拒绝
+
+Chat 的 MVC 执行器拒绝首次发送、点评或重试入队时，按会话、run、attempt 与 fence 结算尚未启动的尝试为 `FAILED / CHAT_ATTEMPT_NOT_DISPATCHED`，释放会话并返回现有 503。已提交的题卡答案仍可查看，点评可在原 run 重试。重放请求被拒绝时不会结算它查询的原尝试。
+
 ### 2026-11-11 Chat 迭代与工具额度
 
 `ChatAgentProperties` 的默认及硬上限为 12 轮模型调用、20 次工具执行。`ChatAgentOrchestrator` 在最后允许轮派发前进入 `finishWithoutTools` 并添加收尾指令；工具 schema 保留以验证原生历史配对，但该轮所有新工具均不执行。模型应基于已有证据回答并说明缺口；若继续请求工具，记录未执行结果并给出限制说明后结束。自定义较小轮数也遵循同一规则。提前 STOP/READY 沿原流程结束，不额外调用总结。

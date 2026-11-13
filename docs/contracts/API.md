@@ -32,6 +32,8 @@ Overview 派发前要求当前生成模型具有服务端声明的容量。平�
 
 新增需 Bearer access token 鉴权的 `POST /api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover`，无请求 body，返回现有 `ChatRunStatusView`。它只对当前 active run 的 current attempt 执行 UNKNOWN 终结，不会重新派发模型请求。目标与会话、run、attempt 通过 owner 复合归属验证；目标已被解决或成为旧 attempt 时只返回该 run 当前状态，不改变后续 attempt 或其他 run。状态不允许恢复时返回 HTTP 409 `CHAT_RECOVERY_NOT_ALLOWED`。
 
+Chat 流任务在执行前被 MVC 队列拒绝时返回现有 HTTP 503。服务端将本次新准入且未派发的尝试结算为 `FAILED / CHAT_ATTEMPT_NOT_DISPATCHED` 并释放会话。题卡答案及重放语义见 [Chat Runtime API](chat-runtime-api.md#6-cancellation-recovery-and-slot-ownership)。
+
 当前 UNKNOWN attempt 没有已提交 READY/SUBMITTED activity 时，显式恢复把 run/attempt 终结为 `FAILED`，错误码 `CHAT_UNKNOWN_ABANDONED`，保留已验证公开正文和行；未闭合 GENERATING block 转为 INVALID。私有 tool evidence、activity/ref 和 usage task/reservation/charged 状态保留，不退款。若已有 READY/SUBMITTED activity，按已提交业务结果完成 run/attempt 并释放执行槽，不撤销 activity 或 private reference。两种路径均通过 conversation fence 阻止迟到 worker 发布；TTL 不证明 Provider 已停止，恢复不代表取消上游请求。
 
 ### 2026-11-04 用户资料头像存在提示

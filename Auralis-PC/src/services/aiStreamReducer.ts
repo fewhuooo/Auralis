@@ -97,11 +97,10 @@ export function setPart(state: ChatStreamState, part: unknown): ChatStreamState 
 function isItemSubstantive(
   component: string,
   row: Record<string, unknown>,
-  optionKey: string,
-  optionText: string
 ): boolean {
   if (component === 'quiz') {
-    return optionKey.trim().length > 0 && optionText.trim().length > 0
+    return typeof row.key === 'string' && row.key.trim().length > 0
+      && typeof row.text === 'string' && row.text.trim().length > 0
   }
   if (component === 'chart') {
     return typeof row.label === 'string' && row.label.trim().length > 0 && typeof row.value === 'number' && Number.isFinite(row.value)
@@ -115,73 +114,46 @@ function isItemSubstantive(
 function streamingBlock(
   state: ChatStreamState,
   event: ChatStreamEnvelope,
-  row?: Record<string, unknown>
 ): ChatStreamState {
-  const componentId = String(event.payload.componentId || event.blockId || '')
-  const component = event.payload.component
-  if (!componentId || typeof component !== 'string') return state
-
-  const id = String(
-    event.payload.partId ||
-      (event.payload.part && typeof event.payload.part === 'object'
-        ? (event.payload.part as Record<string, unknown>).id || componentId
-        : componentId)
-  )
+  const { componentId, component, row: rawRow } = event.payload
+  if (typeof componentId !== 'string' || !componentId.trim() || typeof component !== 'string') return state
 
   const previous = state.parts.find(
     (part): part is ChatBlockPart => part.kind === 'block' && part.componentId === componentId
   )
-
-  let meta = { ...(previous?.meta || {}) }
-  let items = [...(previous?.items || [])]
-
-  if (row) {
-    if (row.type === 'meta' || row.type === 'stem') {
-      const stemMeta: Record<string, unknown> = { ...row }
-      if (typeof row.question === 'string') {
-        stemMeta.question = row.question
-      } else if (typeof row.stem === 'string') {
-        stemMeta.question = row.stem
-      } else if (typeof row.title === 'string') {
-        stemMeta.question = row.title
-      }
-      if (typeof row.questionType === 'string') {
-        stemMeta.questionType = row.questionType
-      }
-      meta = { ...meta, ...stemMeta }
-    } else if (row.type === 'item' || row.type === 'option') {
-      const optionKey = String(row.key ?? (row.label ?? ['A', 'B', 'C', 'D', 'E', 'F'][items.length] ?? ''))
-      const optionText = String(row.text ?? (row.content ?? (row.title ?? '')))
-      const existingIndex = items.findIndex((item) => {
-        if (component === 'quiz' && optionKey) {
-          return String(item.key) === optionKey
-        }
-        if (typeof item.title === 'string' && typeof row.title === 'string' && item.title) {
-          return item.title === row.title
-        }
-        return false
-      })
-      if (existingIndex >= 0) {
-        items[existingIndex] = { ...items[existingIndex], ...row, ...(component === 'quiz' ? { key: optionKey, text: optionText } : {}) }
-      } else if (isItemSubstantive(component, row, optionKey, optionText)) {
-        // 字段完整性守卫 (Field Completeness Guard)：只允许达到封口要求的结构节点推入队列，杜绝半截节点造成画布重排抽搐
-        items.push({ ...row, ...(component === 'quiz' ? { key: optionKey, text: optionText } : {}) })
-      }
-    }
+  const isActivity = component === 'quiz' || component === 'question'
+  if (event.event === 'block.started') {
+    if (previous) return state
+    return setPart(state, {
+      id: componentId,
+      componentId,
+      kind: 'block',
+      component,
+      state: 'GENERATING',
+      meta: {},
+      items: [],
+    })
   }
+  if (!previous || previous.state !== 'GENERATING' || previous.component !== component
+    || rawRow === null || typeof rawRow !== 'object' || Array.isArray(rawRow)) return state
 
-  const candidate = {
-    id,
-    componentId,
-    kind: 'block',
-    component,
-    state: previous?.state === 'READY' ? 'READY' : 'GENERATING',
-    meta,
-    items,
-    ...(event.payload.questionId ? { questionId: event.payload.questionId } : {}),
+  const row = rawRow as Record<string, unknown>
+  if (row.type === (isActivity ? 'stem' : 'meta')) {
+    return setPart(state, { ...previous, meta: { ...previous.meta, ...row } })
   }
+  if (component === 'question' || row.type !== (component === 'quiz' ? 'option' : 'item')
+    || !isItemSubstantive(component, row)) return state
 
-  return setPart(state, candidate)
+  const items = [...previous.items]
+  const index = items.findIndex((item) => component === 'quiz'
+    ? item.key === row.key
+    : typeof item.title === 'string' && item.title === row.title)
+  if (index < 0) {
+    items.push(row)
+  } else {
+    items[index] = { ...items[index], ...row }
+  }
+  return setPart(state, { ...previous, items })
 }
 
 /**
@@ -266,34 +238,12 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     }
 
     case 'block.started':
-      next = streamingBlock(next, event)
-      break
-
     case 'block.item':
-      next = streamingBlock(next, event, event.payload.row as Record<string, unknown> | undefined)
+      next = streamingBlock(next, event)
       break
 
     case 'block.completed':
       next = setPart(next, event.payload.part)
-      break
-
-    case 'activity.ready':
-      if (event.payload.part) {
-        next = setPart(next, event.payload.part)
-      } else if (event.payload.componentId) {
-        const compId = String(event.payload.componentId)
-        const block = next.parts.find((p): p is ChatBlockPart => p.kind === 'block' && p.componentId === compId)
-        if (block) {
-          const rawQId = event.payload.questionId || event.payload.activityId || block.questionId
-          const questionId = rawQId ? String(rawQId) : undefined
-          const updatedBlock: ChatBlockPart = {
-            ...block,
-            state: 'READY',
-            ...(questionId ? { questionId } : {}),
-          }
-          next = setPart(next, updatedBlock)
-        }
-      }
       break
 
     case 'activity.submitted': {

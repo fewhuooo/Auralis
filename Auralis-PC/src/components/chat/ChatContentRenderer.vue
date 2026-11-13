@@ -12,7 +12,8 @@ const props = withDefaults(defineProps<{
   parts: readonly ChatContentPart[]
   streaming?: boolean
   busy?: boolean
-}>(), { streaming: false, busy: false })
+  readOnly?: boolean
+}>(), { streaming: false, busy: false, readOnly: false })
 
 const emit = defineEmits<{
   draftChange: [componentId: string, draft: ChatActivityDraft]
@@ -143,6 +144,7 @@ function onSubmit(questionId: string, answer: ChatActivityAnswer): void {
         :block="part"
         :draft="draftFor(part)"
         :busy="busy"
+        :read-only="readOnly"
         @draft-change="onDraftChange"
         @submit="onSubmit"
       />

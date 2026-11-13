@@ -8,6 +8,7 @@ const props = defineProps<{
   block: ChatBlockPart
   draft: ChatActivityDraft
   busy?: boolean
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +28,8 @@ const selectedKeys = computed(() =>
     : []
 )
 const questionDraft = computed(() => (typeof props.draft === 'string' ? props.draft : ''))
-const submission = computed(() => createChatActivitySubmission(props.block, props.draft, Boolean(props.busy)))
+const submission = computed(() => createChatActivitySubmission(props.block, props.draft, Boolean(props.busy || props.readOnly)))
+const answerDisabled = computed(() => props.readOnly || props.block.state === 'INVALID')
 const placeholderSlots = computed(() => {
   if (props.block.state !== 'GENERATING' || !isQuiz.value) return []
   const currentCount = props.block.items.length
@@ -42,7 +44,16 @@ const stateMessage = computed(() => {
   if (props.block.state === 'GENERATING') return '题卡仍在整理生成中…'
   if (props.block.state === 'INVALID') return '题目未完整生成'
   if (props.block.state === 'SUBMITTED') return '已完成作答并提交'
+  if (props.readOnly) return '历史题卡仅供查看'
+  if (props.busy) return '当前会话正在处理，请稍后提交'
   return submission.value ? '选择完毕，可以提交回答' : '请阅读题目并选择你的答案'
+})
+const statusLabel = computed(() => {
+  if (props.block.state === 'SUBMITTED') return '已提交'
+  if (props.block.state === 'INVALID') return props.busy && !props.readOnly ? '生成中' : '不可用'
+  if (props.block.state === 'GENERATING') return '生成中'
+  if (!isQuiz.value) return '思考题'
+  return isMultiple.value ? '多项思考题' : '单项选择'
 })
 
 const submittedAnswer = computed((): string[] => {
@@ -92,7 +103,7 @@ function submit(): void {
     <header class="chat-activity__header">
       <div class="chat-activity__heading">
         <span class="chat-activity__status-pill">
-          {{ block.state === 'SUBMITTED' ? '已提交' : (block.state === 'INVALID' && !busy) ? '不可用' : (block.state === 'GENERATING' || busy) ? '生成中' : (isQuiz ? (isMultiple ? '多项思考题' : '单项选择') : '思考题') }}
+          {{ statusLabel }}
         </span>
       </div>
     </header>
@@ -102,7 +113,7 @@ function submit(): void {
       class="chat-activity__question"
     >
       <div v-if="question" v-html="renderMarkdown(question, block.state === 'GENERATING')" />
-      <div v-else-if="block.state === 'GENERATING' || (block.state === 'INVALID' && busy)" class="question-skeleton" aria-hidden="true">
+      <div v-else-if="block.state === 'GENERATING' || (block.state === 'INVALID' && busy && !readOnly)" class="question-skeleton" aria-hidden="true">
         <span class="question-shimmer-line" />
       </div>
       <div v-else-if="block.state === 'INVALID'" class="invalid-question-text">
@@ -118,7 +129,7 @@ function submit(): void {
         class="chat-activity__option"
         :class="{
           'is-selected': selectedKeys.includes(String(item.key)),
-          'is-disabled': block.state === 'INVALID',
+          'is-disabled': answerDisabled,
         }"
       >
         <input
@@ -127,7 +138,7 @@ function submit(): void {
           class="chat-activity__native-input"
           :checked="selectedKeys.includes(String(item.key))"
           :value="item.key"
-          :disabled="block.state === 'INVALID'"
+          :disabled="answerDisabled"
           @change="toggleMultipleAnswer(String(item.key), ($event.target as HTMLInputElement).checked)"
         >
         <input
@@ -137,7 +148,7 @@ function submit(): void {
           :name="`chat-answer-${block.componentId}`"
           :checked="selectedKeys.includes(String(item.key))"
           :value="item.key"
-          :disabled="block.state === 'INVALID'"
+          :disabled="answerDisabled"
           @change="setSingleAnswer(String(item.key))"
         >
         <span class="chat-activity__badge" aria-hidden="true">
@@ -174,7 +185,7 @@ function submit(): void {
       </template>
     </fieldset>
 
-    <div v-if="!isQuiz && block.state !== 'SUBMITTED'" class="chat-activity__answer-field">
+    <div v-if="!isQuiz && block.state !== 'SUBMITTED' && !readOnly" class="chat-activity__answer-field">
       <label class="sr-only" :for="`chat-answer-text-${block.componentId}`">你的回答</label>
       <textarea
         :id="`chat-answer-text-${block.componentId}`"
@@ -194,7 +205,7 @@ function submit(): void {
     <footer class="chat-activity__footer">
       <p role="status" class="chat-activity__tip">{{ stateMessage }}</p>
       <button
-        v-if="block.state !== 'SUBMITTED' && block.state !== 'INVALID'"
+        v-if="block.state !== 'SUBMITTED' && !answerDisabled"
         type="button"
         class="chat-activity__submit-btn"
         :disabled="!submission"

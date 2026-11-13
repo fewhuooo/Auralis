@@ -292,6 +292,8 @@ The activity `reference` is deliberately absent from `meta`, `items`, SSE, and p
 
 ## 6. Cancellation, recovery, and slot ownership
 
+If the MVC executor rejects a newly admitted stream before execution starts, the server settles that pending attempt as `FAILED` with `CHAT_ATTEMPT_NOT_DISPATCHED`, releases the conversation slot, and returns the existing HTTP 503 response. An already submitted activity answer remains committed, and the feedback run can be retried. Rejecting a replay leaves the original attempt untouched.
+
 Cancellation requests stop the synchronous provider read and prevent subsequent tool execution, but a run does not release its conversation slot while that reader or a read tool is still executing. The worker publishes terminal cancellation/unknown state only through the existing owner fence. If cancellation, malformed output, EOF, or another failure interrupts a started display call, the visible part transitions to `INVALID`; accepted rows stay visible and submission remains disabled. An `activity.ready` transaction that has already committed is durable even if cancellation arrives immediately afterward.
 
 An `UNKNOWN` owner state retains the conversation slot. Reconnecting to SSE or closing a client connection does not prove that a provider reader or tool exited. A slot is released only after the executing worker has returned and persisted its terminal result, or existing recovery has safely established that no execution owns it.

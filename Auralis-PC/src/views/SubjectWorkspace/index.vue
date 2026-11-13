@@ -686,7 +686,13 @@
                   :streaming="false"
                   :has-content="true"
                 />
-                <ChatContentRenderer :parts="msg.parts" :streaming="false" :busy="isAiStreaming" @submit="submitChatActivity" />
+                <ChatContentRenderer
+                  :parts="msg.parts"
+                  :streaming="false"
+                  :busy="!canSendWorkspaceChat && !chatStore.isLegacySession"
+                  :read-only="chatStore.isLegacySession"
+                  @submit="submitChatActivity"
+                />
                 <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
                   <div class="citation-title">
                     <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
@@ -717,7 +723,7 @@
                 </div>
                 <div v-else-if="(msg.status === 'FAILED' || msg.status === 'INTERRUPTED') && !isAiStreaming" class="chat-msg-interrupted-bar">
                   <span class="interrupted-hint">{{ msg.status === 'FAILED' ? '生成失败' : '回复未完整输出' }}</span>
-                  <button type="button" class="chat-retry-reply-btn" @click="handleRetryAssistantMessage(msg.id)">
+                  <button v-if="canSendWorkspaceChat" type="button" class="chat-retry-reply-btn" @click="handleRetryAssistantMessage(msg.id)">
                     <IconRotate :size="12" :stroke-width="2" />
                     <span>重试回复</span>
                   </button>
@@ -771,7 +777,7 @@
             v-else-if="pendingChatMessage"
             type="button"
             class="chat-error-retry"
-            :disabled="isAiStreaming"
+            :disabled="!canSendWorkspaceChat"
             @click="retryChat"
           >重试</button>
         </div>
@@ -833,7 +839,7 @@
           <button
             class="ai-send-btn"
             :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
-            :disabled="!canUseWorkspaceChat || (!isAiStreaming && (!chatInput.trim() && !quotedSelection)) || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession"
+            :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
             :title="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
             :aria-label="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
@@ -2180,7 +2186,7 @@ const presetQuestions: PresetQuestionItem[] = [
 ]
 
 const sendPreset = (q: string) => {
-  if (!canUseWorkspaceChat.value) return
+  if (!canSendWorkspaceChat.value) return
   chatInput.value = q
   sendChat()
 }
@@ -2766,10 +2772,10 @@ watch([streamingReasoning, streamingTools, streamingContent, () => streamingPart
 })
 
 const sendChat = async () => {
-  if (!canUseWorkspaceChat.value) return
+  if (!canSendWorkspaceChat.value) return
   const msg = chatInput.value.trim()
   const selectionToSend = quotedSelection.value ? quotedSelection.value.slice(0, 4000) : undefined
-  if ((!msg && !selectionToSend) || isAiStreaming.value) return
+  if (!msg && !selectionToSend) return
   if (showProcessingRequired.value) {
     showNotReadyDialog.value = true
     return
@@ -2801,9 +2807,9 @@ const sendChat = async () => {
 }
 
 const retryChat = async () => {
-  if (!canUseWorkspaceChat.value) return
+  if (!canSendWorkspaceChat.value) return
   const pending = pendingChatMessage.value
-  if (!pending || isAiStreaming.value) return
+  if (!pending) return
   isAutoScrollLocked.value = false
   scrollChatToBottom()
   try {
@@ -2816,7 +2822,7 @@ const retryChat = async () => {
 }
 
 const handleRetryAssistantMessage = (msgId: string) => {
-  if (!canUseWorkspaceChat.value || isAiStreaming.value) return
+  if (!canSendWorkspaceChat.value) return
   isAutoScrollLocked.value = false
   try {
     void chatStore.retryPendingMessage(msgId)
@@ -2851,7 +2857,7 @@ const clearChat = () => {
 }
 
 const submitChatActivity = async (questionId: string, answer: import('@/types/chatContent').ChatActivityAnswer) => {
-  if (!canUseWorkspaceChat.value) return
+  if (!canSendWorkspaceChat.value) return
   const block = storedChatMessages.value.flatMap((message) => message.parts)
     .find((part): part is Extract<import('@/types/chatContent').ChatContentPart, { kind: 'block' }> => part.kind === 'block' && part.questionId === questionId)
   if (!block) return
@@ -2954,7 +2960,7 @@ const goToProcessingCenter = () => {
   router.push('/profile')
 }
 const sendSelectionQuestion = async (prompt: string) => {
-  if (!canUseWorkspaceChat.value || !selectedText.value || isAiStreaming.value) return
+  if (!canSendWorkspaceChat.value || !selectedText.value) return
   if (showProcessingRequired.value) {
     showNotReadyDialog.value = true
     return
@@ -2969,7 +2975,7 @@ const sendSelectionQuestion = async (prompt: string) => {
 }
 const explainSelection = () => { void sendSelectionQuestion('请解释我选中的内容，并指出其中的关键概念。') }
 const askSelection = () => {
-  if (!canUseWorkspaceChat.value) return
+  if (!canSendWorkspaceChat.value) return
   chatInput.value = '请围绕我选中的内容继续讲解：'
   void sendSelectionQuestion(chatInput.value)
   chatInput.value = ''
@@ -3005,6 +3011,8 @@ const workspaceChatSession = ref<{ subjectId: string; sessionId: string } | null
 const canUseWorkspaceChat = computed(() => workspaceChatSession.value !== null
   && workspaceChatSession.value.subjectId === subjectId.value
   && workspaceChatSession.value.sessionId === chatStore.activeSession?.id)
+const canSendWorkspaceChat = computed(() => canUseWorkspaceChat.value
+  && !chatStore.isLegacySession && !isAiStreaming.value && !chatStore.activeRun?.executionActive && !chatStore.isRecovering)
 
 const startFreshChatSession = (fallbackTitle = '学科对话', createNew = false) => {
   const id = subjectId.value

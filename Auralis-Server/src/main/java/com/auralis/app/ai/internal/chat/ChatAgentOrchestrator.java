@@ -148,6 +148,11 @@ public class ChatAgentOrchestrator {
         execute(userId, admission, requestId, command, sink);
     }
 
+    public void rejectDispatch(UUID userId, ChatRuntimePersistenceService.Admission admission) {
+        persistence.rejectDispatch(userId, admission.run().getConversationId(), admission.run().getId(),
+                admission.attempt().getId(), admission.attempt().getFenceVersion());
+    }
+
     public void retry(UUID userId, UUID conversationId, UUID runId, String requestId,
                       Consumer<ChatSseEnvelope> sink) {
         executeAdmission(userId, admitRetry(userId, conversationId, runId, requestId), requestId, null, sink);

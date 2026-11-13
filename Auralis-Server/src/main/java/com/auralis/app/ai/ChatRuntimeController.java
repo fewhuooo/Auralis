@@ -8,6 +8,9 @@ import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,10 +35,13 @@ public class ChatRuntimeController {
     private final ChatAgentOrchestrator orchestrator;
     private final TextGenerationService textGeneration;
     private final ObjectMapper mapper;
+    private final AsyncTaskExecutor mvcAsyncTaskExecutor;
 
     public ChatRuntimeController(ChatAgentOrchestrator orchestrator, TextGenerationService textGeneration,
-                                 ObjectMapper mapper) {
+                                 ObjectMapper mapper,
+                                 @Qualifier("mvcAsyncTaskExecutor") AsyncTaskExecutor mvcAsyncTaskExecutor) {
         this.orchestrator = orchestrator; this.textGeneration = textGeneration; this.mapper = mapper;
+        this.mvcAsyncTaskExecutor = mvcAsyncTaskExecutor;
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -46,7 +52,7 @@ public class ChatRuntimeController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AiMessageCommand command, HttpServletRequest request) {
         ChatRuntimePersistenceService.Admission admission = orchestrator.admit(principal.userId(), command);
-        disableMvcAsyncTimeout(request);
+        configureMvcStream(request, principal.userId(), admission);
         StreamingResponseBody body = output -> orchestrator.executeAdmission(principal.userId(), admission,
                 command.requestId(), command, event -> writeEvent(output, event));
         return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
@@ -66,7 +72,7 @@ public class ChatRuntimeController {
             @Valid @RequestBody ChatRetryCommand command, HttpServletRequest request) {
         ChatRuntimePersistenceService.Admission admission = orchestrator.admitRetry(principal.userId(),
                 conversationId, runId, command.requestId());
-        disableMvcAsyncTimeout(request);
+        configureMvcStream(request, principal.userId(), admission);
         StreamingResponseBody body = output -> orchestrator.executeAdmission(principal.userId(), admission,
                 command.requestId(), null, event -> writeEvent(output, event));
         return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
@@ -75,8 +81,20 @@ public class ChatRuntimeController {
                 .body(body);
     }
 
-    private void disableMvcAsyncTimeout(HttpServletRequest request) {
-        WebAsyncUtils.getAsyncManager(request).getAsyncWebRequest().setTimeout(0L);
+    private void configureMvcStream(HttpServletRequest request, UUID userId,
+                                    ChatRuntimePersistenceService.Admission admission) {
+        var asyncManager = WebAsyncUtils.getAsyncManager(request);
+        asyncManager.getAsyncWebRequest().setTimeout(0L);
+        if (admission.replay()) return;
+        // MVC submits the stream after this handler returns. Rejected streams never enter the body.
+        asyncManager.setTaskExecutor(task -> {
+            try {
+                mvcAsyncTaskExecutor.execute(task);
+            } catch (TaskRejectedException rejected) {
+                orchestrator.rejectDispatch(userId, admission);
+                throw rejected;
+            }
+        });
     }
 
     @GetMapping("/conversations/{conversationId}/runs/{runId}")

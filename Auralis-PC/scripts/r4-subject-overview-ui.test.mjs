@@ -329,7 +329,7 @@ test('workspace mounts and switches local files and knowledge blocks while Chat 
   const script = ts.createSourceFile('workspace.ts', descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true)
   const names = new Set([
     'selectFile', 'chatSessionInitialization', 'startFreshChatSession',
-    'isComponentMounted', 'currentSubjectSwitchGen', 'workspaceChatSession', 'canUseWorkspaceChat',
+    'isComponentMounted', 'currentSubjectSwitchGen', 'workspaceChatSession', 'canUseWorkspaceChat', 'canSendWorkspaceChat',
     'sendChat', 'sendPreset', 'sendSelectionQuestion', 'askSelection', 'clearChat',
   ])
   const lifecycle = script.statements.filter(statement => {
@@ -450,6 +450,19 @@ test('workspace mounts and switches local files and knowledge blocks while Chat 
   chatStore.activeSession = { id: 'conversation-b' }
   chatRequests[2].resolve('conversation-b')
   await new Promise(resolve => setImmediate(resolve))
+  quotedSelection.value = 'quote from subject b'
+  chatStore.activeRun = { status: 'UNKNOWN', executionActive: true }
+  chatStore.isRecovering = true
+  await sendChat()
+  sendPreset('preset during recovery')
+  await sendSelectionQuestion('selection during recovery')
+  askSelection()
+  assert.equal(chatInput.value, 'draft')
+  assert.equal(quotedSelection.value, 'quote from subject b')
+  assert.deepEqual(sentMessages, [])
+  chatStore.activeRun = null
+  chatStore.isRecovering = false
+  quotedSelection.value = ''
   await sendChat()
   assert.deepEqual(sentMessages, [['conversation-b', 'draft']])
   assert.equal(chatInput.value, '')
