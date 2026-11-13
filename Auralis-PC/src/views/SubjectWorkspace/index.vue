@@ -2864,6 +2864,7 @@ const submitChatActivity = async (questionId: string, answer: import('@/types/ch
   try {
     await chatStore.submitActivity(questionId, answer, block)
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return
     const safe = classifyClientError(error, 'CHAT')
     ElNotification({ title: '提交失败', message: safe.message, type: 'error', position: 'top-right' })
   }
