@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { registerHooks } from 'node:module'
 import { createPinia, setActivePinia } from 'pinia'
 import ts from 'typescript'
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 test('WorkspaceKnowledgeBlockDialog resets mode to view on close or hide', async () => {
   const root = new URL('../src/', import.meta.url)
@@ -17,24 +17,78 @@ test('WorkspaceKnowledgeBlockDialog resets mode to view on close or hide', async
   assert.match(dialogSrc, /currentMode\.value\s*=\s*'view'/)
 })
 
-test('SubjectWorkspace properly resets creation mode, tracks selection, and updates list', async () => {
+test('SubjectWorkspace follows the latest detail and preserves a stale editing draft', async () => {
   const root = new URL('../src/', import.meta.url)
   const workspaceSrc = await readFile(new URL('views/SubjectWorkspace/index.vue', root), 'utf8')
+  const dialogSrc = await readFile(new URL('components/knowledge/WorkspaceKnowledgeBlockDialog.vue', root), 'utf8')
+  const workspace = workspaceSrc.slice(workspaceSrc.indexOf('const blockDialogVisible'), workspaceSrc.indexOf('const handleResolveBlockConflict'))
+  const dialog = dialogSrc.slice(dialogSrc.indexOf('const currentMode'), dialogSrc.indexOf('const isRenderView'))
+  const block = { id: 'block', subjectId: 'math', title: 'Original', content: 'Original body', version: 4 }
+  const createWorkspace = new Function('ref', 'computed', 'watch', 'reactive', 'block', ts.transpile(`
+    const subjectBlocks = ref([block]), subjectId = ref('math')
+    const authStore = reactive({ loginGeneration: Symbol() })
+    const isComponentMounted = true, currentSubjectSwitchGen = 1
+    const writes = [], notices = []
+    const blockStore = { knowledgeBlockConflicts: {}, updateBlock: async block => writes.push(block) }
+    const ElNotification = notice => notices.push(notice)
+    ${workspace}
+    return { subjectBlocks, subjectId, authStore, selectedBlock, blockDialogVisible, blockDialogMode, blockEditBaseline,
+      blockEditWarning, handleBlockClick, reviewLatestBlock, handleSaveBlockFromDialog, writes, notices }
+  `, { target: ts.ScriptTarget.ES2022 }))
+  const createDialog = new Function('ref', 'computed', 'watch', 'props', ts.transpile(`
+    ${dialog}
+    return { formData, currentMode }
+  `, { target: ts.ScriptTarget.ES2022 }))
+  const view = createWorkspace(ref, computed, watch, reactive, block)
+  const props = reactive({
+    get block() { return view.selectedBlock.value },
+    get modelValue() { return view.blockDialogVisible.value },
+    get mode() { return view.blockDialogMode.value },
+    get editBaseline() { return view.blockEditBaseline.value },
+    themeColors: [],
+  })
+  const editor = createDialog(ref, computed, watch, props)
 
-  // Selection class on block card
-  assert.match(workspaceSrc, /:class="\{\s*'is-selected':\s*selectedBlock\?\.id\s*===\s*block\.id\s*\}"/)
+  view.handleBlockClick(block)
+  view.subjectBlocks.value = [{ ...block, version: 5, content: 'Synced body' }]
+  assert.equal(view.selectedBlock.value.content, 'Synced body')
+  view.blockDialogMode.value = 'edit'
+  await nextTick()
+  assert.equal(editor.formData.value.content, 'Synced body')
+  editor.formData.value.title = 'Draft title'
 
-  // handleBlockClick resets isCreateMode and isEditMode
-  assert.match(workspaceSrc, /const handleBlockClick = \(b: any\) => \{[\s\S]*?selectedBlock\.value = b[\s\S]*?isCreateMode\.value = false[\s\S]*?isEditMode\.value = false[\s\S]*?blockDialogVisible\.value = true/)
+  const latest = { ...block, version: 6, content: 'Newer remote body' }
+  view.subjectBlocks.value = [latest]
+  view.handleBlockClick(latest)
+  await nextTick()
+  assert.equal(editor.formData.value.title, 'Draft title')
+  assert.equal(editor.formData.value.content, 'Synced body')
+  assert.match(view.blockEditWarning.value, /已更新/)
+  await view.handleSaveBlockFromDialog(editor.formData.value)
+  assert.deepEqual(view.writes, [])
 
-  // closeBlockDialog resets isCreateMode and isEditMode
-  assert.match(workspaceSrc, /const closeBlockDialog = \(\) => \{[\s\S]*?blockDialogVisible\.value = false[\s\S]*?isCreateMode\.value = false[\s\S]*?isEditMode\.value = false/)
+  view.reviewLatestBlock()
+  await nextTick()
+  assert.equal(editor.formData.value.title, 'Draft title')
+  assert.equal(editor.formData.value.content, 'Newer remote body')
+  await view.handleSaveBlockFromDialog(editor.formData.value)
+  assert.equal(view.writes[0].version, 6)
+  assert.equal(view.writes[0].title, 'Draft title')
+  assert.equal(view.writes[0].content, 'Newer remote body')
+  assert.match(view.notices[0].title, /本机.*等待同步/)
 
-  // handleSaveBlockFromDialog updates selectedBlock with the newly created block
-  assert.match(workspaceSrc, /const newId = await blockStore\.addBlock\([\s\S]*?const createdBlock = recentBlocks\.value\.find\(\(b\) => b\.id === newId\)[\s\S]*?selectedBlock\.value = createdBlock/)
-
-  // CSS for selected card exists
-  assert.match(workspaceSrc, /\.block-card\.is-selected\s*\{/)
+  view.handleBlockClick(latest)
+  view.blockDialogMode.value = 'edit'
+  await nextTick()
+  editor.formData.value.content = 'Retained on removal'
+  view.subjectBlocks.value = []
+  await nextTick()
+  assert.equal(view.blockDialogVisible.value, true)
+  assert.equal(editor.formData.value.content, 'Retained on removal')
+  assert.match(view.blockEditWarning.value, /移除/)
+  view.blockDialogMode.value = 'view'
+  await nextTick()
+  assert.equal(view.blockDialogVisible.value, false)
 })
 
 test('useKnowledgeStore sorts local blocks descending by createdAt/time', async () => {
@@ -148,6 +202,79 @@ test('Asset knowledge draft survives refresh and cannot overwrite a newer or del
     } finally {
       stop()
     }
+  } finally {
+    loader.deregister()
+  }
+})
+
+test('workspace saves one knowledge block per in-flight creation and keeps a failed draft open', async (t) => {
+  const root = new URL('../src/', import.meta.url)
+  const loader = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const withExtension = /\.[cm]?[jt]s$/.test(specifier) ? specifier : specifier + '.ts'
+      if (specifier.startsWith('@/')) return nextResolve(new URL(withExtension.slice(2), root).href, context)
+      if (specifier.startsWith('.') && context.parentURL?.startsWith(root.href)) {
+        return nextResolve(new URL(withExtension, context.parentURL).href, context)
+      }
+      return nextResolve(specifier, context)
+    },
+  })
+  try {
+    const { useAuthStore } = await import('../src/store/useAuthStore.ts')
+    const { useKnowledgeStore } = await import('../src/store/useKnowledgeStore.ts')
+    const { getLocalRepository } = await import('../src/services/localDb.ts')
+    setActivePinia(createPinia())
+    const auth = useAuthStore()
+    auth.user = { id: 'workspace-create-owner' }
+    auth.serverDeviceId = 'workspace-create-device'
+    const store = useKnowledgeStore()
+    const repo = await getLocalRepository(auth.user.id, auth.serverDeviceId)
+
+    const workspace = await readFile(new URL('views/SubjectWorkspace/index.vue', root), 'utf8')
+    const script = workspace.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
+    const ast = ts.createSourceFile('SubjectWorkspace.ts', script, ts.ScriptTarget.Latest, true)
+    const names = new Set(['handleSaveBlockFromDialog', 'saveKnowledgeBlock', 'isCreatingKnowledgeBlock', 'createKnowledgeBlock'])
+    const statements = ast.statements
+      .filter(statement => statement.declarationList?.declarations.some(declaration => names.has(declaration.name.text)))
+      .map(statement => statement.getText(ast))
+      .join('\n')
+    const createWorkspace = new Function('ref', 'blockStore', ts.transpile(`
+      const subjectId = ref('math'), activeSubject = ref({ id: 'math', name: 'Math' })
+      const authStore = { loginGeneration: 1 }
+      const currentSubjectSwitchGen = 1, isComponentMounted = true
+      const activeSourceFiles = ref([{ id: 'math-source', subjectId: 'math' }])
+      const selectedSourceId = ref(undefined), selectedFileId = ref('math-source')
+      const selectedFile = ref({ name: 'Source' }), selectedBlockId = ref(null)
+      const isCreateMode = ref(true), showKnowledgeEditor = ref(true)
+      const notifications = []
+      const ElNotification = notification => notifications.push(notification)
+      const closeBlockDialog = () => { isCreateMode.value = false }
+      const clearSelection = () => {}
+      ${statements}
+      return { handleSaveBlockFromDialog, saveKnowledgeBlock, isCreateMode, showKnowledgeEditor, notifications }
+    `, { target: ts.ScriptTarget.ES2022 }))
+    const editor = createWorkspace(ref, store)
+    const manual = { subject: 'Math', title: 'Manual', content: 'Manual body', source: 'Manual' }
+    const selected = { title: 'Excerpt', content: 'Selected body' }
+
+    const failingCommit = t.mock.method(repo, 'commitMutation', async () => { throw new Error('Local write failed') })
+    await editor.handleSaveBlockFromDialog(manual)
+    failingCommit.mock.restore()
+    assert.equal(editor.isCreateMode.value, true)
+    assert.equal(editor.notifications.at(-1).type, 'error')
+    assert.deepEqual(await repo.listPending('KNOWLEDGE_BLOCK'), [])
+
+    await Promise.all([editor.handleSaveBlockFromDialog(manual), editor.handleSaveBlockFromDialog(manual)])
+    await Promise.all([editor.saveKnowledgeBlock(selected), editor.saveKnowledgeBlock(selected)])
+    assert.equal(editor.isCreateMode.value, false)
+    assert.equal(editor.showKnowledgeEditor.value, false)
+    assert.deepEqual(editor.notifications.map(notification => notification.title), ['保存失败', '已录入', '已保存为知识块'])
+    const pending = await repo.listPending('KNOWLEDGE_BLOCK')
+    assert.deepEqual(pending.map(record => record.mutationType), ['CREATE', 'CREATE'])
+    const rows = await repo.list('KNOWLEDGE_BLOCK', { includeDeleted: false })
+    assert.equal(rows.length, 2)
+    assert.equal(rows.find(row => row.value.title === manual.title)?.value.content, manual.content)
+    assert.equal(rows.find(row => row.value.title === selected.title)?.value.sourceId, 'math-source')
   } finally {
     loader.deregister()
   }

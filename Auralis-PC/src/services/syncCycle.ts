@@ -107,8 +107,14 @@ export async function applyPullPage(
   const unresolved = await repository.listUnresolved()
   checkCurrent()
   const protectedResources = new Set<string>()
+  const knowledgeBlockConflicts = new Set<string>()
   for (const mutation of unresolved) {
     protectedResources.add(resourceKey(mutation.resourceType, mutation.resourceId))
+    if (mutation.resourceType === 'KNOWLEDGE_BLOCK' && mutation.mutationType === 'UPDATE'
+      && ((mutation.status === 'conflict' && mutation.error === 'RESOURCE_VERSION_CONFLICT')
+        || (mutation.status === 'error' && mutation.error === 'RESOURCE_NOT_FOUND'))) {
+      knowledgeBlockConflicts.add(mutation.resourceId)
+    }
     if (mutation.resourceType === 'TASK'
       && (mutation.mutationType === 'SCHEDULE_INSERTION'
         || mutation.mutationType === 'SCHEDULE_SWAP'
@@ -124,7 +130,8 @@ export async function applyPullPage(
   const changed = new Set<SyncResourceType>()
   for (const change of latestChangesByResource(changes)) {
     checkCurrent()
-    if (protectedResources.has(resourceKey(change.resourceType, change.resourceId))) continue
+    if (protectedResources.has(resourceKey(change.resourceType, change.resourceId))
+      && !(change.resourceType === 'KNOWLEDGE_BLOCK' && knowledgeBlockConflicts.has(change.resourceId))) continue
     const current = await repository.read(change.resourceType, change.resourceId)
     checkCurrent()
     const deletedAt = change.mutationType === 'DELETE'
@@ -430,7 +437,10 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
           || result.resourceId !== claimedMutation.resourceId) continue
         if (!await settlePushResult(input.repository, claimedMutation, result, checkCurrent)) continue
         ordinarySettled += 1
-        if (result.decision === 'APPLIED') changedResourceTypes.add(result.resourceType)
+        if (result.decision === 'APPLIED' || (result.resourceType === 'KNOWLEDGE_BLOCK'
+          && (claimedMutation.mutationType === 'UPDATE' || claimedMutation.mutationType === 'DELETE'))) {
+          changedResourceTypes.add(result.resourceType)
+        }
         const rejectedSubjectDelete = claimedMutation.resourceType === 'SUBJECT'
           && claimedMutation.mutationType === 'DELETE'
           && result.decision !== 'APPLIED'

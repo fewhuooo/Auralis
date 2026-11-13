@@ -4,6 +4,7 @@ import type {
   LocalMutationStatus,
   LocalSyncStatus,
 } from '@/types/api'
+import type { KnowledgeBlockView } from '@/api/useKnowledgeApi'
 import {
   createVersionedLocalSchema,
   documentProcessingJobFromRow,
@@ -84,6 +85,14 @@ export interface LocalMutationSettlement extends LocalResourceKey {
   remoteVersion?: number
 }
 
+export interface KnowledgeBlockConflictResolution {
+  blockId: string
+  clientMutationId: string
+  local: KnowledgeBlockView
+  remote: KnowledgeBlockView & { id: string; version: number; deletedAt?: string | null }
+  retryId?: string
+}
+
 export interface LocalMutationInput extends LocalResourceKey {
   clientMutationId: string
   mutationType: LocalMutation['mutationType']
@@ -110,11 +119,13 @@ export interface LocalRepositoryOptions {
 export class LocalConflictError extends Error {
   readonly code = 'LOCAL_VERSION_CONFLICT'
   readonly resource: LocalEntity<unknown> | null
+  readonly blockedByMutation: boolean
 
-  constructor(resource: LocalEntity<unknown> | null, message = 'Local version conflict') {
+  constructor(resource: LocalEntity<unknown> | null, message = 'Local version conflict', blockedByMutation = false) {
     super(message)
     this.name = 'LocalConflictError'
     this.resource = resource
+    this.blockedByMutation = blockedByMutation
   }
 }
 
@@ -159,6 +170,18 @@ function isUnresolved(mutation: Pick<LocalMutation, 'status'>): boolean {
   return ['pending', 'inflight', 'conflict', 'error'].includes(mutation.status)
 }
 
+function isKnowledgeBlockUpdateConflict(mutation: LocalMutation): boolean {
+  return mutation.resourceType === 'KNOWLEDGE_BLOCK' && mutation.mutationType === 'UPDATE'
+    && ((mutation.status === 'conflict' && mutation.error === 'RESOURCE_VERSION_CONFLICT')
+      || (mutation.status === 'error' && mutation.error === 'RESOURCE_NOT_FOUND'
+        && Boolean(asKnowledgeBlockConflictSnapshot(mutation.remoteValue, mutation.resourceId)?.deletedAt)))
+}
+
+function canCaptureKnowledgeBlockConflict(mutation: LocalMutation, deletedAt: string | null): boolean {
+  return isKnowledgeBlockUpdateConflict(mutation) || Boolean(deletedAt && mutation.resourceType === 'KNOWLEDGE_BLOCK'
+    && mutation.mutationType === 'UPDATE' && mutation.status === 'error' && mutation.error === 'RESOURCE_NOT_FOUND')
+}
+
 function mutationOrder(left: LocalMutation, right: LocalMutation): number {
   return left.createdAt.localeCompare(right.createdAt) || left.clientMutationId.localeCompare(right.clientMutationId)
 }
@@ -200,13 +223,26 @@ function projectCrudSettlement(
   mutation: LocalMutation,
   unresolved: LocalMutation[],
   current: LocalEntity<unknown> | null,
-): { resource: LocalEntity<unknown> | null; successor?: LocalMutation } {
+): { resource: LocalEntity<unknown> | null; successor?: LocalMutation; archiveRejection?: boolean } {
   const statuses = unresolved.map((item) => item.status)
   const syncStatus: LocalSyncStatus = statuses.includes('pending') || statuses.includes('inflight')
     ? 'pending' : statuses.includes('conflict') ? 'conflict' : statuses.includes('error') ? 'error' : 'synced'
   const resource = current && { ...current, syncStatus }
   const version = input.remoteVersion
   const value = input.remoteValue
+  if (mutation.resourceType === 'KNOWLEDGE_BLOCK' && mutation.mutationType === 'DELETE'
+    && unresolved.length === 0 && current?.deletedAt && current.version === mutation.baseVersion) {
+    if (input.status === 'error' && input.error === 'RESOURCE_NOT_FOUND') {
+      return { resource: { ...current, syncStatus: 'synced' }, archiveRejection: true }
+    }
+    if (input.status === 'conflict' && input.error === 'RESOURCE_VERSION_CONFLICT') {
+      const remote = asKnowledgeBlockConflictSnapshot(value, mutation.resourceId)
+      if (remote && remote.version === version && version > current.version) {
+        return { resource: { ...current, value: remote, version, deletedAt: remote.deletedAt ?? null, syncStatus: 'synced' },
+          archiveRejection: true }
+      }
+    }
+  }
   if (input.status !== 'applied' || version === undefined || !value || typeof value !== 'object'
     || Array.isArray(value) || version < (current?.version ?? 0)) return { resource }
 
@@ -222,6 +258,37 @@ function projectCrudSettlement(
   if (!resource || resource.version !== mutation.baseVersion || !successor) return { resource }
   advanceCrudVersion(successor, resource, version)
   return { resource, successor }
+}
+
+export function asKnowledgeBlockConflictSnapshot(
+  value: unknown, blockId: string,
+): KnowledgeBlockConflictResolution['remote'] | null {
+  const block = value as KnowledgeBlockConflictResolution['remote'] | null | undefined
+  return block?.id === blockId && typeof block.subjectId === 'string' && typeof block.title === 'string'
+    && typeof block.content === 'string' && typeof block.version === 'number' && Number.isSafeInteger(block.version)
+    && block.version >= 0 ? { ...block, id: block.id, version: block.version } : null
+}
+
+function projectKnowledgeBlockConflictResolution(
+  input: KnowledgeBlockConflictResolution, unresolved: LocalMutation[], current: LocalEntity<KnowledgeBlockView> | null,
+): LocalEntity<KnowledgeBlockView> {
+  const selected = unresolved.find((mutation) => mutation.clientMutationId === input.clientMutationId)
+  const remote = asKnowledgeBlockConflictSnapshot(input.remote, input.blockId)
+  const selectedSnapshot = selected && asKnowledgeBlockConflictSnapshot(selected.remoteValue, input.blockId)
+  if (!current || current.deletedAt || !selected || selected.remoteVersion === undefined
+    || !remote || remote.version < selected.remoteVersion || remote.version < current.version
+    || (remote.deletedAt && (input.retryId || selectedSnapshot?.deletedAt !== remote.deletedAt
+      || selectedSnapshot?.version !== remote.version))
+    || JSON.stringify(current.value) !== JSON.stringify(input.local)
+    || unresolved.some((mutation) => !isKnowledgeBlockUpdateConflict(mutation))) {
+    throw new LocalConflictError(current, '知识块状态已变化，请刷新后再处理同步冲突。')
+  }
+  const value = input.retryId ? {
+    ...remote, title: current.value.title, content: current.value.content,
+    colorOverride: current.value.colorOverride, updatedAt: current.value.updatedAt,
+  } : remote
+  return { ...current, value, version: remote.version, deletedAt: remote.deletedAt ?? null,
+    syncStatus: input.retryId ? 'pending' : 'synced' }
 }
 
 /** Detect optimistic schedule edits too: they intentionally retain server versions. */
@@ -585,7 +652,28 @@ export class LocalRepository {
              AND status IN ('pending', 'inflight', 'conflict', 'error')`,
           [this.userId, resourceType, resourceId],
         )
-        if (unresolved.length > 0) return false
+        if (unresolved.length > 0) {
+          const remote = resourceType === 'KNOWLEDGE_BLOCK' ? asKnowledgeBlockConflictSnapshot(value, resourceId) : null
+          if (!remote || remote.version !== options.version) return false
+          const conflicts = unresolved.map(mutationFromRow).filter((mutation) =>
+            canCaptureKnowledgeBlockConflict(mutation, options.deletedAt))
+          const newer = conflicts.filter((mutation) => remote.version > (mutation.remoteVersion ?? -1))
+          for (const mutation of newer) {
+            await database.execute(
+              `UPDATE local_mutations SET remote_payload = $1, remote_version = $2
+               WHERE user_id = $3 AND client_mutation_id = $4`,
+              [JSON.stringify({ ...remote, deletedAt: options.deletedAt }), remote.version, this.userId, mutation.clientMutationId],
+            )
+          }
+          return newer.length > 0
+        }
+        if (resourceType === 'KNOWLEDGE_BLOCK') {
+          const rows = await database.select<{ version: number }>(
+            `SELECT version FROM local_resource_records WHERE user_id = $1 AND resource_type = $2 AND resource_id = $3`,
+            [this.userId, resourceType, resourceId],
+          )
+          if (rows[0] && rows[0].version > options.version) return false
+        }
         await database.execute(
           `INSERT INTO local_resource_records
             (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
@@ -609,9 +697,20 @@ export class LocalRepository {
           throw error
         }
         }
-      if (state.mutations.some((item) => item.userId === this.userId && item.resourceType === resourceType
-        && item.resourceId === resourceId && ['pending', 'inflight', 'conflict', 'error'].includes(item.status))) {
-        return false
+      const unresolved = state.mutations.filter((item) => item.userId === this.userId && item.resourceType === resourceType
+        && item.resourceId === resourceId && isUnresolved(item))
+      if (unresolved.length > 0) {
+        const remote = resourceType === 'KNOWLEDGE_BLOCK' ? asKnowledgeBlockConflictSnapshot(value, resourceId) : null
+        if (!remote || remote.version !== options.version) return false
+        const newer = unresolved.filter((mutation) =>
+          canCaptureKnowledgeBlockConflict(mutation, options.deletedAt) && remote.version > (mutation.remoteVersion ?? -1))
+        if (newer.length === 0) return false
+        for (const mutation of newer) {
+          mutation.remoteVersion = remote.version
+          mutation.remoteValue = { ...remote, deletedAt: options.deletedAt }
+        }
+        this.writeBrowserState(state)
+        return true
       }
       const entity: LocalEntity<T> = {
         id: resourceId,
@@ -623,6 +722,7 @@ export class LocalRepository {
         value: clone(value),
       }
       const index = state.resources.findIndex((item) => item.userId === this.userId && item.resourceType === resourceType && item.id === resourceId)
+      if (resourceType === 'KNOWLEDGE_BLOCK' && index >= 0 && state.resources[index].version > options.version) return false
       if (index >= 0) state.resources[index] = entity as LocalEntity<unknown>
       else state.resources.push(entity as LocalEntity<unknown>)
       this.writeBrowserState(state)
@@ -1105,7 +1205,7 @@ export class LocalRepository {
             [this.userId, input.resourceType, input.resourceId],
           )
           if (blocked.length > 0) {
-            throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} has a non-pending local mutation`)
+            throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} has a non-pending local mutation`, true)
           }
         }
         const rows = mutation.mutationType !== 'CREATE' || input.expectedLocalVersion !== undefined || input.requireActiveResource
@@ -1123,6 +1223,10 @@ export class LocalRepository {
           }
           if (input.expectedLocalVersion !== undefined) {
             this.assertBaseVersion(existing, input.expectedLocalVersion, input.resourceType, input.resourceId)
+          }
+          if (mutation.resourceType === 'KNOWLEDGE_BLOCK' && mutation.mutationType === 'UPDATE'
+            && existing.syncStatus === 'conflict') {
+            throw new LocalConflictError(existing, '请先处理此知识块的同步冲突。', true)
           }
         }
 
@@ -1175,11 +1279,15 @@ export class LocalRepository {
       if (input.expectedLocalVersion !== undefined) {
         this.assertBaseVersion(existing, input.expectedLocalVersion, input.resourceType, input.resourceId)
       }
+      if (mutation.resourceType === 'KNOWLEDGE_BLOCK' && mutation.mutationType === 'UPDATE'
+        && existing.syncStatus === 'conflict') {
+        throw new LocalConflictError(existing, '请先处理此知识块的同步冲突。', true)
+      }
     }
     if (input.rejectIfNonPendingMutation && state.mutations.some((item) => item.userId === this.userId
       && item.resourceType === input.resourceType && item.resourceId === input.resourceId
       && ['inflight', 'conflict', 'error'].includes(item.status))) {
-      throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} has a non-pending local mutation`)
+      throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} has a non-pending local mutation`, true)
     }
     const entity: LocalEntity<T> = {
       id: input.resourceId,
@@ -1445,13 +1553,13 @@ export class LocalRepository {
            FROM local_resource_records WHERE user_id = $1 AND resource_type = $2 AND resource_id = $3`,
           [this.userId, input.resourceType, input.resourceId],
         )
-        const { resource, successor } = projectCrudSettlement(input, mutation,
+        const { resource, successor, archiveRejection } = projectCrudSettlement(input, mutation,
           unresolved.filter((item) => item !== mutation), resources[0] ? resourceFromRow(resources[0]) : null)
         await database.execute(
           `UPDATE local_mutations SET status = $1, error = $2, in_flight_at = NULL,
              remote_payload = $3, remote_version = $4
            WHERE user_id = $5 AND client_mutation_id = $6`,
-          [input.status, input.error ?? null,
+          [archiveRejection ? 'rejected' : input.status, input.error ?? null,
             input.remoteValue === undefined ? null : JSON.stringify(input.remoteValue), input.remoteVersion ?? null,
             this.userId, input.clientMutationId],
         )
@@ -1484,9 +1592,9 @@ export class LocalRepository {
       if (mutation?.status !== 'inflight' || mutation.mutationType !== input.mutationType) return false
       const resourceIndex = state.resources.findIndex((item) => item.userId === this.userId
         && item.resourceType === input.resourceType && item.id === input.resourceId)
-      const { resource } = projectCrudSettlement(input, mutation,
+      const { resource, archiveRejection } = projectCrudSettlement(input, mutation,
         unresolved.filter((item) => item !== mutation), state.resources[resourceIndex] ?? null)
-      mutation.status = input.status
+      mutation.status = archiveRejection ? 'rejected' : input.status
       if (input.error) mutation.error = input.error
       else delete mutation.error
       if (input.remoteValue === undefined) delete mutation.remoteValue
@@ -1499,6 +1607,61 @@ export class LocalRepository {
       }
       this.writeBrowserState(state)
       return true
+    })
+  }
+
+  async resolveKnowledgeBlockConflict(input: KnowledgeBlockConflictResolution): Promise<void> {
+    const makeRetry = (value: KnowledgeBlockView): LocalMutation | null => input.retryId ? this.mutationFromInput({
+      clientMutationId: input.retryId, resourceType: 'KNOWLEDGE_BLOCK', resourceId: input.blockId,
+      mutationType: 'UPDATE', baseVersion: input.remote.version,
+      payload: { baseVersion: input.remote.version, subjectId: value.subjectId, sourceId: value.sourceId,
+        title: value.title, content: value.content, colorOverride: value.colorOverride },
+    }) : null
+    if (this.sql) {
+      await this.runSqlTransaction(async (database) => {
+        const rows = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, remote_payload, remote_version
+           FROM local_mutations WHERE user_id = $1 AND resource_type = 'KNOWLEDGE_BLOCK' AND resource_id = $2
+             AND status IN ('pending', 'inflight', 'conflict', 'error')`,
+          [this.userId, input.blockId],
+        )
+        const resources = await database.select<LocalResourceRow>(
+          `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
+           FROM local_resource_records WHERE user_id = $1 AND resource_type = 'KNOWLEDGE_BLOCK' AND resource_id = $2`,
+          [this.userId, input.blockId],
+        )
+        const resource = projectKnowledgeBlockConflictResolution(input, rows.map(mutationFromRow),
+          resources[0] ? resourceFromRow<KnowledgeBlockView>(resources[0]) : null)
+        await database.execute(
+          `UPDATE local_resource_records SET version = $1, sync_status = $2, payload = $3, deleted_at = $4
+           WHERE user_id = $5 AND resource_type = 'KNOWLEDGE_BLOCK' AND resource_id = $6`,
+          [resource.version, resource.syncStatus, JSON.stringify(resource.value), resource.deletedAt, this.userId, input.blockId],
+        )
+        await database.execute(
+          `UPDATE local_mutations SET status = 'rejected'
+           WHERE user_id = $1 AND resource_type = 'KNOWLEDGE_BLOCK' AND resource_id = $2
+             AND status IN ('conflict', 'error')`,
+          [this.userId, input.blockId],
+        )
+        const retry = makeRetry(resource.value)
+        if (retry) await this.enqueueSqlMutation(database, retry)
+      })
+      return
+    }
+    await this.withBrowserStateLock(() => {
+      const state = this.readBrowserState()
+      const unresolved = state.mutations.filter((mutation) => mutation.userId === this.userId
+        && mutation.resourceType === 'KNOWLEDGE_BLOCK' && mutation.resourceId === input.blockId && isUnresolved(mutation))
+      const index = state.resources.findIndex((resource) => resource.userId === this.userId
+        && resource.resourceType === 'KNOWLEDGE_BLOCK' && resource.id === input.blockId)
+      const current = state.resources[index] as LocalEntity<KnowledgeBlockView> | undefined
+      const resource = projectKnowledgeBlockConflictResolution(input, unresolved, current ?? null)
+      state.resources[index] = resource
+      for (const mutation of unresolved) mutation.status = 'rejected'
+      const retry = makeRetry(resource.value)
+      if (retry) this.enqueueBrowserMutation(state, retry)
+      this.writeBrowserState(state)
     })
   }
 

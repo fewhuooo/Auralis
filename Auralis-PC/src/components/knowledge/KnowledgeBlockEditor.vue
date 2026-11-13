@@ -5,6 +5,7 @@
     aria-label="保存为知识块"
     size="md"
     custom-class="knowledge-editor-modal"
+    :prevent-close="isSaving"
     @update:model-value="handleModelValueUpdate"
     @close="$emit('cancel')"
   >
@@ -65,14 +66,14 @@
     </form>
 
     <template #footer>
-      <button type="button" class="modal-btn modal-btn-secondary" @click="$emit('cancel')">取消</button>
+      <button type="button" class="modal-btn modal-btn-secondary" :disabled="isSaving" @click="$emit('cancel')">取消</button>
       <button
         type="submit"
         form="knowledge-editor-form"
         class="modal-btn modal-btn-primary"
         :disabled="!isSubmitEnabled"
       >
-        保存
+        {{ isSaving ? '保存中…' : '保存' }}
       </button>
     </template>
   </ModalShell>
@@ -86,6 +87,7 @@ import { renderMarkdown } from '@/utils/markdown'
 const props = defineProps<{
   modelValue: boolean
   initialContent: string
+  isSaving?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -99,7 +101,7 @@ const content = ref(props.initialContent)
 const isPreviewMode = ref(false)
 
 const isSubmitEnabled = computed(() => {
-  return title.value.trim().length > 0 && content.value.trim().length > 0
+  return !props.isSaving && title.value.trim().length > 0 && content.value.trim().length > 0
 })
 
 const renderedPreview = computed(() => {

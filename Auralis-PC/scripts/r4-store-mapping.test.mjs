@@ -161,7 +161,7 @@ test('knowledge block writes and editors expose only content as the body field',
   assert.match(editor, /value: \{ title: string; content: string \}/)
   assert.doesNotMatch(editor, /tags/)
   assert.match(workspaceDialog, /content: string/)
-  assert.doesNotMatch(workspaceDialog, /preview|tags|summary/)
+  assert.doesNotMatch(workspaceDialog, /\b(?:preview|tags|summary)\??\s*:|\.(?:preview|tags|summary)\b/)
 })
 
 test('does not expose a source id as the knowledge block source name', () => {

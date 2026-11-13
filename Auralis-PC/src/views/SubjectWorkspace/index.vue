@@ -450,6 +450,8 @@
                   <div class="block-title-row">
                     <IconNotes :size="14" :stroke-width="1.8" class="block-title-badge-icon" />
                     <h4 class="block-title" :title="block.title">{{ block.title || '未命名知识块' }}</h4>
+                    <span v-if="blockStore.knowledgeBlockConflicts[block.id]" class="block-time">更新未同步</span>
+                    <span v-else-if="blockStore.pendingKnowledgeBlockUpdates[block.id]" class="block-time">待同步</span>
                   </div>
                   <div class="block-card-hover-actions">
                     <button
@@ -468,7 +470,7 @@
                       class="card-action-btn danger"
                       title="删除知识块"
                       aria-label="删除知识块"
-                      @click.stop="handleDeleteBlockCard(block.id)"
+                      @click.stop="handleDeleteBlockCard(block.id, block.version)"
                     >
                       <IconTrash :size="13" :stroke-width="1.8" />
                     </button>
@@ -870,6 +872,7 @@
     <KnowledgeBlockEditor
       v-model="showKnowledgeEditor"
       :initial-content="selectedText"
+      :is-saving="isCreatingKnowledgeBlock"
       @cancel="showKnowledgeEditor = false"
       @save="saveKnowledgeBlock"
     />
@@ -903,10 +906,17 @@
       v-model="blockDialogVisible"
       :mode="blockDialogMode"
       :block="selectedBlock"
+      :edit-baseline="blockEditBaseline"
       :active-subject-name="activeSubject?.name"
       :theme-colors="themeColors"
+      :is-saving="isSavingBlockEdit || isResolvingBlockConflict || (blockDialogMode === 'create' && isCreatingKnowledgeBlock)"
+      :edit-warning="blockEditWarning"
+      :can-review-latest="!!selectedBlock && selectedBlock.version !== blockEditBaseline?.version && !selectedBlockConflict"
+      :remote-conflict="selectedBlockConflict?.remote"
       @update:mode="blockDialogMode = $event"
       @save="handleSaveBlockFromDialog"
+      @review-latest="reviewLatestBlock"
+      @resolve-conflict="handleResolveBlockConflict"
       @delete="handleDeleteBlock"
       @copy="handleCopyBlockContent"
       @close="closeBlockDialog"
@@ -976,6 +986,7 @@ import { useSourceStore } from '@/store/useSourceStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { getLocalRepository, getOverviewRepository } from '@/services/localDb'
+import { LocalConflictError } from '@/services/localRepository'
 import { OverviewGenerationService, hasUsableOverview } from '@/services/overviewGenerationService'
 import { overviewFailureMessage } from '@/services/overviewFailurePolicy'
 import { classifyClientError, logClientError } from '@/services/clientErrorPolicy'
@@ -987,7 +998,7 @@ import { OverviewResultsSyncService, runOverviewConflictResolutionOnce } from '@
 import { subscribeOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
 import type { FileOverviewRecord, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import { shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
-import type { SourceFileModel } from '@/services/domainMappers'
+import type { KnowledgeBlockModel, SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
 
@@ -2047,9 +2058,25 @@ const aiRefiningText = ref('')
 
 // ===== Block CRUD =====
 const blockDialogVisible = ref(false)
-const selectedBlock = ref<any>(null)
+const selectedBlockId = ref<string | null>(null)
+const selectedBlock = computed(() => subjectBlocks.value.find((block) => block.id === selectedBlockId.value) ?? null)
 const isEditMode = ref(false)
 const isCreateMode = ref(false)
+const blockEditBaseline = ref<KnowledgeBlockModel | null>(null)
+const isSavingBlockEdit = ref(false)
+const isResolvingBlockConflict = ref(false)
+const selectedBlockConflict = computed(() => selectedBlockId.value ? blockStore.knowledgeBlockConflicts[selectedBlockId.value] : undefined)
+const blockEditError = ref('')
+const blockEditWarning = computed(() => {
+  const baseline = blockEditBaseline.value
+  if (!baseline) return ''
+  if (blockEditError.value) return blockEditError.value
+  if (!selectedBlock.value) return '该知识块已从当前列表移除。草稿仍可复制。'
+  if (selectedBlockConflict.value) return '上次更新未同步。请先处理冲突，当前草稿仍可复制。'
+  if (selectedBlock.value.version !== baseline.version) return '知识块已更新。草稿仍可复制，查看最新版本后可重新编辑。'
+  return ''
+})
+const isCreatingKnowledgeBlock = ref(false)
 
 const themeColors = [
   { name: '绿', value: 'rgba(181,196,177,0.4)' },
@@ -2059,32 +2086,42 @@ const themeColors = [
   { name: '黄', value: 'rgba(230,223,216,0.5)' }
 ]
 
-const handleBlockClick = (b: any) => {
-  selectedBlock.value = b
-  isCreateMode.value = false
-  isEditMode.value = false
+const handleBlockClick = (block: KnowledgeBlockModel) => {
+  if (blockDialogVisible.value && isEditMode.value && !isCreateMode.value && selectedBlockId.value === block.id) return
+  blockDialogMode.value = 'view'
+  selectedBlockId.value = block.id
   blockDialogVisible.value = true
 }
-const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; blockDialogVisible.value = true }
+const openCreateDialog = () => {
+  selectedBlockId.value = null
+  blockDialogMode.value = 'create'
+  blockDialogVisible.value = true
+}
 const blockDialogMode = computed<'view' | 'edit' | 'create'>({
   get: () => {
     if (isCreateMode.value) return 'create'
     if (isEditMode.value) return 'edit'
     return 'view'
   },
-  set: (val) => {
-    if (val === 'create') {
-      isCreateMode.value = true
-      isEditMode.value = true
-    } else if (val === 'edit') {
-      isCreateMode.value = false
-      isEditMode.value = true
+  set: (mode) => {
+    if (mode === 'edit') {
+      if (!selectedBlock.value || selectedBlockConflict.value) return
+      blockEditBaseline.value = { ...selectedBlock.value }
     } else {
-      isCreateMode.value = false
-      isEditMode.value = false
+      blockEditBaseline.value = null
     }
+    blockEditError.value = ''
+    isCreateMode.value = mode === 'create'
+    isEditMode.value = mode !== 'view'
   }
 })
+
+const reviewLatestBlock = () => {
+  const block = selectedBlock.value
+  if (!block || !blockEditBaseline.value || selectedBlockConflict.value) return
+  blockEditBaseline.value = { ...block }
+  blockEditError.value = ''
+}
 
 const handleSaveBlockFromDialog = async (data: {
   id?: string
@@ -2100,7 +2137,7 @@ const handleSaveBlockFromDialog = async (data: {
     return
   }
   if (isCreateMode.value) {
-    const newId = await blockStore.addBlock({
+    const newId = await createKnowledgeBlock({
       subject: data.subject || activeSubject.value?.name || '',
       title: data.title,
       content: data.content,
@@ -2110,48 +2147,109 @@ const handleSaveBlockFromDialog = async (data: {
       subjectId: data.subjectId || subjectId.value,
       sourceFileId: selectedSourceId.value || undefined
     })
+    if (!newId) return
+    selectedBlockId.value = newId
     ElNotification({ title: '已录入', type: 'success', position: 'top-right' })
-    const createdBlock = recentBlocks.value.find((b) => b.id === newId)
-    if (createdBlock) {
-      selectedBlock.value = createdBlock
-    }
-  } else {
+    closeBlockDialog()
+    return
+  }
+
+  const baseline = blockEditBaseline.value
+  if (!baseline || data.id !== baseline.id || isSavingBlockEdit.value || blockEditWarning.value) return
+  const isCurrent = captureKnowledgeBlockScope()
+  isSavingBlockEdit.value = true
+  try {
     await blockStore.updateBlock({
-      ...selectedBlock.value,
-      subject: data.subject || activeSubject.value?.name || '',
+      ...baseline,
       title: data.title,
       content: data.content,
       color: data.color,
-      time: new Date().toLocaleString()
     })
-    if (selectedBlock.value) {
-      selectedBlock.value = {
-        ...selectedBlock.value,
-        title: data.title,
-        content: data.content,
-        color: data.color,
-        time: new Date().toLocaleString()
-      }
+    if (!isCurrent()) return
+    closeBlockDialog()
+    ElNotification({ title: '已在本机保存，等待同步', type: 'success', position: 'top-right' })
+  } catch (error) {
+    if (!isCurrent()) return
+    if (error instanceof LocalConflictError) {
+      blockEditError.value = error.blockedByMutation
+        ? '此知识块的同步冲突需要处理。当前草稿仍可复制。'
+        : error.resource && error.resource.deletedAt === null
+          ? '知识块已更新。草稿仍可复制，查看最新版本后可重新编辑。'
+          : '该知识块已从当前列表移除。草稿仍可复制。'
+      await blockStore.loadLocalBlocks(undefined, baseline.subjectId).catch(() => undefined)
+      return
     }
-    ElNotification({ title: '已更新', type: 'success', position: 'top-right' })
+    ElNotification({ title: '保存失败，草稿已保留', type: 'error', position: 'top-right' })
+  } finally {
+    if (isCurrent()) isSavingBlockEdit.value = false
   }
-  closeBlockDialog()
 }
 
 const closeBlockDialog = () => {
   blockDialogVisible.value = false
-  isCreateMode.value = false
-  isEditMode.value = false
+  blockDialogMode.value = 'view'
 }
 
-const handleDeleteBlock = async (id: string) => {
-  if (!id || !confirm('确定删除？')) return
-  await blockStore.removeBlock(id)
-  if (selectedBlock.value?.id === id) {
-    selectedBlock.value = null
-  }
+watch([selectedBlock, blockDialogMode], ([block, mode]) => {
+  if (blockDialogVisible.value && mode === 'view' && !block) closeBlockDialog()
+})
+
+watch([subjectId, () => authStore.loginGeneration], () => {
   closeBlockDialog()
-  ElNotification({ title: '已删除', type: 'success', position: 'top-right' })
+  selectedBlockId.value = null
+  isSavingBlockEdit.value = false
+  isResolvingBlockConflict.value = false
+}, { flush: 'sync' })
+
+const captureKnowledgeBlockScope = () => {
+  const targetSubjectId = subjectId.value
+  const loginGeneration = authStore.loginGeneration
+  const generation = currentSubjectSwitchGen
+  return () => isComponentMounted && subjectId.value === targetSubjectId
+    && authStore.loginGeneration === loginGeneration && currentSubjectSwitchGen === generation
+}
+
+const handleResolveBlockConflict = async (action: 'REMOTE' | 'RETRY') => {
+  const conflict = selectedBlockConflict.value
+  if (!conflict || isResolvingBlockConflict.value || isEditMode.value) return
+  const isCurrent = captureKnowledgeBlockScope()
+  isResolvingBlockConflict.value = true
+  try {
+    await blockStore.resolveBlockConflict(conflict, action)
+    if (!isCurrent()) return
+    ElNotification({
+      title: action === 'REMOTE' ? '已采用云端版本' : '已在本机保存，等待同步',
+      type: 'success',
+      position: 'top-right',
+    })
+  } catch (error) {
+    if (!isCurrent()) return
+    ElNotification({ title: '未能处理同步冲突', message: error instanceof Error ? error.message : undefined, type: 'warning', position: 'top-right' })
+  } finally {
+    if (isCurrent()) isResolvingBlockConflict.value = false
+  }
+}
+
+const handleDeleteBlock = async (id: string, version: number) => {
+  if (!id || !confirm('确定删除？')) return
+  const isCurrent = captureKnowledgeBlockScope()
+  try {
+    await blockStore.removeBlock(id, version)
+  } catch (error) {
+    if (!isCurrent()) return
+    let title = '删除失败，请重试'
+    if (error instanceof LocalConflictError) {
+      title = '知识块已更新，请查看最新内容后再删除'
+      if (error.blockedByMutation) title = '知识块正在同步或有待处理的同步问题'
+      else if (!error.resource || error.resource.deletedAt) title = '该知识块已删除'
+    }
+    ElNotification({ title, type: 'warning', position: 'top-right' })
+    return
+  }
+  if (!isCurrent()) return
+  if (selectedBlockId.value === id) selectedBlockId.value = null
+  closeBlockDialog()
+  ElNotification({ title: '已在本机删除，等待同步', type: 'success', position: 'top-right' })
 }
 const handleCopyBlockContent = (c: string) => { if (c) { navigator.clipboard.writeText(c); ElNotification({ title: '已复制', type: 'success', position: 'top-right', duration: 2000 }) } }
 const copiedBlockId = ref<string | null>(null)
@@ -2171,8 +2269,8 @@ const handleCopyCardContent = (block: any) => {
     }).catch(() => {})
   }
 }
-const handleDeleteBlockCard = (id: string) => {
-  handleDeleteBlock(id)
+const handleDeleteBlockCard = (id: string, version: number) => {
+  void handleDeleteBlock(id, version)
 }
 interface PresetQuestionItem {
   label: string
@@ -2985,11 +3083,11 @@ void explainSelection
 void askSelection
 const saveSelection = () => { showKnowledgeEditor.value = true }
 const saveKnowledgeBlock = async (value: { title: string; content: string }) => {
-  if (!activeSubject.value) return
+  if (!showKnowledgeEditor.value || !activeSubject.value) return
   const validSourceFileId = activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
     ? (selectedFileId.value || undefined)
     : undefined
-  const newId = await blockStore.addBlock({
+  const newId = await createKnowledgeBlock({
     subjectId: subjectId.value,
     sourceFileId: validSourceFileId,
     subject: activeSubject.value.name,
@@ -2997,13 +3095,34 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
     content: value.content,
     source: selectedFile.value?.name || '选中文本',
   })
+  if (!newId) return
   showKnowledgeEditor.value = false
   clearSelection()
-  const createdBlock = recentBlocks.value.find((b) => b.id === newId)
-  if (createdBlock) {
-    selectedBlock.value = createdBlock
-  }
+  selectedBlockId.value = newId
   ElNotification({ title: '已保存为知识块', type: 'success', position: 'top-right' })
+}
+
+const createKnowledgeBlock = async (block: Parameters<typeof blockStore.addBlock>[0]) => {
+  if (isCreatingKnowledgeBlock.value) return
+  const loginGeneration = authStore.loginGeneration
+  const subjectSwitchGeneration = currentSubjectSwitchGen
+  const isCurrent = () => isComponentMounted && authStore.loginGeneration === loginGeneration
+    && currentSubjectSwitchGen === subjectSwitchGeneration && subjectId.value === block.subjectId
+  isCreatingKnowledgeBlock.value = true
+  try {
+    const id = await blockStore.addBlock(block)
+    if (isCurrent()) return id
+  } catch {
+    if (!isCurrent()) return
+    ElNotification({
+      title: '保存失败',
+      message: '知识块保存失败，请重试',
+      type: 'error',
+      position: 'top-right'
+    })
+  } finally {
+    isCreatingKnowledgeBlock.value = false
+  }
 }
 
 // ===== Lifecycle =====

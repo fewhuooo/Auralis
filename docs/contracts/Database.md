@@ -429,7 +429,7 @@ PC 加密 cache/header 与 `payload_receipt_json` 现在记录本地派生格式
 
 ### PC 本地优先同步（本地 schema v6，2026-09-04）
 
-- `local_mutations` 新增 `in_flight_at`、`remote_payload`、`remote_version`；状态为 `pending`、`inflight`、`applied`、`conflict` 或 `error`。`remote_*` 只保存服务端的冲突/拒绝诊断，不替换尚未解决的本地资源投影。
+- `local_mutations` 新增 `in_flight_at`、`remote_payload`、`remote_version`；状态为 `pending`、`inflight`、`applied`、`rejected`、`conflict` 或 `error`。未解决的知识块更新保留本机投影，`remote_*` 记录最新已知的云端版本及墓碑。明确采用云端或用新 ID 重试后，原请求以 `rejected` 归档，保留其请求 ID、基准版本和载荷。知识块删除收到明确拒绝时，在无其他未结算写入的情况下以服务端当前记录恢复投影，或在确认记录不存在时保留墓碑。
 - Subject、Source、KnowledgeBlock、Task、Relation 的普通 CREATE/UPDATE/DELETE 必须在同一 SQLite 事务（浏览器 fallback 为同一序列化状态提交）内同时写入 `local_resource_records` 和 immutable outbox mutation。调用方只有在该本地提交成功后才更新内存 UI；失败须抛回调用方。
 - 普通写入以资源为单位领取队首。首次领取把状态保存为 `inflight`，同时移除 `payload` 内仅供本机使用的 `_localCrudPredecessor`。该字段的存在证明 `pending` 命令从未领取，其值为空或为直接前驱 ID。进程中断、失去响应或结算失败后，`inflight` 原样重放。已领取项不再合并。既有无标记的 `pending` 或 `inflight` 保留已存 ID、基版本和业务载荷；旧实现若已改写服务端记过的请求，重放按现有指纹规则保留拒绝。字段复用现有 JSON，历史队列不批量改写。
 - push 只首次结算已领取且资源、操作与 ID 都匹配的回执。SQLite 事务或浏览器同一次状态提交同时保存回执、核对较新投影和未解决写入。成功回执推进明确引用该前驱且仍未领取、基版本匹配的后继，保留乐观内容。编辑晚于回执取得写边界时，仅在当前已同步投影的内容和版本完全匹配本机同资源的成功回执、且该回执的原基版本等于编辑捕获的版本时承接该版本。仍有 `pending`、`inflight`、`conflict` 或 `error` 时，push、pull 与 snapshot 保留本地编辑内容。

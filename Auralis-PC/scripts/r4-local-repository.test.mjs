@@ -62,6 +62,129 @@ function createRepositories() {
   };
 }
 
+test('knowledge conflict retains the local draft and requires explicit resolution against the latest cloud version', async (t) => {
+  for (const storageType of ['browser', 'sqlite']) {
+    await t.test(storageType, async () => {
+      const sqlite = storageType === 'sqlite' ? new TemporarySqlite() : null;
+      try {
+        const repository = new LocalRepository('knowledge-conflict-owner', 'device',
+          sqlite ? { sql: sqlite } : { storage: createMemoryStorage() });
+        const block = { id: 'block', subjectId: 'subject', title: 'Original', content: 'Original body', version: 2 };
+        const local = { ...block, title: 'Draft title', content: 'Draft body' };
+        const conflict = { ...block, title: 'Cloud edit', version: 3 };
+        const newer = { ...conflict, subjectId: 'moved-subject', sourceId: 'new-source', version: 4 };
+        const receipt = { clientMutationId: 'original-update', resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          mutationType: 'UPDATE' };
+        const originalPayload = { subjectId: block.subjectId, title: local.title, content: local.content };
+        await repository.upsert('KNOWLEDGE_BLOCK', block.id, block, { version: block.version });
+        await repository.commitMutation({ resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          value: local, version: block.version, deletedAt: null, expectedLocalVersion: block.version,
+          requireActiveResource: true, mutation: { ...receipt, baseVersion: block.version, payload: originalPayload } });
+        await repository.claimPending(1);
+        await repository.settleMutation({ ...receipt, status: 'conflict', error: 'RESOURCE_VERSION_CONFLICT',
+          remoteValue: conflict, remoteVersion: conflict.version });
+        await repository.upsertFromSync('KNOWLEDGE_BLOCK', block.id, newer,
+          { version: newer.version, deletedAt: null, syncStatus: 'synced' });
+        assert.deepEqual((await repository.read('KNOWLEDGE_BLOCK', block.id)).value, local);
+        assert.equal((await repository.listUnresolved('KNOWLEDGE_BLOCK'))[0].remoteVersion, 4);
+        const resolution = { blockId: block.id, clientMutationId: receipt.clientMutationId, local };
+        await assert.rejects(repository.resolveKnowledgeBlockConflict({ ...resolution, remote: conflict }), LocalConflictError);
+        assert.deepEqual((await repository.listUnresolved('KNOWLEDGE_BLOCK'))[0].payload, originalPayload);
+        await repository.resolveKnowledgeBlockConflict({ ...resolution, remote: newer, retryId: 'fresh-update' });
+        const pending = await repository.listUnresolved('KNOWLEDGE_BLOCK');
+        assert.equal(pending.length, 1);
+        assert.equal(pending[0].clientMutationId, 'fresh-update');
+        assert.equal(pending[0].baseVersion, 4);
+        assert.equal(pending[0].payload.subjectId, newer.subjectId);
+        assert.equal(pending[0].payload.sourceId, newer.sourceId);
+        assert.equal(pending[0].payload.content, local.content);
+        const updated = await repository.read('KNOWLEDGE_BLOCK', block.id);
+        assert.equal(updated.value.title, local.title);
+        assert.equal(updated.version, 4);
+        await repository.claimPending(1);
+        const cloud = { ...newer, title: 'Another cloud edit', version: 5 };
+        await repository.settleMutation({ ...receipt, clientMutationId: 'fresh-update', status: 'conflict',
+          error: 'RESOURCE_VERSION_CONFLICT', remoteValue: cloud, remoteVersion: cloud.version });
+        await repository.resolveKnowledgeBlockConflict({ blockId: block.id, clientMutationId: 'fresh-update',
+          local: updated.value, remote: cloud });
+        assert.deepEqual(await repository.listUnresolved('KNOWLEDGE_BLOCK'), []);
+        assert.deepEqual((await repository.read('KNOWLEDGE_BLOCK', block.id)).value, cloud);
+        assert.equal(await repository.upsertFromSync('KNOWLEDGE_BLOCK', block.id, newer,
+          { version: newer.version, deletedAt: null, syncStatus: 'synced' }), false);
+        const lastDraft = { ...cloud, content: 'Draft after cloud edit' };
+        await repository.commitMutation({ resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          value: lastDraft, version: cloud.version, deletedAt: null, expectedLocalVersion: cloud.version,
+          requireActiveResource: true, mutation: { ...receipt, clientMutationId: 'deleted-update',
+            baseVersion: cloud.version, payload: { ...originalPayload, content: lastDraft.content } } });
+        await repository.claimPending(1);
+        await repository.settleMutation({ ...receipt, clientMutationId: 'deleted-update', status: 'error', error: 'RESOURCE_NOT_FOUND' });
+        const deletedAt = '2026-11-13T00:00:00Z';
+        const tombstone = { ...cloud, version: 6, deletedAt };
+        await repository.upsertFromSync('KNOWLEDGE_BLOCK', block.id, tombstone,
+          { version: tombstone.version, deletedAt, syncStatus: 'synced' });
+        assert.deepEqual((await repository.read('KNOWLEDGE_BLOCK', block.id)).value, lastDraft);
+        const deletionResolution = { blockId: block.id, clientMutationId: 'deleted-update', local: lastDraft, remote: tombstone };
+        await assert.rejects(repository.resolveKnowledgeBlockConflict({ ...deletionResolution, retryId: 'bad-update' }), LocalConflictError);
+        await repository.resolveKnowledgeBlockConflict(deletionResolution);
+        assert.equal((await repository.read('KNOWLEDGE_BLOCK', block.id)).deletedAt, deletedAt);
+        assert.deepEqual(await repository.listUnresolved('KNOWLEDGE_BLOCK'), []);
+        if (sqlite) {
+          const archived = sqlite.database.prepare('SELECT status, base_version, payload FROM local_mutations WHERE client_mutation_id = ?')
+            .get(receipt.clientMutationId);
+          assert.equal(archived.status, 'rejected');
+          assert.equal(archived.base_version, block.version);
+          assert.deepEqual(JSON.parse(archived.payload), originalPayload);
+        }
+      } finally {
+        sqlite?.close();
+      }
+    });
+  }
+});
+
+test('knowledge delete rejects a stale local view and restores the active cloud version after remote rejection', async (t) => {
+  for (const storageType of ['browser', 'sqlite']) {
+    await t.test(storageType, async () => {
+      const sqlite = storageType === 'sqlite' ? new TemporarySqlite() : null;
+      try {
+        const repository = new LocalRepository('knowledge-delete-owner', 'device',
+          sqlite ? { sql: sqlite } : { storage: createMemoryStorage() });
+        const block = { id: 'block', subjectId: 'subject', title: 'Original', content: 'Original body', version: 2 };
+        const deletedAt = '2026-11-13T00:00:00Z';
+        const receipt = { clientMutationId: 'stale-delete', resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          mutationType: 'DELETE' };
+        const commitDelete = (version) => repository.commitMutation({ resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          value: { ...block, deletedAt }, version, deletedAt, expectedLocalVersion: version, requireActiveResource: true,
+          mutation: { ...receipt, baseVersion: version, payload: { id: block.id } } });
+        await repository.upsert('KNOWLEDGE_BLOCK', block.id, block, { version: block.version });
+        await assert.rejects(commitDelete(1), LocalConflictError);
+        assert.equal((await repository.read('KNOWLEDGE_BLOCK', block.id)).deletedAt, null);
+        assert.deepEqual(await repository.listUnresolved('KNOWLEDGE_BLOCK'), []);
+        await commitDelete(block.version);
+        await repository.claimPending(1);
+        const current = { ...block, title: 'Current cloud title', version: 3 };
+        await repository.settleMutation({ ...receipt, status: 'conflict', error: 'RESOURCE_VERSION_CONFLICT',
+          remoteValue: current, remoteVersion: current.version });
+        const restored = await repository.read('KNOWLEDGE_BLOCK', block.id);
+        assert.equal(restored.deletedAt, null);
+        assert.equal(restored.syncStatus, 'synced');
+        assert.deepEqual(restored.value, current);
+        assert.deepEqual(await repository.listUnresolved('KNOWLEDGE_BLOCK'), []);
+        await repository.commitMutation({ resourceType: 'KNOWLEDGE_BLOCK', resourceId: block.id,
+          value: { ...current, deletedAt }, version: current.version, deletedAt, expectedLocalVersion: current.version,
+          requireActiveResource: true, mutation: { ...receipt, clientMutationId: 'new-delete', baseVersion: current.version,
+            payload: { id: block.id } } });
+        await repository.claimPending(1);
+        await repository.settleMutation({ ...receipt, clientMutationId: 'new-delete', status: 'error', error: 'RESOURCE_NOT_FOUND' });
+        assert.equal((await repository.read('KNOWLEDGE_BLOCK', block.id)).deletedAt, deletedAt);
+        assert.deepEqual(await repository.listUnresolved('KNOWLEDGE_BLOCK'), []);
+      } finally {
+        sqlite?.close();
+      }
+    });
+  }
+});
+
 function createSharedBrowserLockManager() {
   let tail = Promise.resolve();
   return {

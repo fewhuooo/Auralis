@@ -4,6 +4,7 @@
     size="lg"
     :title="dialogAriaLabel"
     :aria-label="dialogAriaLabel"
+    :prevent-close="isSaving"
     @update:model-value="handleOverlayClose"
     @close="handleClose"
   >
@@ -48,16 +49,37 @@
           <p class="kb-empty-text">该知识块暂无详细内容</p>
         </div>
       </div>
+      <div v-if="remoteConflict" class="kb-content-card">
+        <p v-if="remoteConflict.deletedAt" role="status">云端已删除该知识块。本机修改仍可复制。</p>
+        <template v-else>
+          <h3>云端版本</h3>
+          <p>{{ remoteConflict.title }}</p>
+          <div class="kb-markdown-content modal-markdown-body" v-html="renderMarkdown(remoteConflict.content || '')"></div>
+          <p role="status">上方的本机修改未同步。请选择要保留的版本。</p>
+        </template>
+      </div>
     </div>
 
     <!-- 编辑/创建模式 -->
     <div v-else class="edit-body">
+      <div v-if="currentMode === 'edit' && editWarning" class="modal-form-group">
+        <p role="alert">{{ editWarning }}</p>
+        <details v-if="canReviewLatest && block">
+          <summary>查看最新版本</summary>
+          <p>{{ block.title }}</p>
+          <div class="kb-markdown-content modal-markdown-body" v-html="renderMarkdown(block.content || '')"></div>
+          <button type="button" class="modal-btn modal-btn-secondary" :disabled="isSaving" @click="emit('review-latest')">
+            保留草稿并以最新版本继续编辑
+          </button>
+        </details>
+      </div>
       <div class="modal-form-group">
         <label class="modal-form-label">
           标题 <span class="required">*</span>
         </label>
         <input
           v-model="formData.title"
+          :readonly="isSaving"
           class="modal-form-input"
           placeholder="输入知识块标题"
           maxlength="120"
@@ -75,7 +97,7 @@
             :class="{ 'is-selected': formData.color === c.value }"
             :style="{ background: c.value }"
             :title="c.name"
-            @click="formData.color = c.value"
+            @click="!isSaving && (formData.color = c.value)"
           ></span>
         </div>
       </div>
@@ -117,6 +139,7 @@
         <textarea
           v-else
           v-model="formData.content"
+          :readonly="isSaving"
           class="modal-form-textarea"
           rows="12"
           placeholder="在此编写详细知识点内容，支持 Markdown 语法与 LaTeX 数学公式（如 $E=mc^2$ 或 $$公式$$）..."
@@ -126,16 +149,16 @@
 
     <template #footer>
       <template v-if="currentMode !== 'view'">
-        <button type="button" class="modal-btn modal-btn-secondary" @click="handleCancelEdit">
+        <button type="button" class="modal-btn modal-btn-secondary" :disabled="isSaving" @click="handleCancelEdit">
           取消
         </button>
         <button
           type="button"
           class="modal-btn modal-btn-primary"
-          :disabled="!formData.title.trim() || !formData.content.trim()"
+          :disabled="isSaving || Boolean(editWarning) || !formData.title.trim() || !formData.content.trim()"
           @click="handleSave"
         >
-          {{ currentMode === 'create' ? '创建' : '保存' }}
+          {{ isSaving ? '保存中…' : currentMode === 'create' ? '创建' : '保存' }}
         </button>
       </template>
       <template v-else>
@@ -161,7 +184,16 @@
             </button>
           </div>
           <div class="footer-right-actions">
+            <template v-if="remoteConflict">
+              <button type="button" class="modal-btn modal-btn-secondary" :disabled="isSaving" @click="emit('resolve-conflict', 'REMOTE')">
+                采用云端版本
+              </button>
+              <button v-if="!remoteConflict.deletedAt" type="button" class="modal-btn modal-btn-primary" :disabled="isSaving" @click="emit('resolve-conflict', 'RETRY')">
+                保留本机修改并重试
+              </button>
+            </template>
             <button
+              v-else
               type="button"
               class="modal-btn modal-btn-secondary"
               @click="handleStartEdit"
@@ -172,6 +204,7 @@
             <button
               type="button"
               class="modal-btn modal-btn-primary"
+              :disabled="isSaving"
               @click="handleClose"
             >
               确定
@@ -199,6 +232,8 @@ import ModalShell from '@/components/modal/ModalShell.vue'
 
 export interface KnowledgeBlockData {
   id?: string
+  version?: number
+  deletedAt?: string | null
   subjectId?: string
   subject?: string
   source?: string
@@ -219,8 +254,13 @@ const DEFAULT_THEME_COLORS = [
 const props = withDefaults(
   defineProps<{
     modelValue: boolean
+    isSaving?: boolean
+    editWarning?: string
+    canReviewLatest?: boolean
+    remoteConflict?: KnowledgeBlockData
     mode?: 'view' | 'edit' | 'create'
     block?: KnowledgeBlockData | null
+    editBaseline?: KnowledgeBlockData | null
     activeSubjectName?: string
     themeColors?: Array<{ name: string; value: string }>
   }>(),
@@ -250,7 +290,9 @@ const emit = defineEmits<{
     content: string
     source: string
   }): void
-  (e: 'delete', id: string): void
+  (e: 'delete', id: string, version: number): void
+  (e: 'review-latest'): void
+  (e: 'resolve-conflict', action: 'REMOTE' | 'RETRY'): void
   (e: 'copy', text: string): void
   (e: 'close'): void
 }>()
@@ -269,12 +311,8 @@ const formData = ref({
   source: '手动添加'
 })
 
-watch(() => props.mode, (newMode) => {
-  currentMode.value = newMode
-})
-
 watch(
-  () => [props.modelValue, props.block, props.mode],
+  [() => props.modelValue, () => props.mode],
   ([visible]) => {
     if (visible) {
       currentMode.value = props.mode
@@ -288,16 +326,16 @@ watch(
           content: '',
           source: '手动创建'
         }
-      } else if (props.block) {
-        const rawContent = props.block.content || ''
+      } else if (props.mode === 'edit' && props.editBaseline) {
+        const baseline = props.editBaseline
         formData.value = {
-          id: props.block.id || '',
-          subjectId: props.block.subjectId || '',
-          subject: props.block.subject || props.activeSubjectName || '',
-          title: props.block.title || '',
-          color: props.block.color || 'rgba(181,196,177,0.4)',
-          content: rawContent,
-          source: props.block.source || '手动添加'
+          id: baseline.id || '',
+          subjectId: baseline.subjectId || '',
+          subject: baseline.subject || props.activeSubjectName || '',
+          title: baseline.title || '',
+          color: baseline.color || 'rgba(181,196,177,0.4)',
+          content: baseline.content || '',
+          source: baseline.source || '手动添加'
         }
       }
     } else {
@@ -306,6 +344,15 @@ watch(
   },
   { immediate: true }
 )
+
+watch(() => props.editBaseline, (current, previous) => {
+  if (currentMode.value !== 'edit' || !current || !previous || current.id !== previous.id) return
+  const draft = formData.value
+  if (draft.title === (previous.title || '')) draft.title = current.title || ''
+  if (draft.content === (previous.content || '')) draft.content = current.content || ''
+  const defaultColor = 'rgba(181,196,177,0.4)'
+  if (draft.color === (previous.color || defaultColor)) draft.color = current.color || defaultColor
+})
 
 const isRenderView = ref(false)
 
@@ -360,19 +407,6 @@ const handleClose = () => {
 }
 
 const handleStartEdit = () => {
-  if (props.block) {
-    const rawContent = props.block.content || ''
-    formData.value = {
-      id: props.block.id || '',
-      subjectId: props.block.subjectId || '',
-      subject: props.block.subject || props.activeSubjectName || '',
-      title: props.block.title || '',
-      color: props.block.color || 'rgba(181,196,177,0.4)',
-      content: rawContent,
-      source: props.block.source || '手动添加'
-    }
-  }
-  currentMode.value = 'edit'
   emit('update:mode', 'edit')
 }
 
@@ -386,6 +420,7 @@ const handleCancelEdit = () => {
 }
 
 const handleSave = () => {
+  if (props.isSaving || props.editWarning) return
   if (!formData.value.title.trim() || !formData.value.content.trim()) {
     ElMessage.warning('请填写标题与正文内容')
     return
@@ -436,13 +471,14 @@ const formatFullTime = (timeStr?: string): string => {
 
 const handleDelete = () => {
   const blockId = props.block?.id
-  if (!blockId) return
+  const version = props.block?.version
+  if (!blockId || version === undefined) return
   ElMessageBox.confirm('确定删除该知识块吗？', '删除提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
-    emit('delete', blockId)
+    emit('delete', blockId, version)
   }).catch(() => {})
 }
 
