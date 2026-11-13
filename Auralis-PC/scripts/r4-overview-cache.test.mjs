@@ -41,6 +41,7 @@ const { createMemoryStorage } = await import('../src/services/localRepository.ts
 const { OverviewRepository, computeSubjectInputFingerprint } = await import('../src/services/overviewRepository.ts')
 const { OverviewRepository: OverviewRepositoryOtherTab } = await import(`../src/services/overviewRepository.ts?tab=2`)
 const { createVersionedLocalSchema, LOCAL_SCHEMA_VERSION } = await import('../src/services/localSchema.ts')
+const { subscribeOverviewCacheUpdated } = await import('../src/services/overviewSyncWakeup.ts')
 
 class TemporarySqlite {
   constructor() {
@@ -268,6 +269,52 @@ test('scoped deletion removes only the requested overview', async () => {
   await repository.removeFileOverviews('source-1')
   assert.equal(await repository.getFileOverview('source-1', 'rev-1'), null)
   assert.equal((await repository.getFileOverview('source-2', 'rev-1'))?.title, 'File 2')
+})
+
+test('committed Subject Overview removal refreshes only the active owner and device', async () => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const target = new EventTarget()
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: target })
+  const storage = createMemoryStorage()
+  const repository = new OverviewRepository('removed-user', 'removed-device', { storage })
+  const otherDevice = new OverviewRepository(repository.userId, 'other-device', { storage })
+  const subjectId = 'subject-for-cache-removal'
+  const removed = []
+  const refreshed = []
+  const unsubscribe = subscribeOverviewCacheUpdated(target,
+    detail => detail.userId === repository.userId && detail.serverDeviceId === repository.serverDeviceId,
+    detail => {
+      if (detail.removed) {
+        removed.push(detail)
+        refreshed.push(repository.getSubjectOverview(detail.scopeId))
+      }
+    })
+  try {
+    const input = { subjectId, mode: 'ALL', inputFingerprint: 'fingerprint',
+      response: { schemaVersion: 2, title: 'Subject', outlineMarkdown, summaryMarkdown } }
+    await repository.saveSubjectOverviewPart(input)
+    await otherDevice.saveSubjectOverviewPart(input)
+    await otherDevice.removeSubjectOverview(subjectId)
+    assert.deepEqual(removed, [])
+    assert.equal((await repository.getSubjectOverview(subjectId))?.title, 'Subject')
+
+    await repository.removeSubjectOverview(subjectId)
+    assert.deepEqual(removed, [{
+      userId: repository.userId, serverDeviceId: repository.serverDeviceId, scopeType: 'SUBJECT',
+      scopeId: subjectId, revisionKey: 'subject-v1', removed: true,
+    }])
+    assert.deepEqual(await Promise.all(refreshed), [null])
+
+    await repository.saveSubjectOverviewPart(input)
+    repository.completeScopeDeletion(repository.beginScopeDeletion('SUBJECT', subjectId))
+    await repository.removeSubjectOverview(subjectId)
+    assert.equal(await repository.getSubjectOverview(subjectId), null)
+    assert.equal(removed.length, 1, 'deleting the Subject itself does not request an Overview refresh')
+  } finally {
+    unsubscribe()
+    if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor)
+    else delete globalThis.window
+  }
 })
 
 test('concurrent outline and summary saves preserve both successful parts', async () => {

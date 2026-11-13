@@ -440,7 +440,7 @@ test('useSourceStore ignores a stale subject load that resolves after the curren
   }
 })
 
-test('useSourceStore.deleteSourceFile: local-only tombstone releases draft and immediately removes last local asset', async () => {
+test('useSourceStore.deleteSourceFile: local-only deletion terminates the draft before reclaiming its asset', async () => {
   const pinia = createPinia()
   setActivePinia(pinia)
 
@@ -449,24 +449,53 @@ test('useSourceStore.deleteSourceFile: local-only tombstone releases draft and i
   authStore.serverDeviceId = 'device-local-delete'
   const assetStore = useAssetStore()
   const sourceStore = useSourceStore()
+  const subjectStore = useSubjectStore()
+  const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+  const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+  const writeDraftDeletion = assetRepo.deleteSourceDraft.bind(assetRepo)
+  const draftWriteStarted = createDeferred()
+  const draftWrite = createDeferred()
+  let discardCalls = 0
 
   try {
+    const subject = { id: 'subject-delete', name: 'Local files', version: 1 }
+    await repo.upsert('SUBJECT', subject.id, subject, { version: 1 })
     const assetModel = await assetStore.upload(new File(['delete me'], 'delete.pdf', { type: 'application/pdf' }))
     const localAssetId = assetModel.id
-    const sourceId = await sourceStore.createFileSource('subject-delete', 'Delete me', localAssetId)
-    const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
-    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
-    const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
-    await sourceStore.deleteSourceFile(sourceId)
-
+    const sourceId = await sourceStore.createFileSource(subject.id, 'Delete me', localAssetId)
+    sourceStore.attachDocumentScheduler({ schedule: async () => undefined, discard: async () => { discardCalls += 1 } })
+    assetRepo.deleteSourceDraft = async () => { throw new Error('LOCAL_DRAFT_WRITE_FAILED') }
+    await assert.rejects(sourceStore.deleteSourceFile(sourceId), /本机草稿删除未完成，请重试/)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), true)
+    assert.equal((await assetRepo.getSourceDraft(sourceId))?.state, 'DRAFT')
+    assert.equal(discardCalls, 0)
+    assetRepo.deleteSourceDraft = async (id) => {
+      draftWriteStarted.resolve()
+      await draftWrite.promise
+      await writeDraftDeletion(id)
+    }
+    const deleting = sourceStore.deleteSourceFile(sourceId)
+    await waitForSignal(draftWriteStarted.promise, 'local draft deletion marker')
     const source = await repo.read('SOURCE', sourceId)
-    const draft = await assetRepo.getSourceDraft(sourceId)
-    const asset = await assetRepo.getAssetFile(localAssetId)
-    assert.equal(source?.deletedAt !== null, true, 'local-only Source must persist a durable tombstone')
-    assert.equal(draft?.state, 'DELETED', 'local-only draft must be released after the tombstone')
-    assert.equal(asset, null, 'last local-only Source deletion must remove the managed Asset immediately')
+    assert.ok(source?.deletedAt, 'local-only Source must persist a durable tombstone')
+    assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), true)
+    draftWrite.resolve()
+    await deleting
+    assert.equal((await assetRepo.getSourceDraft(sourceId))?.state, 'DELETED')
+    assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), false)
     assert.equal((await repo.listUnresolved()).filter((mutation) => mutation.resourceType === 'SOURCE').length, 0)
+    await waitForCondition(async () => await assetRepo.getAssetFile(localAssetId) === null, 'unreferenced asset cleanup')
+    await repo.replaceSnapshotPreservingPending([
+      { resourceType: 'SUBJECT', resourceId: subject.id, value: subject, version: subject.version, deletedAt: null },
+    ])
+    await subjectStore.loadSubjects()
+    assert.equal(await repo.read('SOURCE', sourceId), null, 'hydration cannot restore a deleted draft after a snapshot')
   } finally {
+    draftWrite.resolve()
+    assetRepo.deleteSourceDraft = writeDraftDeletion
+    sourceStore.attachDocumentScheduler(null)
     releaseLocalAssetSyncQueue('user-local-delete', 'device-local-delete')
   }
 })
@@ -497,7 +526,8 @@ test('useSourceStore.deleteSourceFile: a pre-commit failure keeps the Source vis
     summaryMarkdown: 'Keep this summary',
   }
   const originalCommitMutation = repo.commitMutation.bind(repo)
-  const originalTombstone = repo.tombstone.bind(repo)
+  const commitStarted = createDeferred()
+  const commit = createDeferred()
   let overviewDiscardCalls = 0
   let documentDiscardCalls = 0
   syncStore.requestBackgroundSync = () => undefined
@@ -527,13 +557,21 @@ test('useSourceStore.deleteSourceFile: a pre-commit failure keeps the Source vis
       discardFileOverview: async (id) => { overviewDiscardCalls += 1; await overview.removeFileOverviews(id) },
       restoreFileOverview: async () => true,
     })
-    repo.commitMutation = async () => { throw new Error('SOURCE_COMMIT_FAILED') }
-    repo.tombstone = async () => { throw new Error('SOURCE_COMMIT_FAILED') }
+    repo.commitMutation = () => {
+      commitStarted.resolve()
+      return commit.promise
+    }
 
-    await assert.rejects(sourceStore.deleteSourceFile(sourceId), /SOURCE_COMMIT_FAILED/)
+    const deleting = sourceStore.deleteSourceFile(sourceId)
+    await waitForSignal(commitStarted.promise, 'Source delete commit')
+    assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('FILE', sourceId)), false)
+    assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), true)
+    commit.reject(new Error('SOURCE_COMMIT_FAILED'))
+    await assert.rejects(deleting, /SOURCE_COMMIT_FAILED/)
 
     assert.equal(sourceStore.sources.some((item) => item.id === sourceId), true)
     assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), true)
+    assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('FILE', sourceId)), true)
     assert.deepEqual(await overview.getFileOverview(sourceId, revision), cachedBefore)
     assert.deepEqual(await overview.listOverviewOutbox(), outboxBefore)
     assert.equal(JSON.stringify((await overview.listOverviewOutbox())[0].requestBody), JSON.stringify(immutableRequest))
@@ -541,7 +579,6 @@ test('useSourceStore.deleteSourceFile: a pre-commit failure keeps the Source vis
     assert.equal(documentDiscardCalls, 0)
   } finally {
     repo.commitMutation = originalCommitMutation
-    repo.tombstone = originalTombstone
     sourceStore.attachFileOverviewGenerator(null)
     sourceStore.attachDocumentScheduler(null)
     syncStore.requestBackgroundSync = originalRequestBackgroundSync
@@ -549,7 +586,7 @@ test('useSourceStore.deleteSourceFile: a pre-commit failure keeps the Source vis
   }
 })
 
-test('useSourceStore retries post-commit Overview cleanup from deleted Source reconciliation without releasing the fence', async () => {
+test('useSourceStore settles deletion while cleanup is pending and retries deferred cleanup during hydration', async () => {
   const pinia = createPinia()
   setActivePinia(pinia)
   const authStore = useAuthStore()
@@ -564,9 +601,13 @@ test('useSourceStore retries post-commit Overview cleanup from deleted Source re
   const originalRequestBackgroundSync = syncStore.requestBackgroundSync
   const sourceId = 'source-delete-cleanup-retry'
   const subjectId = 'subject-delete-cleanup-retry'
+  const localAssetId = 'local-asset-registered'
   const revision = 'revision-delete-cleanup-retry'
-  const { getLocalRepository } = await import('../src/services/localDb.ts')
+  const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
   const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+  const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+  const writeDraftDeletion = assetRepo.deleteSourceDraft.bind(assetRepo)
+  const draftDeleteFailed = createDeferred()
   const overview = new OverviewRepository(authStore.user.id, authStore.serverDeviceId, { storage: createMemoryStorage() })
   const overviewResponse = {
     schemaVersion: 2,
@@ -575,50 +616,84 @@ test('useSourceStore retries post-commit Overview cleanup from deleted Source re
     summaryMarkdown: 'Cleanup summary',
   }
   let discardCalls = 0
-  let secondDiscardResolve
-  const secondDiscard = new Promise((resolve) => { secondDiscardResolve = resolve })
+  const firstDiscardStarted = createDeferred()
+  const firstDiscard = createDeferred()
+  const firstSchedulerDiscard = createDeferred()
+  const secondDiscard = createDeferred()
   let schedulerDiscardCalls = 0
-  let secondSchedulerDiscardResolve
-  const secondSchedulerDiscard = new Promise((resolve) => { secondSchedulerDiscardResolve = resolve })
+  const secondSchedulerDiscard = createDeferred()
   syncStore.requestBackgroundSync = () => undefined
 
   try {
     await repo.upsert('SOURCE', sourceId, {
-      id: sourceId, subjectId, type: 'FILE', title: 'Delete me', ingestionStatus: 'READY', ingestionRevision: revision,
+      id: sourceId, subjectId, type: 'FILE', title: 'Delete me', assetId: localAssetId,
+      ingestionStatus: 'READY', ingestionRevision: revision,
     }, { version: 4 })
+    await assetRepo.createAssetFile({
+      localAssetId, originalName: 'delete.pdf', mimeType: 'application/pdf', sizeBytes: 0,
+      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    })
+    await assetRepo.createSourceDraft({
+      localSourceId: sourceId,
+      localAssetId,
+      subjectId,
+      title: 'Delete me',
+      localContentRevision: 'e3b0c442-98fc-1c49-87ae-f4c8996fb924',
+    })
+    await assetRepo.updateSourceDraft(sourceId, { serverSourceId: sourceId, state: 'SYNCING' })
+    assetRepo.deleteSourceDraft = async () => {
+      draftDeleteFailed.resolve()
+      throw new Error('TEMPORARY_DRAFT_CLEANUP_FAILURE')
+    }
     await sourceStore.loadLocalSourceFiles(subjectId)
     await overview.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode: 'ALL', response: overviewResponse })
     sourceStore.attachDocumentScheduler({ schedule: async () => undefined, discard: async () => {
       schedulerDiscardCalls += 1
-      if (schedulerDiscardCalls === 2) secondSchedulerDiscardResolve()
+      if (schedulerDiscardCalls === 1) firstSchedulerDiscard.resolve()
+      if (schedulerDiscardCalls === 2) secondSchedulerDiscard.resolve()
     } })
     sourceStore.attachFileOverviewGenerator({
       generateReadyFileOverview: async () => ({ status: 'SKIPPED' }),
       discardFileOverview: async (id) => {
         discardCalls += 1
-        if (discardCalls === 1) throw new Error('TEMPORARY_OVERVIEW_CLEANUP_FAILURE')
+        if (discardCalls === 1) {
+          firstDiscardStarted.resolve()
+          return firstDiscard.promise
+        }
         await overview.removeFileOverviews(id)
-        secondDiscardResolve()
+        secondDiscard.resolve()
       },
       restoreFileOverview: async () => true,
     })
 
-    await sourceStore.deleteSourceFile(sourceId)
-    assert.equal((await repo.read('SOURCE', sourceId))?.deletedAt !== null, true)
+    const deleting = sourceStore.deleteSourceFile(sourceId)
+    await waitForSignal(firstDiscardStarted.promise, 'first Overview cleanup')
+    await waitForSignal(deleting, 'local deletion while cleanup is pending')
+    assert.ok((await repo.read('SOURCE', sourceId))?.deletedAt)
     assert.equal(sourceStore.sources.some((item) => item.id === sourceId), false)
     assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), false)
-    assert.equal(discardCalls, 1)
+    assert.deepEqual((await repo.listUnresolved('SOURCE')).map(mutation => [mutation.resourceId, mutation.mutationType]),
+      [[sourceId, 'DELETE']])
+    assert.equal(schedulerDiscardCalls, 0, 'the cleanup is still waiting for Overview')
     assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('FILE', sourceId)), false)
     await assert.rejects(overview.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode: 'ALL', response: overviewResponse }), /OVERVIEW_SCOPE_DELETED/)
 
+    firstDiscard.reject(new Error('TEMPORARY_OVERVIEW_CLEANUP_FAILURE'))
+    await waitForSignal(firstSchedulerDiscard.promise, 'document cleanup after Overview failure')
+    await waitForSignal(draftDeleteFailed.promise, 'registered draft cleanup failure')
+    assert.equal((await assetRepo.getSourceDraft(sourceId))?.state, 'SYNCING')
+    assetRepo.deleteSourceDraft = writeDraftDeletion
     await sourceStore.loadSources()
-    await Promise.all([secondDiscard, secondSchedulerDiscard])
+    await waitForSignal(Promise.all([secondDiscard.promise, secondSchedulerDiscard.promise]), 'deferred Source cleanup retry')
+    await waitForCondition(async () => (await assetRepo.getSourceDraft(sourceId))?.state === 'DELETED', 'registered draft cleanup retry')
     assert.equal(discardCalls, 2, 'deleted Source reconciliation retries deferred Overview cleanup')
     assert.equal(schedulerDiscardCalls, 2)
     assert.equal(await overview.getFileOverview(sourceId, revision), null)
     assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('FILE', sourceId)), false,
       'successful cleanup does not reopen the deleted Source scope')
   } finally {
+    firstDiscard.resolve()
+    assetRepo.deleteSourceDraft = writeDraftDeletion
     sourceStore.attachFileOverviewGenerator(null)
     sourceStore.attachDocumentScheduler(null)
     syncStore.requestBackgroundSync = originalRequestBackgroundSync

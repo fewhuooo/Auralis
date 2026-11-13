@@ -1398,25 +1398,34 @@ const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: Ma
   return false
 }
 
+let overviewCacheRefreshGeneration = 0
 const refreshOverviewCache = async () => {
-  if (!overviewRepository) return
-  const records = await Promise.all(activeSourceFiles.value.map(async (file) => {
+  const repository = overviewRepository
+  if (!repository) return false
+  const generation = ++overviewCacheRefreshGeneration
+  const requestedSubjectId = subjectId.value
+  const requestedFiles = activeSourceFiles.value
+  const loginGeneration = authStore.loginGeneration
+  const records = await Promise.all(requestedFiles.map(async (file) => {
     if (file.ingestionRevision) {
-      const record = await overviewRepository!.getFileOverview(file.id, file.ingestionRevision)
+      const record = await repository.getFileOverview(file.id, file.ingestionRevision)
       if (record) return record
     }
-    return (overviewRepository as any).getLatestFileOverview
-      ? (overviewRepository as any).getLatestFileOverview(file.id)
-      : null
+    return repository.getLatestFileOverview(file.id)
   }))
-  fileOverviewRecords.value = Object.fromEntries(records.filter((record): record is FileOverviewRecord => record !== null).map(record => [record.sourceId, record]))
-  subjectOverviewRecord.value = await overviewRepository.getSubjectOverview(subjectId.value)
+  const subjectOverview = await repository.getSubjectOverview(requestedSubjectId)
   const usable = records.filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
-  isSubjectOverviewStale.value = Boolean(subjectOverviewRecord.value?.inputFingerprint
-    && await computeSubjectInputFingerprint(usable) !== subjectOverviewRecord.value.inputFingerprint)
-  if (subjectOverviewRecord.value?.syncStatus === 'CONFLICT' && !subjectOverviewRecord.value.generationConflicts?.length) {
+  const isStale = Boolean(subjectOverview?.inputFingerprint
+    && await computeSubjectInputFingerprint(usable) !== subjectOverview.inputFingerprint)
+  if (!isComponentMounted || generation !== overviewCacheRefreshGeneration || subjectId.value !== requestedSubjectId
+    || activeSourceFiles.value !== requestedFiles || authStore.loginGeneration !== loginGeneration) return false
+  fileOverviewRecords.value = Object.fromEntries(records.filter((record): record is FileOverviewRecord => record !== null).map(record => [record.sourceId, record]))
+  subjectOverviewRecord.value = subjectOverview
+  isSubjectOverviewStale.value = isStale
+  if (subjectOverview?.syncStatus === 'CONFLICT' && !subjectOverview.generationConflicts?.length) {
     void resolveSubjectOverviewConflict('LOCAL', true)
   }
+  return true
 }
 
 const ensureOverviewRuntime = async () => {
@@ -1630,16 +1639,17 @@ const handleDeleteFile = async (file: SourceFileModel) => {
     })
     deletingFileId.value = file.id
     await subjectStore.deleteSourceFile(file.id)
-    await refreshOverviewCache().catch(() => undefined)
-    ElMessage.success('已删除文件')
-    if (selectedFileId.value === file.id) {
-      if (activeSourceFiles.value.length > 0) {
-        selectFile(activeSourceFiles.value[0].id)
+    if (isComponentMounted && subjectId.value === file.subjectId && selectedFileId.value === file.id) {
+      const firstFile = activeSourceFiles.value.find((item) => item.subjectId === file.subjectId)
+      if (firstFile) {
+        void selectFile(firstFile.id)
       } else {
         selectedFileId.value = null
+        selectedSummaryScope.value = null
         centerView.value = 'overview'
       }
     }
+    ElMessage.success('已删除文件')
   } catch (error: any) {
     if (error === 'cancel') return
     let message = error?.message || '删除失败'
@@ -1741,7 +1751,7 @@ watch(fileOverviewItems, (items) => {
 
 watch(activeSourceFiles, async () => {
   if (!isComponentMounted) return
-  await refreshOverviewCache()
+  if (!await refreshOverviewCache().catch(() => false)) return
   if (isOutlineComposer.value) {
     initSubjectOutlineFromExisting()
     initAllFileOutlineDrafts()
@@ -3018,12 +3028,11 @@ onMounted(async () => {
         const isCurrentSubject = detail.scopeType === 'SUBJECT' && detail.scopeId === subjectId.value
         const isCurrentFile = detail.scopeType === 'FILE' && activeSourceFiles.value.some(file => file.id === detail.scopeId)
         if (isCurrentSubject || isCurrentFile) {
-          if (detail.scopeType === 'FILE') {
-            setFileGenerating(detail.scopeId, false)
-          } else {
-            subjectOverviewGenerating.value = false
+          if (!detail.removed) {
+            if (detail.scopeType === 'FILE') setFileGenerating(detail.scopeId, false)
+            else subjectOverviewGenerating.value = false
           }
-          await refreshOverviewCache()
+          if (!await refreshOverviewCache().catch(() => false)) return
           if (isOutlineComposer.value) {
             initSubjectOutlineFromExisting()
             initAllFileOutlineDrafts()

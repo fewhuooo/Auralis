@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
+import ts from 'typescript'
+import { ref, watch } from 'vue'
+import { parse } from '@vue/compiler-sfc'
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
   canPreviewFile,
@@ -290,47 +293,91 @@ test('useSourceStore deletes files locally before background sync', () => {
   assert.match(source, /documentScheduler\?\.discard\(row\.id\)/)
 })
 
-test('useSourceStore removes a deleted file from the projection only after durable tombstone commit', () => {
-  const storePath = path.resolve('src/store/useSourceStore.ts')
-  const source = fs.readFileSync(storePath, 'utf8')
-  const deleteStart = source.indexOf('async function deleteSourceFile')
-  const deletionTicket = source.indexOf("beginOverviewScopeDeletion(userId,serverDeviceId,'FILE',id)", deleteStart)
-  const firstAwait = source.indexOf('await ', deleteStart)
-  const tombstoneCommitted = source.indexOf('tombstoneCommitted = true', deleteStart)
-  const projectionRemove = source.indexOf('sources.value = sources.value.filter', deleteStart)
-  const cleanupCall = source.indexOf('await cleanupDeletedSourceAssets().catch', deleteStart)
+test('SubjectWorkspace falls back after local deletion while Overview refresh is still pending', { timeout: 2000 }, async () => {
+  const source = fs.readFileSync(path.resolve('src/views/SubjectWorkspace/index.vue'), 'utf8')
+  const { descriptor } = parse(source)
+  const script = ts.createSourceFile('workspace.ts', descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true)
+  const names = new Set(['overviewCacheRefreshGeneration', 'refreshOverviewCache', 'selectFile', 'handleDeleteFile'])
+  const statements = script.statements.filter(statement => {
+    if (ts.isVariableStatement(statement)) {
+      return statement.declarationList.declarations.some(declaration => names.has(declaration.name.getText(script)))
+    }
+    if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) return false
+    const call = statement.expression
+    return call.expression.getText(script) === 'watch' && call.arguments[0].getText(script) === 'activeSourceFiles'
+  }).map(statement => statement.getText(script)).join('\n')
+  const execute = new Function(...[
+    'subjectId', 'activeSourceFiles', 'selectedFileId', 'selectedSummaryScope', 'centerView', 'deletingFileId',
+    'subjectStore', 'ElMessageBox', 'ElMessage', 'watch', 'overviewRepository', 'fileOverviewRecords',
+    'subjectOverviewRecord', 'isSubjectOverviewStale', 'authStore', 'isOutlineComposer', 'isScopeLocked',
+  ], ts.transpileModule(`
+    let isComponentMounted = true
+    let currentSubjectSwitchGen = 0
+    ${statements}
+    return handleDeleteFile
+  `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)
 
-  assert.ok(deletionTicket > deleteStart && deletionTicket < firstAwait, 'the deletion fence must start before the first await')
-  assert.ok(tombstoneCommitted > firstAwait && projectionRemove > tombstoneCommitted,
-    'the file must remain visible until its durable Source tombstone commits')
-  assert.ok(cleanupCall > projectionRemove, 'slow document/cache cleanup must follow the committed deletion projection')
-  const cleanupStart = source.indexOf('async function cleanupDeletedSourceAssets')
-  const cleanupEnd = source.indexOf('\n  async function loadSources', cleanupStart)
-  const cleanup = source.slice(cleanupStart, cleanupEnd)
-  assert.match(cleanup, /fileOverviewGenerator\?\.discardFileOverview\(row\.id\)/)
-  assert.match(cleanup, /documentScheduler\?\.discard\(row\.id\)/)
-})
-
-test('useSourceStore fences first, commits the Source tombstone, then removes the projection and cleans local consumers', () => {
-  const storePath = path.resolve('src/store/useSourceStore.ts')
-  const source = fs.readFileSync(storePath, 'utf8')
-  const deleteStart = source.indexOf('async function deleteSourceFile')
-  const deletionTicket = source.indexOf("beginOverviewScopeDeletion(userId,serverDeviceId,'FILE',id)", deleteStart)
-  const firstAwait = source.indexOf('await ', deleteStart)
-  const tombstoneCommitted = source.indexOf('tombstoneCommitted = true', deleteStart)
-  const projectionRemove = source.indexOf('sources.value = sources.value.filter', deleteStart)
-  const sync = source.indexOf('scheduleSync()', deleteStart)
-  const cleanupCall = source.indexOf('await cleanupDeletedSourceAssets().catch', deleteStart)
-  const deleteEnd = source.indexOf('\n  async function saveSourceFileCatalog', deleteStart)
-
-  const tombstone = source.indexOf("mutationType: 'DELETE'", deleteStart)
-
-  assert.ok(deletionTicket > deleteStart && deletionTicket < firstAwait, 'delete lifecycle fence must precede all asynchronous work')
-  assert.ok(tombstone > firstAwait && tombstoneCommitted > tombstone, 'the durable mutation must complete before cleanup')
-  assert.ok(projectionRemove > tombstoneCommitted, 'visible rows are removed only after durable commit')
-  assert.ok(sync > tombstoneCommitted && cleanupCall > tombstoneCommitted,
-    'sync and irreversible local cleanup must follow durable commit')
-  assert.doesNotMatch(source.slice(deleteStart, deleteEnd), /console\.warn\([^\n]*,\s*error\)/)
+  const first = { id: 'first', subjectId: 'a', name: 'First' }
+  const second = { id: 'second', subjectId: 'a', name: 'Second' }
+  const third = { id: 'third', subjectId: 'b', name: 'Third' }
+  for (const scenario of [
+    { files: [first, second], next: second, view: 'preview' },
+    { files: [first], next: null, view: 'overview' },
+    { files: [first, second], choose: second, next: second, view: 'summary' },
+    { files: [first, second], choose: third, next: third, view: 'summary' },
+  ]) {
+    const commit = Promise.withResolvers()
+    const refresh = Promise.withResolvers()
+    const refreshing = Promise.withResolvers()
+    const subjectId = ref('a')
+    const activeSourceFiles = ref(scenario.files)
+    const selectedFileId = ref(first.id)
+    const selectedSummaryScope = ref({ kind: 'file', id: first.id })
+    const centerView = ref('summary')
+    const deletingFileId = ref(null)
+    const messages = []
+    const unwatch = []
+    const handleDeleteFile = execute(
+      subjectId, activeSourceFiles, selectedFileId, selectedSummaryScope, centerView, deletingFileId,
+      { async deleteSourceFile(id) {
+        await commit.promise
+        activeSourceFiles.value = activeSourceFiles.value.filter(file => file.id !== id)
+      } },
+      { async confirm() {} },
+      { success: message => messages.push(message), error: message => messages.push(message) },
+      (...args) => { unwatch.push(watch(...args)) },
+      {
+        async getLatestFileOverview() { return null },
+        async getSubjectOverview() {
+          refreshing.resolve()
+          return refresh.promise
+        },
+      },
+      ref({}), ref(null), ref(false), { loginGeneration: 1 }, ref(false), ref(true),
+    )
+    try {
+      const deleting = handleDeleteFile(first)
+      await Promise.resolve()
+      assert.equal(deletingFileId.value, first.id)
+      if (scenario.choose) {
+        subjectId.value = scenario.choose.subjectId
+        selectedFileId.value = scenario.choose.id
+        selectedSummaryScope.value = { kind: 'file', id: scenario.choose.id }
+        if (scenario.choose.subjectId === 'b') activeSourceFiles.value = [third]
+      }
+      commit.resolve()
+      await refreshing.promise
+      await deleting
+      assert.equal(selectedFileId.value, scenario.next?.id ?? null)
+      assert.equal(selectedSummaryScope.value?.id ?? null, scenario.choose?.id ?? null)
+      assert.equal(centerView.value, scenario.view)
+      assert.equal(deletingFileId.value, null)
+      assert.deepEqual(messages, ['已删除文件'])
+    } finally {
+      refresh.resolve(null)
+      for (const stop of unwatch) stop()
+    }
+  }
 })
 
 test('SubjectWorkspace fallback cannot generate file Overviews without the runtime gate', () => {

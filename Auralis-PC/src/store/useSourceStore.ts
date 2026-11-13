@@ -403,52 +403,41 @@ export const useSourceStore = defineStore('source', () => {
     let tombstoneCommitted = false
     const isCurrentScope = (): boolean => authStore.user?.id === userId && authStore.serverDeviceId === serverDeviceId
     try {
-    const repo = await getLocalRepository(userId,serverDeviceId)
-    const existing = await repo.read<SourceView>('SOURCE', id)
-    const assetRepo = await getLocalAssetRepository(userId,serverDeviceId)
-    const draftBeforeDelete = await assetRepo?.getSourceDraft(id)
-    const localOnlyDraft = Boolean(draftBeforeDelete && !draftBeforeDelete.serverSourceId)
-    const now = new Date().toISOString()
-    if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) throw new Error('OVERVIEW_SCOPE_CHANGED')
-    const localView: SourceView = {
-      ...(existing?.value ?? { id, subjectId: source.subjectId, type: source.type, title: source.name }),
-      id, version: source.version, updatedAt: now, deletedAt: now,
-    }
-    if (localOnlyDraft) {
-      // This Source never reached the server.  Persist a local tombstone
-      // without manufacturing a DELETE mutation that can remain unresolved
-      // forever against a non-existent server row.
-      await repo.tombstone('SOURCE', id, { version: source.version, deletedAt: now, syncStatus: 'synced' })
-    } else {
-      await repo.commitMutation({
-        resourceType: 'SOURCE', resourceId: id, value: localView, version: source.version, deletedAt: now,
-        mutation: createStableMutation({
-          clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'DELETE', baseVersion: source.version, payload: { id },
-        }),
-      })
-    }
-    tombstoneCommitted = true
-    completeOverviewScopeDeletion(deletionTicket)
-    if (isCurrentScope()) {
+      const repo = await getLocalRepository(userId,serverDeviceId)
+      const existing = await repo.read<SourceView>('SOURCE', id)
+      const assetRepo = await getLocalAssetRepository(userId,serverDeviceId)
+      const draft = await assetRepo.getSourceDraft(id)
+      const localOnlyDraft = draft && !draft.serverSourceId ? draft : null
+      const now = new Date().toISOString()
+      if (!isCurrentScope()) throw new Error('OVERVIEW_SCOPE_CHANGED')
+      if (localOnlyDraft) {
+        await repo.tombstone('SOURCE', id, { version: source.version, deletedAt: now, syncStatus: 'synced' })
+      } else {
+        const localView: SourceView = {
+          ...(existing?.value ?? { id, subjectId: source.subjectId, type: source.type, title: source.name }),
+          id, version: source.version, updatedAt: now, deletedAt: now,
+        }
+        await repo.commitMutation({
+          resourceType: 'SOURCE', resourceId: id, value: localView, version: source.version, deletedAt: now,
+          mutation: createStableMutation({
+            clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'DELETE', baseVersion: source.version, payload: { id },
+          }),
+        })
+      }
+      tombstoneCommitted = true
+      completeOverviewScopeDeletion(deletionTicket)
+      if (localOnlyDraft && localOnlyDraft.state !== 'DELETED') {
+        // A full snapshot can replace the local-only tombstone. Terminate the
+        // draft before Subject hydration can reconstruct it from DRAFT state.
+        await assetRepo.deleteSourceDraft(id).catch((error: unknown) => {
+          throw new Error('本机草稿删除未完成，请重试', { cause: error })
+        })
+      }
+      if (!isCurrentScope()) return
       sources.value = sources.value.filter((item) => item.id !== id)
       activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
       if (!localOnlyDraft) scheduleSync()
-    }
-
-    // The Source tombstone is now durable.  Mark the auxiliary draft after
-    // it, so a failure before this line is repairable by startup cleanup.
-    const draft = draftBeforeDelete ?? await assetRepo?.getSourceDraft(id)
-    if (assetRepo && draft && draft.state !== 'DELETED') await assetRepo.deleteSourceDraft(id)
-    // For a local-only draft this can complete immediately.  For a server
-    // Source the tombstone remains a reference until sync settles; startup
-    // cleanup retries after acknowledgement.
-    if (isCurrentScope()) {
-      await cleanupDeletedSourceAssets().catch((error) => {
-        if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) {
-          console.warn('[SourceStore] deleted Source asset cleanup deferred')
-        }
-      })
-    }
+      void cleanupDeletedSourceAssets().catch(() => console.warn('[SourceStore] deleted Source asset cleanup deferred'))
     } catch (error) {
       if (!tombstoneCommitted) cancelOverviewScopeDeletion(deletionTicket)
       throw error

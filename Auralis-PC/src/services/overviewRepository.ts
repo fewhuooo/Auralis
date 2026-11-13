@@ -1116,7 +1116,14 @@ export class OverviewRepository {
 
   async removeSubjectOverview(subjectId: string): Promise<void> {
     requireValue(subjectId, 'OVERVIEW_SCOPE_INVALID')
+    const token = this.captureScopeFenceToken('SUBJECT', subjectId)
     await this.serializeWrite(() => this.transaction(database => this.removeScope('SUBJECT', subjectId, database)))
+    if (this.isScopeFenceTokenCurrent(token)) {
+      notifyOverviewCacheUpdated(undefined, {
+        userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType: 'SUBJECT', scopeId: subjectId,
+        revisionKey: SUBJECT_REVISION_KEY, removed: true,
+      })
+    }
   }
 
   private async removeScope(scopeType: 'FILE' | 'SUBJECT', scopeId: string, database?: LocalSqlDatabase): Promise<void> {

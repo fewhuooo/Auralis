@@ -36,6 +36,7 @@ export interface OverviewCacheUpdatedDetail {
   scopeType: 'FILE' | 'SUBJECT'
   scopeId: string
   revisionKey?: string
+  removed?: true
 }
 
 export function notifyOverviewCacheUpdated(
