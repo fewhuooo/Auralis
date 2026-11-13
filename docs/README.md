@@ -159,6 +159,7 @@ Chat Agent Loop 顺序实施：[容错、收敛与上下文治理](plans/2026-11
 
 ### 非工程事实
 
+- [Overview 实验数据与轮次对比](archive/overview-experiments/README.md)：历史实验的方案、输入输出、结果与原始证据。
 - [展示材料](showcase/TraeCompetitionApplication.md)
 - [历史归档](archive/README.md)
 
