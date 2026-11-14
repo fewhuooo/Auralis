@@ -210,6 +210,9 @@
               <component :is="group.icon" class="setting-icon" aria-hidden="true" />
               {{ group.title }}
             </h3>
+            <button v-if="group.showSyncAction" class="action-btn primary" type="button" @click="handleSyncNow">
+              {{ syncButtonText }}
+            </button>
           </div>
           <div class="group-items">
             <div
@@ -218,7 +221,7 @@
               class="settings-row"
             >
               <div class="row-info">
-                <span v-if="item.type !== 'action'" class="row-label setting-label-with-icon">
+                <span class="row-label setting-label-with-icon">
                   <component :is="item.icon" class="setting-icon" aria-hidden="true" />
                   {{ item.label }}
                 </span>
@@ -244,15 +247,6 @@
                 >
                   <option v-for="opt in item.options" :key="opt" :value="opt">{{ opt }}</option>
                 </select>
-                <!-- Action Button -->
-                <button
-                  v-else-if="item.type === 'action'"
-                  class="action-btn"
-                  :class="item.variant"
-                  @click="handleAction(item)"
-                >
-                  {{ item.btnText }}
-                </button>
                 <!-- Input -->
                 <input
                   v-else-if="item.type === 'input'"
@@ -1230,12 +1224,10 @@ const loadStats = async () => {
 interface SettingItem {
   id: string
   label: string
-  type: 'toggle' | 'select' | 'action' | 'input' | 'status'
+  type: 'toggle' | 'select' | 'input' | 'status'
   icon?: Icon
   value?: any
   options?: string[]
-  btnText?: string
-  variant?: string
   placeholder?: string
 }
 
@@ -1261,14 +1253,16 @@ const settingGroups = reactive([
   {
     title: '同步与数据',
     icon: IconCloud,
+    showSyncAction: true,
     items: [
       { id: 'sync_status', label: '同步状态', icon: IconActivity, type: 'status', value: '已同步 · 状态正常' },
       { id: 'auto_sync', label: '自动同步', icon: IconRefresh, type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
       { id: 'wifi_only', label: '仅 Wi-Fi 同步', icon: IconWifi, type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
-      { id: 'sync_now', label: '立即同步', type: 'action', btnText: '立即同步', variant: 'primary' },
     ] as SettingItem[]
   },
 ])
+
+const syncButtonText = ref('立即同步')
 
 const autoOverviewSetting = reactive({
   id: 'auto_overview',
@@ -1320,32 +1314,30 @@ const handleSelectChange = (item: SettingItem) => {
   })
 }
 
-const handleAction = async (item: SettingItem) => {
-  if (item.id === 'sync_now') {
-    const generation = authStore.loginGeneration
-    const orig = item.btnText
-    item.btnText = '同步中...'
-    try {
-      if (!isOnline()) throw new Error('NETWORK_OFFLINE')
-      await syncStore.flushNow()
-      if (authStore.loginGeneration !== generation) return
-      await pomodoroStore.flushPending()
-      await loadStats()
-      if (authStore.loginGeneration !== generation) return
-      if (hasPendingFocusSessions.value) {
-        item.btnText = '部分记录待传'
-        ElNotification({ title: '专注记录待上传', message: '部分专注记录仍保存在此设备，可稍后重试。', type: 'warning', duration: 3000 })
-        return
-      }
-      item.btnText = '✓ 同步成功'
-      ElNotification({ title: '同步成功', message: '本次同步已完成', type: 'success', duration: 3000 })
-    } catch (e) {
-      if (authStore.loginGeneration !== generation || e instanceof SyncScopeChangedError) return
-      item.btnText = '✕ 同步失败'
-      ElNotification({ title: '同步失败', message: '同步遇到错误，请检查网络后重试', type: 'error', duration: 3000 })
-    } finally {
-      setTimeout(() => { item.btnText = orig }, 2500)
+const handleSyncNow = async () => {
+  const generation = authStore.loginGeneration
+  const previousText = syncButtonText.value
+  syncButtonText.value = '同步中...'
+  try {
+    if (!isOnline()) throw new Error('NETWORK_OFFLINE')
+    await syncStore.flushNow()
+    if (authStore.loginGeneration !== generation) return
+    await pomodoroStore.flushPending()
+    await loadStats()
+    if (authStore.loginGeneration !== generation) return
+    if (hasPendingFocusSessions.value) {
+      syncButtonText.value = '部分记录待传'
+      ElNotification({ title: '专注记录待上传', message: '部分专注记录仍保存在此设备，可稍后重试。', type: 'warning', duration: 3000 })
+      return
     }
+    syncButtonText.value = '✓ 同步成功'
+    ElNotification({ title: '同步成功', message: '本次同步已完成', type: 'success', duration: 3000 })
+  } catch (e) {
+    if (authStore.loginGeneration !== generation || e instanceof SyncScopeChangedError) return
+    syncButtonText.value = '✕ 同步失败'
+    ElNotification({ title: '同步失败', message: '同步遇到错误，请检查网络后重试', type: 'error', duration: 3000 })
+  } finally {
+    setTimeout(() => { syncButtonText.value = previousText }, 2500)
   }
 }
 
@@ -2167,6 +2159,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 16px 22px;
   border-bottom: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   background: rgba(0, 0, 0, 0.012);
