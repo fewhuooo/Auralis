@@ -50,7 +50,7 @@ export function planTimelineDrop(
 ): TimelineDropPlan | undefined {
   const source = tasks.find((task) => task.id === intent.taskId)
   if (!source || source.deletedAt !== null) throw new Error('源任务已变化，请刷新后重试')
-  if (intent.sourceScheduledAt !== undefined && intent.sourceScheduledAt !== (source.scheduledAt ?? null)) {
+  if (intent.sourceScheduledAt !== undefined && !sameScheduleStart(intent.sourceScheduledAt, source.scheduledAt ?? null)) {
     throw new Error('源排期已变化，请刷新时间轴后重试')
   }
   if (source.status === 'DONE') throw new Error('已完成的排期任务已固定')
@@ -174,6 +174,11 @@ export function timelineDateKey(value?: string): string | undefined {
     String(date.getMonth() + 1).padStart(2, '0'),
     String(date.getDate()).padStart(2, '0'),
   ].join('-')
+}
+
+function sameScheduleStart(left: string | null, right: string | null): boolean {
+  if (left === right) return true
+  return left !== null && right !== null && Date.parse(left) === Date.parse(right)
 }
 
 function timeOnDate(dateKey: string, minutes: number): number {
