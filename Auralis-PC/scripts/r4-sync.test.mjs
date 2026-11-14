@@ -521,6 +521,74 @@ test('sync cycle restores the server Task cohort and terminates a rejected sched
   assert.deepEqual(result.scheduleErrors, [{ clientMutationId: 'schedule-conflict', code: 'RESOURCE_VERSION_CONFLICT' }]);
 });
 
+test('a rejected strict schedule refreshes the Task projection even when the following pull fails', async () => {
+  const { createPinia, setActivePinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  const { useTaskStore } = await import('../src/store/useTaskStore.ts');
+  const { useSyncStore } = await import('../src/store/useSyncStore.ts');
+  const { getLocalRepository } = await import('../src/services/localDb.ts');
+  setActivePinia(createPinia());
+  const userId = 'schedule-rejected-before-pull';
+  const deviceId = 'schedule-rejected-before-pull-device';
+  const authStore = useAuthStore();
+  authStore.setSession({
+    user: { id: userId, email: 'schedule-rejected-before-pull@example.test' },
+    tokens: { accessToken: 'test-token', refreshToken: 'test-refresh' },
+    sessionId: 'schedule-rejected-before-pull-session', serverDeviceId: deviceId,
+  });
+  const repository = await getLocalRepository(userId, deviceId);
+  const taskStore = useTaskStore();
+  const syncStore = useSyncStore();
+  const current = { id: 'strict-source', subjectId: 'math', title: 'Strict placement',
+    status: 'TODO', scheduledAt: '2099-10-06T09:00:00Z', durationMinutes: 30, version: 2 };
+  const optimistic = { ...current, scheduledAt: '2099-10-07T10:00:00Z' };
+  await repository.saveCursor('before-push');
+  await repository.upsert('TASK', current.id, current, { version: current.version });
+  await repository.commitScheduleMutation({
+    items: [{ resourceType: 'TASK', resourceId: current.id, value: optimistic,
+      version: current.version, expectedLocalVersion: current.version, deletedAt: null }],
+    mutation: { clientMutationId: 'strict-rejected', resourceType: 'TASK', resourceId: current.id,
+      mutationType: 'SCHEDULE_INSERTION', baseVersion: current.version,
+      payload: { taskId: current.id, scheduledAt: optimistic.scheduledAt, placementMode: 'STRICT',
+        _localAffectedTaskIds: [current.id] } },
+  });
+  await taskStore.loadLocalTasks();
+  assert.equal(taskStore.allTasks[0].scheduledAt, optimistic.scheduledAt);
+
+  const originalApi = { ...useSyncApi };
+  let pushes = 0;
+  let pulls = 0;
+  try {
+    useSyncApi.pushChanges = async () => {
+      pushes += 1;
+      return { results: [{ clientMutationId: 'strict-rejected', resourceType: 'TASK', resourceId: current.id,
+        mutationType: 'SCHEDULE_INSERTION', decision: 'REJECTED', code: 'VALIDATION_FAILED', current: [current] }] };
+    };
+    useSyncApi.pullChanges = async () => {
+      pulls += 1;
+      if (pulls === 1) throw new Error('pull failed after schedule rejection');
+      return { changes: [], nextCursor: 'before-push', hasMore: false, resetRequired: false };
+    };
+
+    await assert.rejects(syncStore.flushNow(), /pull failed after schedule rejection/);
+    assert.equal((await repository.read('TASK', current.id)).value.scheduledAt, current.scheduledAt);
+    assert.deepEqual(syncStore.scheduleSyncErrors, [{ clientMutationId: 'strict-rejected', code: 'VALIDATION_FAILED' }]);
+    for (let attempt = 0; attempt < 50 && taskStore.allTasks[0].scheduledAt !== current.scheduledAt; attempt += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(taskStore.allTasks[0].scheduledAt, current.scheduledAt);
+
+    syncStore.acknowledgeScheduleSyncError('strict-rejected');
+    await syncStore.flushNow();
+    assert.equal(pushes, 1);
+    assert.equal(pulls, 2);
+    assert.deepEqual(syncStore.scheduleSyncErrors, []);
+  } finally {
+    Object.assign(useSyncApi, originalApi);
+    authStore.sessionId = null;
+  }
+});
+
 test('schedule rejection with a missing swap target stays retryable until snapshot reconciliation succeeds', async () => {
   const { runSyncCycle } = await import('../src/services/syncCycle.ts');
   const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
@@ -1803,11 +1871,13 @@ test('schedule wire payloads contain only current server fields and never local 
   const sent = [];
   try {
     request.post = async (_url, data) => { sent.push(data); return { results: [] }; };
-    for (const mutationType of ['SCHEDULE_INSERTION', 'SCHEDULE_SWAP']) {
-      const fields = mutationType === 'SCHEDULE_INSERTION'
-        ? { taskId: 'a', baseVersion: 2, scheduledAt: '2099-10-06T10:00:00Z', windowStartAt: '2099-10-06T08:00:00Z',
-            windowLastStartAt: '2099-10-06T22:30:00Z', targetTaskId: 'b' }
-        : { sourceTaskId: 'a', sourceBaseVersion: 2, targetTaskId: 'b', targetBaseVersion: 4 };
+    const insertion = { taskId: 'a', baseVersion: 2, scheduledAt: '2099-10-06T10:00:00Z',
+      windowStartAt: '2099-10-06T08:00:00Z', windowLastStartAt: '2099-10-06T22:30:00Z' };
+    for (const [mutationType, fields] of [
+      ['SCHEDULE_INSERTION', { ...insertion, targetTaskId: 'b' }],
+      ['SCHEDULE_INSERTION', { ...insertion, placementMode: 'STRICT' }],
+      ['SCHEDULE_SWAP', { sourceTaskId: 'a', sourceBaseVersion: 2, targetTaskId: 'b', targetBaseVersion: 4 }],
+    ]) {
       await useSyncApi.pushChanges({ serverDeviceId: 'device', mutations: [{
         clientMutationId: `wire-${mutationType}`, resourceType: 'TASK', resourceId: 'a', mutationType, baseVersion: 2,
         status: 'pending', createdAt: 'now', userId: 'user', payload: { ...fields,

@@ -24,6 +24,7 @@ import com.auralis.app.task.TaskCommand;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.task.TaskStatus;
 import com.auralis.app.task.TaskView;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -311,6 +312,72 @@ class SyncServiceTests {
                 .isEqualTo(Instant.parse("2026-09-25T09:00:00Z"));
         assertThat(taskService.get(auth.user().id(), existing.id()).scheduledAt())
                 .isEqualTo(Instant.parse("2026-09-25T09:30:00Z"));
+    }
+
+    @Test
+    void strictScheduleInsertionRejectsOverlapAndAppliesOnlyTheSourceAtAnExactSlot() {
+        AuthResult auth = register("sync-strict-placement");
+        UUID userId = auth.user().id();
+        UUID subjectId = subjectService.create(userId, new SubjectCommand(
+                "Strict placement", null, null, "001")).id();
+        var beforeWindow = taskService.create(userId, new TaskCommand(
+                subjectId, "Before window", null, TaskStatus.TODO,
+                Instant.parse("2099-10-06T07:45:00+08:00"), null, 30, "001"));
+        var later = taskService.create(userId, new TaskCommand(
+                subjectId, "Later", null, TaskStatus.TODO,
+                Instant.parse("2099-10-06T09:30:00+08:00"), null, 30, "002"));
+        var source = taskService.create(userId, new TaskCommand(
+                subjectId, "Source", null, TaskStatus.TODO, null,
+                Instant.parse("2099-10-06T09:00:00+08:00"), 30, "003"));
+        long cursorBefore = changeLogService.latestCursor(userId).value();
+        var payload = objectMapper.createObjectNode()
+                .put("taskId", source.id().toString())
+                .put("baseVersion", source.version())
+                .put("scheduledAt", "2099-10-06T08:00:00+08:00")
+                .put("windowStartAt", "2099-10-06T08:00:00+08:00")
+                .put("windowLastStartAt", "2099-10-06T22:30:00+08:00")
+                .put("placementMode", "STRICT");
+        var overlap = new SyncMutation("strict-overlap", SyncResourceType.TASK, source.id(),
+                SyncMutationType.SCHEDULE_INSERTION, source.version(), payload);
+
+        var rejected = syncService.push(userId, auth.serverDeviceId(), List.of(overlap)).getFirst();
+
+        assertThat(rejected.decision()).isEqualTo(MutationDecision.REJECTED);
+        assertThat(rejected.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat((JsonNode) rejected.current()).hasSize(1);
+        assertThat(((JsonNode) rejected.current()).get(0).path("id").asText()).isEqualTo(source.id().toString());
+        assertThat(changeLogService.latestCursor(userId).value()).isEqualTo(cursorBefore);
+        assertThat(taskService.get(userId, source.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(null, source.version());
+
+        var placement = new SyncMutation("strict-placement", SyncResourceType.TASK, source.id(),
+                SyncMutationType.SCHEDULE_INSERTION, source.version(),
+                payload.deepCopy().put("scheduledAt", "2099-10-06T08:30:00+08:00"));
+        var applied = syncService.push(userId, auth.serverDeviceId(), List.of(placement)).getFirst();
+        var replay = syncService.push(userId, auth.serverDeviceId(), List.of(placement)).getFirst();
+
+        assertThat(applied.decision()).isEqualTo(MutationDecision.APPLIED);
+        assertThat((JsonNode) applied.current()).hasSize(1);
+        assertThat(((JsonNode) applied.current()).get(0).path("id").asText()).isEqualTo(source.id().toString());
+        assertThat(replay.current()).isEqualTo(applied.current());
+        assertThat(replay.changeCursor()).isEqualTo(applied.changeCursor());
+        assertThat(changeLogService.latestCursor(userId).value()).isEqualTo(cursorBefore + 1);
+        assertThat(taskService.get(userId, source.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2099-10-06T08:30:00+08:00"));
+        assertThat(taskService.get(userId, source.id()).version()).isEqualTo(source.version() + 1);
+        assertThat(taskService.get(userId, beforeWindow.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(beforeWindow.scheduledAt(), beforeWindow.version());
+        assertThat(taskService.get(userId, later.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(later.scheduledAt(), later.version());
+
+        var stale = new SyncMutation("strict-stale", SyncResourceType.TASK, source.id(),
+                SyncMutationType.SCHEDULE_INSERTION, source.version(), placement.payload());
+        var conflict = syncService.push(userId, auth.serverDeviceId(), List.of(stale)).getFirst();
+        assertThat(conflict.decision()).isEqualTo(MutationDecision.CONFLICT);
+        assertThat(conflict.code()).isEqualTo("RESOURCE_VERSION_CONFLICT");
+        assertThat((JsonNode) conflict.current()).hasSize(1);
+        assertThat(((JsonNode) conflict.current()).get(0).path("version").asLong()).isEqualTo(source.version() + 1);
+        assertThat(changeLogService.latestCursor(userId).value()).isEqualTo(cursorBefore + 1);
     }
 
     @Test

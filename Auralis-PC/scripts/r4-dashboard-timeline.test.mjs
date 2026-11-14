@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { runInNewContext } from 'node:vm'
+import { compileScript, parse } from 'vue/compiler-sfc'
+import ts from 'typescript'
+import { computed, defineComponent, effectScope, nextTick, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 
 const dashboard = await readFile(new URL('../src/views/Dashboard/index.vue', import.meta.url), 'utf8')
 const timeline = await readFile(new URL('../src/views/Timeline/index.vue', import.meta.url), 'utf8')
+const taskDialog = await readFile(new URL('../src/components/task/TaskCreateDialog.vue', import.meta.url), 'utf8')
+const taskSchedulePlanner = await readFile(new URL('../src/services/taskSchedulePlanner.ts', import.meta.url), 'utf8')
 const taskStore = await readFile(new URL('../src/store/useTaskStore.ts', import.meta.url), 'utf8')
 const globalStyles = await readFile(new URL('../src/styles/index.css', import.meta.url), 'utf8')
 const pomodoroRing = await readFile(new URL('../src/components/pomodoro/PomodoroRing.vue', import.meta.url), 'utf8')
@@ -19,16 +26,15 @@ test('dashboard uses a bounded grid and shared timeline window', () => {
   assert.doesNotMatch(dashboard, /timeline-import-btn|focus=unassigned-tasks/)
 })
 
-test('timeline keeps deadline-only pending queue and imports unassigned tasks', () => {
-  assert.match(timeline, /getTasksForTimeline\(allTasks\.value\)/)
+test('timeline keeps the pending task queue and imports unassigned tasks', () => {
+  assert.match(timeline, /\[\.\.\.pendingTasks\.value\]\.sort\(comparePendingTasks\)/)
   assert.match(timeline, /getTimelineDays/)
   assert.match(timeline, /day\.dateKey/)
-  assert.match(timeline, /return filteredPendingTasks\.value\s*\n\}/)
   assert.match(timeline, /router\.push\(['"`]\/asset\?focus=unassigned-tasks['"`]\)/)
 })
 
 test('timeline renders half-hour scheduled tasks and marks past tasks without removing them', () => {
-  assert.match(taskStore, /TIMELINE_SLOT_MINUTES\s*=\s*30/, 'Task time slots must include half-hour boundaries')
+  assert.match(taskSchedulePlanner, /TIMELINE_SLOT_MINUTES\s*=\s*30/, 'Task time slots must include half-hour boundaries')
   assert.match(taskStore, /timelineSlotTimeForScheduledAt/, 'Day timeline must normalize scheduledAt to a visible time slot')
   assert.match(taskStore, /timeForScheduledAt\(value\)/, 'Day timeline must derive the task start time from scheduledAt')
   assert.match(timeline, /isPastTask/, 'Timeline must identify tasks whose scheduledAt is in the past')
@@ -36,9 +42,7 @@ test('timeline renders half-hour scheduled tasks and marks past tasks without re
   assert.match(timeline, /text-decoration:\s*line-through/, 'Past task text must be crossed out')
 })
 
-test('timeline drag/drop carries a native payload and uses half-hour geometry', () => {
-  assert.match(timeline, /sourceSlotTime/)
-  assert.match(timeline, /sourceSlotTime\s*===\s*slotTime/)
+test('timeline uses half-hour geometry', () => {
   assert.match(timeline, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*80/)
   assert.match(timeline, /slots\s*\*\s*TIMELINE_SLOT_HEIGHT\s*\+\s*\(slots\s*-\s*1\)\s*\*\s*TIMELINE_SLOT_GAP/)
   assert.match(timeline, /min-height:\s*80px/)
@@ -48,24 +52,9 @@ test('timeline drag/drop carries a native payload and uses half-hour geometry', 
   assert.match(dashboard, /dayScheduledTasks/)
 })
 
-test('completed scheduled cards block slot insertions and report rejected header swaps', () => {
+test('completed scheduled cards are never draggable in either Timeline view', () => {
   assert.match(timeline, /:draggable="!isCompletedScheduledTask\(slot\.task\)"/)
   assert.match(timeline, /:draggable="!isCompletedScheduledTask\(task\)"/)
-  const slotDropHandler = timeline.slice(timeline.indexOf('const handleDrop ='), timeline.indexOf('const handleDropOnHeader ='))
-  const completedTargetGuardIndex = slotDropHandler.indexOf('if (targetTask && isCompletedScheduledTask(targetTask))')
-  assert.notEqual(completedTargetGuardIndex, -1, 'slot drops must detect a completed target')
-  for (const writePath of ['taskStore.scheduleTask(', 'taskStore.rescheduleTask(']) {
-    const writePathIndex = slotDropHandler.indexOf(writePath)
-    assert.ok(writePathIndex < 0 || completedTargetGuardIndex < writePathIndex, `${writePath} must not run for a completed target`)
-  }
-
-  const headerDropHandler = timeline.slice(timeline.indexOf('const handleDropOnHeader ='), timeline.indexOf('const handleDropOnDay ='))
-  const swapHandler = taskStore.slice(taskStore.indexOf('async function swapScheduledTasks('), taskStore.indexOf('async function unscheduleTask('))
-  assert.match(headerDropHandler, /await taskStore\.swapScheduledTasks\([\s\S]*?catch \(error\) \{[\s\S]*?reportDragFailure\(error\)/)
-  assert.match(swapHandler, /if \(isCompletedScheduledTask\(from\) \|\| isCompletedScheduledTask\(to\)\) throw new Error\('已完成的排期任务已固定'\)/)
-  const bodyDropHandler = timeline.slice(timeline.indexOf('const handleDropOnTaskBody ='), timeline.indexOf('const handleDropOnHeader ='))
-  assert.match(bodyDropHandler, /if \(draggedItem\.value\?\.taskId === task\.id\) \{\s*clearDragState\(\)\s*return\s*\}/,
-    'dropping a task onto its own body must release the drag state')
   // Dashboard uses non-draggable linear list
   assert.doesNotMatch(dashboard, /:draggable/)
 })
@@ -106,7 +95,7 @@ test('pc typography uses the shared font stack and semantic size tokens', () => 
 
 test('production default durations are multiples of 30 minutes', () => {
   assert.match(taskStore, /durationMinutes:\s*input\.durationMinutes\s*\?\?\s*input\.duration\s*\?\?\s*30/, 'useTaskStore default must be 30')
-  assert.match(timeline, /duration:\s*newTaskForm\.value\.duration\s*\|\|\s*60/, 'Timeline creation fallback must be 60')
+  assert.match(timeline, /duration:\s*taskData\.duration\s*\|\|\s*60/, 'Timeline creation fallback must be 60')
   // assert.match(timeline, /duration:\\s*30,/)
 })
 
@@ -118,7 +107,6 @@ test('schedule pages do not expose visible load badges or indicators', () => {
 test('timeline keeps the local task projection when changing days and refreshing remotely', () => {
   const fetchTasksSource = taskStore.slice(taskStore.indexOf('async function fetchTasks()'), taskStore.indexOf('function replaceInMemory('))
   const loadLocalTasksSource = taskStore.slice(taskStore.indexOf('async function loadLocalTasks()'), taskStore.indexOf('async function cache('))
-  const timelineSelectDaySource = timeline.slice(timeline.indexOf('const selectDay'), timeline.indexOf('const getScheduledTasksForDay'))
   const dashboardSelectDaySource = dashboard.slice(dashboard.indexOf('const selectDay'), dashboard.indexOf('const getScheduledTasksForDay'))
 
   assert.match(taskStore, /authStore\.serverDeviceId/, 'Task repository scope must use the canonical authenticated device id')
@@ -126,9 +114,7 @@ test('timeline keeps the local task projection when changing days and refreshing
   assert.match(fetchTasksSource, /requestBackgroundSync\('read'\)/, 'Cloud refresh must continue in the background')
   assert.doesNotMatch(fetchTasksSource, /return await loadFromApi\(\)/, 'Cloud refresh must not block the local task projection')
   assert.doesNotMatch(loadLocalTasksSource, /allTasks\.value\s*=\s*\[\]/, 'A local-read failure must preserve an already visible task projection')
-  // assert.match(timelineSelectDaySource)
   assert.match(dashboardSelectDaySource, /taskStore\.setSelectedDay\(day\)/, 'Dashboard must use the same day-selection path')
-  // assert.doesNotMatch(timelineSelectDaySource, /loadLocalTasks/)
   assert.doesNotMatch(dashboardSelectDaySource, /loadLocalTasks/, 'Dashboard day selection must not clear in-memory tasks after a local read failure')
 })
 
@@ -177,10 +163,178 @@ test('task store metrics and offline persistence protect completed tasks from pa
   assert.match(dashboard, /\.todo-item\.is-completed/)
 })
 
-test('week-view day drops pass the column full dateKey to the Store', () => {
-  assert.match(timeline, /v-for="day in timelineDays"[\s\S]*?@drop\.prevent="handleDropOnDay\(day\.dateKey\)"/,
-    'each week column must pass its own full dateKey to the day-drop handler')
-  const dayDropHandler = timeline.slice(timeline.indexOf('const handleDropOnDay'), timeline.indexOf('const handleDropOnPending'))
-  assert.match(dayDropHandler, /taskStore\.scheduleTaskToDay\(currentDrag\.taskId, day\)/,
-    'the day-drop handler must forward that date to the Store scheduling operation')
+test('Timeline clears a cancelled or completed native drag and ignores external drops', async (t) => {
+  const calls = []
+  const { page } = await setupTimeline(t, {
+    applyTimelineDrop: async (intent) => { calls.push(intent) },
+  })
+  const { content: template } = parse(timeline).descriptor.template
+  assert.equal((template.match(/@dragstart\.stop=/g) ?? []).length, 4)
+  assert.equal((template.match(/@dragend\.stop="clearDragState"/g) ?? []).length, 4)
+  assert.match(template, /@drop="handleDrop\(\$event, \{ type: 'week', dateKey: day\.dateKey \}\)"/)
+
+  const task = { id: 'task', status: 'pending' }
+  const target = { type: 'week', dateKey: '2026-11-14' }
+  const nativeDrag = dragEvent()
+  page.handleDragStart(nativeDrag, task)
+  page.handleDragOver(nativeDrag, target)
+  assert.deepEqual(page.dragOverTarget.value, target)
+  page.clearDragState()
+  assert.equal(page.dragSession.value, null)
+  assert.equal(page.dragOverTarget.value, null)
+  await page.handleDrop(dragEvent(), target)
+  assert.equal(calls.length, 0)
+
+  page.handleDragStart(nativeDrag, task)
+  await page.handleDrop(dragEvent(), target)
+  assert.equal(calls.length, 0)
+  assert.equal(page.dragSession.value, null)
+
+  const sourceStart = new Date(2026, 10, 13, 10, 15).toISOString()
+  page.handleDragStart(nativeDrag, { ...task, scheduledAt: sourceStart })
+  await page.handleDrop(nativeDrag, { ...target, dateKey: '2026-11-13' })
+  assert.equal(calls.length, 0)
+  page.handleDragStart(nativeDrag, { ...task, scheduledAt: sourceStart })
+  await page.handleDrop(nativeDrag, target)
+  assert.deepEqual({ ...calls[0] }, { ...target, taskId: task.id, sourceScheduledAt: sourceStart })
+  assert.equal(page.dragSession.value, null)
+
+  page.handleDragStart(nativeDrag, { ...task, scheduledAt: sourceStart })
+  await page.handleDrop(nativeDrag, { type: 'unschedule', dateKey: '2026-11-14' })
+  assert.deepEqual({ ...calls[1] }, {
+    type: 'unschedule',
+    dateKey: '2026-11-13',
+    taskId: task.id,
+    sourceScheduledAt: sourceStart,
+  })
 })
+
+test('Timeline new task accepts one write and retains a failed draft for retry', async (t) => {
+  const writes = []
+  const { page, notifications, setup } = await setupTimeline(t, {
+    addTask: (payload) => new Promise((resolve, reject) => writes.push({ payload, resolve, reject })),
+  })
+  assert.match(timeline, /:saving="isCreatingTask"\s+@submit="handleCreateTask"/)
+  const submissions = []
+  const dialog = setup(taskDialog, {
+    get modelValue() { return page.taskDialogVisible.value },
+    get saving() { return page.isCreatingTask.value },
+    defaultDuration: 60,
+    fixedSubjectId: 'subject',
+    fixedSubjectName: 'Study',
+  }, (event, payload) => {
+    assert.equal(event, 'submit')
+    submissions.push(page.handleCreateTask(payload))
+  })
+  page.triggerCreate()
+  await nextTick()
+  dialog.form.name = 'Review notes'
+  dialog.handleSubmit()
+  dialog.handleSubmit()
+  void page.handleCreateTask({ name: 'Duplicate' })
+  assert.equal(writes.length, 1)
+  assert.equal(dialog.isSubmitEnabled.value, false)
+  dialog.handleClose()
+  assert.equal(page.taskDialogVisible.value, true)
+
+  writes[0].reject(new Error('local write failed'))
+  await submissions[0]
+  assert.equal(notifications.at(-1).message, 'local write failed')
+  assert.equal(dialog.form.name, 'Review notes')
+  assert.equal(page.taskDialogVisible.value, true)
+  assert.equal(dialog.isSubmitEnabled.value, true)
+
+  dialog.handleSubmit()
+  assert.equal(writes[1].payload.name, 'Review notes')
+  writes[1].resolve()
+  await submissions[1]
+  assert.equal(page.taskDialogVisible.value, false)
+})
+
+test('Timeline delete captures the confirmed task and reports only actual save failures', async (t) => {
+  const confirmations = []
+  const deletes = []
+  let onDeleteStarted
+  const deleteStarted = new Promise((resolve) => { onDeleteStarted = resolve })
+  const { page, notifications } = await setupTimeline(t, {
+    deleteTask: (id) => new Promise((resolve, reject) => {
+      deletes.push({ id, reject })
+      onDeleteStarted()
+    }),
+  }, () => new Promise((resolve, reject) => confirmations.push({ resolve, reject })))
+
+  const task = { id: 'original', name: 'Review notes' }
+  const cancelled = page.handleDeleteTask(task)
+  confirmations[0].reject('close')
+  await cancelled
+  assert.equal(deletes.length, 0)
+  assert.equal(notifications.length, 0)
+
+  const failed = page.handleDeleteTask(task)
+  await page.handleDeleteTask({ id: 'other', name: 'Other task' })
+  assert.equal(confirmations.length, 2)
+  task.id = 'changed'
+  task.name = 'Changed name'
+  confirmations[1].resolve()
+  await deleteStarted
+  assert.equal(deletes[0].id, 'original')
+  assert.equal(notifications.length, 0)
+  deletes[0].reject(new Error('local delete failed'))
+  await failed
+  assert.equal(notifications.at(-1).message, 'local delete failed')
+  assert.equal(page.deletingTaskId.value, null)
+})
+
+function dragEvent() {
+  const data = new Map()
+  return {
+    preventDefault() {},
+    dataTransfer: {
+      get types() { return [...data.keys()] },
+      setData: (type, value) => data.set(type, value),
+      getData: (type) => data.get(type) ?? '',
+    },
+  }
+}
+
+async function setupTimeline(t, storeOverrides, confirm = assert.fail) {
+  const scope = effectScope()
+  t.after(() => scope.stop())
+  const notifications = []
+  const store = reactive({
+    allTasks: ref([]),
+    completedCount: ref(0),
+    currentNow: new Date(2026, 10, 13),
+    pendingCount: ref(0),
+    pendingTasks: ref([]),
+    selectedDay: ref('Fri'),
+    timeSlots: ref([]),
+    totalFocusHours: ref('0.0h'),
+    ...storeOverrides,
+  })
+  const modules = {
+    vue: { computed, defineComponent, nextTick, reactive, ref, watch, onMounted() {}, onUnmounted() {} },
+    'vue-router': { useRouter: () => ({}) },
+    pinia: { storeToRefs },
+    'element-plus': { ElNotification: (notification) => notifications.push(notification), ElMessageBox: { confirm } },
+    '@/store/useKnowledgeStore': { useKnowledgeStore: () => reactive({ recentBlocks: ref([]) }) },
+    '@/store/useSubjectStore': { useSubjectStore: () => ({ subjects: [] }) },
+    '@/store/useSyncStore': { useSyncStore: () => ({ scheduleSyncErrors: [] }) },
+    '@/store/useTaskStore': { useTaskStore: () => store },
+    '@/services/taskViewRules': await import('../src/services/taskViewRules.ts'),
+  }
+  const load = (content) => {
+    const { outputText } = ts.transpileModule(content, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    })
+    const exports = {}
+    runInNewContext(outputText, { exports, Error, require: (name) => modules[name] ?? {} })
+    return exports
+  }
+  modules['@/services/taskSchedulePlanner'] = load(taskSchedulePlanner)
+  const setup = (source, props = {}, emit = assert.fail) => scope.run(() => {
+    const { content } = compileScript(parse(source).descriptor, { id: 'timeline-task-test' })
+    return load(content).default.setup(props, { expose() {}, emit })
+  })
+  return { page: setup(timeline), notifications, setup }
+}

@@ -357,15 +357,18 @@ export const useSyncStore = defineStore('sync', () => {
         serverDeviceId: scope.serverDeviceId,
         scope,
         isCurrent: scope.isCurrent,
+        onScheduleSettled(error) {
+          requireCurrentSyncScope(scope)
+          if (error && !scheduleSyncErrors.value.some(item => item.clientMutationId === error.clientMutationId)) {
+            scheduleSyncErrors.value = [...scheduleSyncErrors.value, error]
+          }
+          publishProjectionChange({ resourceTypes: new Set(['TASK']) })
+          publishUpdated()
+        },
       }))
       requireCurrentSyncScope(scope)
       cursor.value = result.cursor
       resetRequired.value = false
-      if (result.scheduleErrors.length > 0) {
-        const queuedErrors = new Map(scheduleSyncErrors.value.map(error => [error.clientMutationId, error]))
-        for (const error of result.scheduleErrors) queuedErrors.set(error.clientMutationId, error)
-        scheduleSyncErrors.value = [...queuedErrors.values()]
-      }
       if (result.changedResourceTypes.size > 0) {
         publishProjectionChange({ resourceTypes: result.changedResourceTypes })
         publishUpdated()

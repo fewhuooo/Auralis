@@ -259,6 +259,24 @@ public class TaskService {
             Instant windowStartAt,
             Instant windowLastStartAt,
             UUID targetTaskId) {
+        return insertSchedule(userId, new TaskDtos.ScheduleInsertionRequest(
+                taskId, baseVersion, requestedAt, windowStartAt, windowLastStartAt, targetTaskId, null));
+    }
+
+    @Transactional(noRollbackFor = DomainException.class)
+    public List<TaskView> insertSchedule(UUID userId, TaskDtos.ScheduleInsertionRequest request) {
+        UUID taskId = request.taskId();
+        UUID targetTaskId = request.targetTaskId();
+        Instant requestedAt = request.scheduledAt();
+        Instant windowStartAt = request.windowStartAt();
+        Instant windowLastStartAt = request.windowLastStartAt();
+        boolean strictPlacement = request.strictPlacement();
+        if (request.placementMode() != null && !strictPlacement) {
+            throw new DomainException("VALIDATION_FAILED", "Unknown schedule placement mode");
+        }
+        if (strictPlacement && targetTaskId != null) {
+            throw new DomainException("VALIDATION_FAILED", "Strict placement cannot specify a target task");
+        }
         if (requestedAt == null || windowStartAt == null || windowLastStartAt == null
                 || !Duration.between(windowStartAt, windowLastStartAt).equals(Duration.ofMinutes(14 * 60 + 30))) {
             throw new DomainException("VALIDATION_FAILED", "A valid schedule window is required");
@@ -283,7 +301,7 @@ public class TaskService {
         if (!inserted.getSubjectId().equals(targetSubjectId)) {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being scheduled");
         }
-        requireVersion(inserted, baseVersion);
+        requireVersion(inserted, request.baseVersion());
         if (inserted.getStatus() == TaskStatus.DONE || inserted.getStatus() == TaskStatus.CANCELLED) {
             throw new DomainException("VALIDATION_FAILED", "Completed or cancelled tasks cannot be rescheduled");
         }
@@ -292,6 +310,13 @@ public class TaskService {
         if (requestedAt.isBefore(windowStartAt) || requestedAt.isAfter(windowLastStartAt)
                 || roundedTarget.isAfter(windowLastStartAt)) {
             throw new DomainException("VALIDATION_FAILED", "The requested schedule is outside the available window");
+        }
+
+        if (strictPlacement) {
+            if (!requestedAt.equals(roundedTarget)) {
+                throw new DomainException("VALIDATION_FAILED", "Strict placement requires an exact half-hour slot");
+            }
+            return placeSingleTask(userId, inserted, requestedAt);
         }
 
         if (targetTaskId != null) {
@@ -321,25 +346,19 @@ public class TaskService {
                 throw new DomainException("RESOURCE_VERSION_CONFLICT", "The target task changed while being scheduled");
             }
 
-            ScheduleCandidate proposed = new ScheduleCandidate(
-                    afterTarget, inserted.getDueAt(), inserted.getDurationMinutes(), inserted.getStatus());
-            validateScheduleIntervals(userId, List.of(proposed), Set.of(taskId));
-            if (afterTarget.equals(inserted.getScheduledAt())) {
-                return List.of();
-            }
-            validateScheduleDeadlines(List.of(proposed));
-            inserted.reschedule(afterTarget);
-            TaskView result = view(taskRepository.saveAndFlush(inserted));
-            publishChange(userId, result, "UPDATE");
-            return List.of(result);
+            return placeSingleTask(userId, inserted, afterTarget);
         }
 
-        Instant windowEnd = windowLastStartAt.plusSeconds(30 * 60L);
+        if (effectiveDurationMinutes(inserted.getDurationMinutes()) == 0) {
+            return placeSingleTask(userId, inserted, roundedTarget);
+        }
         List<TaskEntity> ordered = locked.stream()
                 .filter(task -> task.getId().equals(taskId)
-                        || task.getScheduledAt() != null
+                        || task.getStatus() != TaskStatus.CANCELLED
+                        && effectiveDurationMinutes(task.getDurationMinutes()) > 0
+                        && task.getScheduledAt() != null
                         && !task.getScheduledAt().isBefore(windowStartAt)
-                        && task.getScheduledAt().isBefore(windowEnd))
+                        && !task.getScheduledAt().isAfter(windowLastStartAt))
                 .sorted(Comparator
                         .comparingInt((TaskEntity task) -> task.getId().equals(taskId) ? 1
                                 : task.getScheduledAt().plus(Duration.ofMinutes(
@@ -353,9 +372,6 @@ public class TaskService {
         List<TaskEntity> changed = new ArrayList<>();
         java.util.Map<UUID, Instant> proposedStarts = new java.util.LinkedHashMap<>();
         for (TaskEntity task : ordered) {
-            if (task.getStatus() == TaskStatus.CANCELLED) {
-                continue;
-            }
             Instant proposedStart = task.getId().equals(taskId) ? roundedTarget : task.getScheduledAt();
             Instant actualStart = proposedStart;
             if (previousEnd != null && proposedStart.isBefore(previousEnd)) {
@@ -396,14 +412,26 @@ public class TaskService {
         return List.copyOf(results);
     }
 
+    private List<TaskView> placeSingleTask(UUID userId, TaskEntity source, Instant scheduledAt) {
+        ScheduleCandidate proposed = new ScheduleCandidate(
+                scheduledAt, source.getDueAt(), source.getDurationMinutes(), source.getStatus());
+        validateScheduleIntervals(userId, List.of(proposed), Set.of(source.getId()));
+        if (scheduledAt.equals(source.getScheduledAt())) {
+            return List.of();
+        }
+        validateScheduleDeadlines(List.of(proposed));
+        source.reschedule(scheduledAt);
+        TaskView result = view(taskRepository.saveAndFlush(source));
+        publishChange(userId, result, "UPDATE");
+        return List.of(result);
+    }
+
     @Transactional(readOnly = true)
     public List<TaskView> currentInsertionSchedule(
             UUID userId, UUID taskId, Instant windowStartAt, Instant windowLastStartAt) {
-        List<TaskEntity> active = taskRepository
-                .findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNullOrderByIdAsc(userId);
         List<TaskView> result = new ArrayList<>();
         if (windowStartAt != null && windowLastStartAt != null) {
-            active.stream()
+            taskRepository.findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNullOrderByIdAsc(userId).stream()
                     .filter(task -> !task.getScheduledAt().isBefore(windowStartAt)
                             && !task.getScheduledAt().isAfter(windowLastStartAt))
                     .map(this::view)

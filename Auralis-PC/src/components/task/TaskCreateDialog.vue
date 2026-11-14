@@ -5,6 +5,7 @@
     :aria-label="title"
     size="md"
     custom-class="task-create-modal"
+    :prevent-close="saving"
     @update:model-value="$emit('update:modelValue', $event)"
     @close="handleClose"
   >
@@ -138,14 +139,14 @@
     </div>
 
     <template #footer>
-      <button type="button" class="modal-btn modal-btn-secondary" @click="handleClose">取消</button>
+      <button type="button" class="modal-btn modal-btn-secondary" :disabled="saving" @click="handleClose">取消</button>
       <button
         type="button"
         class="modal-btn modal-btn-primary"
         :disabled="!isSubmitEnabled"
         @click="handleSubmit"
       >
-        {{ submitText }}
+        {{ saving ? '保存中…' : submitText }}
       </button>
     </template>
   </ModalShell>
@@ -171,6 +172,7 @@ const props = withDefaults(
     modelValue: boolean
     title?: string
     submitText?: string
+    saving?: boolean
     subjects?: TaskSubjectItem[]
     fixedSubjectId?: string
     fixedSubjectName?: string
@@ -183,6 +185,7 @@ const props = withDefaults(
   {
     title: '新建学习任务',
     submitText: '添加到待办',
+    saving: false,
     subjects: undefined,
     fixedSubjectId: '',
     fixedSubjectName: '',
@@ -249,7 +252,7 @@ const resolvedSubjects = computed<TaskSubjectItem[]>(() => {
 
 const isSubmitEnabled = computed(() => {
   const effectiveSubjectId = props.fixedSubjectId || form.subjectId
-  return form.name.trim().length > 0 && effectiveSubjectId.length > 0
+  return !props.saving && form.name.trim().length > 0 && effectiveSubjectId.length > 0
 })
 
 const currentDurationIndex = computed(() => {
@@ -369,6 +372,7 @@ onUnmounted(() => {
 })
 
 const handleClose = () => {
+  if (props.saving) return
   emit('update:modelValue', false)
   emit('cancel')
 }

@@ -87,8 +87,7 @@ public class TaskController {
     public TaskDtos.ScheduleInsertionResponse insertSchedule(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody TaskDtos.ScheduleInsertionRequest request) {
-        var changed = taskService.insertSchedule(principal.userId(), request.taskId(), request.baseVersion(),
-                request.scheduledAt(), request.windowStartAt(), request.windowLastStartAt(), request.targetTaskId());
+        var changed = taskService.insertSchedule(principal.userId(), request);
         return new TaskDtos.ScheduleInsertionResponse(changed.stream().map(TaskDtos.Response::from).toList());
     }
 

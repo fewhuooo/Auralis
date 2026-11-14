@@ -31,14 +31,17 @@ export interface SyncCycleInput {
   serverDeviceId: string
   scope?: SyncRequestScopeTicket
   isCurrent?: () => boolean
+  onScheduleSettled?: (error?: ScheduleSyncError) => void
 }
+
+type ScheduleSyncError = { clientMutationId: string; code: string }
 
 export interface SyncCycleResult {
   changedResourceTypes: ReadonlySet<SyncResourceType>
   cursor: string | null
   ordinarySettled: number
   scheduleApplied: number
-  scheduleErrors: Array<{ clientMutationId: string; code: string }>
+  scheduleErrors: ScheduleSyncError[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -214,7 +217,7 @@ async function settleSchedulePushResult(
   checkCurrent: () => void,
   api: SyncApi,
   scope?: SyncRequestScopeTicket,
-): Promise<{ changed: boolean; refreshRequired: boolean; scheduleApplied: number; scheduleError?: { clientMutationId: string; code: string } } | null> {
+): Promise<{ scheduleApplied: number; scheduleError?: ScheduleSyncError } | null> {
   if (!result.clientMutationId || !result.decision || result.decision === 'PROCESSING') return null
   const expectedMutationType = mutation.mutationType === 'SCHEDULE_UNSCHEDULE' ? 'UPDATE' : mutation.mutationType
   if (result.resourceType !== 'TASK' || result.mutationType !== expectedMutationType) {
@@ -223,10 +226,10 @@ async function settleSchedulePushResult(
   const currentItems = mutation.mutationType === 'SCHEDULE_UNSCHEDULE' && isRecord(result.current) && !Array.isArray(result.current)
     ? [result.current]
     : result.current
-  // A deleted Task has no current UPDATE record, but its tombstone is in the snapshot.
+  // Rejected TASK updates may omit the record. Recover the affected rows from the snapshot.
   const missingUnscheduleTask = mutation.mutationType === 'SCHEDULE_UNSCHEDULE'
-    && result.resourceId === mutation.resourceId && result.decision === 'REJECTED'
-    && result.code === 'RESOURCE_NOT_FOUND' && result.current == null
+    && result.resourceId === mutation.resourceId && result.current == null
+    && (result.decision === 'REJECTED' || result.decision === 'CONFLICT')
   const items = missingUnscheduleTask ? [] : scheduleResultItems(currentItems)
   if (!items) throw new Error('SYNC_SCHEDULE_RESULT_INVALID')
 
@@ -345,8 +348,6 @@ async function settleSchedulePushResult(
   }
 
   return {
-    changed: true,
-    refreshRequired,
     scheduleApplied: applied ? 1 : 0,
     ...(!applied || predictionChanged || recoveredUnsafe ? {
       scheduleError: { clientMutationId: mutation.clientMutationId, code: applied ? 'SCHEDULE_REFRESH_REQUIRED' : result.code ?? 'MUTATION_REJECTED' },
@@ -408,7 +409,7 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
   const changedResourceTypes = new Set<SyncResourceType>()
   let ordinarySettled = 0
   let scheduleApplied = 0
-  const scheduleErrors: Array<{ clientMutationId: string; code: string }> = []
+  const scheduleErrors: ScheduleSyncError[] = []
   try {
     claimed = orderMutationsForPush(await input.repository.claimPending(200))
     claimedScheduleIds = claimed.filter(isScheduleMutation).map((mutation) => mutation.clientMutationId)
@@ -427,9 +428,10 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
             input.repository, claimedMutation, result, checkCurrent, input.api, input.scope,
           )
           if (scheduleResult) {
-            changedResourceTypes.add('TASK')
             scheduleApplied += scheduleResult.scheduleApplied
             if (scheduleResult.scheduleError) scheduleErrors.push(scheduleResult.scheduleError)
+            if (input.onScheduleSettled) input.onScheduleSettled(scheduleResult.scheduleError)
+            else changedResourceTypes.add('TASK')
           }
           continue
         }

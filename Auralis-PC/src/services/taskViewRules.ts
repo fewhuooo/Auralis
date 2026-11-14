@@ -1,4 +1,5 @@
 import type { Task } from '@/store/useTaskStore'
+import type { TaskStatus } from '@/services/domainMappers'
 
 export type AssetTaskGroup = 'unassigned' | 'pending' | 'completed'
 
@@ -99,14 +100,16 @@ export function isSchedulableTask(task: TaskStatusFields): boolean {
     && !task.scheduledAt
 }
 
-type ScheduleIntervalTask = Pick<Task, 'id' | 'status' | 'scheduledAt' | 'durationMinutes' | 'title'>
+type ScheduleIntervalTask = Pick<Task, 'id' | 'scheduledAt' | 'durationMinutes' | 'title'> & {
+  status: Task['status'] | TaskStatus
+}
 
 export function findScheduleConflict(
-  tasks: ScheduleIntervalTask[],
+  tasks: readonly ScheduleIntervalTask[],
   candidate: ScheduleIntervalTask,
   excludedTaskIds: ReadonlySet<string> = new Set(),
 ): ScheduleIntervalTask | undefined {
-  if (candidate.status === 'cancelled' || !candidate.scheduledAt) return undefined
+  if (candidate.status === 'cancelled' || candidate.status === 'CANCELLED' || !candidate.scheduledAt) return undefined
 
   const start = Date.parse(candidate.scheduledAt)
   const duration = Number(candidate.durationMinutes)
@@ -114,7 +117,8 @@ export function findScheduleConflict(
   const end = start + duration * 60_000
 
   return tasks.find((task) => {
-    if (task.id === candidate.id || excludedTaskIds.has(task.id) || task.status === 'cancelled' || !task.scheduledAt) return false
+    if (task.id === candidate.id || excludedTaskIds.has(task.id)
+      || task.status === 'cancelled' || task.status === 'CANCELLED' || !task.scheduledAt) return false
     const otherStart = Date.parse(task.scheduledAt)
     const otherDuration = Number(task.durationMinutes)
     if (!Number.isFinite(otherStart) || !Number.isFinite(otherDuration) || otherDuration <= 0) return false
@@ -177,29 +181,6 @@ export function getTimelineRange(now = new Date()): { start: Date; end: Date } {
   const end = new Date(start)
   end.setDate(end.getDate() + 7)
   return { start, end }
-}
-
-export function getTimelineDropSlotTime(
-  startSlotTime: string,
-  durationMinutes: number,
-  verticalOffsetPx: number,
-  rowStepPx: number,
-): string | undefined {
-  const match = /^(\d{2}):(\d{2})$/.exec(startSlotTime)
-  const rowStep = Number(rowStepPx)
-  const offset = Number(verticalOffsetPx)
-  if (!match || !Number.isFinite(rowStep) || rowStep <= 0 || !Number.isFinite(offset)) return undefined
-
-  const startMinutes = Number(match[1]) * 60 + Number(match[2])
-  if (Number(match[2]) > 59 || startMinutes > 22 * 60 + 30) return undefined
-
-  const duration = Number(durationMinutes)
-  const slotCount = Number.isFinite(duration) && duration > 0
-    ? Math.max(1, Math.ceil(duration / 30))
-    : 1
-  const slotOffset = Math.min(slotCount - 1, Math.floor(Math.max(0, offset) / rowStep))
-  const targetMinutes = Math.min(22 * 60 + 30, startMinutes + slotOffset * 30)
-  return `${String(Math.floor(targetMinutes / 60)).padStart(2, '0')}:${String(targetMinutes % 60).padStart(2, '0')}`
 }
 
 export interface VisibleDay {

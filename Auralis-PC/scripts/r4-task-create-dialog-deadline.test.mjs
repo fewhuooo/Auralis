@@ -26,7 +26,7 @@ test('TaskCreateDialog integrates Zen date picker with due date support', async 
   assert.match(dialogSrc, /function dueAtFromInput\(due\?: string\)[\s\S]*?due\.includes\('T'\) \? due : localDateEndOfDay\(due\)\?\.toISOString\(\)/, 'date-only input must become local end of day while timestamp input stays exact')
 
   const helperStart = dialogSrc.indexOf('function dueAtFromInput(')
-  const helperEnd = dialogSrc.indexOf('\n\nconst handleSubmit', helperStart)
+  const helperEnd = dialogSrc.indexOf('const handleSubmit', helperStart)
   const helperJs = ts.transpile(dialogSrc.slice(helperStart, helperEnd), { target: ts.ScriptTarget.ES2022 })
   const localDateEndOfDay = (value) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
@@ -101,7 +101,7 @@ test('Dashboard, Timeline and SubjectWorkspace forward dueAt on task creation', 
 
   // Timeline
   assert.match(timelineSrc, /const handleCreateTask = async \(taskData: \{[\s\S]*?dueAt\?: string[\s\S]*?\}\)/, 'Timeline handleCreateTask must accept dueAt')
-  assert.match(timelineSrc, /const newTask = \{[\s\S]*?dueAt: taskData\.dueAt[\s\S]*?\}\s*await taskStore\.addTask\(newTask\)/, 'Timeline handleCreateTask must include dueAt in newTask and persist')
+  assert.match(timelineSrc, /await taskStore\.addTask\(\{[\s\S]*?dueAt: taskData\.dueAt[\s\S]*?\}\)/, 'Timeline handleCreateTask must pass dueAt to taskStore.addTask')
 
   // SubjectWorkspace
   assert.match(workspaceSrc, /const handleAddTask = async \(taskData: \{[\s\S]*?dueAt\?: string[\s\S]*?\}\)/, 'SubjectWorkspace handleAddTask must accept dueAt')

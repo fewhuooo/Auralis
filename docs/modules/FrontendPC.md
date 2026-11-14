@@ -1,5 +1,31 @@
 # PC 前端模块
 
+### 2026-11-14 时间线拖放与同步
+
+Timeline 将空槽插入、卡片主体放置、标题换位、周列跨天和拖回待办统一交给 Task Store。预览和提交共用排期计算，以任务 ID、原排期时间和落点的完整日期核对操作。取消拖动立即清除高亮。任务到时自动完成会保留原排期时间；新建提交期间防止重复保存，失败保留草稿；删除结果使用现有消息反馈。
+
+本地排期保存后立即更新页面，后台按顺序提交。周列跨天默认提交 `STRICT` 放置。已有普通创建或更新在队列中的任务，在排期命令队列清空后沿用该单任务更新链，避免先同步使用尚未腾出的时段。服务端拒绝后在本地恢复完成时就发布任务刷新和提示，随后的增量下拉独立执行。
+
+#### 分支试测
+
+在本分支的 `Auralis-Server` 目录启动回环地址上的内存测试后端。每次重启清空该后端的测试数据。
+
+```powershell
+.\mvnw.cmd -B -ntp spring-boot:test-run '-Dspring-boot.run.profiles=test' '-Dspring-boot.run.arguments=--server.port=18080 --server.address=127.0.0.1 --auralis.api.public-base-url=http://127.0.0.1:18080'
+```
+
+在另一个 PowerShell 中进入同一分支的 `Auralis-PC` 目录。试测使用独立应用 ID 保存本地任务缓存。
+
+```powershell
+$env:VITE_API_BASE_URL = 'http://127.0.0.1:18080'
+$env:VITE_WS_BASE_URL = 'ws://127.0.0.1:18080'
+$timelineTrialConfig = Join-Path $env:TEMP 'auralis-timeline-test-tauri.json'
+'{"identifier":"com.auralis.timeline-test"}' | Set-Content -LiteralPath $timelineTrialConfig
+npm.cmd run tauri -- dev --config $timelineTrialConfig
+```
+
+注册测试账号，新建学科和几项未来任务。日视图分别拖向空槽、卡片主体和标题栏，观察重叠任务顺延、放到卡片结束后第一个半小时槽和两卡换位。周视图拖到另一日期和原日期，检查首个可用时段、其他任务原位和同日位置。最后拖回待办，并按 `Esc` 取消一次拖动检查高亮。试测离线重放时保持后端运行，在桌面端开发者工具模拟离线，连续拖放后恢复连接，检查同步结果。
+
 ### 2026-11-12 文件与学科大纲 Markdown 排版与层级样式重构（源码与生产构建通过）
 
 针对学科工作区二级大纲抽屉中文件大纲（`FileOutlineList.vue`）和学科总览大纲（`SubjectOverviewSection.vue`）Markdown 结构缺乏视觉节奏、H1 字体过大粗暴、章节议题（H2）无段落间隔与标记、列表条目无圆点引导等排版丑陋问题，完成符合 Auralis Zen Minimalist 审美体系的排版样式重构：
@@ -76,7 +102,7 @@ SQLite schema 升至 14，为缓存追加 Markdown 列并保留旧行；旧格�
 ### 2026-11-11 任务编辑、删除与连续排期
 
 - 资料管理的任务详情使用独立编辑副本。同步和资料列表刷新时合并未编辑字段，保留当前任务未保存的改动。显式保存写回 Task Store，切换条目或任务被删除时清理旧编辑副本。详情顶部的“删除任务”使用现有确认弹框及 Task Store 软删除流程，适用于未排期和已完成任务。
-- 取消排期尚未结算时，拖回周视图日列仍从当天首个符合时长、冲突和截止条件的槽位开始，使用现有 `SCHEDULE_INSERTION` 排在取消命令之后。其他周列拖放沿用单 Task 更新。
+- 取消排期尚未结算时，拖回周视图日列仍从当天首个符合时长、冲突和截止条件的槽位开始，使用 `SCHEDULE_INSERTION` 排在取消命令之后。周列跨天规则见上方 2026-11-14 条目。
 - 取消排期对应的 `TASK/UPDATE` 收到与源任务匹配的 `REJECTED / RESOURCE_NOT_FOUND` 空 `current` 时，从快照恢复受影响任务（含软删除记录），结算队首及撤回未发送的后继排期，再继续增量下拉。快照不可用或缺少受影响任务时，按原 mutation ID 重试。
 
 ### 2026-11-13 复习轮次恢复与本地提交

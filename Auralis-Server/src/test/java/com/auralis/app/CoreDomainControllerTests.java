@@ -275,6 +275,41 @@ class CoreDomainControllerTests {
     }
 
     @Test
+    void strictTaskScheduleInsertionRejectsInvalidModeSlotAndTargetCombination() throws Exception {
+        JsonNode registered = register("strict-schedule-api@example.com", "strict-schedule-api-device");
+        String token = bearer(registered.path("tokens").path("accessToken").asText());
+        String subjectId = createSubject(token, "Strict placement");
+        JsonNode task = createScheduledTask(token, subjectId, "Source", "2026-10-06T09:00:00+08:00");
+        JsonNode target = createScheduledTask(token, subjectId, "Target", "2026-10-06T09:30:00+08:00");
+        String insertion = """
+                {"taskId":"%s","baseVersion":%d,"scheduledAt":"%s",
+                 "windowStartAt":"2026-10-06T08:00:00+08:00","windowLastStartAt":"2026-10-06T22:30:00+08:00",
+                 %s}
+                """;
+        String taskId = task.path("id").asText();
+        long version = task.path("version").asLong();
+        for (String invalidRequest : java.util.List.of(
+                insertion.formatted(taskId, version, "2026-10-06T08:00:00+08:00", "\"placementMode\":\"UNKNOWN\""),
+                insertion.formatted(taskId, version, "2026-10-06T08:00:00+08:00", "\"placementMode\":0"),
+                insertion.formatted(taskId, version, "2026-10-06T08:15:00+08:00", "\"placementMode\":\"STRICT\""),
+                insertion.formatted(taskId, version, "2026-10-06T07:30:00+08:00", "\"placementMode\":\"STRICT\""),
+                insertion.formatted(taskId, version, "2026-10-06T10:00:00+08:00",
+                        "\"placementMode\":\"STRICT\",\"targetTaskId\":\"" + target.path("id").asText() + "\""))) {
+            mockMvc.perform(post("/api/tasks/schedule-insertions")
+                            .header(HttpHeaders.AUTHORIZATION, token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(invalidRequest))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+
+        mockMvc.perform(get("/api/tasks/{id}", taskId).header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-10-06T01:00:00Z"))
+                .andExpect(jsonPath("$.version").value((int) version));
+    }
+
+    @Test
     void taskScheduleInsertionWithTargetTaskIdPlacesOnlyDraggedTaskAfterTarget() throws Exception {
         JsonNode registered = register("schedule-insertion-target-api@example.com", "schedule-insertion-target-api-device");
         String token = bearer(registered.path("tokens").path("accessToken").asText());

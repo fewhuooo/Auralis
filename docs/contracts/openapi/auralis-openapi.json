@@ -3969,6 +3969,10 @@
           "targetTaskId" : {
             "type" : "string",
             "format" : "uuid"
+          },
+          "placementMode" : {
+            "type" : "string",
+            "enum" : [ "STRICT" ]
           }
         },
         "required" : [ "baseVersion", "scheduledAt", "taskId", "windowLastStartAt", "windowStartAt" ]

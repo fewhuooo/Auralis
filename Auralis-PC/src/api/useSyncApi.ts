@@ -26,7 +26,7 @@ function toMutationRequest(mutation: LocalMutation): SyncMutationRequest {
   let wireMutationType = mutation.mutationType
   if (mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP') {
     const fields = mutation.mutationType === 'SCHEDULE_INSERTION'
-      ? ['taskId', 'baseVersion', 'scheduledAt', 'windowStartAt', 'windowLastStartAt', 'targetTaskId']
+      ? ['taskId', 'baseVersion', 'scheduledAt', 'windowStartAt', 'windowLastStartAt', 'targetTaskId', 'placementMode']
       : ['sourceTaskId', 'sourceBaseVersion', 'targetTaskId', 'targetBaseVersion']
     payload = Object.fromEntries(fields.filter((field) => Object.prototype.hasOwnProperty.call(payload, field))
       .map((field) => [field, payload[field]]))

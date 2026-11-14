@@ -39,6 +39,8 @@ FILE 恢复时按当前 owner/revision 的 ACCEPTED ParsedDocument 确保索引�
 
 取消排期收到匹配任务的 `REJECTED / RESOURCE_NOT_FOUND` 空回执时，恢复集合由快照提供，其中含该任务的软删除记录。完整集合就绪后结算队首、撤回后继排期并推进快照游标。
 
+2026-11-14 补充：周列跨天排期复用 `SCHEDULE_INSERTION` 的 JSON payload，使用 `placementMode: "STRICT"` 表示只放置源任务。后继排期未派发时，成功回执保留其本地排期投影，并以服务端回执更新版本和非排期字段。后继取消排期的 `TASK/UPDATE` 载荷同时采用这些最新字段。已派发命令仍以原 ID 和载荷重试。队列、Task 表和同步历史无需迁移。
+
 ### 2026-10-28 Writer 多小节私有执行载荷（无数据库迁移）
 
 多节操作write_adjacent_sections_v1的执行descriptor绑定有序members及其目录位置、主题、原文范围和prompt身份；singleton不序列化空members。每个合批对应一个现有execution node，模型回传request-local sectionIndex/detailedContent；程序按成员自己的授权原文范围绑定各节，全部校验成功后通过现有journal原子保存完整batch checkpoint，再拆回公开outline。合批恢复保持成员组合，已验证singleton保持独立，parts沿现行单节路径；不新增表列、旁路映射或公开响应字段。费用、未知派发与lease/fence规则保持。定向及同一只读审查B0/I0；未部署、未操作业务库或验证真实模型。证据D:/Temp/auralis-coalesced-writer-20261028/。

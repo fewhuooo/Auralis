@@ -470,6 +470,57 @@ class CoreDomainServiceTests {
     }
 
     @Test
+    void taskScheduleInsertionKeepsOutOfWindowTasksFixedWithoutBlockingUnrelatedSlots() {
+        var owner = register("schedule-insert-off-grid");
+        UUID userId = owner.user().id();
+        UUID subjectId = subjectService.create(userId, new SubjectCommand(
+                "Off-grid schedule", null, null, "001")).id();
+        Instant start = Instant.parse("2099-10-06T08:00:00+08:00");
+        Instant last = Instant.parse("2099-10-06T22:30:00+08:00");
+        var late = taskService.create(userId, new TaskCommand(
+                subjectId, "Late fixed", null, TaskStatus.DONE, last.plus(Duration.ofMinutes(15)), null, 30, "001"));
+        var inserted = taskService.create(userId, scheduledTask(subjectId, "Inserted", null, 30));
+
+        assertThatThrownBy(() -> taskService.insertSchedule(userId, inserted.id(), inserted.version(), last, start, last))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Task schedule overlaps another active task");
+        assertThat(taskService.get(userId, inserted.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(null, inserted.version());
+
+        var changed = taskService.insertSchedule(userId, inserted.id(), inserted.version(), start, start, last);
+        assertThat(changed).extracting(TaskView::id).containsExactly(inserted.id());
+        assertThat(changed.getFirst().scheduledAt()).isEqualTo(start);
+        assertThat(taskService.get(userId, late.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(late.scheduledAt(), late.version());
+    }
+
+    @Test
+    void taskScheduleInsertionTreatsZeroDurationAsAnEmptyInterval() {
+        var owner = register("schedule-insert-empty-interval");
+        UUID userId = owner.user().id();
+        UUID subjectId = subjectService.create(userId, new SubjectCommand(
+                "Empty intervals", null, null, "001")).id();
+        Instant start = Instant.parse("2099-10-06T08:00:00+08:00");
+        Instant halfHour = start.plus(Duration.ofMinutes(30));
+        Instant last = Instant.parse("2099-10-06T22:30:00+08:00");
+        var fixedZero = taskService.create(userId, new TaskCommand(
+                subjectId, "Fixed zero", null, TaskStatus.DONE, halfHour, null, 0, "001"));
+        var positive = taskService.create(userId, scheduledTask(subjectId, "Positive duration", null, 60));
+        var movingZero = taskService.create(userId, scheduledTask(subjectId, "Moving zero", null, 0));
+
+        var placed = taskService.insertSchedule(userId, positive.id(), positive.version(), start, start, last);
+        assertThat(placed).extracting(TaskView::id).containsExactly(positive.id());
+        assertThat(taskService.get(userId, fixedZero.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(fixedZero.scheduledAt(), fixedZero.version());
+
+        var placedZero = taskService.insertSchedule(userId, movingZero.id(), movingZero.version(), halfHour, start, last);
+        assertThat(placedZero).extracting(TaskView::id).containsExactly(movingZero.id());
+        assertThat(placedZero.getFirst().scheduledAt()).isEqualTo(halfHour);
+        assertThat(taskService.get(userId, positive.id())).extracting(TaskView::scheduledAt, TaskView::version)
+                .containsExactly(start, placed.getFirst().version());
+    }
+
+    @Test
     void taskScheduleInsertionRoundsUpAndMovesOutOfAnOccupiedInterval() {
         var owner = register("schedule-insert-round");
         SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(

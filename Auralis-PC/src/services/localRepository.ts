@@ -53,6 +53,7 @@ export interface LocalCommitInput<T = unknown> extends LocalResourceKey {
   expectedLocalVersion?: number
   rejectIfNonPendingMutation?: boolean
   requireActiveResource?: boolean
+  ordinaryScheduleBaseline?: string
   mutation: LocalMutationInput
 }
 
@@ -1079,8 +1080,14 @@ export class LocalRepository {
         if (protectedIds.has(item.resourceId)) continue
         const current = resources.find((row) => row.resourceType === 'TASK' && row.id === item.resourceId)
         const keepProjection = fenced.has(item.resourceId) && current !== undefined
-        const value = keepProjection ? clone(current.value) : clone(item.value)
-        if (value && typeof value === 'object') (value as Record<string, unknown>).version = item.version
+        const value = clone(item.value)
+        if (value && typeof value === 'object') {
+          const task = value as Record<string, unknown>
+          task.version = item.version
+          if (keepProjection && current.value && typeof current.value === 'object') {
+            task.scheduledAt = (current.value as Record<string, unknown>).scheduledAt
+          }
+        }
         const entity: LocalEntity<unknown> = {
           id: item.resourceId, resourceType: 'TASK', userId: this.userId,
           version: item.version, deletedAt: item.deletedAt,
@@ -1098,6 +1105,14 @@ export class LocalRepository {
               : next.mutationType === 'SCHEDULE_SWAP' ? 'sourceBaseVersion'
               : 'baseVersion'
             if (Object.prototype.hasOwnProperty.call(next.payload, field)) next.payload[field] = item.version
+            if (next.mutationType === 'SCHEDULE_UNSCHEDULE' && item.value && typeof item.value === 'object') {
+              // Unschedule sends a full Task UPDATE. Keep fields from the authoritative receipt
+              // while carrying forward the pending clear of scheduledAt.
+              const task = item.value as Record<string, unknown>
+              for (const key of ['subjectId', 'title', 'description', 'status', 'dueAt', 'durationMinutes', 'sortKey']) {
+                if (Object.prototype.hasOwnProperty.call(task, key)) next.payload[key] = task[key]
+              }
+            }
           }
           if (next.mutationType === 'SCHEDULE_SWAP' && next.payload.targetTaskId === item.resourceId
             && Object.prototype.hasOwnProperty.call(next.payload, 'targetBaseVersion')) {
@@ -1195,6 +1210,22 @@ export class LocalRepository {
     if (this.sql) {
       return this.runSqlTransaction(async (database) => {
         if (input.resourceType === 'TASK') await this.assertNoScheduleFence(database, [input.resourceId])
+        if (input.ordinaryScheduleBaseline !== undefined) {
+          const pending = await database.select<Record<string, unknown>>(
+            `SELECT client_mutation_id FROM local_mutations
+             WHERE user_id = $1 AND resource_type = 'TASK'
+               AND mutation_type IN ('SCHEDULE_INSERTION', 'SCHEDULE_SWAP', 'SCHEDULE_UNSCHEDULE')
+               AND status IN ('pending', 'inflight', 'conflict', 'error') LIMIT 1`, [this.userId],
+          )
+          if (pending.length > 0) throw new LocalConflictError(null, '请等待已有排期同步后再安排此任务')
+          const rows = await database.select<LocalResourceRow>(
+            `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
+             FROM local_resource_records WHERE user_id = $1 AND resource_type = 'TASK'`, [this.userId],
+          )
+          if (taskScheduleState(rows.map(resourceFromRow)) !== input.ordinaryScheduleBaseline) {
+            throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
+          }
+        }
         if (input.rejectIfNonPendingMutation) {
           const blocked = await database.select<LocalMutationRow>(
             `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
@@ -1267,6 +1298,15 @@ export class LocalRepository {
     return this.withBrowserStateLock(() => {
     const state = this.readBrowserState()
     if (input.resourceType === 'TASK') this.assertNoScheduleFenceInBrowser(state, [input.resourceId])
+    if (input.ordinaryScheduleBaseline !== undefined) {
+      if (state.mutations.some((item) => item.userId === this.userId && isScheduleCommand(item) && isUnresolved(item))) {
+        throw new LocalConflictError(null, '请等待已有排期同步后再安排此任务')
+      }
+      if (taskScheduleState(state.resources.filter((row) => row.userId === this.userId && row.resourceType === 'TASK'))
+        !== input.ordinaryScheduleBaseline) {
+        throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
+      }
+    }
     const resourceIndex = state.resources.findIndex(
       (item) => item.userId === this.userId && item.resourceType === input.resourceType && item.id === input.resourceId,
     )

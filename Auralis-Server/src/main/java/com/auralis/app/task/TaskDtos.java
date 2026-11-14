@@ -1,5 +1,6 @@
 package com.auralis.app.task;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -65,7 +66,11 @@ public final class TaskDtos {
             @NotNull Instant scheduledAt,
             @NotNull Instant windowStartAt,
             @NotNull Instant windowLastStartAt,
-            UUID targetTaskId) {
+            UUID targetTaskId,
+            @Schema(allowableValues = "STRICT") String placementMode) {
+        public boolean strictPlacement() {
+            return "STRICT".equals(placementMode);
+        }
     }
 
     public record ScheduleInsertionResponse(@NotNull List<Response> tasks) {

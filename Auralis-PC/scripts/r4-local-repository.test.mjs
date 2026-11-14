@@ -1755,7 +1755,7 @@ for (const backend of ['browser', 'sqlite']) {
         mutation: {
           clientMutationId: 'unsched-1', resourceType: 'TASK', resourceId: 'task-u',
           mutationType: 'SCHEDULE_UNSCHEDULE', baseVersion: 2,
-          payload: { id: 'task-u', scheduledAt: null, baseVersion: 2, _localAffectedTaskIds: ['task-u'] },
+          payload: { id: 'task-u', title: 'Original title', scheduledAt: null, baseVersion: 2, _localAffectedTaskIds: ['task-u'] },
         },
       });
 
@@ -1775,18 +1775,21 @@ for (const backend of ['browser', 'sqlite']) {
       // Because unsched-1 is still queued, resolving insert-10 must NOT overwrite the newer unschedule projection!
       const insertResult = {
         clientMutationId: 'insert-10', status: 'applied', items: [
-          { resourceType: 'TASK', resourceId: 'task-u', value: scheduled('10'), version: 3, deletedAt: null },
+          { resourceType: 'TASK', resourceId: 'task-u', value: { ...scheduled('10'), title: 'Title edited on another device' }, version: 3, deletedAt: null },
         ],
       };
       const insertAccepted = await repository.resolveScheduleMutation(insertResult);
       assert.equal(insertAccepted, true);
       const afterInsertAck = await repository.read('TASK', 'task-u');
       assert.equal(afterInsertAck.value.scheduledAt, undefined, 'preceding insertion ACK must not overwrite newer unschedule projection');
+      assert.equal(afterInsertAck.value.title, 'Title edited on another device');
 
       // Also verify unsched-1 baseVersion was updated from 2 to 3!
       const [unschedClaim] = await repository.claimPending(200);
       assert.equal(unschedClaim.clientMutationId, 'unsched-1');
       assert.equal(unschedClaim.baseVersion, 3, 'unschedule mutation baseVersion must be updated by predecessor ACK');
+      assert.equal(unschedClaim.payload.scheduledAt, null);
+      assert.equal(unschedClaim.payload.title, 'Title edited on another device', 'the full UPDATE must preserve the title from the authoritative receipt');
 
       // Step 4: User reschedules task-u to 14:00 while unsched-1 is in-flight / un-ACKed
       await repository.commitScheduleMutation({

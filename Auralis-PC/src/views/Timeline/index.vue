@@ -114,10 +114,10 @@
             v-for="slot in timeSlots"
             :key="slot.time"
             class="time-slot"
-            :class="{ 'has-task': slot.task, 'is-covered': isSlotCovered(slot.time), 'is-current': slot.isCurrent, 'drag-over': dragOverSlot === slot.time }"
-            @dragover.prevent="handleDragOver(slot.time)"
-            @dragleave.prevent="handleDragLeave"
-            @drop.prevent="handleDrop(slot.time)"
+            :class="{ 'has-task': slot.task, 'is-covered': isSlotCovered(slot.time), 'is-current': slot.isCurrent, 'drag-over': dragOverTarget?.type === 'slot' && dragOverTarget.slotTime === slot.time }"
+            @dragover="handleDragOver($event, { type: 'slot', dateKey: selectedTimelineDay.dateKey, slotTime: slot.time })"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop($event, { type: 'slot', dateKey: selectedTimelineDay.dateKey, slotTime: slot.time })"
           >
             <span class="slot-time">{{ slot.time }}</span>
             <div class="slot-right-container">
@@ -125,36 +125,37 @@
               <div 
                 v-if="slot.task" 
                 class="slot-task" 
-                :class="{ 'is-past': isPastTask(slot.task), 'is-completed': isCompletedScheduledTask(slot.task), 'is-insert-drop-target': dragOverBodyTaskId === slot.task.id }"
+                :class="{ 'is-past': isPastTask(slot.task), 'is-completed': isCompletedScheduledTask(slot.task), 'is-insert-drop-target': dragOverTarget?.type === 'body' && dragOverTarget.targetTaskId === slot.task.id }"
                 :style="{ 
                   borderLeftColor: 'var(--color-primary-accent)',
                   height: getTaskHeight(slot.task.duration)
                 }"
                 :draggable="!isCompletedScheduledTask(slot.task)"
-                @dragstart.stop="handleDragStart($event, 'scheduled', slot.task.id || '', slot.time)"
-                @dragover.stop.prevent="handleTaskBodyDragOver(slot.task, slot.time)"
-                @dragleave.stop.prevent="handleTaskBodyDragLeave"
-                @drop.stop.prevent="handleDropOnTaskBody(slot.task, slot.time)"
+                @dragstart.stop="handleDragStart($event, slot.task, slot.time)"
+                @dragend.stop="clearDragState"
+                @dragover.stop="handleDragOver($event, { type: 'body', dateKey: selectedTimelineDay.dateKey, targetTaskId: slot.task.id })"
+                @dragleave.stop="handleDragLeave"
+                @drop.stop="handleDrop($event, { type: 'body', dateKey: selectedTimelineDay.dateKey, targetTaskId: slot.task.id })"
               >
                 <div
                   class="task-header"
-                  :class="{ 'is-drop-target': dragOverHeaderTaskId === slot.task.id }"
-                  @dragover.stop.prevent="handleHeaderDragOver(slot.task)"
-                  @dragleave.stop.prevent="handleHeaderDragLeave($event)"
-                  @drop.stop.prevent="handleDropOnHeader(slot.task)"
+                  :class="{ 'is-drop-target': dragOverTarget?.type === 'swap' && dragOverTarget.targetTaskId === slot.task.id }"
+                  @dragover.stop="handleDragOver($event, { type: 'swap', dateKey: selectedTimelineDay.dateKey, targetTaskId: slot.task.id })"
+                  @dragleave.stop="handleDragLeave"
+                  @drop.stop="handleDrop($event, { type: 'swap', dateKey: selectedTimelineDay.dateKey, targetTaskId: slot.task.id })"
                 >
                   <span class="task-name">{{ slot.task.name }}</span>
                   <span class="task-tag">
                     {{ slot.task.subject }}
                   </span>
-                  <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
+                  <button class="task-delete-btn" :disabled="deletingTaskId === slot.task.id" @click.stop="handleDeleteTask(slot.task)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
                 </div>
                 <div class="task-detail">{{ getCleanDesc(slot.task.desc) }}</div>
-                <span v-if="dragOverHeaderTaskId === slot.task.id" class="task-body-drop-hint">
+                <span v-if="dragOverTarget?.type === 'swap' && dragOverTarget.targetTaskId === slot.task.id" class="task-body-drop-hint">
                   交换排期
                 </span>
-                <span v-else-if="dragOverBodyTaskId === slot.task.id" class="task-body-drop-hint">
-                  {{ isCompletedScheduledTask(slot.task) ? '已完成任务不可移动' : `插入至 ${dragOverBodySlotTime}` }}
+                <span v-else-if="dragOverTarget?.type === 'body' && dragOverTarget.targetTaskId === slot.task.id" class="task-body-drop-hint">
+                  {{ bodyDropHint }}
                 </span>
                 
                 <!-- Bidirectional knowledge block badge -->
@@ -182,10 +183,10 @@
         <h3 class="column-title">待安排任务</h3>
         <div 
           class="pending-tasks"
-          :class="{ 'drag-over': dragOverPending }"
-          @dragover.prevent="dragOverPending = true"
-          @dragleave.prevent="dragOverPending = false"
-          @drop.prevent="handleDropOnPending"
+          :class="{ 'drag-over': dragOverTarget?.type === 'unschedule' }"
+          @dragover="handleDragOver($event, { type: 'unschedule', dateKey: selectedTimelineDay.dateKey })"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop($event, { type: 'unschedule', dateKey: selectedTimelineDay.dateKey })"
         >
           <div v-if="filteredTimelinePendingTasks.length === 0" class="pending-empty-state">
             <span class="empty-icon"><IconCalendarCheck :size="36" :stroke-width="1.5" /></span>
@@ -195,9 +196,10 @@
             v-for="task in filteredTimelinePendingTasks"
             :key="task.id"
             class="pending-card"
-            :class="{ 'is-dragging': draggedItem?.taskId === task.id }"
+            :class="{ 'is-dragging': dragSession?.taskId === task.id }"
             draggable="true"
-            @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
+            @dragstart.stop="handleDragStart($event, task)"
+            @dragend.stop="clearDragState"
           >
             <div class="pending-color" :style="{ background: 'var(--color-primary-accent)' }"></div>
             <div class="pending-body">
@@ -233,10 +235,10 @@
           v-for="day in timelineDays"
           :key="day.dateKey"
           class="weekly-column"
-          :class="{ 'is-today': day.isToday, 'drag-over': dragOverDay === day.dateKey }"
-          @dragover.prevent="dragOverDay = day.dateKey"
-          @dragleave.prevent="dragOverDay = null"
-          @drop.prevent="handleDropOnDay(day.dateKey)"
+          :class="{ 'is-today': day.isToday, 'drag-over': dragOverTarget?.type === 'week' && dragOverTarget.dateKey === day.dateKey }"
+          @dragover="handleDragOver($event, { type: 'week', dateKey: day.dateKey })"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop($event, { type: 'week', dateKey: day.dateKey })"
           >
           <div class="weekly-column-header">
             <span class="day-dot" v-if="day.isToday">今</span>
@@ -244,22 +246,23 @@
               {{ day.weekdayLabel }} · {{ day.monthDayLabel }}
             </span>
             <span class="weekly-column-count">
-              {{ getScheduledTasksForDay(day.dayCode).length }}
+              {{ getScheduledTasksForDateKey(day.dateKey).length }}
             </span>
           </div>
           <div class="weekly-tasks-list">
             <div 
-              v-for="task in getScheduledTasksForDay(day.dayCode)"
+              v-for="task in getScheduledTasksForDateKey(day.dateKey)"
               :key="task.id" 
               class="weekly-task-card"
               :class="{ 'is-past': isPastTask(task), 'is-completed': isCompletedScheduledTask(task) }"
               :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
               :draggable="!isCompletedScheduledTask(task)"
-              @dragstart.stop="handleDragStart($event, 'scheduled', task.id || '', task.startTime)"
+              @dragstart.stop="handleDragStart($event, task)"
+              @dragend.stop="clearDragState"
             >
               <div class="weekly-task-header">
                 <span class="weekly-task-name">{{ task.name }}</span>
-                <button class="card-delete-btn" @click.stop="handleDeleteTaskById(task.id!)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
+                <button class="card-delete-btn" :disabled="deletingTaskId === task.id" @click.stop="handleDeleteTask(task)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
               </div>
               <div class="weekly-task-meta">
                 <span class="weekly-task-time"><IconClock :size="12" :stroke-width="1.8" style="vertical-align: -1.5px; margin-right: 2px;" />{{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
@@ -274,10 +277,10 @@
       
       <!-- Week Mode Bottom Dock -->
       <div class="weekly-bottom-dock"
-           :class="{ 'drag-over': dragOverPending }"
-           @dragover.prevent="dragOverPending = true"
-           @dragleave.prevent="dragOverPending = false"
-           @drop.prevent="handleDropOnPending">
+           :class="{ 'drag-over': dragOverTarget?.type === 'unschedule' }"
+           @dragover="handleDragOver($event, { type: 'unschedule', dateKey: selectedTimelineDay.dateKey })"
+           @dragleave="handleDragLeave"
+           @drop="handleDrop($event, { type: 'unschedule', dateKey: selectedTimelineDay.dateKey })">
         
         <div v-if="filteredTimelinePendingTasks.length === 0" class="dock-empty">
           <IconCalendarCheck :size="16" :stroke-width="1.8" style="vertical-align: -3px; margin-right: 4px;" />本周待排期任务已全部安排妥当！
@@ -288,9 +291,10 @@
             v-for="task in filteredTimelinePendingTasks"
             :key="task.id"
             class="pending-pill"
-            :class="{ 'is-dragging': draggedItem?.taskId === task.id }"
+            :class="{ 'is-dragging': dragSession?.taskId === task.id }"
             draggable="true"
-            @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
+            @dragstart.stop="handleDragStart($event, task)"
+            @dragend.stop="clearDragState"
           >
             <span class="pill-name">{{ task.name }}</span>
             <span class="pill-duration" :style="{ color: 'var(--color-primary-accent)' }">{{ task.duration }}m</span>
@@ -302,8 +306,7 @@
     <!-- Task Creation Modal -->
     <TaskCreateDialog
       v-model="taskDialogVisible"
-      :related-block-id="newTaskForm.relatedBlockId"
-      :initial-desc="newTaskForm.desc"
+      :saving="isCreatingTask"
       @submit="handleCreateTask"
     />
 
@@ -333,9 +336,10 @@ import {
   IconX
 } from '@tabler/icons-vue'
 
-import { useTaskStore, DAY_CODES, type Task } from '@/store/useTaskStore'
+import { useTaskStore, type Task } from '@/store/useTaskStore'
 import { useSyncStore } from '@/store/useSyncStore'
-import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, comparePendingTasks, parseDueTimestamp } from '@/services/taskViewRules'
+import { getTimelineDays, isCompletedScheduledTask, comparePendingTasks, parseDueTimestamp } from '@/services/taskViewRules'
+import { timelineDateKey, type TimelineDropIntent, type TimelineDropTarget } from '@/services/taskSchedulePlanner'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
@@ -361,52 +365,30 @@ const nextWeekNow = computed(() => {
 const nextWeekTimelineDays = computed(() => getTimelineDays(nextWeekNow.value))
 const allTimelineDays = computed(() => [...timelineDays.value, ...nextWeekTimelineDays.value])
 
-const selectedDateKey = ref<string>(/^\d{4}-\d{2}-\d{2}$/.test(selectedDay.value) ? selectedDay.value : '')
-
 const selectedTimelineDay = computed(() => {
-  if (selectedDateKey.value) {
-    const found = allTimelineDays.value.find((day) => day.dateKey === selectedDateKey.value)
-    if (found) return found
-  }
-  return timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0]
+  return allTimelineDays.value.find((day) => day.dateKey === selectedDay.value)
+    ?? timelineDays.value.find((day) => day.dayCode === selectedDay.value)
+    ?? timelineDays.value.find((day) => day.isToday)
+    ?? timelineDays.value[0]
 })
 
-const selectDay = async (dayCode: string, dateKey?: string) => {
-  taskStore.setSelectedDay(dayCode, dateKey)
-  if (dateKey) {
-    selectedDateKey.value = dateKey
-  } else {
-    const match = timelineDays.value.find((d) => d.dayCode === dayCode)
-    selectedDateKey.value = match ? match.dateKey : ''
+watch(selectedTimelineDay, (day) => {
+  if (day.dateKey !== selectedDay.value && day.dayCode !== selectedDay.value) {
+    taskStore.setSelectedDay(day.dayCode, day.dateKey)
   }
+}, { immediate: true })
+
+const selectDay = async (dayCode: string, dateKey: string) => {
+  taskStore.setSelectedDay(dayCode, dateKey)
   await taskStore.loadLocalTasks()
 }
 
 const getScheduledTasksForDateKey = (dateKey: string) => {
-  return allTasks.value.filter((task) => {
-    if (!task.scheduledAt) return false
-    const d = new Date(task.scheduledAt)
-    if (Number.isNaN(d.getTime())) return false
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const key = `${d.getFullYear()}-${month}-${day}`
-    return key === dateKey
-  })
+  return allTasks.value.filter((task) => task.status !== 'cancelled' && timelineDateKey(task.scheduledAt) === dateKey)
 }
 
 const getPendingScheduledTasksForDateKey = (dateKey: string) => {
   return getScheduledTasksForDateKey(dateKey).filter(task => !isCompletedScheduledTask(task))
-}
-
-const getScheduledTasksForDay = (day: string) => {
-  const targetDayObj = timelineDays.value.find(d => d.dayCode === day)
-  if (targetDayObj) {
-    return getScheduledTasksForDateKey(targetDayObj.dateKey)
-  }
-  return getTasksForTimeline(allTasks.value).filter((task) => {
-    if (!task.scheduledAt) return false
-    return DAY_CODES[new Date(task.scheduledAt).getDay()] === day
-  })
 }
 
 const getTaskTimeStr = (startTime?: string) => {
@@ -452,25 +434,6 @@ const isSlotCovered = (slotTime: string) => {
   return false
 }
 
-const getCoveringTask = (slotTime: string): Task | null => {
-  const direct = timeSlots.value.find((s) => s.time === slotTime)?.task
-  if (direct) return direct
-
-  const [slotHour, slotMinute] = slotTime.split(':').map(Number)
-  const currentMinutes = slotHour * 60 + slotMinute
-  for (const slot of timeSlots.value) {
-    if (slot.task) {
-      const [taskHour, taskMinute] = slot.time.split(':').map(Number)
-      const taskStartMinutes = taskHour * 60 + taskMinute
-      const taskEndMinutes = taskStartMinutes + (slot.task.duration || 30)
-      if (currentMinutes >= taskStartMinutes && currentMinutes < taskEndMinutes) {
-        return slot.task
-      }
-    }
-  }
-  return null
-}
-
 onMounted(async () => {
   pastTaskRefreshTimer = window.setInterval(() => {
     nowTimestamp.value = Date.now()
@@ -487,111 +450,105 @@ onUnmounted(() => {
 const stats = computed(() => [
   { icon: IconListCheck, value: pendingCount.value.toString(), label: '待排期' },
   { icon: IconCircleCheck, value: completedCount.value.toString(), label: '已完成' },
-  { icon: IconClock, value: totalFocusHours.value, label: '专注时长' }
+  { icon: IconClock, value: totalFocusHours.value, label: '已完成任务预计用时' }
 ])
 
-// Filter pending tasks (without subject filter)
-const filteredPendingTasks = computed(() => {
+const filteredTimelinePendingTasks = computed(() => {
   return [...pendingTasks.value].sort(comparePendingTasks)
 })
 
-// Filter pending tasks displayed on the Timeline right-sidebar (exclude non-pending ones)
-const filteredTimelinePendingTasks = computed(() => {
-  return filteredPendingTasks.value
+const TASK_DRAG_TYPE = 'application/x-auralis-timeline-task'
+type DropTarget = TimelineDropTarget & Pick<TimelineDropIntent, 'dateKey'>
+interface DragSession {
+  taskId: string
+  sourceScheduledAt: string | null
+  sourceSlotTime?: string
+}
+
+const dragSession = ref<DragSession | null>(null)
+const dragOverTarget = ref<DropTarget | null>(null)
+
+const handleDragStart = (event: DragEvent, task: Task, sourceSlotTime?: string) => {
+  if (!event.dataTransfer || isCompletedScheduledTask(task)) {
+    event.preventDefault()
+    return
+  }
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData(TASK_DRAG_TYPE, task.id)
+  dragSession.value = { taskId: task.id, sourceScheduledAt: task.scheduledAt ?? null, sourceSlotTime }
+}
+
+const handleDragOver = (event: DragEvent, target: DropTarget) => {
+  const session = dragSession.value
+  if (!session || !event.dataTransfer?.types.includes(TASK_DRAG_TYPE)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+
+  const targetTask = 'targetTaskId' in target
+    ? allTasks.value.find((task) => task.id === target.targetTaskId)
+    : undefined
+  const invalidSwap = target.type === 'swap'
+    && (!session.sourceScheduledAt || (targetTask && isCompletedScheduledTask(targetTask)))
+  dragOverTarget.value = isSamePlacement(session, target) || invalidSwap ? null : target
+}
+
+const handleDragLeave = (event: DragEvent) => {
+  if (event.currentTarget instanceof HTMLElement
+    && event.relatedTarget instanceof Node
+    && event.currentTarget.contains(event.relatedTarget)) return
+  dragOverTarget.value = null
+}
+
+const bodyDropHint = computed(() => {
+  const target = dragOverTarget.value
+  const session = dragSession.value
+  if (!session || target?.type !== 'body') return ''
+  const preview = taskStore.previewTimelineDrop({
+    ...target,
+    taskId: session.taskId,
+    sourceScheduledAt: session.sourceScheduledAt,
+  })
+  if (preview.error) return preview.error
+  if (!preview.scheduledAt) return ''
+  const date = new Date(preview.scheduledAt)
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  return `插入至 ${time}`
 })
 
-// Timeline drag/drop logic
-const draggedItem = ref<{ type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string } | null>(null)
-const dragOverSlot = ref<string | null>(null)
-const dragOverHeaderTaskId = ref<string | null>(null)
-const dragOverBodyTaskId = ref<string | null>(null)
-const dragOverBodySlotTime = ref<string | null>(null)
-const dragOverPending = ref(false)
-const dragOverDay = ref<string | null>(null)
-
-const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string) => {
-  const dragPayload = { type, taskId, sourceSlotTime }
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload))
-  }
-  draggedItem.value = dragPayload
+const clearDragState = () => {
+  dragSession.value = null
+  dragOverTarget.value = null
 }
 
-const handleDragOver = (slotTime: string) => {
-  const targetTask = getCoveringTask(slotTime) || timeSlots.value.find((slot) => slot.time === slotTime)?.task
-  if (targetTask && isCompletedScheduledTask(targetTask)) {
-    dragOverSlot.value = null
-    return
-  }
-  if (!(draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime === slotTime)) {
-    dragOverSlot.value = slotTime
-  } else {
-    dragOverSlot.value = null
-  }
-}
+const handleDrop = async (event: DragEvent, target: DropTarget) => {
+  const session = dragSession.value
+  clearDragState()
+  if (!session || event.dataTransfer?.getData(TASK_DRAG_TYPE) !== session.taskId) return
+  event.preventDefault()
+  if (isSamePlacement(session, target)) return
 
-const handleDragLeave = () => {
-  dragOverSlot.value = null
-}
-
-const clearTaskBodyDropTarget = () => {
-  dragOverBodyTaskId.value = null
-  dragOverBodySlotTime.value = null
-}
-
-const taskEndSlotTime = (task: Task, startSlotTime: string): string => {
-  const [hour, minute] = startSlotTime.split(':').map(Number)
-  const endMinutes = Math.ceil((hour * 60 + minute + (task.duration ?? 30)) / 30) * 30
-  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
-  if (!timeSlots.value.some((slot) => slot.time === endTime)) {
-    throw new Error('任务结束后已没有可用时间槽')
-  }
-  return endTime
-}
-
-const handleTaskBodyDragOver = (task: Task, startSlotTime: string) => {
-  if (!draggedItem.value) {
-    clearTaskBodyDropTarget()
-    return
-  }
-  if (draggedItem.value.type === 'scheduled' && draggedItem.value.taskId === task.id) {
-    clearTaskBodyDropTarget()
-    return
-  }
-
-  // 主体落点接在目标任务后；顶部文字区域单独交换。
-  dragOverHeaderTaskId.value = null
   try {
-    dragOverBodyTaskId.value = task.id
-    dragOverBodySlotTime.value = taskEndSlotTime(task, startSlotTime)
-  } catch {
-    clearTaskBodyDropTarget()
+    const result = await taskStore.applyTimelineDrop({
+      ...target,
+      dateKey: target.type === 'unschedule'
+        ? timelineDateKey(session.sourceScheduledAt ?? undefined) ?? target.dateKey
+        : target.dateKey,
+      taskId: session.taskId,
+      sourceScheduledAt: session.sourceScheduledAt,
+    })
+    if (result === 'queued') reportScheduleQueued()
+  } catch (error) {
+    reportDragFailure(error)
   }
 }
 
-const handleTaskBodyDragLeave = () => {
-  clearTaskBodyDropTarget()
-}
+const isSamePlacement = (session: DragSession, target: DropTarget): boolean => {
+  if ('targetTaskId' in target) return session.taskId === target.targetTaskId
+  if (target.type === 'unschedule') return !session.sourceScheduledAt
 
-const handleHeaderDragOver = (targetTask: Task) => {
-  clearTaskBodyDropTarget()
-  dragOverHeaderTaskId.value = draggedItem.value?.type === 'scheduled'
-    && draggedItem.value.taskId !== targetTask.id
-    && !isCompletedScheduledTask(targetTask)
-    ? targetTask.id
-    : null
-}
-
-const handleHeaderDragLeave = (event?: DragEvent) => {
-  if (event) {
-    const currentTarget = event.currentTarget as HTMLElement | null
-    const relatedTarget = event.relatedTarget as Node | null
-    if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
-      return
-    }
-  }
-  dragOverHeaderTaskId.value = null
+  const sourceDate = timelineDateKey(session.sourceScheduledAt ?? undefined)
+  return sourceDate === target.dateKey
+    && (target.type === 'week' || target.slotTime === session.sourceSlotTime)
 }
 
 const reportDragFailure = (error: unknown) => {
@@ -625,103 +582,6 @@ watch(() => syncStore.scheduleSyncErrors, (errors) => {
     syncStore.acknowledgeScheduleSyncError(error.clientMutationId)
   }
 }, { immediate: true })
-
-const handleDrop = async (slotTime: string) => {
-  await handleDropAtSlot(slotTime)
-}
-
-const clearDragState = () => {
-  draggedItem.value = null
-  dragOverSlot.value = null
-  dragOverHeaderTaskId.value = null
-  clearTaskBodyDropTarget()
-  dragOverPending.value = false
-  dragOverDay.value = null
-}
-
-const handleDropAtSlot = async (slotTime: string, targetTaskId?: string) => {
-  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
-  clearDragState()
-  if (!currentDrag) return
-  try {
-    const targetTask = getCoveringTask(slotTime) || timeSlots.value.find((slot) => slot.time === slotTime)?.task
-    if (!targetTaskId) {
-      if (targetTask && isCompletedScheduledTask(targetTask)) throw new Error('已完成的排期任务已固定')
-    }
-    if (currentDrag.type === 'pending') {
-      const result = await taskStore.scheduleTask(currentDrag.taskId, slotTime, targetTaskId)
-      if (result === 'queued') reportScheduleQueued()
-    } else if (currentDrag.type === 'scheduled') {
-      if (!currentDrag.sourceSlotTime) throw new Error('无法识别原排期任务，请从日程卡片拖动')
-      if (currentDrag.sourceSlotTime !== slotTime) {
-        const result = await taskStore.rescheduleTask(currentDrag.taskId, slotTime, targetTaskId)
-        if (result === 'queued') reportScheduleQueued()
-      }
-    }
-  } catch (error) {
-    reportDragFailure(error)
-  }
-}
-
-const handleDropOnTaskBody = async (task: Task, startSlotTime: string) => {
-  try {
-    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
-    if (draggedItem.value?.taskId === task.id) {
-      clearDragState()
-      return
-    }
-    await handleDropAtSlot(taskEndSlotTime(task, startSlotTime), task.id)
-  } catch (error) {
-    reportDragFailure(error)
-    clearDragState()
-  }
-}
-
-const handleDropOnHeader = async (targetTask: Task) => {
-  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
-  clearDragState()
-  if (!currentDrag) return
-  try {
-    if (currentDrag.type === 'pending') {
-      throw new Error('待排期任务请拖到任务主体或空槽进行插入')
-    }
-    if (!currentDrag.sourceSlotTime) {
-      throw new Error('无法识别原排期任务，请从日程卡片拖动')
-    }
-    if (targetTask && isCompletedScheduledTask(targetTask)) throw new Error('已完成的排期任务已固定')
-    if (currentDrag.taskId !== targetTask.id) {
-      const result = await taskStore.swapScheduledTasks(currentDrag.taskId, targetTask.id)
-      if (result === 'queued') reportScheduleQueued()
-    }
-  } catch (error) {
-    reportDragFailure(error)
-  }
-}
-
-const handleDropOnDay = async (day: string) => {
-  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
-  clearDragState()
-  if (!currentDrag) return
-  try {
-    await taskStore.scheduleTaskToDay(currentDrag.taskId, day)
-  } catch (error) {
-    reportDragFailure(error)
-  }
-}
-
-const handleDropOnPending = async () => {
-  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
-  clearDragState()
-  if (!currentDrag) return
-  try {
-    if (currentDrag.type === 'scheduled') {
-      const targetId = currentDrag.taskId || currentDrag.sourceSlotTime
-      if (targetId) await taskStore.unscheduleTask(targetId)
-    }
-  } catch (error) {
-    reportDragFailure(error)
-  }
-}
 
 // Bidirectional Relation Parsing helpers
 const getTaskIdRelation = (desc?: string): string | null => {
@@ -786,28 +646,14 @@ const copyBlockContent = (text: string) => {
 // Router & Modal actions
 const router = useRouter()
 const taskDialogVisible = ref(false)
-const newTaskForm = ref({
-  name: '',
-  subjectId: '',
-  duration: 60,
-  desc: '',
-  relatedBlockId: ''
-})
-
-
+const isCreatingTask = ref(false)
+const deletingTaskId = ref<string | null>(null)
 
 const triggerImport = () => {
   router.push('/asset?focus=unassigned-tasks')
 }
 
 const triggerCreate = () => {
-  newTaskForm.value = {
-    name: '',
-    subjectId: subjectStore.subjects.length > 0 ? subjectStore.subjects[0].id : '',
-    duration: 60,
-    desc: '',
-    relatedBlockId: ''
-  }
   taskDialogVisible.value = true
 }
 
@@ -816,83 +662,66 @@ const handleCreateTask = async (taskData: {
   subjectId: string
   subjectName: string
   duration: number
-  due?: string
   dueAt?: string
   desc?: string
-  relatedBlockId?: string
 }) => {
-  newTaskForm.value.name = taskData.name
-  newTaskForm.value.subjectId = taskData.subjectId
-  newTaskForm.value.duration = taskData.duration
-  newTaskForm.value.desc = taskData.desc || ''
-
-  let finalDesc = (taskData.desc || '').trim()
-  if (taskData.relatedBlockId) {
-    finalDesc += `\n[KB_ID:${taskData.relatedBlockId}]`
-  }
-
-  const newTask = {
-    name: taskData.name,
-    subject: taskData.subjectName,
-    duration: newTaskForm.value.duration || 60,
-    desc: finalDesc,
-    status: 'pending' as const,
-    subjectId: taskData.subjectId,
-    dueAt: taskData.dueAt,
-  }
-
-  await taskStore.addTask(newTask)
-  taskDialogVisible.value = false
-}
-
-const handleDeleteScheduledTask = async (slot: any) => {
-  if (!slot.task?.id) return
+  if (isCreatingTask.value || !taskDialogVisible.value) return
+  isCreatingTask.value = true
   try {
-    await ElMessageBox.confirm(
-      `确定要彻底删除任务「${slot.task.name}」吗？`,
-      '删除提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    await taskStore.deleteTask(slot.task.id)
-    ElNotification({
-      title: '🗑️ 任务已删除',
-      message: `任务「${slot.task.name}」已清除`,
-      type: 'success',
-      position: 'top-right'
+    await taskStore.addTask({
+      name: taskData.name,
+      subject: taskData.subjectName,
+      duration: taskData.duration || 60,
+      desc: taskData.desc?.trim() ?? '',
+      status: 'pending',
+      subjectId: taskData.subjectId,
+      dueAt: taskData.dueAt,
     })
-  } catch (e) {
-    if (e !== 'cancel') {
-      console.error(e)
-    }
+    taskDialogVisible.value = false
+  } catch (error) {
+    ElNotification({
+      title: '创建任务失败',
+      message: error instanceof Error ? error.message : '任务保存失败，请重试。',
+      type: 'error',
+      position: 'top-right',
+    })
+  } finally {
+    isCreatingTask.value = false
   }
 }
 
-const handleDeleteTaskById = async (id: string) => {
+const handleDeleteTask = async (task: Task) => {
+  if (deletingTaskId.value) return
+  const { id, name } = task
+  deletingTaskId.value = id
   try {
     await ElMessageBox.confirm(
-      '确定要删除这个任务吗？',
+      `确定要删除任务「${name}」吗？`,
       '删除提示',
       {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
-        type: 'warning'
+        distinguishCancelAndClose: true,
+        type: 'warning',
       }
     )
     await taskStore.deleteTask(id)
     ElNotification({
-      title: '🗑️ 任务已删除',
-      message: '任务已彻底从列表移除。',
+      title: '任务已删除',
+      message: `任务「${name}」已移除。`,
       type: 'success',
-      position: 'top-right'
+      position: 'top-right',
     })
-  } catch (e) {
-    if (e !== 'cancel') {
-      console.error(e)
-    }
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElNotification({
+      title: '删除任务失败',
+      message: error instanceof Error ? error.message : '任务删除失败，请重试。',
+      type: 'error',
+      position: 'top-right',
+    })
+  } finally {
+    deletingTaskId.value = null
   }
 }
 </script>

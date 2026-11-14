@@ -1462,6 +1462,8 @@ export interface components {
             windowLastStartAt: string;
             /** Format: uuid */
             targetTaskId?: string;
+            /** @enum {string} */
+            placementMode?: "STRICT";
         };
         ScheduleInsertionResponse: {
             tasks: components["schemas"]["Response"][];

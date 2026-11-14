@@ -114,9 +114,7 @@ public class DomainWritePort {
             case SCHEDULE_INSERTION -> {
                 TaskDtos.ScheduleInsertionRequest request = command(payload, TaskDtos.ScheduleInsertionRequest.class);
                 validateScheduleEnvelope(mutation, request.taskId(), request.baseVersion());
-                yield taskService.insertSchedule(userId, request.taskId(), request.baseVersion(),
-                        request.scheduledAt(), request.windowStartAt(), request.windowLastStartAt(),
-                        request.targetTaskId());
+                yield taskService.insertSchedule(userId, request);
             }
             case SCHEDULE_SWAP -> {
                 TaskDtos.ScheduleSwapRequest request = command(payload, TaskDtos.ScheduleSwapRequest.class);
@@ -138,6 +136,9 @@ public class DomainWritePort {
                 case SCHEDULE_INSERTION -> {
                     TaskDtos.ScheduleInsertionRequest request = command(payload, TaskDtos.ScheduleInsertionRequest.class);
                     validateScheduleEnvelope(mutation, request.taskId(), request.baseVersion());
+                    if (request.placementMode() != null) {
+                        yield taskService.currentInsertionSchedule(userId, request.taskId(), null, null);
+                    }
                     yield taskService.currentInsertionSchedule(userId, request.taskId(),
                             request.windowStartAt(), request.windowLastStartAt());
                 }
