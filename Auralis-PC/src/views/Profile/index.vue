@@ -206,7 +206,10 @@
           class="settings-group"
         >
           <div class="group-header">
-            <h3 class="group-title">{{ group.title }}</h3>
+            <h3 class="group-title setting-label-with-icon">
+              <component :is="group.icon" class="setting-icon" aria-hidden="true" />
+              {{ group.title }}
+            </h3>
           </div>
           <div class="group-items">
             <div
@@ -215,7 +218,10 @@
               class="settings-row"
             >
               <div class="row-info">
-                <span v-if="item.type !== 'action'" class="row-label">{{ item.label }}</span>
+                <span v-if="item.type !== 'action'" class="row-label setting-label-with-icon">
+                  <component :is="item.icon" class="setting-icon" aria-hidden="true" />
+                  {{ item.label }}
+                </span>
               </div>
               <div class="row-control">
                 <!-- Toggle -->
@@ -268,12 +274,18 @@
 
         <section class="settings-group" aria-labelledby="profile-ai-title">
           <div class="group-header">
-            <h3 id="profile-ai-title" class="group-title">AI 设置</h3>
+            <h3 id="profile-ai-title" class="group-title setting-label-with-icon">
+              <IconSparkles class="setting-icon" aria-hidden="true" />
+              AI 设置
+            </h3>
           </div>
 
           <div class="settings-row">
             <div class="row-info">
-              <span class="row-label">{{ autoOverviewSetting.label }}</span>
+              <span class="row-label setting-label-with-icon">
+                <IconFileDescription class="setting-icon" aria-hidden="true" />
+                {{ autoOverviewSetting.label }}
+              </span>
               <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
             </div>
             <div class="row-control">
@@ -293,7 +305,10 @@
           </div>
 
           <div class="ai-subheader">
-            <h4 class="group-title ai-subtitle">AI 使用额度</h4>
+            <h4 class="group-title ai-subtitle setting-label-with-icon">
+              <IconGauge class="setting-icon" aria-hidden="true" />
+              AI 使用额度
+            </h4>
           </div>
           
           <div class="group-items usage-group-body">
@@ -376,13 +391,19 @@
           </div>
 
           <div class="ai-subheader byok-subheader">
-            <h4 class="group-title ai-subtitle">AI 模型与服务</h4>
+            <h4 class="group-title ai-subtitle setting-label-with-icon">
+              <IconCpu class="setting-icon" aria-hidden="true" />
+              AI 模型与服务
+            </h4>
           </div>
 
           <div class="group-items">
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <label class="row-label" for="profile-ai-provider">AI 服务商</label>
+                <label class="row-label setting-label-with-icon" for="profile-ai-provider">
+                  <IconServer class="setting-icon" aria-hidden="true" />
+                  AI 服务商
+                </label>
               </div>
               <div class="row-control byok-control-wrap">
                 <input
@@ -410,7 +431,10 @@
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <label class="row-label" for="profile-ai-model">对话模型</label>
+                <label class="row-label setting-label-with-icon" for="profile-ai-model">
+                  <IconMessages class="setting-icon" aria-hidden="true" />
+                  对话模型
+                </label>
               </div>
               <div class="row-control byok-control-wrap">
                 <div class="byok-model-detect-group">
@@ -450,7 +474,10 @@
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <label class="row-label" for="profile-ai-base-url">Base URL</label>
+                <label class="row-label setting-label-with-icon" for="profile-ai-base-url">
+                  <IconLink class="setting-icon" aria-hidden="true" />
+                  Base URL
+                </label>
                 <span id="profile-ai-base-url-hint" class="row-desc">
                   {{ canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
                 </span>
@@ -468,7 +495,10 @@
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <label class="row-label" for="profile-ai-key">API Key</label>
+                <label class="row-label setting-label-with-icon" for="profile-ai-key">
+                  <IconKey class="setting-icon" aria-hidden="true" />
+                  API Key
+                </label>
                 <span v-if="!aiSettingsInitializing" id="profile-ai-key-status" class="row-desc">
                   {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
                 </span>
@@ -542,14 +572,34 @@
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  IconFlame,
-  IconNotes,
+  IconActivity,
+  IconAlarm,
+  IconBell,
+  IconCamera,
   IconChecklist,
   IconClock,
-  IconTrendingUp,
-  IconCamera,
+  IconCloud,
+  IconCpu,
+  IconDeviceDesktop,
   IconEye,
   IconEyeOff,
+  IconFileDescription,
+  IconFlame,
+  IconGauge,
+  IconKey,
+  IconLanguage,
+  IconLayoutRows,
+  IconLink,
+  IconMessages,
+  IconMoon,
+  IconNotes,
+  IconRefresh,
+  IconServer,
+  IconSparkles,
+  IconTextSize,
+  IconTrendingUp,
+  IconWifi,
+  type Icon,
 } from '@tabler/icons-vue'
 import { isCurrentUsageRequest, nextRequestGeneration } from '@/services/aiUsageGuardHelper.ts'
 import { useAuthApi, type SessionResponse } from '@/api/useAuthApi'
@@ -1181,6 +1231,7 @@ interface SettingItem {
   id: string
   label: string
   type: 'toggle' | 'select' | 'action' | 'input' | 'status'
+  icon?: Icon
   value?: any
   options?: string[]
   btnText?: string
@@ -1191,26 +1242,29 @@ interface SettingItem {
 const settingGroups = reactive([
   {
     title: '外观与显示',
+    icon: IconDeviceDesktop,
     items: [
-      { id: 'dark', label: '深色模式', type: 'toggle', value: settingsStore.isDark },
-      { id: 'compact', label: '紧凑布局', type: 'toggle', value: settingsStore.compactLayout },
-      { id: 'lang', label: '界面语言', type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
-      { id: 'font_size', label: '基础字号', type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
+      { id: 'dark', label: '深色模式', icon: IconMoon, type: 'toggle', value: settingsStore.isDark },
+      { id: 'compact', label: '紧凑布局', icon: IconLayoutRows, type: 'toggle', value: settingsStore.compactLayout },
+      { id: 'lang', label: '界面语言', icon: IconLanguage, type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
+      { id: 'font_size', label: '基础字号', icon: IconTextSize, type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
     ] as SettingItem[]
   },
   {
     title: '提醒',
+    icon: IconBell,
     items: [
-      { id: 'task_remind', label: '任务提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
-      { id: 'focus_end', label: '专注结束提醒', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
+      { id: 'task_remind', label: '任务提醒', icon: IconChecklist, type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
+      { id: 'focus_end', label: '专注结束提醒', icon: IconAlarm, type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
     ] as SettingItem[]
   },
   {
     title: '同步与数据',
+    icon: IconCloud,
     items: [
-      { id: 'sync_status', label: '同步状态', type: 'status', value: '已同步 · 状态正常' },
-      { id: 'auto_sync', label: '自动同步', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
-      { id: 'wifi_only', label: '仅 Wi-Fi 同步', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
+      { id: 'sync_status', label: '同步状态', icon: IconActivity, type: 'status', value: '已同步 · 状态正常' },
+      { id: 'auto_sync', label: '自动同步', icon: IconRefresh, type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
+      { id: 'wifi_only', label: '仅 Wi-Fi 同步', icon: IconWifi, type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
       { id: 'sync_now', label: '立即同步', type: 'action', btnText: '立即同步', variant: 'primary' },
     ] as SettingItem[]
   },
@@ -2170,6 +2224,28 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
   line-height: 1.45;
+}
+
+.setting-label-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  stroke-width: 1.8;
+}
+
+.group-header .setting-icon {
+  color: var(--text-accent);
+}
+
+.setting-label-with-icon + .row-desc {
+  margin-inline-start: 24px;
 }
 
 .row-control {
