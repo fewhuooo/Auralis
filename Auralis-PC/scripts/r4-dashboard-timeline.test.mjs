@@ -209,6 +209,17 @@ test('Timeline clears a cancelled or completed native drag and ignores external 
   })
 })
 
+test('Timeline explains why dropping onto the preceding card body keeps the current slot', async (t) => {
+  const { page } = await setupTimeline(t, {
+    previewTimelineDrop: () => ({}),
+  })
+  const task = { id: 'task', status: 'scheduled', scheduledAt: new Date(2026, 10, 14, 10, 30).toISOString() }
+  const nativeDrag = dragEvent()
+  page.handleDragStart(nativeDrag, task, '10:30')
+  page.handleDragOver(nativeDrag, { type: 'body', targetTaskId: 'preceding', dateKey: '2026-11-14' })
+  assert.equal(page.bodyDropHint.value, '已在目标时段')
+})
+
 test('Timeline new task accepts one write and retains a failed draft for retry', async (t) => {
   const writes = []
   const { page, notifications, setup } = await setupTimeline(t, {

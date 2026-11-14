@@ -509,7 +509,7 @@ const bodyDropHint = computed(() => {
     sourceScheduledAt: session.sourceScheduledAt,
   })
   if (preview.error) return preview.error
-  if (!preview.scheduledAt) return ''
+  if (!preview.scheduledAt) return '已在目标时段'
   const date = new Date(preview.scheduledAt)
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   return `插入至 ${time}`
@@ -1222,7 +1222,6 @@ html.dark .btn-secondary {
 .time-slots {
   display: flex;
   flex-direction: column;
-  gap: 4px; /* Strictly matches TIMELINE_SLOT_GAP = 4 */
   flex: 1;
   overflow-y: auto;
   min-height: 0;
@@ -1241,10 +1240,16 @@ html.dark .btn-secondary {
   display: flex;
   align-items: stretch;
   gap: 14px;
+  box-sizing: content-box;
   height: 80px; /* Strictly matches TIMELINE_SLOT_HEIGHT = 80 */
   min-height: 80px;
   flex-shrink: 0;
   position: relative;
+}
+
+.time-slot:not(:last-child) {
+  /* Keep the visible spacing inside the drop target. */
+  padding-bottom: 4px;
 }
 
 .slot-time {
