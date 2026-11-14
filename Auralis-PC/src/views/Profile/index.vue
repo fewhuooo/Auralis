@@ -254,7 +254,7 @@
 
         <section class="settings-group" aria-labelledby="profile-ai-title">
           <div class="group-header">
-            <h3 id="profile-ai-title" class="group-title ai-group-title setting-label-with-icon">
+            <h3 id="profile-ai-title" class="group-title setting-label-with-icon">
               <IconSparkles class="setting-icon" aria-hidden="true" />
               AI 设置
             </h3>
@@ -292,7 +292,7 @@
               </h4>
             </div>
 
-            <div>
+            <div class="ai-section-content">
               <div class="settings-row byok-field-row">
                 <div class="row-info">
                   <label class="row-label setting-label-with-icon" for="profile-ai-provider">
@@ -422,7 +422,7 @@
               </div>
             </div>
 
-            <div class="byok-action-footer">
+            <div class="byok-action-footer ai-section-content">
               <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
               <div class="byok-btn-group">
                 <button
@@ -454,7 +454,7 @@
               </button>
             </div>
 
-            <div>
+            <div class="ai-section-content">
               <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
               <div v-else-if="aiUsageError" class="usage-error">
                 <span>{{ aiUsageError }}</span>
@@ -2332,16 +2332,12 @@ onMounted(() => {
 
 
 /* ===== 4. AI 设置与使用额度 (AI Settings) ===== */
-.ai-group-title {
-  font-size: var(--font-size-body-lg);
-}
-
 .ai-overview-row {
   border-bottom: 0;
 }
 
 .ai-settings-section {
-  padding: 18px 22px;
+  padding: 20px 22px;
   border-top: 0.5px solid var(--border-subtle);
 }
 
@@ -2350,11 +2346,17 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .ai-subtitle {
-  font-size: var(--font-size-body);
+  font-size: var(--font-size-body-sm);
+}
+
+.ai-section-content {
+  border-inline-start: 1px solid var(--border-subtle);
+  margin-inline-start: 7px;
+  padding-inline-start: 12px;
 }
 
 .ai-settings-section .byok-field-row {
