@@ -210,9 +210,6 @@
               <component :is="group.icon" class="setting-icon" aria-hidden="true" />
               {{ group.title }}
             </h3>
-            <button v-if="group.showSyncAction" class="action-btn primary" type="button" @click="handleSyncNow">
-              {{ syncButtonText }}
-            </button>
           </div>
           <div class="group-items">
             <div
@@ -226,7 +223,7 @@
                   {{ item.label }}
                 </span>
               </div>
-              <div class="row-control">
+              <div class="row-control" :class="{ 'sync-status-controls': item.id === 'sync_status' }">
                 <!-- Toggle -->
                 <button
                   v-if="item.type === 'toggle'"
@@ -257,10 +254,15 @@
                   @blur="handleInputBlur(item)"
                 />
                 <!-- Status -->
-                <div v-else-if="item.type === 'status'" class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired || hasPendingFocusSessions) }">
-                  <span class="status-dot-indicator"></span>
-                  <span>{{ item.id === 'sync_status' ? syncStatusText : item.value }}</span>
-                </div>
+                <template v-else-if="item.type === 'status'">
+                  <div class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired || hasPendingFocusSessions) }">
+                    <span class="status-dot-indicator"></span>
+                    <span>{{ item.id === 'sync_status' ? syncStatusText : item.value }}</span>
+                  </div>
+                  <button v-if="item.id === 'sync_status'" class="action-btn primary" type="button" @click="handleSyncNow">
+                    {{ syncButtonText }}
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -1253,7 +1255,6 @@ const settingGroups = reactive([
   {
     title: '同步与数据',
     icon: IconCloud,
-    showSyncAction: true,
     items: [
       { id: 'sync_status', label: '同步状态', icon: IconActivity, type: 'status', value: '已同步 · 状态正常' },
       { id: 'auto_sync', label: '自动同步', icon: IconRefresh, type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
@@ -2159,7 +2160,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
   padding: 16px 22px;
   border-bottom: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   background: rgba(0, 0, 0, 0.012);
@@ -2246,6 +2246,17 @@ onMounted(() => {
   align-items: center;
   justify-content: flex-end;
   flex-shrink: 0;
+}
+
+.sync-status-controls {
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.sync-status-controls .status-pill-badge {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* 3.4 交互控件 (Controls: Toggle, Select, Input, Action Button) */
