@@ -254,7 +254,7 @@
 
         <section class="settings-group" aria-labelledby="profile-ai-title">
           <div class="group-header">
-            <h3 id="profile-ai-title" class="group-title setting-label-with-icon">
+            <h3 id="profile-ai-title" class="group-title ai-group-title setting-label-with-icon">
               <IconSparkles class="setting-icon" aria-hidden="true" />
               AI 设置
             </h3>
@@ -284,245 +284,248 @@
             </div>
           </div>
 
-          <div class="ai-subheader byok-subheader">
-            <h4 class="group-title ai-subtitle setting-label-with-icon">
-              <IconCpu class="setting-icon" aria-hidden="true" />
-              AI 模型与服务
-            </h4>
-          </div>
+          <div class="ai-settings-section" role="group" aria-labelledby="profile-ai-model-title">
+            <div class="ai-subheader">
+              <h4 id="profile-ai-model-title" class="group-title ai-subtitle setting-label-with-icon">
+                <IconCpu class="setting-icon" aria-hidden="true" />
+                AI 模型与服务
+              </h4>
+            </div>
 
-          <div class="group-items">
-            <div class="settings-row byok-field-row">
-              <div class="row-info">
-                <label class="row-label setting-label-with-icon" for="profile-ai-provider">
-                  <IconServer class="setting-icon" aria-hidden="true" />
-                  AI 服务商
-                </label>
-              </div>
-              <div class="row-control byok-control-wrap">
-                <input
-                  id="profile-ai-provider"
-                  v-model="customProvider"
-                  type="text"
-                  class="settings-input byok-input"
-                  :disabled="aiSettingsInitializing"
-                />
-                <div class="quick-providers-bar">
-                  <button
-                    v-for="qp in quickProviders"
-                    :key="qp.provider"
-                    type="button"
-                    class="quick-preset-chip"
-                    :class="{ 'is-active': normalizeProvider(customProvider) === qp.provider }"
-                    :disabled="aiSettingsInitializing"
-                    @click="applyQuickProvider(qp)"
-                  >
-                    {{ qp.name }}
-                  </button>
+            <div>
+              <div class="settings-row byok-field-row">
+                <div class="row-info">
+                  <label class="row-label setting-label-with-icon" for="profile-ai-provider">
+                    <IconServer class="setting-icon" aria-hidden="true" />
+                    AI 服务商
+                  </label>
                 </div>
-              </div>
-            </div>
-
-            <div class="settings-row byok-field-row">
-              <div class="row-info">
-                <label class="row-label setting-label-with-icon" for="profile-ai-base-url">
-                  <IconLink class="setting-icon" aria-hidden="true" />
-                  Base URL
-                </label>
-                <span id="profile-ai-base-url-hint" class="row-desc">
-                  {{ canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
-                </span>
-              </div>
-              <div class="row-control byok-control-wrap">
-                <input
-                  id="profile-ai-base-url"
-                  v-model="customBaseUrl"
-                  type="text"
-                  class="settings-input byok-input"
-                  aria-describedby="profile-ai-base-url-hint"
-                />
-              </div>
-            </div>
-
-            <div class="settings-row byok-field-row">
-              <div class="row-info">
-                <label class="row-label setting-label-with-icon" for="profile-ai-key">
-                  <IconKey class="setting-icon" aria-hidden="true" />
-                  API Key
-                </label>
-                <span v-if="!aiSettingsInitializing" id="profile-ai-key-status" class="row-desc">
-                  {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
-                </span>
-              </div>
-              <div class="row-control byok-control-wrap">
-                <div class="api-key-input-wrapper">
+                <div class="row-control byok-control-wrap">
                   <input
-                    id="profile-ai-key"
-                    v-model="customApiKey"
-                    :type="showApiKey ? 'text' : 'password'"
-                    class="settings-input byok-input byok-key-input"
-                    :aria-describedby="aiSettingsInitializing ? undefined : 'profile-ai-key-status'"
-                    autocomplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    class="eye-toggle-btn"
-                    :title="showApiKey ? '隐藏密钥' : '显示密钥'"
-                    @click="showApiKey = !showApiKey"
-                  >
-                    <IconEyeOff v-if="showApiKey" :size="15" />
-                    <IconEye v-else :size="15" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="settings-row byok-field-row">
-              <div class="row-info">
-                <label class="row-label setting-label-with-icon" for="profile-ai-model">
-                  <IconMessages class="setting-icon" aria-hidden="true" />
-                  对话模型
-                </label>
-              </div>
-              <div class="row-control byok-control-wrap">
-                <div class="byok-model-detect-group">
-                  <input
-                    id="profile-ai-model"
-                    v-model="customChatModel"
+                    id="profile-ai-provider"
+                    v-model="customProvider"
                     type="text"
-                    class="settings-input byok-input byok-model-input"
-                    placeholder="如 deepseek-chat"
+                    class="settings-input byok-input"
+                    :disabled="aiSettingsInitializing"
                   />
-                  <button
-                    class="action-btn byok-detect-btn"
-                    :disabled="detectingModels || aiSettingsBusy"
-                    @click="handleDetectModels"
-                  >
-                    {{ detectingModels ? '检测中...' : '自动检测' }}
-                  </button>
-                </div>
-                <!-- 自动检测模型快速选取托盘 -->
-                <div v-if="detectedModels.length > 0" class="detected-models-tray">
-                  <span class="tray-label">检测到 {{ detectedModels.length }} 个候选模型：</span>
-                  <div class="tray-chips">
+                  <div class="quick-providers-bar">
                     <button
-                      v-for="m in detectedModels"
-                      :key="m"
+                      v-for="qp in quickProviders"
+                      :key="qp.provider"
                       type="button"
-                      class="model-chip"
-                      :class="{ 'is-selected': customChatModel === m }"
-                      @click="selectDetectedModel(m)"
+                      class="quick-preset-chip"
+                      :class="{ 'is-active': normalizeProvider(customProvider) === qp.provider }"
+                      :disabled="aiSettingsInitializing"
+                      @click="applyQuickProvider(qp)"
                     >
-                      {{ m }}
+                      {{ qp.name }}
                     </button>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div class="byok-action-footer">
-            <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
-            <div class="byok-btn-group">
-              <button
-                class="action-btn"
-                :disabled="testingConnection || aiSettingsBusy"
-                @click="handleTestConnection"
-              >
-                {{ testingConnection ? '测试中...' : '测试连接' }}
-              </button>
-              <button
-                class="action-btn primary"
-                :disabled="aiSettingsBusy"
-                @click="handleSaveAiSettings"
-              >
-                {{ aiSettingsLoading ? '保存中...' : '保存 AI 配置' }}
-              </button>
-            </div>
-          </div>
-
-          <div class="ai-subheader usage-subheader">
-            <h4 class="group-title ai-subtitle setting-label-with-icon">
-              <IconGauge class="setting-icon" aria-hidden="true" />
-              AI 使用额度
-            </h4>
-          </div>
-
-          <div class="group-items usage-group-body">
-            <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
-            <div v-else-if="aiUsageError" class="usage-error">
-              <span>{{ aiUsageError }}</span>
-              <button class="action-btn secondary" @click="fetchAiUsage">重试</button>
-            </div>
-            <div v-else-if="aiUsage" class="usage-content">
-              <!-- Hourly -->
-              <div class="usage-card">
-                <div class="usage-card-header">
-                  <div class="usage-header-left">
-                    <span class="usage-plan-name">每小时额度</span>
-                    <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
-                  </div>
-                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
+              <div class="settings-row byok-field-row">
+                <div class="row-info">
+                  <label class="row-label setting-label-with-icon" for="profile-ai-base-url">
+                    <IconLink class="setting-icon" aria-hidden="true" />
+                    Base URL
+                  </label>
+                  <span id="profile-ai-base-url-hint" class="row-desc">
+                    {{ canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
+                  </span>
                 </div>
-                <!-- 进度条 -->
-                <div class="usage-progress-bar-wrap">
-                  <div class="usage-progress-bar-fill" :style="{ width: hourlyUsagePercent + '%' }" :class="{ 'is-low': hourlyUsagePercent < 20 }"></div>
+                <div class="row-control byok-control-wrap">
+                  <input
+                    id="profile-ai-base-url"
+                    v-model="customBaseUrl"
+                    type="text"
+                    class="settings-input byok-input"
+                    aria-describedby="profile-ai-base-url-hint"
+                  />
                 </div>
-                <div class="usage-grid">
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">总额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.hourly.limitTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">剩余额度</span>
-                    <span class="usage-stat-val accent">{{ aiUsage.hourly.remainingTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" >
-                    <span class="usage-stat-label">已用额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.hourly.chargedTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" >
-                    <span class="usage-stat-label">预留额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.hourly.reservedTokens }} token</span>
+              </div>
+
+              <div class="settings-row byok-field-row">
+                <div class="row-info">
+                  <label class="row-label setting-label-with-icon" for="profile-ai-key">
+                    <IconKey class="setting-icon" aria-hidden="true" />
+                    API Key
+                  </label>
+                  <span v-if="!aiSettingsInitializing" id="profile-ai-key-status" class="row-desc">
+                    {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
+                  </span>
+                </div>
+                <div class="row-control byok-control-wrap">
+                  <div class="api-key-input-wrapper">
+                    <input
+                      id="profile-ai-key"
+                      v-model="customApiKey"
+                      :type="showApiKey ? 'text' : 'password'"
+                      class="settings-input byok-input byok-key-input"
+                      :aria-describedby="aiSettingsInitializing ? undefined : 'profile-ai-key-status'"
+                      autocomplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      class="eye-toggle-btn"
+                      :title="showApiKey ? '隐藏密钥' : '显示密钥'"
+                      @click="showApiKey = !showApiKey"
+                    >
+                      <IconEyeOff v-if="showApiKey" :size="15" />
+                      <IconEye v-else :size="15" />
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <!-- Daily -->
-              <div class="usage-card">
-                <div class="usage-card-header">
-                  <div class="usage-header-left">
-                    <span class="usage-plan-name">每日额度</span>
-                    <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
-                  </div>
-                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
+              <div class="settings-row byok-field-row">
+                <div class="row-info">
+                  <label class="row-label setting-label-with-icon" for="profile-ai-model">
+                    <IconMessages class="setting-icon" aria-hidden="true" />
+                    对话模型
+                  </label>
                 </div>
-                <!-- 进度条 -->
-                <div class="usage-progress-bar-wrap">
-                  <div class="usage-progress-bar-fill" :style="{ width: dailyUsagePercent + '%' }" :class="{ 'is-low': dailyUsagePercent < 20 }"></div>
-                </div>
-                <div class="usage-grid">
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">总额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.daily.limitTokens }} token</span>
+                <div class="row-control byok-control-wrap">
+                  <div class="byok-model-detect-group">
+                    <input
+                      id="profile-ai-model"
+                      v-model="customChatModel"
+                      type="text"
+                      class="settings-input byok-input byok-model-input"
+                      placeholder="如 deepseek-chat"
+                    />
+                    <button
+                      class="action-btn byok-detect-btn"
+                      :disabled="detectingModels || aiSettingsBusy"
+                      @click="handleDetectModels"
+                    >
+                      {{ detectingModels ? '检测中...' : '自动检测' }}
+                    </button>
                   </div>
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">剩余额度</span>
-                    <span class="usage-stat-val accent">{{ aiUsage.daily.remainingTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" title="缺少实际 usage 时按保守估算">
-                    <span class="usage-stat-label">已结算（估算）</span>
-                    <span class="usage-stat-val">{{ aiUsage.daily.chargedTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" title="在途预留为估算值，不代表最终实际用量">
-                    <span class="usage-stat-label">在途预留（估算）</span>
-                    <span class="usage-stat-val">{{ aiUsage.daily.reservedTokens }} token</span>
+                  <!-- 自动检测模型快速选取托盘 -->
+                  <div v-if="detectedModels.length > 0" class="detected-models-tray">
+                    <span class="tray-label">检测到 {{ detectedModels.length }} 个候选模型：</span>
+                    <div class="tray-chips">
+                      <button
+                        v-for="m in detectedModels"
+                        :key="m"
+                        type="button"
+                        class="model-chip"
+                        :class="{ 'is-selected': customChatModel === m }"
+                        @click="selectDetectedModel(m)"
+                      >
+                        {{ m }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div class="usage-actions">
-                <button class="action-btn secondary" @click="fetchAiUsage">刷新</button>
+            <div class="byok-action-footer">
+              <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
+              <div class="byok-btn-group">
+                <button
+                  class="action-btn"
+                  :disabled="testingConnection || aiSettingsBusy"
+                  @click="handleTestConnection"
+                >
+                  {{ testingConnection ? '测试中...' : '测试连接' }}
+                </button>
+                <button
+                  class="action-btn primary"
+                  :disabled="aiSettingsBusy"
+                  @click="handleSaveAiSettings"
+                >
+                  {{ aiSettingsLoading ? '保存中...' : '保存 AI 配置' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="ai-settings-section" role="group" aria-labelledby="profile-ai-usage-title">
+            <div class="ai-subheader">
+              <h4 id="profile-ai-usage-title" class="group-title ai-subtitle setting-label-with-icon">
+                <IconGauge class="setting-icon" aria-hidden="true" />
+                AI 使用额度
+              </h4>
+              <button v-if="aiUsage && !loadingAiUsage && !aiUsageError" class="action-btn secondary" type="button" @click="fetchAiUsage">
+                刷新
+              </button>
+            </div>
+
+            <div>
+              <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
+              <div v-else-if="aiUsageError" class="usage-error">
+                <span>{{ aiUsageError }}</span>
+                <button class="action-btn secondary" @click="fetchAiUsage">重试</button>
+              </div>
+              <div v-else-if="aiUsage" class="usage-content">
+                <!-- Hourly -->
+                <div class="usage-card">
+                  <div class="usage-card-header">
+                    <div class="usage-header-left">
+                      <span class="usage-plan-name">每小时额度</span>
+                      <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
+                    </div>
+                    <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
+                  </div>
+                  <!-- 进度条 -->
+                  <div class="usage-progress-bar-wrap">
+                    <div class="usage-progress-bar-fill" :style="{ width: hourlyUsagePercent + '%' }" :class="{ 'is-low': hourlyUsagePercent < 20 }"></div>
+                  </div>
+                  <div class="usage-grid">
+                    <div class="usage-stat-box">
+                      <span class="usage-stat-label">总额度</span>
+                      <span class="usage-stat-val">{{ aiUsage.hourly.limitTokens }} token</span>
+                    </div>
+                    <div class="usage-stat-box">
+                      <span class="usage-stat-label">剩余额度</span>
+                      <span class="usage-stat-val accent">{{ aiUsage.hourly.remainingTokens }} token</span>
+                    </div>
+                    <div class="usage-stat-box" >
+                      <span class="usage-stat-label">已用额度</span>
+                      <span class="usage-stat-val">{{ aiUsage.hourly.chargedTokens }} token</span>
+                    </div>
+                    <div class="usage-stat-box" >
+                      <span class="usage-stat-label">预留额度</span>
+                      <span class="usage-stat-val">{{ aiUsage.hourly.reservedTokens }} token</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Daily -->
+                <div class="usage-card">
+                  <div class="usage-card-header">
+                    <div class="usage-header-left">
+                      <span class="usage-plan-name">每日额度</span>
+                      <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
+                    </div>
+                    <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
+                  </div>
+                  <!-- 进度条 -->
+                  <div class="usage-progress-bar-wrap">
+                    <div class="usage-progress-bar-fill" :style="{ width: dailyUsagePercent + '%' }" :class="{ 'is-low': dailyUsagePercent < 20 }"></div>
+                  </div>
+                  <div class="usage-grid">
+                    <div class="usage-stat-box">
+                      <span class="usage-stat-label">总额度</span>
+                      <span class="usage-stat-val">{{ aiUsage.daily.limitTokens }} token</span>
+                    </div>
+                    <div class="usage-stat-box">
+                      <span class="usage-stat-label">剩余额度</span>
+                      <span class="usage-stat-val accent">{{ aiUsage.daily.remainingTokens }} token</span>
+                    </div>
+                    <div class="usage-stat-box" title="缺少实际 usage 时按保守估算">
+                      <span class="usage-stat-label">已结算（估算）</span>
+                      <span class="usage-stat-val">{{ aiUsage.daily.chargedTokens }} token</span>
+                    </div>
+                    <div class="usage-stat-box" title="在途预留为估算值，不代表最终实际用量">
+                      <span class="usage-stat-label">在途预留（估算）</span>
+                      <span class="usage-stat-val">{{ aiUsage.daily.reservedTokens }} token</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2328,21 +2331,34 @@ onMounted(() => {
 }
 
 
-/* ===== 4. AI 使用额度卡片 (AI Usage Cards) ===== */
-.ai-subheader {
-  padding: 14px 22px 0;
+/* ===== 4. AI 设置与使用额度 (AI Settings) ===== */
+.ai-group-title {
+  font-size: var(--font-size-body-lg);
 }
 
-.usage-subheader {
+.ai-overview-row {
+  border-bottom: 0;
+}
+
+.ai-settings-section {
+  padding: 18px 22px;
   border-top: 0.5px solid var(--border-subtle);
 }
 
-.ai-subtitle {
-  font-size: var(--font-size-body-sm);
+.ai-subheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.usage-group-body {
-  padding: 12px 22px 18px;
+.ai-subtitle {
+  font-size: var(--font-size-body);
+}
+
+.ai-settings-section .byok-field-row {
+  padding: 10px 0;
 }
 
 .usage-loading {
@@ -2434,17 +2450,7 @@ onMounted(() => {
   color: #637748;
 }
 
-.usage-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-
 /* ===== 5. AI BYOK 配置区 (BYOK Settings) ===== */
-.byok-subheader {
-  padding-bottom: 14px;
-}
-
 .byok-control-wrap {
   display: flex;
   flex-direction: column;
@@ -2524,9 +2530,10 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 22px;
-  border-top: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  gap: 16px;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  column-gap: 16px;
+  padding-top: 14px;
 }
 .byok-tip {
   font-size: 12px;
@@ -2536,6 +2543,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-inline-start: auto;
 }
 
 
@@ -2739,10 +2747,6 @@ html.dark .status-pill-badge {
 
 html.dark .group-header {
   background: rgba(0, 0, 0, 0.12);
-  border-color: rgba(163, 177, 155, 0.14);
-}
-
-html.dark .byok-action-footer {
   border-color: rgba(163, 177, 155, 0.14);
 }
 
