@@ -2611,6 +2611,9 @@ onMounted(() => {
 }
 
 .danger-title {
+  color: var(--color-danger);
+}
+
 .danger-row {
   display: flex;
   align-items: center;
