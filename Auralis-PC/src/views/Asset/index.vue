@@ -3,8 +3,8 @@
     <!-- LEFT: Asset Tree (Nested Folder Explorer + Upload Inline) -->
     <aside class="studio-left">
       <div class="panel-header">
-        <span class="panel-title">资料库</span>
-        <button class="icon-btn" title="导入文件" @click="showRegisterModal = true">
+        <span class="panel-title">{{ t({ 'zh-CN': '资料库', en: 'Library', ja: '資料ライブラリ' }) }}</span>
+        <button class="icon-btn" :title="t({ 'zh-CN': '导入文件', en: 'Import file', ja: 'ファイルを取り込む' })" @click="showRegisterModal = true">
           <IconPlus :size="16" :stroke-width="2" />
         </button>
       </div>
@@ -13,15 +13,15 @@
       <div class="tree-search">
         <div class="search-input-wrapper">
           <IconSearch :size="13" :stroke-width="2" class="search-icon" />
-          <input v-model="searchQ" class="search-input" placeholder="搜索文件、知识或任务..." />
-          <button v-if="searchQ" class="search-clear-btn" @click="searchQ = ''" title="清空搜索">✕</button>
+          <input v-model="searchQ" class="search-input" :placeholder="t({ 'zh-CN': '搜索文件、知识或任务...', en: 'Search files, knowledge, or tasks…', ja: 'ファイル・知識・タスクを検索…' })" />
+          <button v-if="searchQ" class="search-clear-btn" @click="searchQ = ''" :title="t({ 'zh-CN': '清空搜索', en: 'Clear search', ja: '検索をクリア' })">✕</button>
         </div>
       </div>
 
       <!-- Upload Progress -->
       <div v-if="isUploading" class="upload-progress-wrapper">
         <div class="upload-progress-header">
-          <span class="upload-progress-title" aria-live="polite">{{ uploadStatusText || '正在导入本地文件...' }}</span>
+          <span class="upload-progress-title" aria-live="polite">{{ uploadStatusText || t({ 'zh-CN': '正在导入本地文件...', en: 'Importing local files…', ja: 'ローカルファイルを取り込み中…' }) }}</span>
           <span class="upload-progress-percent">{{ uploadProgress }}%</span>
         </div>
         <div class="upload-progress-track">
@@ -36,11 +36,11 @@
       <!-- Tree Hierarchy -->
       <div class="tree-body">
         <div v-if="isLoadingAssets" class="tree-loading">
-          <span class="loading-spinner"></span> 加载中...
+          <span class="loading-spinner"></span> {{ t({ 'zh-CN': '加载中...', en: 'Loading…', ja: '読み込み中…' }) }}
         </div>
         <div v-else-if="filteredGroups.length === 0" class="tree-empty">
           <IconArchive :size="24" :stroke-width="1.6" class="empty-tree-icon" />
-          <p>暂无数据</p>
+          <p>{{ t({ 'zh-CN': '暂无数据', en: 'No items yet', ja: '項目がありません' }) }}</p>
         </div>
         <template v-else>
           <!-- Level 1: Groups (e.g. 全部, 学科A) -->
@@ -49,7 +49,7 @@
               <span class="group-arrow">{{ group.open ? '▾' : '▸' }}</span>
               <component :is="group.lucideIcon" :size="13" class="group-icon" />
               <span class="group-name">{{ group.name }}</span>
-              <button v-if="group.id !== 'all'" class="header-action-btn" title="上传文件" @click.stop="openUploadForGroup(group.id)">
+              <button v-if="group.id !== 'all'" class="header-action-btn" :title="t({ 'zh-CN': '上传文件', en: 'Upload file', ja: 'ファイルをアップロード' })" @click.stop="openUploadForGroup(group.id)">
                 <IconPlus :size="12" :stroke-width="2" />
               </button>
             </div>
@@ -90,12 +90,12 @@
                           <div class="item-info">
                             <span class="item-name" :class="{ 'is-done': subitem.type === 'task' && subitem.done }">{{ subitem.name }}</span>
                             <span v-if="subitem.type === 'file'" class="item-meta">{{ subitem.time }}</span>
-                            <span v-else-if="subitem.type === 'task'" class="item-meta">截止: {{ subitem.due || '未设置' }}</span>
+                            <span v-else-if="subitem.type === 'task'" class="item-meta">{{ t({ 'zh-CN': '截止：{date}', en: 'Due: {date}', ja: '期限：{date}' }, { date: subitem.due || t({ 'zh-CN': unsetDueLabel, en: 'Not set', ja: '未設定' }) }) }}</span>
                           </div>
                           <span v-if="subitem.type === 'file' && subitem.status !== 'success'" class="status-dot" :class="subitem.status" :title="subitem.statusText"></span>
                           <span v-if="subitem.type === 'task' && subitem.done" class="task-done-icon"><IconCheck :size="12" :stroke-width="2" /></span>
                         </div>
-                        <div v-if="!item.children?.length" class="tree-empty-folder tree-subitem-empty">无内容</div>
+                        <div v-if="!item.children?.length" class="tree-empty-folder tree-subitem-empty">{{ t({ 'zh-CN': '无内容', en: 'Empty', ja: '項目がありません' }) }}</div>
                       </div>
                     </div>
                     <div
@@ -108,13 +108,13 @@
                       <div class="item-info">
                         <span class="item-name" :class="{ 'is-done': item.type === 'task' && item.done }">{{ item.name }}</span>
                         <span v-if="item.type === 'file'" class="item-meta">{{ item.time }}</span>
-                        <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due || '未设置' }}</span>
+                        <span v-else-if="item.type === 'task'" class="item-meta">{{ t({ 'zh-CN': '截止：{date}', en: 'Due: {date}', ja: '期限：{date}' }, { date: item.due || t({ 'zh-CN': unsetDueLabel, en: 'Not set', ja: '未設定' }) }) }}</span>
                       </div>
                       <span v-if="item.type === 'file' && item.status !== 'success'" class="status-dot" :class="item.status" :title="item.statusText"></span>
                       <span v-if="item.type === 'task' && item.done" class="task-done-icon"><IconCheck :size="12" :stroke-width="2" /></span>
                     </div>
                   </template>
-                  <div v-if="!folder.children?.length" class="tree-empty-folder">无内容</div>
+                  <div v-if="!folder.children?.length" class="tree-empty-folder">{{ t({ 'zh-CN': '无内容', en: 'Empty', ja: '項目がありません' }) }}</div>
                 </div>
               </div>
             </div>
@@ -135,8 +135,8 @@
           <IconCloudUpload :size="18" :stroke-width="1.8" class="drop-icon" />
         </div>
         <div class="drop-text-group">
-          <span class="drop-text-main">拖拽文件或点击上传</span>
-          <span class="drop-text-sub">支持 PDF, Markdown, 音频, 图片</span>
+          <span class="drop-text-main">{{ t({ 'zh-CN': '拖拽文件或点击上传', en: 'Drop files here or click to upload', ja: 'ファイルをドロップするか、クリックしてアップロード' }) }}</span>
+          <span class="drop-text-sub">{{ t({ 'zh-CN': '支持 PDF、DOC、DOCX、PPT、PPTX 文件', en: 'Supports PDF, DOC, DOCX, PPT, and PPTX', ja: 'PDF、DOC、DOCX、PPT、PPTX に対応' }) }}</span>
         </div>
       </div>
     </aside>
@@ -150,12 +150,12 @@
               <IconLayoutDashboard :size="36" :stroke-width="1.6" class="empty-icon" />
             </div>
           </div>
-          <h2 class="empty-title">资料阅览区</h2>
-          <p class="empty-desc">在左侧选择文件、知识点或任务进行查看与编辑</p>
+          <h2 class="empty-title">{{ t({ 'zh-CN': '资料阅览区', en: 'Library viewer', ja: '資料ビューア' }) }}</h2>
+          <p class="empty-desc">{{ t({ 'zh-CN': '在左侧选择文件、知识点或任务进行查看与编辑', en: 'Select a file, knowledge block, or task to view or edit it', ja: '左側からファイル、知識ブロック、タスクを選んで表示・編集' }) }}</p>
           <div class="empty-actions">
             <button class="btn-primary sm-btn empty-upload-btn" @click="showRegisterModal = true">
               <IconPlus :size="14" :stroke-width="2" />
-              <span>导入新文件</span>
+              <span>{{ t({ 'zh-CN': '导入新文件', en: 'Import a file', ja: 'ファイルを取り込む' }) }}</span>
             </button>
           </div>
         </div>
@@ -167,7 +167,7 @@
             <component :is="selected.lucideIcon" :size="24" class="detail-icon" />
             <div class="detail-main-info">
               <h1 class="detail-name">{{ selected.name }}</h1>
-              <p class="detail-path">上传于 {{ selected.time }} · {{ selected.pages }} 页 · {{ selected.size }}</p>
+              <p class="detail-path">{{ t({ 'zh-CN': '上传于 {date} · 页数 {count} · {size}', en: 'Uploaded {date} · Pages: {count} · {size}', ja: 'アップロード日 {date} · {count} ページ · {size}' }, { date: selected.time || '', count: selected.pages || 0, size: selected.size || '' }) }}</p>
             </div>
             <span class="status-badge" :class="selected.status">{{ selected.statusText }}</span>
           </div>
@@ -179,16 +179,16 @@
                 <IconNotes :size="18" :stroke-width="1.8" />
               </div>
               <div class="header-breadcrumb">
-                <span class="crumb-parent">知识库</span>
+                <span class="crumb-parent">{{ t({ 'zh-CN': '知识库', en: 'Knowledge base', ja: '知識ベース' }) }}</span>
                 <span class="crumb-sep">/</span>
                 <span class="crumb-subject">{{ getSubjectName(selected.groupId) }}</span>
               </div>
             </div>
             <div class="editor-bar-right">
-              <span class="editor-stats-hint">{{ (selected.content || selected.preview || '').length }} 字符</span>
+              <span class="editor-stats-hint">{{ t({ 'zh-CN': '字符数 {count}', en: 'Characters: {count}', ja: '{count}文字' }, { count: (selected.content || selected.preview || '').length }) }}</span>
               <button class="btn-primary sm-btn header-save-btn" @click="saveBlockEdit(selected)">
                 <IconCheck :size="14" :stroke-width="2.2" />
-                <span>保存知识块</span>
+                <span>{{ t({ 'zh-CN': '保存知识块', en: 'Save knowledge block', ja: '知識ブロックを保存' }) }}</span>
               </button>
             </div>
           </div>
@@ -200,7 +200,7 @@
                 <IconListCheck :size="18" :stroke-width="1.8" />
               </div>
               <div class="header-breadcrumb">
-                <span class="crumb-parent">任务库</span>
+                <span class="crumb-parent">{{ t({ 'zh-CN': '任务库', en: 'Task library', ja: 'タスク一覧' }) }}</span>
                 <span class="crumb-sep">/</span>
                 <span class="crumb-subject">{{ getSubjectName(selected.groupId) }}</span>
               </div>
@@ -209,26 +209,26 @@
                 :class="{ 'is-done': selected.done }"
                   :disabled="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow)"
                 @click="toggleTaskDone(selected)"
-                  :title="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : selected.done ? '点击标记为待处理' : '点击标记为已完成'"
+                  :title="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow) ? t({ 'zh-CN': '任务时段已结束，完成状态不可取消', en: 'This task\'s scheduled time has ended and completion is locked', ja: '予定時間が終了しているため完了を取り消せません' }) : selected.done ? t({ 'zh-CN': '点击标记为待处理', en: 'Mark as pending', ja: '未完了に戻す' }) : t({ 'zh-CN': '点击标记为已完成', en: 'Mark as completed', ja: '完了にする' })"
               >
                 <component :is="selected.done ? IconCircleCheck : IconCircleDot" :size="14" :stroke-width="2" />
-                <span>{{ selected.done ? '已完成' : '待处理' }}</span>
+                <span>{{ selected.done ? t({ 'zh-CN': '已完成', en: 'Completed', ja: '完了' }) : t({ 'zh-CN': '待处理', en: 'Pending', ja: '未完了' }) }}</span>
               </button>
             </div>
             <div class="editor-bar-right">
-              <span v-if="selected.due" class="header-meta-pill">截止: {{ selected.due }}</span>
-              <span class="header-meta-pill">预计: {{ formatDuration(selected.durationMinutes || 30) }}</span>
+              <span v-if="selected.due" class="header-meta-pill">{{ t({ 'zh-CN': '截止：{date}', en: 'Due: {date}', ja: '期限：{date}' }, { date: selected.due }) }}</span>
+              <span class="header-meta-pill">{{ t({ 'zh-CN': '预计：{duration}', en: 'Est. {duration}', ja: '見積：{duration}' }, { duration: formatDuration(selected.durationMinutes || 30) }) }}</span>
               <button type="button" class="btn-secondary sm-btn" @click="deleteTask(selected)">
-                删除任务
+                {{ t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' }) }}
               </button>
               <button
                 class="btn-primary sm-btn header-save-btn"
                 :disabled="selected.done"
-                :title="selected.done ? '已完成任务不可修改属性' : '保存任务'"
+                :title="selected.done ? t({ 'zh-CN': '已完成任务不可修改属性', en: 'Completed tasks cannot be edited', ja: '完了したタスクは編集できません' }) : t({ 'zh-CN': '保存任务', en: 'Save task', ja: 'タスクを保存' })"
                 @click="saveTaskEdit(selected)"
               >
                 <IconCheck :size="14" :stroke-width="2.2" />
-                <span>保存任务</span>
+                <span>{{ t({ 'zh-CN': '保存任务', en: 'Save task', ja: 'タスクを保存' }) }}</span>
               </button>
             </div>
           </div>
@@ -249,7 +249,7 @@
                   <span class="paper-subject-pill">{{ getSubjectName(selected.groupId) }}</span>
                 </div>
                 <div class="paper-meta-right">
-                  <span class="paper-hint-text">Markdown 实时笔记</span>
+                  <span class="paper-hint-text">{{ t({ 'zh-CN': 'Markdown 实时笔记', en: 'Live Markdown notes', ja: 'Markdown ノート' }) }}</span>
                 </div>
               </div>
 
@@ -258,7 +258,7 @@
                 <input
                   v-model="selected.name"
                   class="paper-title-input"
-                  placeholder="输入知识块标题..."
+                  :placeholder="t({ 'zh-CN': '输入知识块标题...', en: 'Enter a knowledge block title…', ja: '知識ブロックのタイトルを入力…' })"
                 />
               </div>
 
@@ -269,7 +269,7 @@
               <div class="paper-editor-section">
                 <div class="editor-micro-toolbar">
                   <div class="micro-toolbar-left">
-                    <span class="micro-tip">正文内容 (支持 Markdown 与 LaTeX 公式)</span>
+                    <span class="micro-tip">{{ t({ 'zh-CN': '正文内容 (支持 Markdown 与 LaTeX 公式)', en: 'Content (Markdown and LaTeX supported)', ja: '本文（Markdown・LaTeX に対応）' }) }}</span>
                     <div class="asset-preview-toggle-group">
                       <button
                         type="button"
@@ -277,7 +277,7 @@
                         :class="{ 'is-active': !isBlockPreviewMode }"
                         @click="isBlockPreviewMode = false"
                       >
-                        编写
+                        {{ t({ 'zh-CN': '编写', en: 'Write', ja: '編集' }) }}
                       </button>
                       <button
                         type="button"
@@ -285,11 +285,11 @@
                         :class="{ 'is-active': isBlockPreviewMode }"
                         @click="isBlockPreviewMode = true"
                       >
-                        实时预览
+                        {{ t({ 'zh-CN': '实时预览', en: 'Live preview', ja: 'プレビュー' }) }}
                       </button>
                     </div>
                   </div>
-                  <span class="micro-count">{{ (selected.content || selected.preview || '').length }} 字</span>
+                  <span class="micro-count">{{ t({ 'zh-CN': '{count} 字', en: 'Characters: {count}', ja: '{count}文字' }, { count: (selected.content || selected.preview || '').length }) }}</span>
                 </div>
                 <template v-if="isBlockPreviewMode">
                   <div
@@ -298,14 +298,14 @@
                     v-html="renderMarkdown(selected.content || selected.preview || '')"
                   ></div>
                   <div v-else class="paper-preview-card modal-markdown-body empty-preview-tip">
-                    暂无内容可供预览，在编写模式下录入内容
+                    {{ t({ 'zh-CN': '暂无内容可供预览，在编写模式下录入内容', en: 'Nothing to preview. Enter content in Write mode.', ja: 'プレビューする内容がありません。編集モードで入力してください。' }) }}
                   </div>
                 </template>
                 <textarea
                   v-else
                   v-model="selected.content"
                   class="paper-textarea"
-                  placeholder="在此编写知识块的核心内容、知识点脉络或关键定理（支持 Markdown 语法与 LaTeX 数学公式）..."
+                  :placeholder="t({ 'zh-CN': '在此编写知识块的核心内容、知识点脉络或关键定理（支持 Markdown 语法与 LaTeX 数学公式）...', en: 'Write notes, key ideas, or theorems here. Markdown and LaTeX are supported.', ja: '要点や定理を入力してください。Markdown と LaTeX に対応しています。' })"
                   rows="18"
                 ></textarea>
               </div>
@@ -324,18 +324,18 @@
                     :class="{ 'is-done': selected.done }"
                     :disabled="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow)"
                     @click="toggleTaskDone(selected)"
-                    :title="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : selected.done ? '点击标记为待处理' : '点击标记为已完成'"
+                    :title="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow) ? t({ 'zh-CN': '任务时段已结束，完成状态不可取消', en: 'This task\'s scheduled time has ended and completion is locked', ja: '予定時間が終了しているため完了を取り消せません' }) : selected.done ? t({ 'zh-CN': '点击标记为待处理', en: 'Mark as pending', ja: '未完了に戻す' }) : t({ 'zh-CN': '点击标记为已完成', en: 'Mark as completed', ja: '完了にする' })"
                   >
                     <component :is="selected.done ? IconCircleCheck : IconCircleDot" :size="13" :stroke-width="2" />
-                    <span>{{ selected.done ? '已完成' : '待处理' }}</span>
+                    <span>{{ selected.done ? t({ 'zh-CN': '已完成', en: 'Completed', ja: '完了' }) : t({ 'zh-CN': '待处理', en: 'Pending', ja: '未完了' }) }}</span>
                   </button>
                 </div>
                 <div class="paper-meta-right">
                   <span v-if="selected.originalData?.scheduledAt" class="scheduled-indicator">
-                    <IconCalendar :size="12" /> 已安排在日程
+                    <IconCalendar :size="12" /> {{ t({ 'zh-CN': '已安排在日程', en: 'Scheduled', ja: '予定済み' }) }}
                   </span>
                   <span v-else class="unscheduled-indicator">
-                    未排期
+                    {{ t({ 'zh-CN': '未排期', en: 'Unscheduled', ja: '未予定' }) }}
                   </span>
                 </div>
               </div>
@@ -347,8 +347,8 @@
                   class="paper-title-input"
                   :class="{ 'is-done': selected.done }"
                   :disabled="selected.done"
-                  :title="selected.done ? '已完成任务不可修改属性' : ''"
-                  placeholder="输入任务名称或行动事项..."
+                  :title="selected.done ? t({ 'zh-CN': '已完成任务不可修改属性', en: 'Completed tasks cannot be edited', ja: '完了したタスクは編集できません' }) : ''"
+                  :placeholder="t({ 'zh-CN': '输入任务名称或行动事项...', en: 'Enter a task name or action…', ja: 'タスク名や作業内容を入力…' })"
                 />
               </div>
 
@@ -359,14 +359,14 @@
                   <div class="property-item">
                     <div class="property-label">
                       <IconCalendar :size="14" :stroke-width="1.8" />
-                      <span>截止日期</span>
+                      <span>{{ t({ 'zh-CN': '截止日期', en: 'Due date', ja: '期限' }) }}</span>
                     </div>
                     <div class="property-control">
                       <el-date-picker
                         v-model="selected.due"
                         :disabled="selected.done"
                         type="date"
-                        placeholder="设置截止日期"
+                        :placeholder="t({ 'zh-CN': '设置截止日期', en: 'Set a due date', ja: '期限を設定' })"
                         format="YYYY-MM-DD"
                         value-format="YYYY-MM-DD"
                         class="zen-date-picker"
@@ -380,17 +380,17 @@
                   <div class="property-item">
                     <div class="property-label">
                       <IconClock :size="14" :stroke-width="1.8" />
-                      <span>预计用时</span>
+                      <span>{{ t({ 'zh-CN': '预计用时', en: 'Estimated time', ja: '見積時間' }) }}</span>
                     </div>
                     <div class="property-control">
                       <el-select
                         v-model="selected.durationMinutes"
                         :disabled="selected.done"
-                        placeholder="选择预计用时"
+                        :placeholder="t({ 'zh-CN': '选择预计用时', en: 'Choose an estimated duration', ja: '見積時間を選択' })"
                         class="zen-select"
                         popper-class="zen-select-popper"
                         style="width: 220px;"
-                        aria-label="预计用时"
+                        :aria-label="t({ 'zh-CN': '预计用时', en: 'Estimated time', ja: '見積時間' })"
                       >
                         <el-option
                           v-for="minutes in durationOptions"
@@ -406,13 +406,13 @@
                   <div class="property-item">
                     <div class="property-label">
                       <IconFolder :size="14" :stroke-width="1.8" />
-                      <span>所属学科</span>
+                      <span>{{ t({ 'zh-CN': '所属学科', en: 'Subject', ja: '科目' }) }}</span>
                     </div>
                     <div class="property-control">
                       <el-select
                         v-model="selected.groupId"
                         :disabled="selected.done"
-                        placeholder="选择所属学科"
+                        :placeholder="t({ 'zh-CN': '选择所属学科', en: 'Choose a subject', ja: '科目を選択' })"
                         class="zen-select"
                         popper-class="zen-select-popper"
                         style="width: 220px;"
@@ -436,13 +436,13 @@
               <div class="paper-notes-section">
                 <div class="section-label-row">
                   <IconFileText :size="14" :stroke-width="1.8" />
-                  <span>任务备注与详细说明</span>
+                  <span>{{ t({ 'zh-CN': '任务备注与详细说明', en: 'Task notes and details', ja: 'タスクのメモと詳細' }) }}</span>
                 </div>
                 <textarea
                   v-model="selected.preview"
                   :disabled="selected.done"
                   class="paper-textarea task-notes-textarea"
-                  :placeholder="selected.done ? '已完成任务不可修改备注' : '记录该任务的详细要求、执行要点或参考资料...'"
+                  :placeholder="selected.done ? t({ 'zh-CN': '已完成任务不可修改备注', en: 'Notes on completed tasks cannot be edited', ja: '完了したタスクのメモは編集できません' }) : t({ 'zh-CN': '记录该任务的详细要求、执行要点或参考资料...', en: 'Add requirements, steps, or reference materials…', ja: '要件、手順、参考資料を入力…' })"
                   rows="10"
                 ></textarea>
               </div>
@@ -460,15 +460,15 @@
           <div class="graph-empty-halo">
             <IconNetwork :size="36" :stroke-width="1.6" class="empty-graph-icon" />
           </div>
-          <p class="empty-graph-title">关系星图</p>
-          <p class="empty-graph-desc">选择左侧项目查看知识关联图谱</p>
+          <p class="empty-graph-title">{{ t({ 'zh-CN': '关系星图', en: 'Relationship graph', ja: '関連グラフ' }) }}</p>
+          <p class="empty-graph-desc">{{ t({ 'zh-CN': '选择左侧项目查看知识关联图谱', en: 'Select an item on the left to explore its connections', ja: '左側の項目を選ぶと関連が表示されます' }) }}</p>
         </div>
         <div v-else :key="selectedGroupForGraph ? selectedGroupForGraph.id : 'graph'" class="graph-content-wrapper">
           <div class="panel-header">
-            <span class="panel-title">关系星图</span>
+            <span class="panel-title">{{ t({ 'zh-CN': '关系星图', en: 'Relationship graph', ja: '関連グラフ' }) }}</span>
             <div v-if="selectedGroupForGraph" class="graph-header-meta">
               <span class="graph-subject-pill">{{ selectedGroupForGraph.name }}</span>
-              <span class="graph-count-pill">{{ graphBlocks.length + graphSources.length }} 星点</span>
+              <span class="graph-count-pill">{{ t({ 'zh-CN': '节点 {count} 个', en: 'Nodes: {count}', ja: 'ノード {count}件' }, { count: graphBlocks.length + graphSources.length }) }}</span>
             </div>
           </div>
           <div class="context-body">
@@ -504,6 +504,7 @@
 </template>
 
 <script setup lang="ts">
+import { locale, t } from '@/i18n'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { LocalConflictError } from '@/services/localRepository'
 import { useRoute } from 'vue-router'
@@ -616,36 +617,36 @@ const route = useRoute()
 function getFileStatus(file: SourceFileModel): { status: 'success' | 'processing' | 'failed'; statusText: string } {
   const job = docProcessingStore.jobs.find(j => j.sourceId === file.id)
   if (job) {
-    if (job.phase === 'READY') return { status: 'success', statusText: '已就绪' }
-    if (job.phase === 'FAILED_LOCAL' || job.phase === 'FAILED_SERVER') return { status: 'failed', statusText: '解析失败' }
-    if (job.phase === 'OCR_RUNNING') return { status: 'processing', statusText: 'OCR 识别中' }
-    if (job.phase === 'EXTRACTING') return { status: 'processing', statusText: '提取文本中' }
-    if (job.phase === 'DOWNLOADING_SOURCE') return { status: 'processing', statusText: '下载文件中' }
-    if (job.phase === 'QUEUED') return { status: 'processing', statusText: '排队中' }
-    if (job.phase === 'UPLOADING') return { status: 'processing', statusText: '上传中' }
-    if (job.phase === 'SERVER_VALIDATING') return { status: 'processing', statusText: '服务端校验' }
-    if (job.phase === 'SERVER_INDEXING') return { status: 'processing', statusText: '构建索引' }
-    if (job.phase === 'PAUSED_NETWORK') return { status: 'processing', statusText: '等待网络' }
-    return { status: 'processing', statusText: '处理中' }
+    if (job.phase === 'READY') return { status: 'success', statusText: t({ 'zh-CN': '已就绪', en: 'Ready', ja: '準備完了' }) }
+    if (job.phase === 'FAILED_LOCAL' || job.phase === 'FAILED_SERVER') return { status: 'failed', statusText: t({ 'zh-CN': '解析失败', en: 'Parsing failed', ja: '解析に失敗しました' }) }
+    if (job.phase === 'OCR_RUNNING') return { status: 'processing', statusText: t({ 'zh-CN': 'OCR 识别中', en: 'Running OCR', ja: 'OCR 処理中' }) }
+    if (job.phase === 'EXTRACTING') return { status: 'processing', statusText: t({ 'zh-CN': '提取文本中', en: 'Extracting text', ja: 'テキストを抽出中' }) }
+    if (job.phase === 'DOWNLOADING_SOURCE') return { status: 'processing', statusText: t({ 'zh-CN': '下载文件中', en: 'Downloading file', ja: 'ファイルをダウンロード中' }) }
+    if (job.phase === 'QUEUED') return { status: 'processing', statusText: t({ 'zh-CN': '排队中', en: 'Queued', ja: '待機中' }) }
+    if (job.phase === 'UPLOADING') return { status: 'processing', statusText: t({ 'zh-CN': '上传中', en: 'Uploading', ja: 'アップロード中' }) }
+    if (job.phase === 'SERVER_VALIDATING') return { status: 'processing', statusText: t({ 'zh-CN': '服务端校验', en: 'Server validation', ja: 'サーバーで検証中' }) }
+    if (job.phase === 'SERVER_INDEXING') return { status: 'processing', statusText: t({ 'zh-CN': '构建索引', en: 'Building index', ja: 'インデックスを作成中' }) }
+    if (job.phase === 'PAUSED_NETWORK') return { status: 'processing', statusText: t({ 'zh-CN': '等待网络', en: 'Waiting for connection', ja: 'ネットワーク接続を待機中' }) }
+    return { status: 'processing', statusText: t({ 'zh-CN': '处理中', en: 'Processing', ja: '処理中' }) }
   }
 
   switch (file.ingestionStatus) {
     case 'READY':
-      return { status: 'success', statusText: '已就绪' }
+      return { status: 'success', statusText: t({ 'zh-CN': '已就绪', en: 'Ready', ja: '準備完了' }) }
     case 'FAILED':
-      return { status: 'failed', statusText: '解析失败' }
+      return { status: 'failed', statusText: t({ 'zh-CN': '解析失败', en: 'Parsing failed', ja: '解析に失敗しました' }) }
     case 'AWAITING_CLIENT':
-      return { status: 'processing', statusText: '待本机处理' }
+      return { status: 'processing', statusText: t({ 'zh-CN': '待本机处理', en: 'Waiting for local processing', ja: '端末での処理待ち' }) }
     case 'PARSING':
-      return { status: 'processing', statusText: '正在解析' }
+      return { status: 'processing', statusText: t({ 'zh-CN': '正在解析', en: 'Parsing', ja: '解析中' }) }
     case 'INDEXING':
-      return { status: 'processing', statusText: '构建索引' }
+      return { status: 'processing', statusText: t({ 'zh-CN': '构建索引', en: 'Building index', ja: 'インデックスを作成中' }) }
     case 'VALIDATING':
-      return { status: 'processing', statusText: '校验中' }
+      return { status: 'processing', statusText: t({ 'zh-CN': '校验中', en: 'Validating', ja: '検証中' }) }
     case 'PENDING':
-      return { status: 'processing', statusText: '排队中' }
+      return { status: 'processing', statusText: t({ 'zh-CN': '排队中', en: 'Queued', ja: '待機中' }) }
     default:
-      return { status: 'success', statusText: '已就绪' }
+      return { status: 'success', statusText: t({ 'zh-CN': '已就绪', en: 'Ready', ja: '準備完了' }) }
   }
 }
 
@@ -661,6 +662,7 @@ function getIconForSource(source: string): any {
   return IconFile
 }
 
+const unsetDueLabel = computed(() => t({ 'zh-CN': '未设置', en: 'Not set', ja: '未設定' }))
 const durationOptions = Array.from({ length: 16 }, (_, index) => (index + 1) * 30)
 
 function normalizeDuration(value: unknown): number {
@@ -674,8 +676,9 @@ function formatDuration(minutes: number): string {
   const safeMinutes = normalizeDuration(minutes)
   const hours = Math.floor(safeMinutes / 60)
   const remainder = safeMinutes % 60
-  if (hours === 0) return `${remainder}分钟`
-  return `${hours}小时${remainder ? ` ${remainder}分钟` : ''}`
+  if (hours === 0) return t({ 'zh-CN': '{minutes} 分钟', en: '{minutes} min', ja: '{minutes}分' }, { minutes: remainder })
+  if (remainder === 0) return t({ 'zh-CN': '{hours} 小时', en: '{hours} hr', ja: '{hours}時間' }, { hours })
+  return t({ 'zh-CN': '{hours} 小时 {remainder} 分钟', en: '{hours} hr {remainder} min', ja: '{hours}時間{remainder}分' }, { hours, remainder })
 }
 
 function formatDateInput(value?: string): string {
@@ -699,7 +702,7 @@ function taskTreeNode(task: any, groupId: string): TreeNode {
     id: `t-${task.id}`,
     type: 'task',
     groupId: task.subjectId || groupId,
-    name: task.title || task.name || '未命名任务',
+    name: task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }),
     icon: IconListCheck,
     lucideIcon: IconListCheck,
     due: formatDateInput(task.dueAt),
@@ -726,9 +729,9 @@ function taskGroupFolder(id: string, name: string, tasks: any[], groupId: string
 function taskGroupFolders(tasks: any[], groupId: string, openUnassigned = false): TreeNode[] {
   const groups: AssetTaskGroups = getTasksForAssetGroups(tasks)
   return [
-    taskGroupFolder(`${groupId}-tasks-unassigned`, '未排期', groups.unassigned, groupId, openUnassigned, IconInbox),
-    taskGroupFolder(`${groupId}-tasks-pending`, '未完成', groups.pending, groupId, false, IconCircleDot),
-    taskGroupFolder(`${groupId}-tasks-completed`, '已完成', groups.completed, groupId, false, IconCircleCheck),
+    taskGroupFolder(`${groupId}-tasks-unassigned`, t({ 'zh-CN': '未排期', en: 'Unscheduled', ja: '未予定' }), groups.unassigned, groupId, openUnassigned, IconInbox),
+    taskGroupFolder(`${groupId}-tasks-pending`, t({ 'zh-CN': '未完成', en: 'Incomplete', ja: '未完了' }), groups.pending, groupId, false, IconCircleDot),
+    taskGroupFolder(`${groupId}-tasks-completed`, t({ 'zh-CN': '已完成', en: 'Completed', ja: '完了' }), groups.completed, groupId, false, IconCircleCheck),
   ]
 }
 
@@ -757,12 +760,12 @@ function rebuildAssetTree(): void {
     // --- 1. 汇总 (All) Group ---
     const allFilesRaw = sourceStore.sources
     
-    const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', icon: IconFiles, lucideIcon: IconFiles, open: false, children: [] }
-    const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', icon: IconNotes, lucideIcon: IconNotes, open: false, children: [] }
+    const allFilesFolder: TreeNode = { id: 'all-files', name: t({ 'zh-CN': '全部文件', en: 'All files', ja: 'すべてのファイル' }), type: 'folder', icon: IconFiles, lucideIcon: IconFiles, open: false, children: [] }
+    const allBlocksFolder: TreeNode = { id: 'all-blocks', name: t({ 'zh-CN': '全部知识块', en: 'All knowledge blocks', ja: 'すべての知識ブロック' }), type: 'folder', icon: IconNotes, lucideIcon: IconNotes, open: false, children: [] }
     const shouldFocusUnassigned = route.query.focus === 'unassigned-tasks'
     const allTasksFolder: TreeNode = {
       id: 'all-tasks',
-      name: '全部任务',
+      name: t({ 'zh-CN': '全部任务', en: 'All tasks', ja: 'すべてのタスク' }),
       type: 'folder',
       icon: IconChecklist,
       lucideIcon: IconChecklist,
@@ -777,7 +780,7 @@ function rebuildAssetTree(): void {
       allFilesFolder.children!.push({
         id: `f-${file.id}`, sourceId: file.id, type: 'file', groupId: 'all', name: file.name,
         assetId: file.assetId, fileType: file.fileType, icon: srcIcon, lucideIcon: srcIcon,
-        status, statusText, time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
+        status, statusText, time: new Date(file.createdAt || Date.now()).toLocaleDateString(locale.value),
         size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, originalData: file
       })
     })
@@ -785,13 +788,13 @@ function rebuildAssetTree(): void {
     // Map all blocks
     blockStore.recentBlocks.forEach(b => {
       allBlocksFolder.children!.push({
-        id: `b-${b.id}`, type: 'block', groupId: b.subjectId || 'all', name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
+        id: `b-${b.id}`, type: 'block', groupId: b.subjectId || 'all', name: b.title || t({ 'zh-CN': '无标题块', en: 'Untitled block', ja: '無題のブロック' }), icon: IconNote, lucideIcon: IconNote,
         content: b.content || '', originalData: b
       })
     })
 
     newRoots.push({
-      id: 'all', name: '汇总分类', type: 'group', icon: IconArchive, lucideIcon: IconArchive, open: shouldFocusUnassigned,
+      id: 'all', name: t({ 'zh-CN': '汇总分类', en: 'All items', ja: 'すべての項目' }), type: 'group', icon: IconArchive, lucideIcon: IconArchive, open: shouldFocusUnassigned,
       children: [allFilesFolder, allBlocksFolder, allTasksFolder]
     })
 
@@ -801,9 +804,9 @@ function rebuildAssetTree(): void {
       const blocks = blockStore.recentBlocks.filter(b => b.subjectId === subj.id)
       const tasks = taskStore.allTasks.filter(t => t.subjectId === subj.id)
 
-      const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', icon: IconFiles, lucideIcon: IconFiles, open: false, children: [] }
-      const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: '知识块', type: 'folder', icon: IconNotes, lucideIcon: IconNotes, open: false, children: [] }
-      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: '任务', type: 'folder', icon: IconChecklist, lucideIcon: IconChecklist, open: false, children: taskGroupFolders(tasks, subj.id) }
+      const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: t({ 'zh-CN': '文件', en: 'Files', ja: 'ファイル' }), type: 'folder', icon: IconFiles, lucideIcon: IconFiles, open: false, children: [] }
+      const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: t({ 'zh-CN': '知识块', en: 'Knowledge blocks', ja: '知識ブロック' }), type: 'folder', icon: IconNotes, lucideIcon: IconNotes, open: false, children: [] }
+      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: t({ 'zh-CN': '任务', en: 'Tasks', ja: 'タスク' }), type: 'folder', icon: IconChecklist, lucideIcon: IconChecklist, open: false, children: taskGroupFolders(tasks, subj.id) }
 
       files.forEach(file => {
         const srcIcon = getIconForSource(file.name)
@@ -811,14 +814,14 @@ function rebuildAssetTree(): void {
         subjFilesFolder.children!.push({
           id: `f-${file.id}`, sourceId: file.id, type: 'file', groupId: subj.id, name: file.name,
           assetId: file.assetId, fileType: file.fileType, icon: srcIcon, lucideIcon: srcIcon,
-          status, statusText, time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
+          status, statusText, time: new Date(file.createdAt || Date.now()).toLocaleDateString(locale.value),
           size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, originalData: file
         })
       })
 
       blocks.forEach(b => {
         subjBlocksFolder.children!.push({
-          id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
+          id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || t({ 'zh-CN': '无标题块', en: 'Untitled block', ja: '無題のブロック' }), icon: IconNote, lucideIcon: IconNote,
           content: b.content || '', originalData: b
         })
       })
@@ -909,6 +912,7 @@ watch(
     () => blockStore.recentBlocks,
     () => taskStore.allTasks,
     () => docProcessingStore.jobs,
+    locale,
   ],
   () => {
     if (!isLoadingAssets.value) rebuildAssetTree()
@@ -976,8 +980,8 @@ const selectItem = (item: TreeNode) => {
 }
 
 const getSubjectName = (id?: string) => {
-  if (!id || id === 'all') return '全部'
-  return subjectStore.subjects.find(s => s.id === id)?.name || '未知学科'
+  if (!id || id === 'all') return t({ 'zh-CN': '全部', en: 'All', ja: 'すべて' })
+  return subjectStore.subjects.find(s => s.id === id)?.name || t({ 'zh-CN': '未知学科', en: 'Unknown subject', ja: '不明な科目' })
 }
 
 const toggleTaskDone = async (task: TreeNode) => {
@@ -990,14 +994,14 @@ const toggleTaskDone = async (task: TreeNode) => {
     task.originalData = { ...task.originalData, status: nextDone ? 'completed' : 'pending' }
   } catch (err) {
     task.done = previousDone
-    ElNotification({ title: '更新任务状态失败', message: err instanceof Error ? err.message : '请稍后重试', type: 'error' })
+    ElNotification({ title: t({ 'zh-CN': '更新任务状态失败', en: 'Could not update task status', ja: 'タスクの状態を更新できませんでした' }), message: err instanceof Error ? err.message : t({ 'zh-CN': '请稍后重试', en: 'Try again later', ja: 'しばらくしてから再試行してください' }), type: 'error' })
   }
 }
 
 const saveTaskEdit = async (task: TreeNode) => {
   if (!task.originalData?.id) return
   if (task.done) {
-    ElNotification({ title: '无法修改', message: '已完成的任务不允许修改属性', type: 'warning' })
+    ElNotification({ title: t({ 'zh-CN': '无法修改', en: 'Editing unavailable', ja: '編集できません' }), message: t({ 'zh-CN': '已完成的任务不允许修改属性', en: 'Completed tasks cannot be edited', ja: '完了したタスクは編集できません' }), type: 'warning' })
     return
   }
   try {
@@ -1013,26 +1017,26 @@ const saveTaskEdit = async (task: TreeNode) => {
       const saved = findTreeNode(rootNodes.value, task.id)
       selected.value = saved ? { ...saved } : null
     }
-    ElNotification({ title: '✅ 成功', message: '任务已更新', type: 'success' })
+    ElNotification({ title: t({ 'zh-CN': '✅ 成功', en: '✅ Saved', ja: '✅ 保存しました' }), message: t({ 'zh-CN': '任务已更新', en: 'Task updated', ja: 'タスクを更新しました' }), type: 'success' })
   } catch (err) {
     console.error('[Asset] Failed to save task:', err)
-    ElNotification({ title: '保存失败', message: '任务更新失败，请稍后重试', type: 'error' })
+    ElNotification({ title: t({ 'zh-CN': '保存失败', en: 'Could not save', ja: '保存できませんでした' }), message: t({ 'zh-CN': '任务更新失败，请稍后重试', en: 'Could not update the task. Try again later.', ja: 'タスクを更新できませんでした。しばらくしてから再試行してください。' }), type: 'error' })
   }
 }
 
 const deleteTask = async (task: TreeNode) => {
   try {
-    await ElMessageBox.confirm('确定要删除这个任务吗？', '删除提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t({ 'zh-CN': '确定要删除这个任务吗？', en: 'Delete this task?', ja: 'このタスクを削除しますか？' }), t({ 'zh-CN': '删除提示', en: 'Confirm deletion', ja: '削除の確認' }), {
+      confirmButtonText: t({ 'zh-CN': '确定', en: 'Confirm', ja: '確定' }),
+      cancelButtonText: t({ 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' }),
       type: 'warning',
     })
     await taskStore.deleteTask(task.id.slice(2))
     if (selected.value === task) selected.value = null
-    ElNotification({ title: '任务已删除', type: 'success' })
+    ElNotification({ title: t({ 'zh-CN': '任务已删除', en: 'Task deleted', ja: 'タスクを削除しました' }), type: 'success' })
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElNotification({ title: '删除任务失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error' })
+    ElNotification({ title: t({ 'zh-CN': '删除任务失败', en: 'Could not delete task', ja: 'タスクを削除できませんでした' }), message: error instanceof Error ? error.message : t({ 'zh-CN': '请稍后重试', en: 'Try again later', ja: 'しばらくしてから再試行してください' }), type: 'error' })
   }
 }
 
@@ -1047,20 +1051,20 @@ const saveBlockEdit = async (block: TreeNode) => {
       content,
       subjectId: targetSubjectId
     })
-    ElNotification({ title: '✅ 成功', message: '知识块已更新', type: 'success' })
+    ElNotification({ title: t({ 'zh-CN': '✅ 成功', en: '✅ Saved', ja: '✅ 保存しました' }), message: t({ 'zh-CN': '知识块已更新', en: 'Knowledge block updated', ja: '知識ブロックを更新しました' }), type: 'success' })
   } catch (err) {
     if (err instanceof LocalConflictError) {
       const deleted = !err.resource || err.resource.deletedAt !== null
       if (deleted && selected.value?.id === block.id) selected.value = null
       ElNotification({
-        title: '保存失败',
-        message: deleted ? '知识块已删除' : '知识块已更新，请重新打开后再编辑',
+        title: t({ 'zh-CN': '保存失败', en: 'Could not save', ja: '保存できませんでした' }),
+        message: deleted ? t({ 'zh-CN': '知识块已删除', en: 'Knowledge block deleted', ja: '知識ブロックを削除しました' }) : t({ 'zh-CN': '知识块已更新，请重新打开后再编辑', en: 'This knowledge block has changed. Reopen it before editing.', ja: '知識ブロックが更新されました。開き直してから編集してください。' }),
         type: 'warning',
       })
       return
     }
     console.error('[Asset] Failed to save block:', err)
-    ElNotification({ title: '保存失败', message: '知识块更新失败，请稍后重试', type: 'error' })
+    ElNotification({ title: t({ 'zh-CN': '保存失败', en: 'Could not save', ja: '保存できませんでした' }), message: t({ 'zh-CN': '知识块更新失败，请稍后重试', en: 'Could not update the knowledge block. Try again later.', ja: '知識ブロックを更新できませんでした。しばらくしてから再試行してください。' }), type: 'error' })
   }
 }
 
@@ -1069,7 +1073,7 @@ const saveBlockEdit = async (block: TreeNode) => {
 const selectedGroupForGraph = computed(() => {
   if (!selected.value || !selected.value.groupId) return null
   if (selected.value.groupId === 'all') {
-    return { id: 'all', name: '全局关联图', color: 'rgba(59,130,246,0.2)' }
+    return { id: 'all', name: t({ 'zh-CN': '全局关联图', en: 'Global relationship graph', ja: '全体の関連グラフ' }), color: 'rgba(59,130,246,0.2)' }
   }
   return subjectStore.subjects.find(s => s.id === selected.value!.groupId) || null
 })
@@ -1129,7 +1133,7 @@ const openUploadForGroup = (groupId: string) => {
 const handleRegisterSubmit = async ({ file, name, subjectId }: { file: File; name: string; subjectId: string }) => {
   isUploading.value = true
   uploadProgress.value = 5
-  uploadStatusText.value = '校验文件...'
+  uploadStatusText.value = t({ 'zh-CN': '校验文件...', en: 'Validating file…', ja: 'ファイルを検証中…' })
 
   try {
     const asset = await assetStore.upload(file, (percent, stage) => {
@@ -1137,16 +1141,16 @@ const handleRegisterSubmit = async ({ file, name, subjectId }: { file: File; nam
       uploadStatusText.value = stage
     })
     uploadProgress.value = 75
-    uploadStatusText.value = '正在关联学科资料...'
+    uploadStatusText.value = t({ 'zh-CN': '正在关联学科资料...', en: 'Linking file to subject…', ja: 'ファイルを科目に関連付け中…' })
     await sourceStore.createFileSource(subjectId, name, asset.id)
     uploadProgress.value = 90
-    uploadStatusText.value = '正在刷新资料列表...'
+    uploadStatusText.value = t({ 'zh-CN': '正在刷新资料列表...', en: 'Refreshing the library…', ja: '資料一覧を更新中…' })
     await loadAssetsFromBackend()
     uploadProgress.value = 100
-    uploadStatusText.value = '上传成功'
+    uploadStatusText.value = t({ 'zh-CN': '上传成功', en: 'Upload complete', ja: 'アップロードが完了しました' })
     ElNotification({
-      title: '上传成功',
-      message: `文件 ${name} 已成功关联`,
+      title: t({ 'zh-CN': '上传成功', en: 'Upload complete', ja: 'アップロードが完了しました' }),
+      message: t({ 'zh-CN': '已关联文件「{name}」', en: 'Linked file “{name}”.', ja: 'ファイル「{name}」を関連付けました。' }, { name }),
       type: 'success',
     })
     await new Promise(resolve => setTimeout(resolve, 400))
@@ -1154,10 +1158,11 @@ const handleRegisterSubmit = async ({ file, name, subjectId }: { file: File; nam
   } catch (err: any) {
     console.error('上传失败:', err)
     uploadProgress.value = 0
-    uploadStatusText.value = '上传失败: ' + (err.message || '未知错误')
+    const detail = err.message || t({ 'zh-CN': '未知错误', en: 'Unknown error', ja: '不明なエラー' })
+    uploadStatusText.value = t({ 'zh-CN': '上传失败：{detail}', en: 'Upload failed: {detail}', ja: 'アップロードに失敗しました：{detail}' }, { detail })
     ElNotification({
-      title: '上传失败',
-      message: err.message || '未知错误',
+      title: t({ 'zh-CN': '上传失败', en: 'Upload failed', ja: 'アップロードに失敗しました' }),
+      message: detail,
       type: 'error',
     })
   } finally {
@@ -1187,8 +1192,8 @@ onUnmounted(() => undefined)
   width: 100%;
   overflow: hidden;
   background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
-  padding: 8px;
-  gap: 8px;
+  padding: calc(8px - var(--card-padding-reduction));
+  gap: calc(8px - var(--layout-gap-reduction));
   box-sizing: border-box;
 
   /* Zen Minimalist Theme Tokens */
@@ -1308,7 +1313,7 @@ html.dark .studio-left {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
   border-bottom: 0.5px solid var(--border-subtle);
   background: var(--color-bg-primary, #F7F2EB);
   flex-shrink: 0;
@@ -1318,7 +1323,7 @@ html.dark .panel-header {
 }
 
 .panel-title {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.2px;
@@ -1382,7 +1387,7 @@ html.dark .icon-btn:hover {
   border-radius: 9999px;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   outline: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
@@ -1488,7 +1493,7 @@ html.dark .upload-progress-track {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 6px 8px;
+  padding: 4px calc(6px - var(--card-padding-reduction)) calc(8px - var(--card-padding-reduction));
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
@@ -1562,7 +1567,7 @@ html.dark .upload-progress-track {
   flex-shrink: 0;
 }
 .group-name {
-  font-size: 12.5px;
+  font-size: calc(12.5px + var(--ui-font-size-adjustment));
   font-weight: 700;
   color: var(--text-primary);
   flex: 1;
@@ -1629,7 +1634,7 @@ html.dark .upload-progress-track {
   flex-shrink: 0;
 }
 .folder-name {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
@@ -1729,7 +1734,7 @@ html.dark .tree-item.is-active .item-icon {
   gap: 1.5px;
 }
 .item-name {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1749,7 +1754,7 @@ html.dark .tree-item.is-active .item-name {
   opacity: 0.5;
 }
 .item-meta {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   color: var(--text-muted);
   font-feature-settings: 'tnum';
 }
@@ -1977,14 +1982,14 @@ html.dark .middle-content-scroll {
   opacity: 0.9;
 }
 .empty-title {
-  font-size: 19px;
+  font-size: calc(19px + var(--ui-font-size-adjustment));
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 8px;
   letter-spacing: -0.3px;
 }
 .empty-desc {
-  font-size: 13px;
+  font-size: calc(13px + var(--ui-font-size-adjustment));
   color: var(--text-muted);
   max-width: 360px;
   line-height: 1.7;
@@ -2015,7 +2020,7 @@ html.dark .empty-icon {
 
 /* Detail Header */
 .detail-header {
-  padding: 16px 28px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(28px - var(--card-padding-reduction));
   border-bottom: 0.5px solid var(--border-subtle);
   background: rgba(247, 242, 235, 0.92);
   backdrop-filter: blur(16px);
@@ -2051,7 +2056,7 @@ html.dark .detail-icon {
   min-width: 0;
 }
 .detail-name {
-  font-size: 16px;
+  font-size: calc(16px + var(--ui-font-size-adjustment));
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 3px;

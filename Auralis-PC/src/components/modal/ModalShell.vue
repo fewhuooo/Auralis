@@ -34,7 +34,7 @@
                 type="button"
                 class="modal-shell-close"
                 :disabled="preventClose"
-                aria-label="关闭"
+                :aria-label="t({ 'zh-CN': '关闭', en: 'Close', ja: '閉じる' })"
                 @click="requestClose"
               >
                 <IconX :size="15" :stroke-width="2.2" />
@@ -58,6 +58,7 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '@/i18n'
 import { ref, computed, watch, onUnmounted, nextTick, useAttrs } from 'vue'
 import { IconX } from '@tabler/icons-vue'
 import './modal.css'

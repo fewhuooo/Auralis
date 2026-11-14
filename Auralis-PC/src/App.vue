@@ -1,46 +1,54 @@
 <template>
-  <Transition name="shell-fade" mode="out-in">
-    <div v-if="isAuthenticatedRoute" key="auth-shell" class="app-shell">
-      <AppSidebar :connection-projection="connectionProjection" />
-      <div class="app-body">
-        <AppHeader />
-        <main class="app-content">
-          <router-view v-slot="{ Component }">
-            <transition name="page-fade" mode="out-in">
-              <component :is="Component" :key="route.path" />
-            </transition>
-          </router-view>
-        </main>
+  <ElConfigProvider :locale="elementLocale">
+    <Transition name="shell-fade" mode="out-in">
+      <div v-if="isAuthenticatedRoute" key="auth-shell" class="app-shell">
+        <AppSidebar :connection-projection="connectionProjection" />
+        <div class="app-body">
+          <AppHeader />
+          <main class="app-content">
+            <router-view v-slot="{ Component }">
+              <transition name="page-fade" mode="out-in">
+                <component :is="Component" :key="route.path" />
+              </transition>
+            </router-view>
+          </main>
+        </div>
+
+        <!-- Subtle background glow effect -->
+        <div class="bg-glow bg-glow--1"></div>
+        <div class="bg-glow bg-glow--2"></div>
       </div>
+      <div v-else key="public-shell" class="public-shell">
+        <router-view v-slot="{ Component }">
+          <transition name="page-fade" mode="out-in">
+            <component :is="Component" :key="route.path" />
+          </transition>
+        </router-view>
+      </div>
+    </Transition>
 
-      <!-- Subtle background glow effect -->
-      <div class="bg-glow bg-glow--1"></div>
-      <div class="bg-glow bg-glow--2"></div>
-    </div>
-    <div v-else key="public-shell" class="public-shell">
-      <router-view v-slot="{ Component }">
-        <transition name="page-fade" mode="out-in">
-          <component :is="Component" :key="route.path" />
-        </transition>
-      </router-view>
-    </div>
-  </Transition>
+    <!-- Global Command Palette -->
+    <SearchPalette />
 
-  <!-- Global Command Palette -->
-  <SearchPalette />
+    <!-- Kept mounted across routes for background Office extraction. -->
+    <BackgroundParserHost ref="backgroundParserHost" />
 
-  <!-- Kept mounted across routes for background Office extraction. -->
-  <BackgroundParserHost ref="backgroundParserHost" />
-
-  <!-- Full-Page GPU Ambient Theme Veil (Zero Jank, Zero Lag) -->
-  <div v-if="curtainClass" :key="curtainKey" :class="['theme-ambient-curtain', curtainClass]" aria-hidden="true"></div>
+    <!-- Full-Page GPU Ambient Theme Veil (Zero Jank, Zero Lag) -->
+    <div v-if="curtainClass" :key="curtainKey" :class="['theme-ambient-curtain', curtainClass]" aria-hidden="true"></div>
+  </ElConfigProvider>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElConfigProvider } from 'element-plus'
+import en from 'element-plus/es/locale/lang/en'
+import ja from 'element-plus/es/locale/lang/ja'
+import zhCN from 'element-plus/es/locale/lang/zh-cn'
+import { locale } from '@/i18n'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
+import { getConnectionStatusMessages } from '@/components/layout/navigationMessages'
 import SearchPalette from '@/components/SearchPalette.vue'
 import BackgroundParserHost from '@/components/preview/BackgroundParserHost.vue'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -59,6 +67,8 @@ let stopWatchingAuth: (() => void) | undefined
 const backgroundParserHost = ref<BackgroundParserHostHandle | null>(null)
 const browserOnline = ref(typeof navigator === 'undefined' || navigator.onLine)
 const route = useRoute()
+const elementLocales = { 'zh-CN': zhCN, en, ja }
+const elementLocale = computed(() => elementLocales[locale.value])
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
 const pomodoroStore = usePomodoroStore()
@@ -75,7 +85,7 @@ const connectionProjection = computed<ConnectionProjection>(() => projectConnect
   syncing: syncStore.isSyncing,
   chatError: chatStore.lastError,
   chatErrorCode: chatStore.lastErrorCode,
-}))
+}, getConnectionStatusMessages()))
 
 const fetchTasksOnStartup = async () => {
   try {

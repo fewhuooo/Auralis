@@ -18,12 +18,23 @@ export interface ConnectionProjection {
   retryable: boolean
 }
 
-export function projectConnectionStatus(input: ConnectionStatusInput): ConnectionProjection {
+export const defaultConnectionStatusMessages: Readonly<Record<ConnectionLevel, string>> = {
+  error: '服务暂时不可用',
+  offline: '当前离线，本地修改会在恢复网络后同步',
+  reconnecting: '实时连接恢复中',
+  syncing: '同步中',
+  ready: '已同步',
+}
+
+export function projectConnectionStatus(
+  input: ConnectionStatusInput,
+  messages = defaultConnectionStatusMessages,
+): ConnectionProjection {
   if (input.syncError || input.serviceUnavailable || input.chatError) {
     return {
       level: 'error',
       code: input.syncErrorCode || input.chatErrorCode || input.syncError || 'SERVICE_UNAVAILABLE',
-      message: input.syncError || input.chatError || '服务暂时不可用',
+      message: input.syncError || input.chatError || messages.error,
       retryable: true,
     }
   }
@@ -32,7 +43,7 @@ export function projectConnectionStatus(input: ConnectionStatusInput): Connectio
     return {
       level: 'offline',
       code: 'OFFLINE',
-      message: '当前离线，本地修改会在恢复网络后同步',
+      message: messages.offline,
       retryable: true,
     }
   }
@@ -41,7 +52,7 @@ export function projectConnectionStatus(input: ConnectionStatusInput): Connectio
     return {
       level: 'reconnecting',
       code: 'REALTIME_RECONNECTING',
-      message: '实时连接恢复中',
+      message: messages.reconnecting,
       retryable: true,
     }
   }
@@ -50,7 +61,7 @@ export function projectConnectionStatus(input: ConnectionStatusInput): Connectio
     return {
       level: 'syncing',
       code: 'SYNCING',
-      message: '同步中',
+      message: messages.syncing,
       retryable: true,
     }
   }
@@ -58,7 +69,7 @@ export function projectConnectionStatus(input: ConnectionStatusInput): Connectio
   return {
     level: 'ready',
     code: null,
-    message: '已同步',
+    message: messages.ready,
     retryable: false,
   }
 }

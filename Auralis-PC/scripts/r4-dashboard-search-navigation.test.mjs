@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import { compileScript, parse } from 'vue/compiler-sfc'
 import ts from 'typescript'
+import { t } from '../src/i18n.ts'
 import { computed, defineComponent, effectScope, nextTick, ref, watch } from 'vue'
 
 const searchPalette = await readFile(new URL('../src/components/SearchPalette.vue', import.meta.url), 'utf8')
@@ -196,6 +197,7 @@ function setupComponent(source, props, imports, globals) {
   const modules = {
     vue: { computed, defineComponent, nextTick, ref, watch, onMounted() {}, onUnmounted() {} },
     '@tabler/icons-vue': {},
+    '@/i18n': { t },
     ...imports,
   }
   const exports = {}

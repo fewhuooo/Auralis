@@ -3,8 +3,8 @@
     <!-- LEFT: Subject Index Tree (20%) -->
     <nav class="subject-index">
       <div class="index-header">
-        <h1 class="welcome-title">{{ greeting }}，{{ username }}</h1>
-        <p class="welcome-sub">已完成 {{ completedCount }} 项 · {{ totalFocusHours }}</p>
+        <h1 class="welcome-title">{{ t({ 'zh-CN': '{greeting}，{name}', en: '{greeting}, {name}', ja: '{name}さん、{greeting}' }, { greeting, name: username }) }}</h1>
+        <p class="welcome-sub">{{ t({ 'zh-CN': '已完成 {count} 项 · {duration}', en: 'Completed: {count} · {duration}', ja: '完了 {count}件 · {duration}' }, { count: completedCount, duration: totalFocusHours }) }}</p>
       </div>
       <div 
         class="global-view-card"
@@ -15,12 +15,12 @@
           <IconLayoutGrid :size="18" :stroke-width="1.6" />
         </div>
         <div class="global-text-wrap">
-          <span class="global-title">全部知识</span>
+          <span class="global-title">{{ t({ 'zh-CN': '全部知识', en: 'All knowledge', ja: 'すべての知識' }) }}</span>
         </div>
         <span class="global-count">{{ allSubjectsOption[0].blockCount }}</span>
       </div>
 
-      <div class="section-label">学科空间</div>
+      <div class="section-label">{{ t({ 'zh-CN': '学科空间', en: 'Subjects', ja: '科目スペース' }) }}</div>
 
       <ul class="subject-list">
         <li
@@ -44,7 +44,7 @@
         </li>
       </ul>
       <button class="manage-subjects-btn" @click="router.push('/subjects')">
-        <span class="btn-text">管理学科</span>
+        <span class="btn-text">{{ t({ 'zh-CN': '管理学科', en: 'Manage subjects', ja: '科目を管理' }) }}</span>
         <IconArrowRight :size="13" :stroke-width="2.2" class="btn-arrow-icon" />
       </button>
     </nav>
@@ -56,16 +56,16 @@
     <main class="content-stream">
       <div class="stream-header">
         <div class="stream-title-wrap">
-          <h3 class="stream-title">知识流</h3>
-          <span class="stream-subtitle">{{ currentSubjectTitle }} · {{ filteredBlocks.length }} 个知识块</span>
+          <h3 class="stream-title">{{ t({ 'zh-CN': '知识流', en: 'Knowledge feed', ja: '知識フィード' }) }}</h3>
+          <span class="stream-subtitle">{{ t({ 'zh-CN': '{name} · 知识块 {count} 个', en: '{name} · Knowledge blocks: {count}', ja: '{name} · 知識ブロック {count}件' }, { name: currentSubjectTitle, count: filteredBlocks.length }) }}</span>
         </div>
         <button
           v-if="selectedSubjectId"
           class="stream-enter-workspace-btn"
           @click="router.push(`/subject/${selectedSubjectId}`)"
-          title="进入该学科工作区"
+          :title="t({ 'zh-CN': '进入该学科工作区', en: 'Open this subject workspace', ja: 'この科目のワークスペースを開く' })"
         >
-          <span>进入工作区</span>
+          <span>{{ t({ 'zh-CN': '进入工作区', en: 'Open workspace', ja: 'ワークスペースを開く' }) }}</span>
           <IconArrowUpRight :size="13" :stroke-width="2.2" class="stream-enter-icon" />
         </button>
       </div>
@@ -85,7 +85,7 @@
                 <div class="row-meta">
                   <!-- 采用统一的浅鼠尾草绿背景+深色文字微标签 (Badge) -->
                   <span class="row-subj-badge">{{ block.subject }}</span>
-                  <span class="row-source-badge">来源: {{ block.source }}</span>
+                  <span class="row-source-badge">{{ t({ 'zh-CN': '来源：{name}', en: 'Source: {name}', ja: '資料：{name}' }, { name: block.source }) }}</span>
                   <span class="row-time-badge" style="display: inline-flex; align-items: center; gap: 4px;">
                     <IconHistory :size="12" :stroke-width="1.6" />
                     {{ timeAgo(block.time) }}
@@ -95,9 +95,9 @@
               </div>
             </div>
             <div class="empty-stream" v-else>
-              <span>暂无知识块，可在学科空间中添加</span>
+              <span>{{ t({ 'zh-CN': '暂无知识块，可在学科空间中添加', en: 'No knowledge blocks yet. Add them in a subject workspace.', ja: '知識ブロックはまだありません。科目スペースで追加できます。' }) }}</span>
               <button class="create-first-btn" @click="router.push('/subjects')">
-                <span>创建学科空间</span>
+                <span>{{ t({ 'zh-CN': '创建学科空间', en: 'Create subject', ja: '科目を作成' }) }}</span>
                 <IconPlus :size="13" :stroke-width="2.2" class="create-first-icon" />
               </button>
             </div>
@@ -114,7 +114,7 @@
       <!-- Compact Timeline (top 70%) -->
       <section class="compact-timeline">
         <div class="timeline-header">
-          <h3 class="timeline-title">时间轴 · {{ selectedTimelineDay.monthLabel }}</h3>
+          <h3 class="timeline-title">{{ t({ 'zh-CN': '时间轴 · {month}', en: 'Timeline · {month}', ja: 'タイムライン · {month}' }, { month: formatTimelineDate(selectedTimelineDay, { month: 'long' }) }) }}</h3>
           <div class="dashboard-time-actions">
             <div class="db-view-toggle">
               <button 
@@ -122,17 +122,17 @@
                 :class="{ 'is-active': dashboardViewMode === 'day' }"
                 @click="setDashboardViewMode('day')"
               >
-                日视图
+                {{ t({ 'zh-CN': '日视图', en: 'Day', ja: '日' }) }}
               </button>
               <button 
                 class="db-view-toggle-btn" 
                 :class="{ 'is-active': dashboardViewMode === 'week' }"
                 @click="setDashboardViewMode('week')"
               >
-                周视图
+                {{ t({ 'zh-CN': '周视图', en: 'Week', ja: '週' }) }}
               </button>
             </div>
-            <button class="todo-fab-add-btn" @click="openCreateTaskDialog" title="新建任务">
+            <button class="todo-fab-add-btn" @click="openCreateTaskDialog" :title="t({ 'zh-CN': '新建任务', en: 'New task', ja: 'タスクを作成' })">
               <IconPlus :size="15" :stroke-width="2.4" class="fab-plus-icon" />
             </button>
           </div>
@@ -149,9 +149,9 @@
                   :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
                   @click="selectDay(day.dayCode)"
                 >
-                  <span class="db-day-week">{{ day.weekdayShort }}</span>
+                  <span class="db-day-week">{{ formatTimelineDate(day, { weekday: 'short' }) }}</span>
                   <span class="db-day-date-circle">
-                    <span class="db-day-date">{{ day.dayLabel }}</span>
+                    <span class="db-day-date">{{ formatTimelineDate(day, { day: 'numeric' }) }}</span>
                   </span>
                 </button>
               </div>
@@ -170,7 +170,7 @@
                         type="checkbox"
                         :checked="isCompletedScheduledTask(task)"
                         :disabled="isScheduledCompletionLocked(task, taskStore.currentNow)"
-                        :title="isScheduledCompletionLocked(task, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : '切换任务完成状态'"
+                        :title="isScheduledCompletionLocked(task, taskStore.currentNow) ? t({ 'zh-CN': '任务时段已结束，完成状态不可取消', en: 'This task\'s scheduled time has ended and completion is locked', ja: '予定時間が終了しているため完了を取り消せません' }) : t({ 'zh-CN': '切换任务完成状态', en: 'Toggle task completion', ja: 'タスクの完了状態を切り替える' })"
                         @change="toggleTaskCompletion(task)"
                         class="task-checkbox"
                         @click.stop
@@ -192,13 +192,13 @@
                         v-if="!isCompletedScheduledTask(task)"
                         class="scheduled-task-remove-btn"
                         @click.stop="handleRemoveSchedule(task)"
-                        title="移出日程"
+                        :title="t({ 'zh-CN': '移出日程', en: 'Remove from schedule', ja: '予定から外す' })"
                       >
                         <IconX :size="12" :stroke-width="2.2" />
                       </button>
                     </div>
                     <div v-if="dayScheduledTasks.length === 0" class="empty-scheduled-state">
-                      <span class="empty-scheduled-text">当日暂无排期任务</span>
+                      <span class="empty-scheduled-text">{{ t({ 'zh-CN': '当日暂无排期任务', en: 'No tasks scheduled for this day', ja: 'この日の予定はありません' }) }}</span>
                     </div>
                   </div>
                 </Transition>
@@ -216,8 +216,8 @@
                   @click="selectDay(day.dayCode); setDashboardViewMode('day', false);"
                 >
                   <div class="db-weekly-row-label">
-                    <span class="db-weekly-row-name">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
-                    <span class="db-weekly-row-count">{{ getScheduledTasksForDay(day.dayCode).length }} 项</span>
+                    <span class="db-weekly-row-name">{{ formatTimelineDate(day, { weekday: 'short', month: 'numeric', day: 'numeric' }) }}</span>
+                    <span class="db-weekly-row-count">{{ t({ 'zh-CN': '{count} 项', en: 'Tasks: {count}', ja: '{count}件' }, { count: getScheduledTasksForDay(day.dayCode).length }) }}</span>
                   </div>
                   <div class="db-weekly-row-timeline">
                     <div 
@@ -232,7 +232,7 @@
                       <span class="db-weekly-block-name">{{ task.name }}</span>
                     </div>
                     <div v-if="getScheduledTasksForDay(day.dayCode).length === 0" class="db-weekly-row-empty">
-                      空闲
+                      {{ t({ 'zh-CN': '空闲', en: 'Free', ja: '予定なし' }) }}
                     </div>
                   </div>
                 </div>
@@ -248,9 +248,9 @@
       <!-- Todo List (bottom, simple task list, no drag) -->
       <section class="todo-section">
         <div class="todo-header">
-          <h3 class="todo-title">待办清单</h3>
-          <button class="todo-jump-btn" @click="router.push('/timeline')" title="前往任务排期">
-            <span>前往排期</span>
+          <h3 class="todo-title">{{ t({ 'zh-CN': '待办清单', en: 'To-do list', ja: 'やることリスト' }) }}</h3>
+          <button class="todo-jump-btn" @click="router.push('/timeline')" :title="t({ 'zh-CN': '前往任务排期', en: 'Go to task scheduling', ja: 'タスクの予定を開く' })">
+            <span>{{ t({ 'zh-CN': '前往排期', en: 'Open schedule', ja: '予定を開く' }) }}</span>
             <IconChevronRight :size="12" :stroke-width="2.2" class="todo-jump-icon" />
           </button>
         </div>
@@ -270,7 +270,7 @@
           <div v-if="filteredPendingTasks.length === 0" class="empty-pending">
             <span class="empty-pending-content">
               <IconCircleCheck :size="15" :stroke-width="1.8" class="empty-pending-icon" />
-              所有任务已完成
+              {{ t({ 'zh-CN': '所有任务已完成', en: 'All tasks are complete', ja: 'すべてのタスクが完了しました' }) }}
             </span>
           </div>
         </div>
@@ -293,6 +293,7 @@
 </template>
 
 <script setup lang="ts">
+import { locale, t } from '@/i18n'
 import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -323,6 +324,10 @@ const authStore = useAuthStore()
 
 const dashboardViewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays(taskStore.currentNow))
+function formatTimelineDate(day: ReturnType<typeof getTimelineDays>[number], options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat(locale.value, options).format(new Date(day.dateKey + 'T00:00:00'))
+}
+
 const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
 const viewModeSlideDirection = ref<'forward' | 'backward'>('forward')
@@ -375,17 +380,17 @@ const getTaskTimeStr = (startTime?: string) => {
   return startTime.split(' ').pop() || startTime
 }
 
-const username = computed(() => authStore.username || '同学')
+const username = computed(() => authStore.username || t({ 'zh-CN': '同学', en: 'there', ja: '学習者' }))
 const completedCount = computed(() => taskStore.completedCount)
 const totalFocusHours = computed(() => taskStore.totalFocusHours)
 
 const greeting = computed(() => {
   const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 12) return '早上好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  return '晚上好'
+  if (h < 6) return t({ 'zh-CN': '夜深了', en: 'Hello', ja: 'こんばんは' })
+  if (h < 12) return t({ 'zh-CN': '早上好', en: 'Good morning', ja: 'おはようございます' })
+  if (h < 14) return t({ 'zh-CN': '中午好', en: 'Hello', ja: 'こんにちは' })
+  if (h < 18) return t({ 'zh-CN': '下午好', en: 'Good afternoon', ja: 'こんにちは' })
+  return t({ 'zh-CN': '晚上好', en: 'Good evening', ja: 'こんばんは' })
 })
 
 // ===== Resize Logic =====
@@ -482,7 +487,7 @@ const allSubjectsOption = computed(() => {
   const subjectsList = subjectStore.subjects
   const count = recentBlocks.value.length
   return [
-    { id: null as string | null, name: '全部', icon: '📋', color: 'var(--text-muted)', blockCount: count },
+    { id: null as string | null, name: t({ 'zh-CN': '全部', en: 'All', ja: 'すべて' }), icon: '📋', color: 'var(--text-muted)', blockCount: count },
     ...subjectsList
   ]
 })
@@ -494,20 +499,20 @@ const filteredBlocks = computed(() => {
 })
 
 const currentSubjectTitle = computed(() => {
-  if (!selectedSubjectId.value) return '全部知识'
+  if (!selectedSubjectId.value) return t({ 'zh-CN': '全部知识', en: 'All knowledge', ja: 'すべての知識' })
   const target = subjectStore.subjects.find(s => s.id === selectedSubjectId.value)
-  return target?.name || '当前学科'
+  return target?.name || t({ 'zh-CN': '当前学科', en: 'Current subject', ja: '現在の科目' })
 })
 
 const timeAgo = (isoString: string): string => {
   if (!isoString) return ''
   const diff = Date.now() - new Date(isoString).getTime()
   const mins = Math.floor(diff / 60000)
-  if (mins < 1) return '刚刚'
-  if (mins < 60) return `${mins}分钟前`
+  if (mins < 1) return t({ 'zh-CN': '刚刚', en: 'Just now', ja: 'たった今' })
+  if (mins < 60) return t({ 'zh-CN': '{count} 分钟前', en: '{count} min ago', ja: '{count}分前' }, { count: mins })
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}小时前`
-  return `${Math.floor(hours / 24)}天前`
+  if (hours < 24) return t({ 'zh-CN': '{count} 小时前', en: '{count} hr ago', ja: '{count}時間前' }, { count: hours })
+  return t({ 'zh-CN': '{count} 天前', en: '{count} d ago', ja: '{count}日前' }, { count: Math.floor(hours / 24) })
 }
 
 const isTaskOverdue = (task: Task): boolean => {
@@ -520,7 +525,7 @@ const formatTaskDue = (dueAt?: string): string => {
   if (!dueAt) return ''
   const d = new Date(dueAt)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getMonth() + 1}/${d.getDate()} 截止`
+  return t({ 'zh-CN': '{date} 截止', en: 'Due {date}', ja: '期限 {date}' }, { date: new Intl.DateTimeFormat(locale.value, { month: 'numeric', day: 'numeric' }).format(d) })
 }
 
 // ===== Task Creation =====
@@ -554,8 +559,8 @@ const handleAddTask = async (taskData: {
     })
     showTaskModal.value = false
     ElNotification({
-      title: '🎯 任务已生成',
-      message: `"${taskData.name}" 已加入待安排列表。`,
+      title: t({ 'zh-CN': '🎯 任务已生成', en: '🎯 Task created', ja: '🎯 タスクを作成しました' }),
+      message: t({ 'zh-CN': '「{name}」已加入待安排列表。', en: '“{name}” was added to the unscheduled list.', ja: '「{name}」を未予定リストに追加しました。' }, { name: taskData.name }),
       type: 'success',
       position: 'top-right'
     })
@@ -581,14 +586,14 @@ const handleRemoveSchedule = async (task: Task) => {
   if (!task.id) return
   try {
     await taskStore.unscheduleTask(task.id)
-    ElNotification({ title: '已移出日程', type: 'success', position: 'top-right', duration: 2000 })
+    ElNotification({ title: t({ 'zh-CN': '已移出日程', en: 'Removed from schedule', ja: '予定から外しました' }), type: 'success', position: 'top-right', duration: 2000 })
   } catch (error: any) {
     if (error?.message === '已完成的排期任务已固定') {
-      ElNotification({ title: '已完成的排期任务已固定', type: 'warning', position: 'top-right', duration: 2000 })
+      ElNotification({ title: t({ 'zh-CN': '已完成的排期任务已固定', en: 'Completed scheduled tasks are locked', ja: '完了した予定は変更できません' }), type: 'warning', position: 'top-right', duration: 2000 })
     } else {
       console.error('移出日程失败', error)
-      const detail = error instanceof Error ? error.message : '移出日程失败，请重试'
-      ElNotification({ title: '移出日程失败', message: detail, type: 'error', position: 'top-right', duration: 2500 })
+      const detail = error instanceof Error ? error.message : t({ 'zh-CN': '移出日程失败，请重试', en: 'Could not remove from schedule. Try again.', ja: '予定から外せませんでした。もう一度お試しください。' })
+      ElNotification({ title: t({ 'zh-CN': '移出日程失败', en: 'Could not remove from schedule', ja: '予定から外せませんでした' }), message: detail, type: 'error', position: 'top-right', duration: 2500 })
     }
   }
 }
@@ -650,8 +655,8 @@ const toggleTaskCompletion = async (task: Task) => {
       (event.target as HTMLInputElement).checked = isCurrentlyCompleted
     }
     ElNotification({
-      title: '更新任务状态失败',
-      message: error instanceof Error ? error.message : '更新状态失败，请重试',
+      title: t({ 'zh-CN': '更新任务状态失败', en: 'Could not update task status', ja: 'タスクの状態を更新できませんでした' }),
+      message: error instanceof Error ? error.message : t({ 'zh-CN': '更新状态失败，请重试', en: 'Could not update status. Try again.', ja: '状態を更新できませんでした。もう一度お試しください。' }),
       type: 'error',
       position: 'top-right'
     })
@@ -684,8 +689,8 @@ onUnmounted(() => {
   width: 100%;
   overflow: hidden;
   background: var(--color-bg-secondary, #EEEEEE);
-  padding: 16px;
-  gap: 14px;
+  padding: calc(16px - var(--card-padding-reduction));
+  gap: calc(14px - var(--layout-gap-reduction));
 
   /* Zen Minimalist System Tokens */
   --color-primary-accent: var(--color-zen-sage, #8B9A6E);
@@ -738,7 +743,7 @@ html.dark .dashboard-container {
 .subject-index {
   display: flex;
   flex-direction: column;
-  padding: 22px 18px;
+  padding: calc(22px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction));
   overflow-y: auto;
   min-width: 0;
   min-height: 0;
@@ -761,7 +766,7 @@ html.dark .dashboard-container {
 }
 
 .welcome-title {
-  font-size: 17px;
+  font-size: calc(17px + var(--ui-font-size-adjustment));
   font-weight: 850;
   color: var(--text-primary);
   margin: 0;
@@ -772,7 +777,7 @@ html.dark .dashboard-container {
 
 .welcome-sub {
   display: inline-block;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 600;
   color: var(--text-secondary);
   margin-top: 6px;
@@ -851,7 +856,7 @@ html.dark .global-view-card {
 }
 
 .global-title {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary);
   letter-spacing: -0.01em;
@@ -880,7 +885,7 @@ html.dark .global-count {
 }
 
 .section-label {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-muted);
   margin-bottom: 10px;
@@ -1097,7 +1102,7 @@ html.dark .stream-enter-workspace-btn:hover {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 24px 28px;
+  padding: calc(24px - var(--panel-padding-reduction)) calc(28px - var(--panel-padding-reduction));
   background: var(--bg-card);
   border-radius: 16px;
   border: 0.5px solid var(--card-border-color);
@@ -1108,7 +1113,7 @@ html.dark .stream-enter-workspace-btn:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 18px;
+  margin-bottom: calc(18px - var(--layout-gap-reduction));
   flex-shrink: 0;
 }
 
@@ -1119,7 +1124,7 @@ html.dark .stream-enter-workspace-btn:hover {
 }
 
 .stream-title {
-  font-size: 18px;
+  font-size: calc(18px + var(--ui-font-size-adjustment));
   font-weight: 850;
   color: var(--text-primary);
   margin: 0;
@@ -1127,7 +1132,7 @@ html.dark .stream-enter-workspace-btn:hover {
 }
 
 .stream-subtitle {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   color: var(--text-secondary);
   font-weight: 600;
   background: rgba(139, 154, 110, 0.1);
@@ -1198,7 +1203,7 @@ html.dark .stream-subtitle {
 }
 
 .stream-row {
-  padding: 18px 22px;
+  padding: calc(18px - var(--card-padding-reduction)) calc(22px - var(--card-padding-reduction));
   border-radius: 14px;
   border: 0.5px solid var(--card-border-color);
   background: var(--color-bg-tertiary, #FAF7F2);
@@ -1243,7 +1248,7 @@ html.dark .stream-row:hover {
 }
 
 .row-title {
-  font-size: 15.5px;
+  font-size: calc(15.5px + var(--ui-font-size-adjustment));
   font-weight: 800;
   color: var(--text-primary);
   margin-bottom: 10px;
@@ -1255,7 +1260,7 @@ html.dark .stream-row:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
@@ -1298,7 +1303,7 @@ html.dark .row-source-badge {
 }
 
 .row-preview {
-  font-size: 12.5px;
+  font-size: calc(12.5px + var(--ui-font-size-adjustment));
   color: var(--text-secondary);
   line-height: 1.65;
   margin: 0;
@@ -1402,7 +1407,7 @@ html.dark .row-preview :deep(code) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 22px 20px 16px;
+  padding: calc(22px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction)) calc(16px - var(--card-padding-reduction));
 }
 
 .timeline-header {
@@ -1414,7 +1419,7 @@ html.dark .row-preview :deep(code) {
 }
 
 .timeline-title {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 800;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1929,7 +1934,7 @@ html.dark .scheduled-task-subject {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 14px 18px 18px;
+  padding: calc(14px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction));
 }
 
 .todo-header {
@@ -1974,7 +1979,7 @@ html.dark .scheduled-task-subject {
 }
 
 .todo-title {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 800;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -2111,7 +2116,7 @@ html.dark .todo-item:hover {
 }
 
 .todo-name {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 650;
   color: var(--text-primary);
   flex: 1;
@@ -2775,36 +2780,36 @@ html.dark .duration-bar-thumb {
 /* ===== Responsive Adaptation ===== */
 @media (max-width: 1280px) {
   .dashboard-container {
-    padding: 12px;
-    gap: 10px;
+    padding: calc(12px - var(--card-padding-reduction));
+    gap: calc(10px - var(--layout-gap-reduction));
   }
   .subject-index {
-    padding: 18px 14px;
+    padding: calc(18px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
   }
   .content-stream {
-    padding: 20px 22px;
+    padding: calc(20px - var(--panel-padding-reduction)) calc(22px - var(--panel-padding-reduction));
   }
   .compact-timeline {
-    padding: 18px 16px 14px;
+    padding: calc(18px - var(--card-padding-reduction)) calc(16px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
   }
 }
 
 @media (max-width: 1080px) {
   .dashboard-container {
-    padding: 10px;
-    gap: 8px;
+    padding: calc(10px - var(--card-padding-reduction));
+    gap: calc(8px - var(--layout-gap-reduction));
   }
   .subject-index {
-    padding: 14px 10px;
+    padding: calc(14px - var(--card-padding-reduction)) calc(10px - var(--card-padding-reduction));
   }
   .welcome-title {
-    font-size: 15px;
+    font-size: calc(15px + var(--ui-font-size-adjustment));
   }
   .content-stream {
-    padding: 16px;
+    padding: calc(16px - var(--panel-padding-reduction));
   }
   .compact-timeline {
-    padding: 14px 12px 10px;
+    padding: calc(14px - var(--card-padding-reduction)) calc(12px - var(--card-padding-reduction)) calc(10px - var(--card-padding-reduction));
   }
   .timeline-header {
     margin-bottom: 12px;

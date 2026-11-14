@@ -3,8 +3,8 @@
     :model-value="modelValue"
     :prevent-close="saving"
     size="md"
-    :title="isEdit ? '编辑学科空间' : '创建学科空间'"
-    :aria-label="isEdit ? '编辑学科空间' : '创建学科空间'"
+    :title="isEdit ? t({ 'zh-CN': '编辑学科空间', en: 'Edit subject', ja: '科目を編集' }) : t({ 'zh-CN': '创建学科空间', en: 'Create subject', ja: '科目を作成' })"
+    :aria-label="isEdit ? t({ 'zh-CN': '编辑学科空间', en: 'Edit subject', ja: '科目を編集' }) : t({ 'zh-CN': '创建学科空间', en: 'Create subject', ja: '科目を作成' })"
     @update:model-value="handleClose"
     @close="handleClose"
   >
@@ -21,19 +21,19 @@
           <span v-else>{{ getLegacySubjectIcon(form.icon) }}</span>
         </div>
         <div class="preview-info">
-          <span class="preview-name">{{ form.name || '学科名称预览' }}</span>
-          <span class="preview-desc">{{ form.description || '这是您的专属学科知识沉淀空间' }}</span>
+          <span class="preview-name">{{ form.name || t({ 'zh-CN': '学科名称预览', en: 'Subject name preview', ja: '科目名のプレビュー' }) }}</span>
+          <span class="preview-desc">{{ form.description || t({ 'zh-CN': '这是您的专属学科知识沉淀空间', en: 'A workspace for this subject', ja: 'この科目専用のワークスペース' }) }}</span>
         </div>
       </div>
 
       <!-- Name Input -->
       <div class="modal-form-group">
-        <label for="subj-name" class="modal-form-label">学科名称 <span class="required">*</span></label>
+        <label for="subj-name" class="modal-form-label">{{ t({ 'zh-CN': '学科名称', en: 'Subject name', ja: '科目名' }) }} <span class="required">*</span></label>
         <input
           type="text"
           id="subj-name"
           v-model="form.name"
-          placeholder="例如: 算法与数据结构、应用物理学"
+          :placeholder="t({ 'zh-CN': '例如: 算法与数据结构、应用物理学', en: 'For example: Algorithms, Applied Physics', ja: '例：アルゴリズム、応用物理学' })"
           maxlength="20"
           required
           autofocus
@@ -43,11 +43,11 @@
 
       <!-- Description Input -->
       <div class="modal-form-group">
-        <label for="subj-desc" class="modal-form-label">学科简述</label>
+        <label for="subj-desc" class="modal-form-label">{{ t({ 'zh-CN': '学科简述', en: 'Description', ja: '説明' }) }}</label>
         <textarea
           id="subj-desc"
           v-model="form.description"
-          placeholder="简短描述这个学科的研究方向或课程定位..."
+          :placeholder="t({ 'zh-CN': '简短描述这个学科的研究方向或课程定位...', en: 'Briefly describe the subject or course…', ja: '科目や授業の概要を入力…' })"
           maxlength="100"
           rows="3"
           class="modal-form-textarea"
@@ -56,7 +56,7 @@
 
       <!-- Icon Selector -->
       <div class="modal-form-group">
-        <label class="modal-form-label">选择空间图标</label>
+        <label class="modal-form-label">{{ t({ 'zh-CN': '选择空间图标', en: 'Subject icon', ja: '科目のアイコン' }) }}</label>
         <div class="icon-grid">
           <button
             v-for="option in subjectIconOptions"
@@ -64,8 +64,8 @@
             type="button"
             class="icon-btn"
             :class="{ 'is-selected': form.icon === option.key }"
-            :title="option.label"
-            :aria-label="`选择${option.label}图标`"
+            :title="t(iconLabels[option.key])"
+            :aria-label="t({ 'zh-CN': '选择{name}图标', en: 'Select {name} icon', ja: '{name}のアイコンを選択' }, { name: t(iconLabels[option.key]) })"
             @click="form.icon = option.key"
           >
             <ElIcon :size="20"><component :is="option.component" /></ElIcon>
@@ -75,15 +75,16 @@
     </div>
 
     <template #footer>
-      <button type="button" class="modal-btn modal-btn-secondary" :disabled="saving" @click="handleClose">取消</button>
+      <button type="button" class="modal-btn modal-btn-secondary" :disabled="saving" @click="handleClose">{{ t({ 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' }) }}</button>
       <button type="button" class="modal-btn modal-btn-primary" :disabled="saving || !form.name.trim()" @click="handleSave">
-        {{ isEdit ? '保存修改' : '确认创建' }}
+        {{ isEdit ? t({ 'zh-CN': '保存修改', en: 'Save changes', ja: '変更を保存' }) : t({ 'zh-CN': '确认创建', en: 'Create subject', ja: '科目を作成' }) }}
       </button>
     </template>
   </ModalShell>
 </template>
 
 <script setup lang="ts">
+import { t } from '@/i18n'
 import { ref, watch } from 'vue'
 import { ElIcon } from 'element-plus'
 import ModalShell from '@/components/modal/ModalShell.vue'
@@ -111,6 +112,25 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'save', data: any): void
 }>()
+
+const iconLabels = {
+  math: { 'zh-CN': '高等数学', en: 'Mathematics', ja: '数学' },
+  code: { 'zh-CN': '程序设计', en: 'Programming', ja: 'プログラミング' },
+  physics: { 'zh-CN': '大学物理', en: 'Physics', ja: '物理学' },
+  chemistry: { 'zh-CN': '基础化学', en: 'Chemistry', ja: '化学' },
+  biology: { 'zh-CN': '生命科学', en: 'Life sciences', ja: '生命科学' },
+  computer: { 'zh-CN': '电子信息', en: 'Electronics and information technology', ja: '電子情報' },
+  analysis: { 'zh-CN': '数据与AI', en: 'Data and AI', ja: 'データと AI' },
+  language: { 'zh-CN': '学术外语', en: 'Academic languages', ja: '学術外国語' },
+  book: { 'zh-CN': '文学传播', en: 'Literature and communication', ja: '文学・コミュニケーション' },
+  economics: { 'zh-CN': '经济金融', en: 'Economics and finance', ja: '経済・金融' },
+  business: { 'zh-CN': '工商管理', en: 'Business administration', ja: '経営学' },
+  law: { 'zh-CN': '法律法学', en: 'Law', ja: '法学' },
+  medicine: { 'zh-CN': '临床医学', en: 'Clinical medicine', ja: '臨床医学' },
+  engineering: { 'zh-CN': '建筑土木', en: 'Architecture and civil engineering', ja: '建築・土木工学' },
+  art: { 'zh-CN': '艺术设计', en: 'Art and design', ja: '芸術・デザイン' },
+  school: { 'zh-CN': '通识思政', en: 'General and civic education', ja: '教養・市民教育' },
+}
 
 const isEdit = ref(false)
 const form = ref({

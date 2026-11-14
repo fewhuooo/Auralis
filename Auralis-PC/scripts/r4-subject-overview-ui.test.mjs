@@ -78,7 +78,7 @@ test('automatic subject-local conflict resolution claims its authenticated scope
 
 test('SubjectWorkspace integrates overview UI with outline composer and unified overview cards', async () => {
   const source = await read('src/views/SubjectWorkspace/index.vue')
-  assert.match(source, /<h3 class="drawer-title">总览<\/h3>/)
+  assert.match(source, /<h3 class="drawer-title">\{\{ t\(messages\.overview\) \}\}<\/h3>/)
   assert.doesNotMatch(source, /<button class="outline-ai-button"[^>]*>AI 梳理<\/button>/)
   assert.match(source, /<button[\s\S]*?class="outline-add-button"[\s\S]*?:class="\{\s*'is-active':\s*isOutlineComposer\s*\}"/)
   assert.match(source, /<SubjectOverviewSection/)

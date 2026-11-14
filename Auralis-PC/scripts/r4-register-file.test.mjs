@@ -117,7 +117,7 @@ test('file register dialog and callers guard against fake 100% completion and re
   const asset = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
 
   assert.match(dialog, /const isCompleted = computed\(/)
-  assert.match(dialog, /isCompleted \? '导入完成' :/)
+  assert.match(dialog, /isCompleted \? t\(\{\s*'zh-CN': '导入完成'[^\n]+\) :/)
   assert.doesNotMatch(dialog, /ceiling = Math\.max\(rawTarget, 86\)/)
   assert.match(workspace, /catch \(e: any\) \{[\s\S]*?uploadProgress\.value = 0/)
   assert.match(asset, /catch \(err: any\) \{[\s\S]*?uploadProgress\.value = 0/)

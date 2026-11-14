@@ -24,12 +24,12 @@
       <div class="phase-status">
         <span class="phase-pill" :class="{ 'is-break': isBreakPhase, 'is-active': isRunning }">
           <span class="phase-beacon"></span>
-          {{ isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}
+          {{ isBreakPhase ? t({ 'zh-CN': '茶歇时刻', en: 'Break time', ja: '休憩中' }) : t({ 'zh-CN': '沉浸专注中', en: 'Focus time', ja: '集中時間' }) }}
         </span>
       </div>
 
       <!-- Progress Dots -->
-      <div class="progress-dots" :title="`今日第 ${currentPomodoro} 个番茄周期`">
+      <div class="progress-dots" :title="t({ 'zh-CN': '今日第 {count} 个番茄周期', en: 'Today\'s Pomodoro #{count}', ja: '今日のポモドーロ {count} 回目' }, { count: currentPomodoro })">
         <div 
           v-for="i in 4" 
           :key="i"
@@ -40,24 +40,25 @@
 
       <!-- Controls -->
       <div class="controls">
-        <button class="ctrl-btn secondary" type="button" @click="resetTimer">重置</button>
+        <button class="ctrl-btn secondary" type="button" @click="resetTimer">{{ t({ 'zh-CN': '重置', en: 'Reset', ja: 'リセット' }) }}</button>
         <button 
           class="main-btn" 
           type="button" 
           :class="{ 'is-running': isRunning, 'is-break': isBreakPhase }" 
           @click="toggleTimer"
-          :title="isRunning ? '暂停专注' : '开始专注'"
+          :title="isRunning ? t({ 'zh-CN': '暂停专注', en: 'Pause focus', ja: '集中を一時停止' }) : t({ 'zh-CN': '开始专注', en: 'Start focus', ja: '集中を開始' })"
         >
           <div class="pause-icon" v-if="isRunning"></div>
           <div class="play-icon" v-else></div>
         </button>
-        <button class="ctrl-btn secondary" type="button" @click="skipPhase">跳过</button>
+        <button class="ctrl-btn secondary" type="button" @click="skipPhase">{{ t({ 'zh-CN': '跳过', en: 'Skip', ja: 'スキップ' }) }}</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { locale, t } from '@/i18n'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import PomodoroRing from './PomodoroRing.vue'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
@@ -78,14 +79,9 @@ const currentTimeFormatted = computed(() => {
   return `${h}:${m}`
 })
 
-const currentDateFormatted = computed(() => {
-  const d = now.value
-  const month = d.getMonth() + 1
-  const date = d.getDate()
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  const weekday = weekdays[d.getDay()]
-  return `${month}月${date}日 ${weekday}`
-})
+const currentDateFormatted = computed(() =>
+  new Intl.DateTimeFormat(locale.value, { month: 'long', day: 'numeric', weekday: 'short' }).format(now.value),
+)
 
 const isRunning = computed(() => pomodoroStore.isRunning)
 const isBreakPhase = computed(() => pomodoroStore.isBreakPhase)
@@ -103,7 +99,7 @@ async function runTimerAction(action: () => Promise<void>): Promise<void> {
     await action()
   } catch (error) {
     console.error('Failed to persist Pomodoro action:', error)
-    ElNotification({ title: '专注状态保存失败', message: '请稍后重试', type: 'error', position: 'top-right' })
+    ElNotification({ title: t({ 'zh-CN': '专注状态保存失败', en: 'Could not save focus session', ja: '集中セッションを保存できませんでした' }), message: t({ 'zh-CN': '请稍后重试', en: 'Try again later', ja: 'しばらくしてから再試行してください' }), type: 'error', position: 'top-right' })
   }
 }
 
@@ -115,12 +111,12 @@ const skipPhase = () => runTimerAction(() => pomodoroStore.skip())
 
 watch(currentPomodoro, (current, previous) => {
   if (suppressPhaseNotifications || current <= previous) return
-  ElNotification({ title: '专注完成！休息一下', type: 'success', position: 'top-right' })
+  ElNotification({ title: t({ 'zh-CN': '专注完成！休息一下', en: 'Focus session complete. Take a break.', ja: '集中セッションが完了しました。休憩しましょう。' }), type: 'success', position: 'top-right' })
 }, { flush: 'sync' })
 
 watch(isBreakPhase, (isBreak, wasBreak) => {
   if (suppressPhaseNotifications || !wasBreak || isBreak) return
-  ElNotification({ title: '休息结束，开始专注', type: 'success', position: 'top-right' })
+  ElNotification({ title: t({ 'zh-CN': '休息结束，开始专注', en: 'Break over. Time to focus.', ja: '休憩が終わりました。集中を始めましょう。' }), type: 'success', position: 'top-right' })
 }, { flush: 'sync' })
 
 onMounted(async () => {

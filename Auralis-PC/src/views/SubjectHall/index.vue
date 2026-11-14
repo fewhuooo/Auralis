@@ -5,16 +5,16 @@
       <div class="hall-header">
         <div class="hall-header-left">
           <div class="hall-title-row">
-            <h1 class="hall-title">学科空间</h1>
+            <h1 class="hall-title">{{ t({ 'zh-CN': '学科空间', en: 'Subjects', ja: '科目スペース' }) }}</h1>
             <span v-if="subjectStore.subjects.length > 0" class="hall-count-badge">
-              共 {{ subjectStore.subjects.length }} 个空间
+              {{ t({ 'zh-CN': '共 {count} 个空间', en: 'Subjects: {count}', ja: '全{count}科目' }, { count: subjectStore.subjects.length }) }}
             </span>
           </div>
-          <p class="hall-desc">按学科分类管理你的学习资料、知识点与复习计划</p>
+          <p class="hall-desc">{{ t({ 'zh-CN': '按学科分类管理你的学习资料、知识点与复习计划', en: 'Organize your materials, knowledge blocks, and review plans by subject', ja: '学習資料、知識ブロック、復習計画を科目別に管理' }) }}</p>
         </div>
         <button class="create-btn" @click="openCreateSubject(null)">
           <IconPlus :size="15" :stroke-width="2.2" class="create-btn-icon" />
-          <span>新建学科空间</span>
+          <span>{{ t({ 'zh-CN': '新建学科空间', en: 'New subject', ja: '科目を作成' }) }}</span>
         </button>
       </div>
 
@@ -25,14 +25,14 @@
           <input
             v-model="searchQuery"
             class="search-input"
-            placeholder="搜索学科空间名称或简介..."
+            :placeholder="t({ 'zh-CN': '搜索学科空间名称或简介...', en: 'Search subject names or descriptions…', ja: '科目名や説明を検索…' })"
           />
           <button
             v-if="searchQuery"
             type="button"
             class="search-clear-btn"
-            title="清空搜索"
-            aria-label="清空搜索"
+            :title="t({ 'zh-CN': '清空搜索', en: 'Clear search', ja: '検索をクリア' })"
+            :aria-label="t({ 'zh-CN': '清空搜索', en: 'Clear search', ja: '検索をクリア' })"
             @click="searchQuery = ''"
           >
             <IconX :size="13" :stroke-width="2.2" />
@@ -48,7 +48,7 @@
           class="subject-card"
           role="button"
           tabindex="0"
-          :aria-label="`进入学科空间 ${subj.name}`"
+          :aria-label="t({ 'zh-CN': '进入学科空间 {name}', en: 'Open subject {name}', ja: '科目「{name}」を開く' }, { name: subj.name })"
           @click="router.push(`/subject/${subj.id}`)"
           @keydown.enter="router.push(`/subject/${subj.id}`)"
         >
@@ -62,16 +62,16 @@
             <div class="subject-card-actions" @click.stop>
               <button
                 class="card-action-btn"
-                title="编辑学科空间"
-                aria-label="编辑学科空间"
+                :title="t({ 'zh-CN': '编辑学科空间', en: 'Edit subject', ja: '科目を編集' })"
+                :aria-label="t({ 'zh-CN': '编辑学科空间', en: 'Edit subject', ja: '科目を編集' })"
                 @click="openCreateSubject(subj)"
               >
                 <IconPencil :size="13" :stroke-width="2" />
               </button>
               <button
                 class="card-action-btn delete"
-                title="删除学科空间"
-                aria-label="删除学科空间"
+                :title="t({ 'zh-CN': '删除学科空间', en: 'Delete subject', ja: '科目を削除' })"
+                :aria-label="t({ 'zh-CN': '删除学科空间', en: 'Delete subject', ja: '科目を削除' })"
                 @click="confirmDeleteSubject(subj)"
               >
                 <IconX :size="13" :stroke-width="2.2" />
@@ -82,21 +82,21 @@
           <div class="subject-card-body">
             <h4 class="subject-card-title">{{ subj.name }}</h4>
             <div class="subject-card-meta">
-              <span class="meta-pill">{{ subj.fileCount || 0 }} 材料</span>
+              <span class="meta-pill">{{ t({ 'zh-CN': '材料 {count}', en: 'Materials: {count}', ja: '資料 {count}件' }, { count: subj.fileCount || 0 }) }}</span>
               <span class="meta-dot">·</span>
-              <span class="meta-pill">{{ subj.blockCount || 0 }} 知识块</span>
+              <span class="meta-pill">{{ t({ 'zh-CN': '知识块 {count}', en: 'Knowledge blocks: {count}', ja: '知識ブロック {count}件' }, { count: subj.blockCount || 0 }) }}</span>
             </div>
           </div>
 
           <div class="subject-card-footer">
             <div class="mastery-label-row">
-              <span class="mastery-title">知识掌握度</span>
+              <span class="mastery-title">{{ t({ 'zh-CN': '知识掌握度', en: 'Mastery', ja: '習熟度' }) }}</span>
               <span class="mastery-value">{{ getMasteryPercent(subj) }}%</span>
             </div>
             <!-- 三态细轨进度条 -->
             <div
               class="mastery-bar-track"
-              :title="`待学习 ${getSubjectProportions(subj).pendingCount} (${getSubjectProportions(subj).pendingPct}%) · 待复习 ${getSubjectProportions(subj).reviewingCount} (${getSubjectProportions(subj).reviewingPct}%) · 已掌握 ${getSubjectProportions(subj).masteredCount} (${getSubjectProportions(subj).masteredPct}%)`"
+              :title="t({ 'zh-CN': '待学习 {pendingCount} ({pendingPct}%) · 待复习 {reviewingCount} ({reviewingPct}%) · 已掌握 {masteredCount} ({masteredPct}%)', en: 'To learn {pendingCount} ({pendingPct}%) · To review {reviewingCount} ({reviewingPct}%) · Mastered {masteredCount} ({masteredPct}%)', ja: '未学習 {pendingCount} ({pendingPct}%) · 復習待ち {reviewingCount} ({reviewingPct}%) · 習得済み {masteredCount} ({masteredPct}%)' }, { ...getSubjectProportions(subj) })"
             >
               <div
                 class="mastery-bar-seg mastery-bar-seg--new"
@@ -119,7 +119,7 @@
           class="subject-card add-card"
           role="button"
           tabindex="0"
-          aria-label="新建学科空间"
+          :aria-label="t({ 'zh-CN': '新建学科空间', en: 'New subject', ja: '科目を作成' })"
           @click="openCreateSubject(null)"
           @keydown.enter="openCreateSubject(null)"
         >
@@ -127,8 +127,8 @@
             <IconPlus :size="20" :stroke-width="2.2" />
           </div>
           <div class="add-text-group">
-            <span class="add-label">创建学科空间</span>
-            <span class="add-sublabel">扩展你的新知识疆域</span>
+            <span class="add-label">{{ t({ 'zh-CN': '创建学科空间', en: 'Create subject', ja: '科目を作成' }) }}</span>
+            <span class="add-sublabel">{{ t({ 'zh-CN': '扩展你的新知识疆域', en: 'Organize a new area of study', ja: '新しい学習領域を整理' }) }}</span>
           </div>
         </div>
       </div>
@@ -138,11 +138,11 @@
         <div class="empty-icon-halo">
           <IconBooks :size="40" :stroke-width="1.6" class="empty-halo-svg" />
         </div>
-        <h3 class="empty-hall-title">还没有学科空间</h3>
-        <p class="empty-hall-desc">创建你的第一个专属学科空间，开始系统化沉淀材料与知识块</p>
+        <h3 class="empty-hall-title">{{ t({ 'zh-CN': '还没有学科空间', en: 'No subjects yet', ja: '科目がまだありません' }) }}</h3>
+        <p class="empty-hall-desc">{{ t({ 'zh-CN': '创建你的第一个专属学科空间，开始系统化沉淀材料与知识块', en: 'Create a subject to start organizing your materials and knowledge blocks', ja: '科目を作成して資料や知識ブロックを整理しましょう' }) }}</p>
         <button class="create-btn" @click="openCreateSubject(null)">
           <IconPlus :size="15" :stroke-width="2.2" class="create-btn-icon" />
-          <span>立即创建学科空间</span>
+          <span>{{ t({ 'zh-CN': '立即创建学科空间', en: 'Create your first subject', ja: '最初の科目を作成' }) }}</span>
         </button>
       </div>
 
@@ -150,10 +150,10 @@
         <div class="empty-icon-halo">
           <IconSearch :size="38" :stroke-width="1.6" class="empty-halo-svg" />
         </div>
-        <h3 class="empty-hall-title">未找到匹配的学科空间</h3>
-        <p class="empty-hall-desc">未能找到包含 “{{ searchQuery }}” 的学科，尝试更换关键词</p>
+        <h3 class="empty-hall-title">{{ t({ 'zh-CN': '未找到匹配的学科空间', en: 'No matching subjects', ja: '該当する科目がありません' }) }}</h3>
+        <p class="empty-hall-desc">{{ t({ 'zh-CN': '未能找到包含 “{query}” 的学科，尝试更换关键词', en: 'No subjects match “{query}”. Try a different search.', ja: '「{query}」に一致する科目がありません。別のキーワードで検索してください。' }, { query: searchQuery }) }}</p>
         <button class="clear-search-btn" @click="searchQuery = ''">
-          清空搜索条件
+          {{ t({ 'zh-CN': '清空搜索条件', en: 'Clear search', ja: '検索条件をクリア' }) }}
         </button>
       </div>
     </div>
@@ -170,6 +170,7 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '@/i18n'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElIcon, ElNotification } from 'element-plus'
@@ -411,8 +412,8 @@ const handleSaveSubject = async (formData: any) => {
       const existing = subjectStore.subjects.find(s => s.id === formData.id)
       if (!existing) {
         ElNotification({
-          title: '无法保存学科空间',
-          message: '该学科已不存在，请刷新后重试。',
+          title: t({ 'zh-CN': '无法保存学科空间', en: 'Could not save subject', ja: '科目を保存できません' }),
+          message: t({ 'zh-CN': '该学科已不存在，请刷新后重试。', en: 'This subject no longer exists. Refresh and try again.', ja: 'この科目はすでに削除されています。更新してから再試行してください。' }),
           type: 'error',
           position: 'top-right'
         })
@@ -434,8 +435,8 @@ const handleSaveSubject = async (formData: any) => {
     const duplicateName = e instanceof Error && e.message === 'SUBJECT_NAME_ALREADY_EXISTS'
     if (!duplicateName) console.error('Failed to save subject:', e)
     ElNotification({
-      title: '学科空间保存失败',
-      message: duplicateName ? '已有同名学科，请更换名称后重试。' : '更改未能保存，请重试。表单内容仍保留。',
+      title: t({ 'zh-CN': '学科空间保存失败', en: 'Could not save subject', ja: '科目を保存できませんでした' }),
+      message: duplicateName ? t({ 'zh-CN': '已有同名学科，请更换名称后重试。', en: 'A subject with this name already exists. Choose another name and try again.', ja: '同じ名前の科目があります。別の名前で再試行してください。' }) : t({ 'zh-CN': '更改未能保存，请重试。表单内容仍保留。', en: 'Your changes were kept in the form. Try saving again.', ja: '入力内容は保持されています。もう一度保存してください。' }),
       type: 'error',
       position: 'top-right'
     })
@@ -449,12 +450,12 @@ const handleSaveSubject = async (formData: any) => {
 }
 
 const confirmDeleteSubject = async (subject: Subject) => {
-  if (confirm(`确定要删除学科"${subject.name}"吗？关联的学习材料也将同步删除。`)) {
+  if (confirm(t({ 'zh-CN': '确定要删除学科「{name}」吗？关联的学习材料也将同步删除。', en: 'Delete “{name}” and its linked learning materials?', ja: '科目「{name}」と関連する学習資料を削除しますか？' }, { name: subject.name }))) {
     try {
       await subjectStore.deleteSubject(subject.id)
       ElNotification({
-        title: '学科已删除',
-        message: `"${subject.name}" 学科及关联材料已删除。`,
+        title: t({ 'zh-CN': '学科已删除', en: 'Subject deleted', ja: '科目を削除しました' }),
+        message: t({ 'zh-CN': '「{name}」学科及关联材料已删除。', en: '“{name}” and its linked materials were deleted.', ja: '科目「{name}」と関連する資料を削除しました。' }, { name: subject.name }),
         type: 'success',
         position: 'top-right'
       })
@@ -471,7 +472,7 @@ const confirmDeleteSubject = async (subject: Subject) => {
   width: 100%;
   overflow-y: auto;
   background: var(--color-bg-secondary, #EEEEEE);
-  padding: 16px 20px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
   box-sizing: border-box;
 
   /* Zen Minimalist Theme Tokens */
@@ -489,7 +490,7 @@ html.dark .hall-container {
 .hall-content {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 36px 44px;
+  padding: calc(36px - var(--panel-padding-reduction)) calc(44px - var(--panel-padding-reduction));
   background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-xl, 20px);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
@@ -509,7 +510,7 @@ html.dark .hall-content {
   justify-content: space-between;
   align-items: flex-start;
   gap: 20px;
-  margin-bottom: 28px;
+  margin-bottom: calc(28px - var(--layout-gap-reduction));
 }
 
 .hall-header-left {
@@ -526,7 +527,7 @@ html.dark .hall-content {
 }
 
 .hall-title {
-  font-size: 24px;
+  font-size: calc(24px + var(--ui-font-size-adjustment));
   font-weight: 800;
   color: var(--text-primary, #1C1C1A);
   margin: 0;
@@ -539,7 +540,7 @@ html.dark .hall-title {
 }
 
 .hall-count-badge {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 600;
   padding: 3px 10px;
   border-radius: var(--radius-full, 9999px);
@@ -556,7 +557,7 @@ html.dark .hall-count-badge {
 }
 
 .hall-desc {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   color: var(--text-muted, #7A7A75);
   margin: 0;
   line-height: 1.5;
@@ -573,7 +574,7 @@ html.dark .hall-count-badge {
   border: none;
   padding: 0 18px;
   border-radius: var(--radius-full, 9999px);
-  font-size: 13px;
+  font-size: calc(13px + var(--ui-font-size-adjustment));
   font-weight: 600;
   cursor: pointer;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -629,7 +630,7 @@ html.dark .hall-count-badge {
   border: 0.5px solid var(--border-default, rgba(0, 0, 0, 0.08));
   border-radius: var(--radius-full, 9999px);
   color: var(--text-primary, #1C1C1A);
-  font-size: 13px;
+  font-size: calc(13px + var(--ui-font-size-adjustment));
   font-family: inherit;
   outline: none;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -694,7 +695,7 @@ html.dark .search-clear-btn:hover {
 .subjects-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 22px;
+  gap: calc(22px - var(--layout-gap-reduction));
 }
 
 /* Subject Card */
@@ -702,7 +703,7 @@ html.dark .search-clear-btn:hover {
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   border-radius: 16px;
-  padding: 22px 24px;
+  padding: calc(22px - var(--card-padding-reduction)) calc(24px - var(--card-padding-reduction));
   cursor: pointer;
   transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
@@ -809,11 +810,11 @@ html.dark .card-action-btn {
 }
 
 .subject-card-body {
-  margin-bottom: 20px;
+  margin-bottom: calc(20px - var(--layout-gap-reduction));
 }
 
 .subject-card-title {
-  font-size: 16.5px;
+  font-size: calc(16.5px + var(--ui-font-size-adjustment));
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
   margin: 0 0 8px;
@@ -829,7 +830,7 @@ html.dark .subject-card-title {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   color: var(--text-muted, #7A7A75);
   font-weight: 500;
 }
@@ -1047,20 +1048,20 @@ html.dark .empty-hall-title {
 /* ===== Responsive Adaptation ===== */
 @media (max-width: 1200px) {
   .hall-content {
-    padding: 28px 32px;
+    padding: calc(28px - var(--panel-padding-reduction)) calc(32px - var(--panel-padding-reduction));
   }
   .subjects-grid {
     grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-    gap: 16px;
+    gap: calc(16px - var(--layout-gap-reduction));
   }
 }
 
 @media (max-width: 960px) {
   .hall-container {
-    padding: 12px 14px;
+    padding: calc(12px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
   }
   .hall-content {
-    padding: 20px 18px;
+    padding: calc(20px - var(--panel-padding-reduction)) calc(18px - var(--panel-padding-reduction));
     border-radius: 16px;
   }
   .hall-header {
@@ -1073,7 +1074,7 @@ html.dark .empty-hall-title {
   }
   .subjects-grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 12px;
+    gap: calc(12px - var(--layout-gap-reduction));
   }
 }
 </style>

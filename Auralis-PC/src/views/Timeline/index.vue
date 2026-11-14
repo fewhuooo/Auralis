@@ -5,7 +5,7 @@
       <!-- Page header -->
       <div class="page-header">
         <div class="header-left">
-          <h1 class="page-headline">任务排期</h1>
+          <h1 class="page-headline">{{ t({ 'zh-CN': '任务排期', en: 'Task schedule', ja: 'タスクの予定' }) }}</h1>
         </div>
         
         <!-- Pill stats in the middle -->
@@ -25,21 +25,21 @@
               :class="{ 'is-active': viewMode === 'day' }"
               @click="viewMode = 'day'"
             >
-              日视图
+              {{ t({ 'zh-CN': '日视图', en: 'Day', ja: '日' }) }}
             </button>
             <button 
               class="toggle-btn" 
               :class="{ 'is-active': viewMode === 'week' }"
               @click="viewMode = 'week'"
             >
-              周视图
+              {{ t({ 'zh-CN': '周视图', en: 'Week', ja: '週' }) }}
             </button>
           </div>
           <button class="btn-secondary" @click="triggerImport">
-            <IconInbox :size="15" :stroke-width="2" /> 导入任务
+            <IconInbox :size="15" :stroke-width="2" /> {{ t({ 'zh-CN': '导入任务', en: 'Import tasks', ja: 'タスクを取り込む' }) }}
           </button>
           <button class="btn-primary" @click="triggerCreate">
-            <IconPlus :size="16" :stroke-width="2" /> 新建任务
+            <IconPlus :size="16" :stroke-width="2" /> {{ t({ 'zh-CN': '新建任务', en: 'New task', ja: 'タスクを作成' }) }}
           </button>
         </div>
       </div>
@@ -50,7 +50,7 @@
     <div v-if="viewMode === 'day'" class="timeline-body">
       <!-- Left Column: Weekly Overview -->
       <div class="weekly-overview-column">
-        <h3 class="column-title">本周排期概览</h3>
+        <h3 class="column-title">{{ t({ 'zh-CN': '本周排期概览', en: 'This week', ja: '今週の予定' }) }}</h3>
         <div class="weekly-overview-list">
           <div 
             v-for="day in timelineDays"
@@ -60,9 +60,9 @@
             @click="selectDay(day.dayCode, day.dateKey)"
           >
             <div class="weekly-overview-row-header">
-              <span class="day-dot" v-if="day.isToday">今</span>
-              <span class="weekly-overview-day-name" :class="{ 'is-today-text': day.isToday }">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
-              <span class="weekly-overview-task-count">{{ getPendingScheduledTasksForDateKey(day.dateKey).length }} 项任务</span>
+              <span class="day-dot" v-if="day.isToday">{{ t({ 'zh-CN': '今', en: 'Today', ja: '今日' }) }}</span>
+              <span class="weekly-overview-day-name" :class="{ 'is-today-text': day.isToday }">{{ formatTimelineDate(day, { weekday: 'short', month: 'numeric', day: 'numeric' }) }}</span>
+              <span class="weekly-overview-task-count">{{ t({ 'zh-CN': '任务 {count} 项', en: 'Tasks: {count}', ja: 'タスク {count}件' }, { count: getPendingScheduledTasksForDateKey(day.dateKey).length }) }}</span>
             </div>
             <div class="weekly-overview-tasks-timeline">
               <div 
@@ -73,12 +73,12 @@
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
               ></div>
               <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length > 3" class="weekly-overview-more">+{{ getPendingScheduledTasksForDateKey(day.dateKey).length - 3 }}</span>
-              <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">空闲</span>
+              <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">{{ t({ 'zh-CN': '空闲', en: 'Free', ja: '予定なし' }) }}</span>
             </div>
           </div>
         </div>
 
-        <h3 class="column-title next-week-title">下周排期概览</h3>
+        <h3 class="column-title next-week-title">{{ t({ 'zh-CN': '下周排期概览', en: 'Next week', ja: '来週の予定' }) }}</h3>
         <div class="weekly-overview-list">
           <div 
             v-for="day in nextWeekTimelineDays"
@@ -88,8 +88,8 @@
             @click="selectDay(day.dayCode, day.dateKey)"
           >
             <div class="weekly-overview-row-header">
-              <span class="weekly-overview-day-name">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
-              <span class="weekly-overview-task-count">{{ getPendingScheduledTasksForDateKey(day.dateKey).length }} 项任务</span>
+              <span class="weekly-overview-day-name">{{ formatTimelineDate(day, { weekday: 'short', month: 'numeric', day: 'numeric' }) }}</span>
+              <span class="weekly-overview-task-count">{{ t({ 'zh-CN': '任务 {count} 项', en: 'Tasks: {count}', ja: 'タスク {count}件' }, { count: getPendingScheduledTasksForDateKey(day.dateKey).length }) }}</span>
             </div>
             <div class="weekly-overview-tasks-timeline">
               <div 
@@ -100,7 +100,7 @@
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
               ></div>
               <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length > 3" class="weekly-overview-more">+{{ getPendingScheduledTasksForDateKey(day.dateKey).length - 3 }}</span>
-              <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">空闲</span>
+              <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">{{ t({ 'zh-CN': '空闲', en: 'Free', ja: '予定なし' }) }}</span>
             </div>
           </div>
         </div>
@@ -108,7 +108,7 @@
 
       <!-- Middle Column: Detailed Day Timeline -->
       <div class="timeline-column">
-        <h3 class="column-title">日程时间轴 ({{ selectedTimelineDay.weekdayLabel }} {{ selectedTimelineDay.monthDayLabel }})</h3>
+        <h3 class="column-title">{{ t({ 'zh-CN': '日程时间轴（{date}）', en: 'Schedule ({date})', ja: '予定タイムライン（{date}）' }, { date: formatTimelineDate(selectedTimelineDay, { weekday: 'short', month: 'numeric', day: 'numeric' }) }) }}</h3>
         <div class="time-slots">
           <div
             v-for="slot in timeSlots"
@@ -148,11 +148,11 @@
                   <span class="task-tag">
                     {{ slot.task.subject }}
                   </span>
-                  <button class="task-delete-btn" :disabled="deletingTaskId === slot.task.id" @click.stop="handleDeleteTask(slot.task)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
+                  <button class="task-delete-btn" :disabled="deletingTaskId === slot.task.id" @click.stop="handleDeleteTask(slot.task)" :title="t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' })"><IconX :size="12" :stroke-width="1.8" /></button>
                 </div>
                 <div class="task-detail">{{ getCleanDesc(slot.task.desc) }}</div>
                 <span v-if="dragOverTarget?.type === 'swap' && dragOverTarget.targetTaskId === slot.task.id" class="task-body-drop-hint">
-                  交换排期
+                  {{ t({ 'zh-CN': '交换排期', en: 'Swap time slots', ja: '予定枠を入れ替える' }) }}
                 </span>
                 <span v-else-if="dragOverTarget?.type === 'body' && dragOverTarget.targetTaskId === slot.task.id" class="task-body-drop-hint">
                   {{ bodyDropHint }}
@@ -164,7 +164,7 @@
                   class="kb-relation-badge"
                   @click.stop="openRelatedBlock(getTaskIdRelation(slot.task.desc)!)"
                 >
-                  💡 关联知识: {{ getBlockTitle(getTaskIdRelation(slot.task.desc)!) }}
+                  {{ t({ 'zh-CN': '💡 关联知识：{title}', en: '💡 Linked knowledge: {title}', ja: '💡 関連知識：{title}' }, { title: getBlockTitle(getTaskIdRelation(slot.task.desc)!) }) }}
                 </div>
               </div>
               <div v-else-if="!isSlotCovered(slot.time)" class="slot-empty">
@@ -180,7 +180,7 @@
 
       <!-- Right Column: Pending Tasks -->
       <div class="tasks-column">
-        <h3 class="column-title">待安排任务</h3>
+        <h3 class="column-title">{{ t({ 'zh-CN': '待安排任务', en: 'Unscheduled tasks', ja: '未予定のタスク' }) }}</h3>
         <div 
           class="pending-tasks"
           :class="{ 'drag-over': dragOverTarget?.type === 'unschedule' }"
@@ -190,7 +190,7 @@
         >
           <div v-if="filteredTimelinePendingTasks.length === 0" class="pending-empty-state">
             <span class="empty-icon"><IconCalendarCheck :size="36" :stroke-width="1.5" /></span>
-            <p>暂无待安排的任务</p>
+            <p>{{ t({ 'zh-CN': '暂无待安排的任务', en: 'No tasks to schedule', ja: '予定を設定するタスクがありません' }) }}</p>
           </div>
           <div
             v-for="task in filteredTimelinePendingTasks"
@@ -212,11 +212,11 @@
                 class="kb-relation-badge mini"
                 @click.stop="openRelatedBlock(getTaskIdRelation(task.desc)!)"
               >
-                💡 知识: {{ getBlockTitle(getTaskIdRelation(task.desc)!) }}
+                {{ t({ 'zh-CN': '💡 知识：{title}', en: '💡 Knowledge: {title}', ja: '💡 知識：{title}' }, { title: getBlockTitle(getTaskIdRelation(task.desc)!) }) }}
               </div>
 
               <div class="pending-meta">
-                <span>预计 {{ task.duration }}min</span>
+                <span>{{ t({ 'zh-CN': '预计 {count} 分钟', en: 'Est. {count} min', ja: '見積 {count}分' }, { count: task.duration || 0 }) }}</span>
                 <span v-if="task.dueAt" class="pending-due-badge" :class="{ 'is-overdue': isTaskOverdue(task.dueAt) }">
                   {{ formatTaskDue(task.dueAt) }}
                 </span>
@@ -241,9 +241,9 @@
           @drop="handleDrop($event, { type: 'week', dateKey: day.dateKey })"
           >
           <div class="weekly-column-header">
-            <span class="day-dot" v-if="day.isToday">今</span>
+            <span class="day-dot" v-if="day.isToday">{{ t({ 'zh-CN': '今', en: 'Today', ja: '今日' }) }}</span>
             <span class="weekly-column-title" :class="{ 'is-today-text': day.isToday }">
-              {{ day.weekdayLabel }} · {{ day.monthDayLabel }}
+              {{ formatTimelineDate(day, { weekday: 'short', month: 'numeric', day: 'numeric' }) }}
             </span>
             <span class="weekly-column-count">
               {{ getScheduledTasksForDateKey(day.dateKey).length }}
@@ -262,7 +262,7 @@
             >
               <div class="weekly-task-header">
                 <span class="weekly-task-name">{{ task.name }}</span>
-                <button class="card-delete-btn" :disabled="deletingTaskId === task.id" @click.stop="handleDeleteTask(task)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
+                <button class="card-delete-btn" :disabled="deletingTaskId === task.id" @click.stop="handleDeleteTask(task)" :title="t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' })"><IconX :size="12" :stroke-width="1.8" /></button>
               </div>
               <div class="weekly-task-meta">
                 <span class="weekly-task-time"><IconClock :size="12" :stroke-width="1.8" style="vertical-align: -1.5px; margin-right: 2px;" />{{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
@@ -283,7 +283,7 @@
            @drop="handleDrop($event, { type: 'unschedule', dateKey: selectedTimelineDay.dateKey })">
         
         <div v-if="filteredTimelinePendingTasks.length === 0" class="dock-empty">
-          <IconCalendarCheck :size="16" :stroke-width="1.8" style="vertical-align: -3px; margin-right: 4px;" />本周待排期任务已全部安排妥当！
+          <IconCalendarCheck :size="16" :stroke-width="1.8" style="vertical-align: -3px; margin-right: 4px;" />{{ t({ 'zh-CN': '本周待排期任务已全部安排妥当！', en: 'All tasks for this week are scheduled', ja: '今週のタスクはすべて予定済みです' }) }}
         </div>
         
         <div class="dock-tasks-container" v-else>
@@ -320,6 +320,7 @@
 </template>
 
 <script setup lang="ts">
+import { locale, t } from '@/i18n'
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -364,6 +365,10 @@ const nextWeekNow = computed(() => {
 })
 const nextWeekTimelineDays = computed(() => getTimelineDays(nextWeekNow.value))
 const allTimelineDays = computed(() => [...timelineDays.value, ...nextWeekTimelineDays.value])
+
+function formatTimelineDate(day: ReturnType<typeof getTimelineDays>[number], options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat(locale.value, options).format(new Date(day.dateKey + 'T00:00:00'))
+}
 
 const selectedTimelineDay = computed(() => {
   return allTimelineDays.value.find((day) => day.dateKey === selectedDay.value)
@@ -448,9 +453,9 @@ onUnmounted(() => {
 })
 
 const stats = computed(() => [
-  { icon: IconListCheck, value: pendingCount.value.toString(), label: '待排期' },
-  { icon: IconCircleCheck, value: completedCount.value.toString(), label: '已完成' },
-  { icon: IconClock, value: totalFocusHours.value, label: '已完成任务预计用时' }
+  { icon: IconListCheck, value: pendingCount.value.toString(), label: t({ 'zh-CN': '待排期', en: 'Unscheduled', ja: '未予定' }) },
+  { icon: IconCircleCheck, value: completedCount.value.toString(), label: t({ 'zh-CN': '已完成', en: 'Completed', ja: '完了' }) },
+  { icon: IconClock, value: totalFocusHours.value, label: t({ 'zh-CN': '已完成任务预计用时', en: 'Estimated time for completed tasks', ja: '完了したタスクの見積時間' }) }
 ])
 
 const filteredTimelinePendingTasks = computed(() => {
@@ -509,10 +514,10 @@ const bodyDropHint = computed(() => {
     sourceScheduledAt: session.sourceScheduledAt,
   })
   if (preview.error) return preview.error
-  if (!preview.scheduledAt) return '已在目标时段'
+  if (!preview.scheduledAt) return t({ 'zh-CN': '已在目标时段', en: 'Already in this slot', ja: 'すでにこの時間帯にあります' })
   const date = new Date(preview.scheduledAt)
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-  return `插入至 ${time}`
+  return t({ 'zh-CN': '插入至 {time}', en: 'Insert at {time}', ja: '{time}に挿入' }, { time })
 })
 
 const clearDragState = () => {
@@ -553,8 +558,8 @@ const isSamePlacement = (session: DragSession, target: DropTarget): boolean => {
 
 const reportDragFailure = (error: unknown) => {
   ElNotification({
-    title: '排期未保存',
-    message: error instanceof Error ? error.message : '本地保存失败，请重试。',
+    title: t({ 'zh-CN': '排期未保存', en: 'Schedule could not be saved', ja: '予定を保存できませんでした' }),
+    message: error instanceof Error ? error.message : t({ 'zh-CN': '本地保存失败，请重试。', en: 'Could not save locally. Try again.', ja: 'この端末に保存できませんでした。もう一度お試しください。' }),
     type: 'error',
     position: 'top-right',
   })
@@ -562,8 +567,8 @@ const reportDragFailure = (error: unknown) => {
 
 const reportScheduleQueued = () => {
   ElNotification({
-    title: '排期已保存在本机',
-    message: '等待网络连接后同步。',
+    title: t({ 'zh-CN': '排期已保存在本机', en: 'Schedule saved on this device', ja: '予定をこの端末に保存しました' }),
+    message: t({ 'zh-CN': '等待网络连接后同步。', en: 'Sync will resume when connected.', ja: 'ネットワークに接続すると同期します。' }),
     type: 'info',
     position: 'top-right',
   })
@@ -572,13 +577,13 @@ const reportScheduleQueued = () => {
 watch(() => syncStore.scheduleSyncErrors, (errors) => {
   for (const error of errors) {
     const message = error.code === 'RESOURCE_VERSION_CONFLICT'
-      ? '排期已在其他设备发生变化，本机安排已按服务器数据恢复。'
+      ? t({ 'zh-CN': '排期已在其他设备发生变化，本机安排已按服务器数据恢复。', en: 'The schedule changed on another device. This device has refreshed to the server schedule.', ja: '別の端末で予定が変更されたため、この端末の予定をサーバーの内容に更新しました。' })
       : error.code === 'VALIDATION_FAILED'
-        ? '排期未通过服务器校验，本机安排已按服务器数据恢复。'
+        ? t({ 'zh-CN': '排期未通过服务器校验，本机安排已按服务器数据恢复。', en: 'The server rejected the schedule. This device has refreshed to the server schedule.', ja: 'サーバーが予定を受け付けなかったため、この端末の予定をサーバーの内容に更新しました。' })
         : error.code === 'SCHEDULE_REFRESH_REQUIRED'
-          ? '排期结果需要重新读取，任务已从服务器刷新。'
-          : `排期同步失败（${error.code}），本机安排已恢复。`
-    ElNotification({ title: '排期同步失败', message, type: 'error', position: 'top-right' })
+          ? t({ 'zh-CN': '排期结果需要重新读取，任务已从服务器刷新。', en: 'Tasks have been reloaded from the server to refresh the schedule.', ja: '予定を更新するため、サーバーからタスクを再取得しました。' })
+          : t({ 'zh-CN': '排期同步失败（{code}），本机安排已恢复。', en: 'Schedule sync failed ({code}). The local schedule was restored.', ja: '予定を同期できませんでした（{code}）。この端末の予定は復元されました。' }, { code: error.code })
+    ElNotification({ title: t({ 'zh-CN': '排期同步失败', en: 'Schedule sync failed', ja: '予定を同期できませんでした' }), message, type: 'error', position: 'top-right' })
     syncStore.acknowledgeScheduleSyncError(error.clientMutationId)
   }
 }, { immediate: true })
@@ -597,7 +602,7 @@ const getCleanDesc = (desc?: string): string => {
 
 const getBlockTitle = (blockId: string): string => {
   const block = recentBlocks.value.find(b => b.id === blockId)
-  return block ? block.title : '已删除知识点'
+  return block ? block.title : t({ 'zh-CN': '已删除知识点', en: 'Deleted knowledge block', ja: '削除済みの知識ブロック' })
 }
 
 const isTaskOverdue = (dueAt?: string): boolean => {
@@ -610,7 +615,7 @@ const formatTaskDue = (dueAt?: string): string => {
   if (!dueAt) return ''
   const d = new Date(dueAt)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getMonth() + 1}/${d.getDate()} 截止`
+  return t({ 'zh-CN': '{date} 截止', en: 'Due {date}', ja: '期限 {date}' }, { date: new Intl.DateTimeFormat(locale.value, { month: 'numeric', day: 'numeric' }).format(d) })
 }
 
 // Related Block Detail Dialog trigger
@@ -624,8 +629,8 @@ const openRelatedBlock = (blockId: string) => {
     blockDialogVisible.value = true
   } else {
     ElNotification({
-      title: '⚠️ 无法查看',
-      message: '该关联知识块已被删除。',
+      title: t({ 'zh-CN': '⚠️ 无法查看', en: '⚠️ Cannot open', ja: '⚠️ 開けません' }),
+      message: t({ 'zh-CN': '该关联知识块已被删除。', en: 'The linked knowledge block was deleted.', ja: '関連する知識ブロックは削除されています。' }),
       type: 'warning',
       position: 'top-right'
     })
@@ -635,8 +640,8 @@ const openRelatedBlock = (blockId: string) => {
 const copyBlockContent = (text: string) => {
   navigator.clipboard.writeText(text)
   ElNotification({
-    title: '📋 已复制',
-    message: '内容已成功复制。',
+    title: t({ 'zh-CN': '📋 已复制', en: '📋 Copied', ja: '📋 コピーしました' }),
+    message: t({ 'zh-CN': '内容已成功复制。', en: 'Content copied.', ja: '内容をコピーしました。' }),
     type: 'success',
     position: 'top-right',
     duration: 2000
@@ -680,8 +685,8 @@ const handleCreateTask = async (taskData: {
     taskDialogVisible.value = false
   } catch (error) {
     ElNotification({
-      title: '创建任务失败',
-      message: error instanceof Error ? error.message : '任务保存失败，请重试。',
+      title: t({ 'zh-CN': '创建任务失败', en: 'Could not create task', ja: 'タスクを作成できませんでした' }),
+      message: error instanceof Error ? error.message : t({ 'zh-CN': '任务保存失败，请重试。', en: 'Could not save the task. Try again.', ja: 'タスクを保存できませんでした。もう一度お試しください。' }),
       type: 'error',
       position: 'top-right',
     })
@@ -696,27 +701,27 @@ const handleDeleteTask = async (task: Task) => {
   deletingTaskId.value = id
   try {
     await ElMessageBox.confirm(
-      `确定要删除任务「${name}」吗？`,
-      '删除提示',
+      t({ 'zh-CN': '确定要删除任务「{name}」吗？', en: 'Delete the task “{name}”?', ja: 'タスク「{name}」を削除しますか？' }, { name }),
+      t({ 'zh-CN': '删除提示', en: 'Confirm deletion', ja: '削除の確認' }),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t({ 'zh-CN': '确定', en: 'Confirm', ja: '確定' }),
+        cancelButtonText: t({ 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' }),
         distinguishCancelAndClose: true,
         type: 'warning',
       }
     )
     await taskStore.deleteTask(id)
     ElNotification({
-      title: '任务已删除',
-      message: `任务「${name}」已移除。`,
+      title: t({ 'zh-CN': '任务已删除', en: 'Task deleted', ja: 'タスクを削除しました' }),
+      message: t({ 'zh-CN': '任务「{name}」已移除。', en: 'The task “{name}” was removed.', ja: 'タスク「{name}」を削除しました。' }, { name }),
       type: 'success',
       position: 'top-right',
     })
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     ElNotification({
-      title: '删除任务失败',
-      message: error instanceof Error ? error.message : '任务删除失败，请重试。',
+      title: t({ 'zh-CN': '删除任务失败', en: 'Could not delete task', ja: 'タスクを削除できませんでした' }),
+      message: error instanceof Error ? error.message : t({ 'zh-CN': '任务删除失败，请重试。', en: 'Could not delete the task. Try again.', ja: 'タスクを削除できませんでした。もう一度お試しください。' }),
       type: 'error',
       position: 'top-right',
     })
@@ -772,8 +777,8 @@ const handleDeleteTask = async (task: Task) => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 16px 20px 20px;
-  gap: 14px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
+  gap: calc(14px - var(--layout-gap-reduction));
   overflow: hidden;
   box-sizing: border-box;
   background: var(--color-bg-secondary, #EEEEEE);
@@ -817,7 +822,7 @@ html.dark .timeline-page {
   border-radius: 18px;
   border: 1px solid var(--border-glass);
   box-shadow: var(--shadow-ambient);
-  padding: 14px 22px;
+  padding: calc(14px - var(--card-padding-reduction)) calc(22px - var(--card-padding-reduction));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -839,7 +844,7 @@ html.dark .timeline-page {
 }
 
 .page-headline {
-  font-size: 21px;
+  font-size: calc(21px + var(--ui-font-size-adjustment));
   font-weight: 850;
   letter-spacing: -0.025em;
   color: var(--text-primary);
@@ -869,7 +874,7 @@ html.dark .timeline-page {
   background: rgba(139, 154, 110, 0.06);
   border-radius: 9999px;
   border: 0.5px solid var(--border-glass);
-  font-size: 12.5px;
+  font-size: calc(12.5px + var(--ui-font-size-adjustment));
   box-shadow: 0 2px 6px rgba(35, 45, 30, 0.05);
   transition: transform 0.2s var(--spring-ease), border-color 0.2s var(--spring-ease), box-shadow 0.2s var(--spring-ease), background 0.2s;
   cursor: default;
@@ -904,7 +909,7 @@ html.dark .timeline-page {
 .stat-label {
   color: var(--text-secondary);
   font-weight: 500;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
 }
 
 /* Header Actions & Segmented Control */
@@ -1033,7 +1038,7 @@ html.dark .btn-secondary {
 .timeline-body {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(270px, 370px);
-  gap: 14px;
+  gap: calc(14px - var(--layout-gap-reduction));
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -1046,7 +1051,7 @@ html.dark .btn-secondary {
   border-radius: 18px;
   border: 0.5px solid var(--border-glass);
   box-shadow: var(--shadow-ambient);
-  padding: 18px 20px;
+  padding: calc(18px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1055,7 +1060,7 @@ html.dark .btn-secondary {
 }
 
 .column-title {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary);
   letter-spacing: -0.015em;
@@ -1139,7 +1144,7 @@ html.dark .btn-secondary {
 }
 
 .weekly-overview-day-name {
-  font-size: 12.5px;
+  font-size: calc(12.5px + var(--ui-font-size-adjustment));
   font-weight: 650;
   color: var(--text-primary);
   letter-spacing: -0.01em;
@@ -1151,7 +1156,7 @@ html.dark .btn-secondary {
 }
 
 .weekly-overview-task-count {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 600;
   color: var(--text-secondary);
   margin-left: auto;
@@ -1259,7 +1264,7 @@ html.dark .btn-secondary {
 
 .slot-time {
   width: 48px;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 650;
   color: var(--text-secondary);
   padding-top: 6px;
@@ -1438,7 +1443,7 @@ html.dark .slot-grid-line {
 }
 
 .task-name {
-  font-size: 13px;
+  font-size: calc(13px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary);
   pointer-events: none;
@@ -1639,7 +1644,7 @@ html.dark .kb-relation-badge {
 }
 
 .pending-name {
-  font-size: 13px;
+  font-size: calc(13px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1742,10 +1747,10 @@ html.dark .pending-due-badge.is-overdue {
   background: var(--surface-panel);
   border: 0.5px solid var(--border-glass);
   border-radius: 16px;
-  padding: 12px;
+  padding: calc(12px - var(--card-padding-reduction));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(10px - var(--layout-gap-reduction));
   min-height: 480px;
   box-shadow: var(--shadow-ambient);
   transition: all 0.25s var(--spring-ease);
@@ -1774,7 +1779,7 @@ html.dark .pending-due-badge.is-overdue {
 }
 
 .weekly-column-title {
-  font-size: 12.5px;
+  font-size: calc(12.5px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary);
   letter-spacing: -0.01em;
@@ -1836,7 +1841,7 @@ html.dark .pending-due-badge.is-overdue {
 }
 
 .weekly-task-name {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary);
   line-height: 1.4;
@@ -1893,7 +1898,7 @@ html.dark .weekly-task-tag {
 .weekly-bottom-dock {
   background: var(--surface-panel);
   border-radius: 18px;
-  padding: 16px 20px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
   box-shadow: var(--shadow-ambient);
   flex: 1;
   min-height: 130px;
@@ -1980,36 +1985,36 @@ html.dark .weekly-task-tag {
 /* ===== Responsive Adaptation ===== */
 @media (max-width: 1280px) {
   .timeline-page {
-    padding: 12px 14px 14px;
-    gap: 10px;
+    padding: calc(12px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
+    gap: calc(10px - var(--layout-gap-reduction));
   }
   .timeline-header-card {
-    padding: 12px 16px;
+    padding: calc(12px - var(--card-padding-reduction)) calc(16px - var(--card-padding-reduction));
   }
   .timeline-body {
     grid-template-columns: 240px 1fr 310px;
-    gap: 10px;
+    gap: calc(10px - var(--layout-gap-reduction));
   }
   .timeline-column,
   .tasks-column,
   .weekly-overview-column {
-    padding: 14px 16px;
+    padding: calc(14px - var(--card-padding-reduction)) calc(16px - var(--card-padding-reduction));
   }
 }
 
 @media (max-width: 1080px) {
   .timeline-page {
-    padding: 10px 12px 12px;
-    gap: 8px;
+    padding: calc(10px - var(--card-padding-reduction)) calc(12px - var(--card-padding-reduction)) calc(12px - var(--card-padding-reduction));
+    gap: calc(8px - var(--layout-gap-reduction));
   }
   .timeline-body {
     grid-template-columns: 210px 1fr 270px;
-    gap: 8px;
+    gap: calc(8px - var(--layout-gap-reduction));
   }
   .timeline-column,
   .tasks-column,
   .weekly-overview-column {
-    padding: 12px 14px;
+    padding: calc(12px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
   }
   .stat-pill {
     padding: 0 8px;

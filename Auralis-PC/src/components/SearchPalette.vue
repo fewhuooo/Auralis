@@ -9,20 +9,21 @@
               ref="searchInput"
               v-model="query"
               class="palette-input"
-              placeholder="唤醒个人知识库... (Personal Context)"
+              :placeholder="t(messages.search)"
+              :aria-label="t(messages.search)"
               @keydown.esc="close"
               @keydown="handleKeyNav"
             />
-            <button class="close-btn" @click="close">ESC</button>
+            <button class="close-btn" :aria-label="t(messages.close)" @click="close">ESC</button>
           </div>
           
           <div class="palette-body" v-if="query">
             <div v-if="isSearching" class="search-loading">
-              <span class="loading-spinner"></span> 正在为您检索个人知识库...
+              <span class="loading-spinner"></span> {{ t(messages.loading) }}
             </div>
             <template v-else>
               <div class="result-group" v-if="searchResults.length > 0">
-                <div class="group-title">知识块</div>
+                <div class="group-title">{{ t(messages.blocks) }}</div>
                 <div
                   v-for="(block, idx) in searchResults"
                   :key="block.id"
@@ -39,15 +40,15 @@
               </div>
               
               <div v-if="searchResults.length === 0" class="no-result">
-                未匹配到合适的本地知识块
+                {{ t(messages.noMatches) }}
               </div>
             </template>
           </div>
           
           <div class="palette-footer" v-else>
-            <div class="hint-item"><kbd>↑</kbd> <kbd>↓</kbd> 导航</div>
-            <div class="hint-item"><kbd>Enter</kbd> 确认</div>
-            <div class="hint-item"><kbd>Esc</kbd> 取消</div>
+            <div class="hint-item"><kbd>↑</kbd> <kbd>↓</kbd> {{ t(messages.navigate) }}</div>
+            <div class="hint-item"><kbd>Enter</kbd> {{ t(messages.confirm) }}</div>
+            <div class="hint-item"><kbd>Esc</kbd> {{ t(messages.cancel) }}</div>
           </div>
         </div>
       </div>
@@ -59,8 +60,20 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { IconSearch } from '@tabler/icons-vue'
+import { t } from '@/i18n'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import type { KnowledgeBlockModel } from '@/services/domainMappers'
+
+const messages = {
+  search: { 'zh-CN': '唤醒个人知识库... (Personal Context)', en: 'Search your knowledge base…', ja: 'ナレッジベースを検索…' },
+  close: { 'zh-CN': '关闭搜索', en: 'Close search', ja: '検索を閉じる' },
+  loading: { 'zh-CN': '正在为您检索个人知识库...', en: 'Searching your knowledge base…', ja: 'ナレッジベースを検索中…' },
+  blocks: { 'zh-CN': '知识块', en: 'Knowledge blocks', ja: '知識ブロック' },
+  noMatches: { 'zh-CN': '未匹配到合适的本地知识块', en: 'No matching local knowledge blocks', ja: '一致するローカルの知識ブロックはありません' },
+  navigate: { 'zh-CN': '导航', en: 'Navigate', ja: '移動' },
+  confirm: { 'zh-CN': '确认', en: 'Confirm', ja: '決定' },
+  cancel: { 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' },
+}
 
 const router = useRouter()
 const knowledgeStore = useKnowledgeStore()
@@ -207,6 +220,7 @@ onUnmounted(() => {
 
 .palette-input {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   outline: none;

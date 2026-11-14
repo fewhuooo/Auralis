@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import path from 'node:path'
+import { t } from '../src/i18n.ts'
+import { messages } from '../src/views/SubjectWorkspace/workspaceMessages.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
 const source = (file) => readFile(path.join(root, file), 'utf8')
@@ -89,7 +91,7 @@ test('last-source removal executes the workspace fallback and produces matching 
     const declaration = workspaceSource.slice(start, end)
       .replaceAll(' as const', '')
       .replace('(id: string)', '(id)')
-    return new Function(...args, `${declaration}\nreturn ${variable}`)(...values)
+    return new Function('t', 'messages', ...args, `${declaration}\nreturn ${variable}`)(t, messages, ...values)
   }
   const readyFiles = [
     { id: 'current', subjectId: 'subject-a', ingestionStatus: 'READY', name: 'current.md' },
@@ -182,9 +184,9 @@ test('whole-subject indicators include only READY sources from the current subje
     const end = workspace.indexOf(endMarker, start)
     assert.ok(start >= 0 && end > start)
     const declaration = workspace.slice(start, end).replace('(id: string)', '(id)')
-    return new Function('computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFile', 'chatStore',
+    return new Function('t', 'messages', 'computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFile', 'chatStore',
       `${declaration}; return ${variable}`)(
-      fn => ({ value: fn() }), { value: 'SUBJECT' }, { value: [] }, { value: files }, { value: 'subject-a' }, { value: null }, { isLegacySession: false },
+      t, messages, fn => ({ value: fn() }), { value: 'SUBJECT' }, { value: [] }, { value: files }, { value: 'subject-a' }, { value: null }, { isLegacySession: false },
     )
   }
   const selected = evaluate('const isAiSourceSelected =', 'const toggleAiSource =', 'isAiSourceSelected')
@@ -218,9 +220,9 @@ test('source list changes remove missing or moved selections and retain pending 
       const sectionStart = workspace.indexOf(startMarker)
       const sectionEnd = workspace.indexOf(endMarker, sectionStart)
       const declaration = workspace.slice(sectionStart, sectionEnd).replaceAll(' as const', '')
-      return new Function('computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFileId', 'selectedFile', 'documentProcessingStore', 'chatStore',
+      return new Function('t', 'messages', 'computed', 'aiReferenceScope', 'selectedAiSourceIds', 'activeSourceFiles', 'subjectId', 'selectedFileId', 'selectedFile', 'documentProcessingStore', 'chatStore',
         `${declaration}; return ${variable}`)(
-        fn => ({ value: fn() }), scope, selected, files, { value: 'subject-a' }, current,
+        t, messages, fn => ({ value: fn() }), scope, selected, files, { value: 'subject-a' }, current,
         { value: files.value.find(file => file.id === currentId) }, { jobs: [] }, { isLegacySession: false },
       )
     }

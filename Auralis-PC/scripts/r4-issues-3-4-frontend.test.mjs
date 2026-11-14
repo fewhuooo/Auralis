@@ -106,7 +106,7 @@ test('generic API availability updates the global connection projection', async 
 
 test('Profile displays only a mask in the password summary', async () => {
   const profile = await read('src/views/Profile/index.vue')
-  assert.match(profile, /<span class="cell-label">登录密码<\/span>\s*<span class="cell-sub">••••••••<\/span>/)
+  assert.match(profile, /<span class="cell-label">\{\{ t\(profileMessages\.password\) \}\}<\/span>\s*<span class="cell-sub">••••••••<\/span>/)
   assert.doesNotMatch(profile, /凭证加密托管/)
 })
 

@@ -2,6 +2,8 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { isTauriEnvironment } from '@/api/tauri'
+import { useSettingsStore } from '@/store/useSettingsStore'
+import './i18n'
 
 // Global styles
 import './styles/index.css'
@@ -20,6 +22,7 @@ async function mountApp(startup?: ReturnType<typeof createApp>): Promise<void> {
   const pinia = createPinia()
   pinia.use(piniaPluginPersistedstate)
   app.use(pinia)
+  useSettingsStore(pinia)
   app.use(router)
   app.mount('#app')
 }

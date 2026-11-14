@@ -12,7 +12,7 @@
         <div class="kb-dialog-icon" aria-hidden="true">
           <IconNotes :size="15" :stroke-width="2.2" />
         </div>
-        <span class="kb-dialog-main-title">知识块详情</span>
+        <span class="kb-dialog-main-title">{{ t({ 'zh-CN': '知识块详情', en: 'Knowledge block details', ja: '知識ブロックの詳細' }) }}</span>
         <span v-if="block?.subject" class="kb-dialog-subject-pill" :style="subjectPillStyle">
           {{ block.subject }}
         </span>
@@ -22,11 +22,11 @@
     <div class="kb-article-container">
       <!-- 头部元信息区块 -->
       <div class="kb-meta-card">
-        <h2 class="kb-title">{{ block?.title || '未命名知识块' }}</h2>
+        <h2 class="kb-title">{{ block?.title || t({ 'zh-CN': '未命名知识块', en: 'Untitled knowledge block', ja: '無題の知識ブロック' }) }}</h2>
 
         <div class="kb-meta-row">
           <!-- 来源文件或资料 -->
-          <div v-if="block?.source" class="kb-meta-item kb-meta-source" :title="`来源资料：${block.source}`">
+          <div v-if="block?.source" class="kb-meta-item kb-meta-source" :title="t({ 'zh-CN': '来源资料：{name}', en: 'Source: {name}', ja: '資料：{name}' }, { name: block.source })">
             <IconFileText :size="13" :stroke-width="1.8" />
             <span class="kb-meta-source-text">{{ block.source }}</span>
           </div>
@@ -44,7 +44,7 @@
         <div v-if="rawContent" class="kb-markdown-content modal-markdown-body" v-html="renderedMarkdown"></div>
         <div v-else class="kb-empty-content">
           <IconFileText :size="32" :stroke-width="1.4" class="kb-empty-icon" />
-          <p class="kb-empty-text">该知识块暂无详细正文内容</p>
+          <p class="kb-empty-text">{{ t({ 'zh-CN': '该知识块暂无详细正文内容', en: 'This knowledge block has no content yet', ja: 'この知識ブロックにはまだ内容がありません' }) }}</p>
         </div>
       </div>
     </div>
@@ -55,23 +55,23 @@
           v-if="rawContent"
           type="button"
           class="modal-btn modal-btn-secondary"
-          :title="copied ? '已复制到剪贴板' : '复制正文到剪贴板'"
+          :title="copied ? t({ 'zh-CN': '已复制到剪贴板', en: 'Copied to clipboard', ja: 'クリップボードにコピーしました' }) : t({ 'zh-CN': '复制正文到剪贴板', en: 'Copy content to clipboard', ja: '内容をクリップボードにコピー' })"
           @click="handleCopy"
         >
           <IconCheck v-if="copied" :size="14" :stroke-width="2.2" class="is-success" />
           <IconCopy v-else :size="14" :stroke-width="1.8" />
-          <span>{{ copied ? '已复制' : '复制内容' }}</span>
+          <span>{{ copied ? t({ 'zh-CN': '已复制', en: 'Copied', ja: 'コピーしました' }) : t({ 'zh-CN': '复制内容', en: 'Copy content', ja: '内容をコピー' }) }}</span>
         </button>
 
         <button
           v-if="block?.subjectId"
           type="button"
           class="modal-btn modal-btn-secondary kb-btn-goto"
-          title="前往该学科的知识块界面"
+          :title="t({ 'zh-CN': '前往该学科的知识块界面', en: 'Open this subject\'s knowledge blocks', ja: 'この科目の知識ブロックを開く' })"
           @click="goToSubject"
         >
           <IconExternalLink :size="14" :stroke-width="1.8" />
-          <span>前往知识块界面</span>
+          <span>{{ t({ 'zh-CN': '前往知识块界面', en: 'Open knowledge blocks', ja: '知識ブロックを開く' }) }}</span>
         </button>
       </div>
 
@@ -81,7 +81,7 @@
           class="modal-btn modal-btn-primary"
           @click="close"
         >
-          完成阅读
+          {{ t({ 'zh-CN': '完成阅读', en: 'Done reading', ja: '閉じる' }) }}
         </button>
       </div>
     </template>
@@ -89,6 +89,7 @@
 </template>
 
 <script setup lang="ts">
+import { locale, t } from '@/i18n'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { renderMarkdown } from '@/utils/markdown'
@@ -128,7 +129,7 @@ const router = useRouter()
 const copied = ref(false)
 
 const dialogAriaLabel = computed(() => {
-  return props.block?.title ? `知识块详情：${props.block.title}` : '知识块详情'
+  return props.block?.title ? t({ 'zh-CN': '知识块详情：{name}', en: 'Knowledge block: {name}', ja: '知識ブロック：{name}' }, { name: props.block.title }) : t({ 'zh-CN': '知识块详情', en: 'Knowledge block details', ja: '知識ブロックの詳細' })
 })
 
 const subjectPillStyle = computed(() => {
@@ -153,22 +154,20 @@ const formatFriendlyTime = (iso?: string): string => {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
   const diffMinutes = Math.floor((Date.now() - date.getTime()) / 60000)
-  if (diffMinutes < 1) return '刚刚'
-  if (diffMinutes < 60) return `${diffMinutes} 分钟前`
+  if (diffMinutes < 1) return t({ 'zh-CN': '刚刚', en: 'Just now', ja: 'たった今' })
+  if (diffMinutes < 60) return t({ 'zh-CN': '{count} 分钟前', en: '{count} min ago', ja: '{count}分前' }, { count: diffMinutes })
   const diffHours = Math.floor(diffMinutes / 60)
-  if (diffHours < 24) return `${diffHours} 小时前`
+  if (diffHours < 24) return t({ 'zh-CN': '{count} 小时前', en: '{count} hr ago', ja: '{count}時間前' }, { count: diffHours })
   const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 30) return `${diffDays} 天前`
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  if (diffDays < 30) return t({ 'zh-CN': '{count} 天前', en: '{count} d ago', ja: '{count}日前' }, { count: diffDays })
+  return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium' }).format(date)
 }
 
 const formatFullTime = (iso?: string): string => {
   if (!iso) return ''
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'long' }).format(date)
 }
 
 const close = () => {
@@ -189,11 +188,11 @@ const handleCopy = async () => {
   if (!text) return
   if (!(await copyContent(text))) {
     copied.value = false
-    ElMessage.error('复制知识块内容失败，请手动复制')
+    ElMessage.error(t({ 'zh-CN': '复制知识块内容失败，请手动复制', en: 'Could not copy. Copy the content manually.', ja: 'コピーできませんでした。手動でコピーしてください。' }))
     return
   }
   copied.value = true
-  ElMessage.success('已复制知识块内容')
+  ElMessage.success(t({ 'zh-CN': '已复制知识块内容', en: 'Knowledge block copied', ja: '知識ブロックをコピーしました' }))
   setTimeout(() => { copied.value = false }, 2000)
 }
 

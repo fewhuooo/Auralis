@@ -103,21 +103,22 @@
   --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-family-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --font-size-caption: 0.75rem;
+  --ui-font-size-adjustment: 0px;
+  --font-size-caption: calc(0.75rem + var(--ui-font-size-adjustment));
   /* 12px */
-  --font-size-label: 0.875rem;
+  --font-size-label: calc(0.875rem + var(--ui-font-size-adjustment));
   /* 14px */
-  --font-size-body-sm: 0.8125rem;
+  --font-size-body-sm: calc(0.8125rem + var(--ui-font-size-adjustment));
   /* 13px */
-  --font-size-body: 1rem;
+  --font-size-body: calc(1rem + var(--ui-font-size-adjustment));
   /* 16px */
-  --font-size-body-lg: 1.125rem;
+  --font-size-body-lg: calc(1.125rem + var(--ui-font-size-adjustment));
   /* 18px */
-  --font-size-title-sm: 1.25rem;
+  --font-size-title-sm: calc(1.25rem + var(--ui-font-size-adjustment));
   /* 20px */
-  --font-size-title: 1.5rem;
+  --font-size-title: calc(1.5rem + var(--ui-font-size-adjustment));
   /* 24px */
-  --font-size-title-lg: 1.875rem;
+  --font-size-title-lg: calc(1.875rem + var(--ui-font-size-adjustment));
   /* 30px */
   --font-size-display-sm: 3rem;
   /* 48px */
@@ -188,6 +189,16 @@
   /* ===== 9. Layout Constants ===== */
   --sidebar-width: 68px;
   --header-height: 64px;
+
+  --layout-gap-reduction: 0px;
+  --card-padding-reduction: 0px;
+  --panel-padding-reduction: 0px;
+}
+
+html.compact-layout {
+  --layout-gap-reduction: 4px;
+  --card-padding-reduction: 4px;
+  --panel-padding-reduction: 8px;
 }
 
 /* ==========================================================================
@@ -263,6 +274,7 @@ html {
 
 body {
   font-family: var(--font-family-base);
+  font-size: var(--font-size-body);
   background-color: var(--color-bg-page);
   color: var(--text-primary);
   line-height: var(--line-height-normal);
@@ -328,6 +340,10 @@ select:focus {
 }
 
 /* ===== 唯一保留：文件预览阅读区域（PDF / 文档 / 媒体等） ===== */
+.file-viewer-renderer {
+  font-size: 1rem;
+}
+
 .file-preview,
 .file-preview *,
 .file-viewer-renderer,

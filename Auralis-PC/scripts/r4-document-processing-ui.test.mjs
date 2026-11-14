@@ -6,7 +6,7 @@ import path from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDocumentProcessingStore } from '../src/store/useDocumentProcessingStore.ts'
 import { sourceDetailLabel, sourcePhaseLabel } from '../src/utils/documentProcessingStatus.ts'
-import { resumeActionErrorLabel, runManualSourceResume } from '../src/services/documentProcessing/manualSourceResume.ts'
+import { resumeActionErrorMessage, runManualSourceResume } from '../src/services/documentProcessing/manualSourceResume.ts'
 import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback } from '../src/utils/ocrDiagnostics.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
@@ -56,7 +56,7 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /sourceActionResults\[source\.id\]/)
   assert.match(center, /SOURCE_NOT_FOUND/)
   assert.match(center, /ALREADY_READY/)
-  assert.match(center, /resumeActionErrorLabel\(error, stage\)/)
+  assert.match(center, /resumeActionErrorMessage\(error, stage\)/)
   assert.match(center, /resumeScopeGeneration/)
   assert.match(center, /if \(!isCurrentAction\(\)\) return/)
   const resumeAction = center.slice(center.indexOf('const resumeSource ='), center.indexOf('const retrySource ='))
@@ -68,7 +68,7 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /retrySource\(source\.id\)/)
   assert.doesNotMatch(center, /blockOrdinal > 0|已处理 .*内容块/)
   assert.match(center, /serverProcessingSources\.value\.length && \+\+sourcePollTicks/)
-  assert.match(center, /@click="resumeDraft\(sourceId\)">继续/)
+  assert.match(center, /@click="resumeDraft\(sourceId\)">\{\{ t\(messages\.continue\) \}\}/)
   assert.match(center, /min-width: 0/)
   assert.match(center, /html\.dark/)
   assert.match(center, /准备中|正在处理/)
@@ -110,7 +110,7 @@ test('document processing exposes a compact status dot and profile progress cent
 
 test('processing center shows current server indexing and failures after local READY, and keeps paused drafts actionable', async () => {
   const center = await source('src/components/documentProcessing/DocumentProcessingCenter.vue')
-  const projection = center.slice(center.indexOf('const pausedDraftSourceIds ='), center.indexOf('const pausedNetworkDetail ='))
+  const projection = center.slice(center.indexOf('const pausedDraftSourceIds ='), center.indexOf('const sourceActionErrors ='))
   const sourceStore = { sources: [
     { id: 'file-indexing', type: 'FILE', ingestionStatus: 'INDEXING', ingestionRevision: 'current' },
     { id: 'file-failed', type: 'FILE', ingestionStatus: 'FAILED', ingestionRevision: 'current' },
@@ -182,9 +182,9 @@ test('manual resume does not read or schedule after logout, account/device switc
 })
 
 test('manual resume exception labels allow known errors and never echo unknown details', () => {
-  assert.equal(resumeActionErrorLabel(new Error('SOURCE_SYNC_CONFLICT'), 'sync'), '资料同步发生版本冲突，请刷新后重试。')
-  assert.equal(resumeActionErrorLabel({ status: 503, detail: 'server-secret /private/path' }, 'schedule'), '服务暂时不可用，请稍后重试。')
-  const unknown = resumeActionErrorLabel(new Error('parser-token /private/path/source.pdf'), 'schedule')
+  assert.equal(resumeActionErrorMessage(new Error('SOURCE_SYNC_CONFLICT'), 'sync')['zh-CN'], '资料同步发生版本冲突，请刷新后重试。')
+  assert.equal(resumeActionErrorMessage({ status: 503, detail: 'server-secret /private/path' }, 'schedule')['zh-CN'], '服务暂时不可用，请稍后重试。')
+  const unknown = resumeActionErrorMessage(new Error('parser-token /private/path/source.pdf'), 'schedule')['zh-CN']
   assert.equal(unknown, '本机处理暂未启动，请刷新后重试。')
   assert.doesNotMatch(unknown, /parser-token|private\/path|source\.pdf/)
 })
@@ -231,7 +231,7 @@ test('Source row prefers local OCR page progress and falls back to its existing 
   const center = await source('src/components/documentProcessing/DocumentProcessingCenter.vue')
   assert.match(center, /import type \{ SourceFileModel \} from ['"]@\/services\/domainMappers['"]/
   )
-  assert.match(center, /const sourceDetail = \(source: SourceFileModel\): string => \{[\s\S]*const progress = store\.localOcrProgressBySource\[source\.id\][\s\S]*return progress[\s\S]*`正在识别第 \$\{progress\.currentPage\}\/\$\{progress\.totalPages\} 页`[\s\S]*sourceDetailLabel\(source\.ingestionStatus\)/
+  assert.match(center, /const sourceDetail = \(source: SourceFileModel\): string => \{[\s\S]*const progress = store\.localOcrProgressBySource\[source\.id\][\s\S]*return progress[\s\S]*t\(messages\.ocrProgress, \{ current: progress\.currentPage, total: progress\.totalPages \}\)[\s\S]*sourceDetailLabel\(source\.ingestionStatus\)/
   )
   assert.match(center, /<span v-else>\{\{ sourceDetail\(source\) \}\}<\/span>/
   )
@@ -325,7 +325,7 @@ test('clipboard boundary handles resolve, reject, and unsupported writers', asyn
 test('copy feedback stays isolated by job id', () => {
   const first = updateCopyFeedback({}, 'job-a', 'copied')
   const second = updateCopyFeedback(first, 'job-b', 'failed')
-  assert.deepEqual(second, { 'job-a': '已复制', 'job-b': '复制失败' })
+  assert.deepEqual(second, { 'job-a': 'copied', 'job-b': 'failed' })
 })
 
 test('OCR diagnostics formatter ignores unknown raw keys', () => {

@@ -6,6 +6,7 @@ import { compileScript, parse } from 'vue/compiler-sfc'
 import ts from 'typescript'
 import { computed, defineComponent, effectScope, nextTick, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { locale, t } from '../src/i18n.ts'
 
 const dashboard = await readFile(new URL('../src/views/Dashboard/index.vue', import.meta.url), 'utf8')
 const timeline = await readFile(new URL('../src/views/Timeline/index.vue', import.meta.url), 'utf8')
@@ -68,9 +69,9 @@ test('the desktop shell does not surface an overdue-task notice', async () => {
 
 test('dashboard keeps grid cells date-only and moves full day information to the header', () => {
   assert.match(dashboard, /db-day-date/)
-  assert.match(dashboard, /selectedTimelineDay\.monthLabel/)
+  assert.match(dashboard, /formatTimelineDate\(selectedTimelineDay, \{ month: 'long' \}\)/)
   assert.match(dashboard, /db-day-week/)
-  assert.match(dashboard, /day\.weekdayShort/)
+  assert.match(dashboard, /formatTimelineDate\(day, \{ weekday: 'short' \}\)/)
   assert.doesNotMatch(dashboard, /day\.isToday \? '今天'/)
 })
 
@@ -121,7 +122,7 @@ test('timeline keeps the local task projection when changing days and refreshing
 test('dashboard removes tasks from schedule by exact task ID and notifies on failure', () => {
   assert.match(dashboard, /await taskStore\.unscheduleTask\(task\.id\)/)
   assert.doesNotMatch(dashboard, /await taskStore\.unscheduleTask\(slotTime\)/)
-  assert.match(dashboard, /title:\s*['"]移出日程失败['"]/)
+  assert.match(dashboard, /title:\s*t\(\{\s*'zh-CN': '移出日程失败'/)
 })
 
 test('dashboard binds task checkboxes and toggles completion safely', () => {
@@ -132,7 +133,7 @@ test('dashboard binds task checkboxes and toggles completion safely', () => {
   assert.doesNotMatch(dashboard, /class="todo-item"[\s\S]*?<input[^>]*type="checkbox"/)
   assert.match(dashboard, /const toggleTaskCompletion = async \(task: Task\) =>/)
   assert.match(dashboard, /await taskStore\.updateTaskStatus\(task\.id, newStatus\)/)
-  assert.match(dashboard, /title:\s*['"]更新任务状态失败['"]/)
+  assert.match(dashboard, /title:\s*t\(\{\s*'zh-CN': '更新任务状态失败'/)
 })
 
 test('isCompletedTask and isCompletedScheduledTask recognize both presentation and canonical completed statuses', async () => {
@@ -308,9 +309,9 @@ function dragEvent() {
   }
 }
 
-async function setupTimeline(t, storeOverrides, confirm = assert.fail) {
+async function setupTimeline(testContext, storeOverrides, confirm = assert.fail) {
   const scope = effectScope()
-  t.after(() => scope.stop())
+  testContext.after(() => scope.stop())
   const notifications = []
   const store = reactive({
     allTasks: ref([]),
@@ -327,6 +328,7 @@ async function setupTimeline(t, storeOverrides, confirm = assert.fail) {
     vue: { computed, defineComponent, nextTick, reactive, ref, watch, onMounted() {}, onUnmounted() {} },
     'vue-router': { useRouter: () => ({}) },
     pinia: { storeToRefs },
+    '@/i18n': { locale, t },
     'element-plus': { ElNotification: (notification) => notifications.push(notification), ElMessageBox: { confirm } },
     '@/store/useKnowledgeStore': { useKnowledgeStore: () => reactive({ recentBlocks: ref([]) }) },
     '@/store/useSubjectStore': { useSubjectStore: () => ({ subjects: [] }) },

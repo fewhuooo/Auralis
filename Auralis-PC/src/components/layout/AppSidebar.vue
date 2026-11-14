@@ -4,9 +4,9 @@
     <div 
       class="sidebar-brand"
       @click="router.push('/')"
-      @mouseenter="handleMouseEnter($event, 'nav', { title: 'Auralis', desc: '智能学习与知识工作台' })"
+      @mouseenter="handleMouseEnter($event, { type: 'nav', item: 'brand' })"
       @mouseleave="handleMouseLeave"
-      title="回到首页"
+      :title="t(messages.backHome)"
     >
       <div class="brand-icon">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -24,15 +24,15 @@
     </div>
 
     <!-- Primary Fixed Navigation (Top 5 features strictly fixed, never scroll) -->
-    <nav class="sidebar-primary-nav" aria-label="核心功能导航">
+    <nav class="sidebar-primary-nav" :aria-label="t(messages.primaryNav)">
       <!-- Dashboard -->
       <router-link 
         to="/" 
         class="nav-item" 
         :class="{ 'is-active': route.path === '/' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '首页', desc: '日程与知识总览' })"
+        @mouseenter="handleMouseEnter($event, { type: 'nav', item: 'home' })"
         @mouseleave="handleMouseLeave"
-        aria-label="首页"
+        :aria-label="t(navigationMessages.home)"
       >
         <span class="nav-active-indicator"></span>
         <span class="nav-icon"><IconLayoutDashboard :size="20" :stroke-width="1.7" /></span>
@@ -43,9 +43,9 @@
         to="/subjects" 
         class="nav-item" 
         :class="{ 'is-active': route.path === '/subjects' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '学科空间', desc: '浏览与管理学科' })"
+        @mouseenter="handleMouseEnter($event, { type: 'nav', item: 'subjects' })"
         @mouseleave="handleMouseLeave"
-        aria-label="学科空间"
+        :aria-label="t(navigationMessages.subjects)"
       >
         <span class="nav-active-indicator"></span>
         <span class="nav-icon"><IconBooks :size="20" :stroke-width="1.7" /></span>
@@ -56,9 +56,9 @@
         to="/timeline" 
         class="nav-item" 
         :class="{ 'is-active': route.path === '/timeline' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '任务排期', desc: '日程规划与任务安排' })"
+        @mouseenter="handleMouseEnter($event, { type: 'nav', item: 'timeline' })"
         @mouseleave="handleMouseLeave"
-        aria-label="任务排期"
+        :aria-label="t(navigationMessages.timeline)"
       >
         <span class="nav-active-indicator"></span>
         <span class="nav-icon"><IconCalendarTime :size="20" :stroke-width="1.7" /></span>
@@ -69,9 +69,9 @@
         to="/asset" 
         class="nav-item" 
         :class="{ 'is-active': route.path === '/asset' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '资料管理', desc: '文件、知识点与关联图谱' })"
+        @mouseenter="handleMouseEnter($event, { type: 'nav', item: 'assets' })"
         @mouseleave="handleMouseLeave"
-        aria-label="资料管理"
+        :aria-label="t(navigationMessages.assets)"
       >
         <span class="nav-active-indicator"></span>
         <span class="nav-icon"><IconDatabase :size="20" :stroke-width="1.7" /></span>
@@ -82,9 +82,9 @@
         to="/pomodoro" 
         class="nav-item" 
         :class="{ 'is-active': route.path === '/pomodoro' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '专注时钟', desc: '番茄钟专注与休息' })"
+        @mouseenter="handleMouseEnter($event, { type: 'nav', item: 'focus' })"
         @mouseleave="handleMouseLeave"
-        aria-label="专注时钟"
+        :aria-label="t(navigationMessages.focus)"
       >
         <span class="nav-active-indicator"></span>
         <span class="nav-icon"><IconStopwatch :size="20" :stroke-width="1.7" /></span>
@@ -95,7 +95,7 @@
     <div class="sidebar-divider"></div>
 
     <!-- Scrollable Subjects Section (Only subjects list can scroll) -->
-    <div class="sidebar-subjects-scroll" aria-label="学科列表">
+    <div class="sidebar-subjects-scroll" :aria-label="t(messages.subjectList)">
       <div class="subjects-list">
         <div
           v-for="subj in subjectStore.subjects"
@@ -103,7 +103,7 @@
           class="subject-item"
           :class="{ 'is-active': route.path === `/subject/${subj.id}` }"
           @click="router.push(`/subject/${subj.id}`)"
-          @mouseenter="handleMouseEnter($event, 'subject', subj)"
+          @mouseenter="handleMouseEnter($event, { type: 'subject', subject: subj })"
           @mouseleave="handleMouseLeave"
           :aria-label="subj.name"
         >
@@ -125,11 +125,11 @@
       <!-- 模式切换按钮 (天体日月翻转) -->
       <button 
         class="sidebar-action-btn theme-toggle-btn" 
-        :title="settingsStore.isDark ? '切换浅色模式' : '切换深色模式'" 
+        :title="themeAction"
         @click="handleThemeToggle"
-        @mouseenter="handleMouseEnter($event, 'profile', { title: settingsStore.isDark ? '浅色模式' : '深色模式', desc: '点击切换主题界面' })"
+        @mouseenter="handleMouseEnter($event, { type: 'theme' })"
         @mouseleave="handleMouseLeave"
-        aria-label="切换浅色或深色模式"
+        :aria-label="themeAction"
       >
         <Transition name="theme-flip" mode="out-in">
           <IconSun v-if="settingsStore.isDark" key="sun" :size="17" :stroke-width="1.8" class="theme-icon sun-icon" />
@@ -141,18 +141,18 @@
       <div 
         class="sidebar-avatar-entry" 
         @click="router.push('/profile')"
-        @mouseenter="handleMouseEnter($event, 'profile', { title: authStore.username || '个人中心', desc: connectionProjection.message })"
+        @mouseenter="handleMouseEnter($event, { type: 'profile' })"
         @mouseleave="handleMouseLeave"
-        title="个人设置"
+        :title="t(navigationMessages.settings)"
       >
-        <img v-if="authStore.avatarUrl" :src="authStore.avatarUrl" class="sidebar-avatar-img" alt="用户头像" />
+        <img v-if="authStore.avatarUrl" :src="authStore.avatarUrl" class="sidebar-avatar-img" :alt="t(messages.avatar)" />
         <div v-else class="sidebar-avatar">{{ userInitial }}</div>
 
         <!-- 镶嵌在头像右下角的状态点徽标 (点击可重试同步) -->
         <div 
           class="avatar-sync-badge"
           :class="`status-${connectionProjection.level}`"
-          :title="`${connectionProjection.message}${connectionProjection.retryable ? ' (点击重试)' : ''}`"
+          :title="syncBadgeTitle"
           @click.stop="triggerSyncRetry"
         >
           <span class="avatar-sync-ripple" :class="`status-${connectionProjection.level}`"></span>
@@ -163,27 +163,30 @@
 
     <!-- Shared Floating Tooltip -->
     <div 
-      v-if="hoverState.type === 'nav' || hoverState.type === 'sync' || hoverState.type === 'profile'" 
+      v-if="hoverTooltip"
       class="sidebar-tooltip-floating"
-      :style="{ top: hoverState.top + 'px' }"
+      :style="{ top: hoverTop + 'px' }"
     >
-      <div class="tooltip-title">{{ hoverState.data.title }}</div>
-      <div class="tooltip-desc" v-if="hoverState.data.desc">{{ hoverState.data.desc }}</div>
+      <div class="tooltip-title">{{ hoverTooltip.title }}</div>
+      <div class="tooltip-desc" v-if="hoverTooltip.description">{{ hoverTooltip.description }}</div>
     </div>
 
     <!-- Shared Floating Subject Hover Card -->
     <div 
-      v-if="hoverState.type === 'subject'" 
+      v-if="hoverState?.type === 'subject'"
       class="subject-hover-card-floating"
-      :style="{ top: hoverState.top + 'px' }"
+      :style="{ top: hoverTop + 'px' }"
       @mouseenter="keepHoverCard"
       @mouseleave="handleMouseLeave"
       @click.stop
     >
-      <span class="hover-subject-name">{{ hoverState.data.name }}</span>
-      <span class="hover-subject-desc">{{ hoverState.data.description || '暂无描述' }}</span>
-      <span class="hover-subject-meta" v-if="hoverState.data.id !== 'hall'">
-        {{ hoverState.data.blockCount || 0 }} 知识块 · {{ hoverState.data.fileCount || 0 }} 材料
+      <span class="hover-subject-name">{{ hoverState.subject.name }}</span>
+      <span class="hover-subject-desc">{{ hoverState.subject.description || t(messages.noDescription) }}</span>
+      <span class="hover-subject-meta" v-if="hoverState.subject.id !== 'hall'">
+        {{ t(messages.subjectCounts, {
+          blocks: hoverState.subject.blockCount ?? 0,
+          materials: hoverState.subject.fileCount ?? 0,
+        }) }}
       </span>
     </div>
   </aside>
@@ -193,9 +196,11 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IconLayoutDashboard, IconBooks, IconCalendarTime, IconDatabase, IconStopwatch, IconSun, IconMoon } from '@tabler/icons-vue'
+import { t } from '@/i18n'
+import { navigationMessages } from './navigationMessages'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
-import { useSubjectStore } from '@/store/useSubjectStore'
+import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import type { ConnectionProjection } from '@/services/connectionStatusProjection'
 import {
@@ -204,9 +209,37 @@ import {
   isSubjectIconKey
 } from '@/utils/subjectIcon'
 
+const messages = {
+  backHome: { 'zh-CN': '回到首页', en: 'Back to home', ja: 'ホームに戻る' },
+  primaryNav: { 'zh-CN': '核心功能导航', en: 'Main navigation', ja: 'メインナビゲーション' },
+  subjectList: { 'zh-CN': '学科列表', en: 'Subject list', ja: '科目一覧' },
+  switchLight: { 'zh-CN': '切换浅色模式', en: 'Switch to light mode', ja: 'ライトモードに切り替える' },
+  switchDark: { 'zh-CN': '切换深色模式', en: 'Switch to dark mode', ja: 'ダークモードに切り替える' },
+  lightMode: { 'zh-CN': '浅色模式', en: 'Light mode', ja: 'ライトモード' },
+  darkMode: { 'zh-CN': '深色模式', en: 'Dark mode', ja: 'ダークモード' },
+  switchTheme: { 'zh-CN': '点击切换主题界面', en: 'Switch the appearance theme', ja: '外観テーマを切り替える' },
+  profile: { 'zh-CN': '个人中心', en: 'Profile', ja: 'プロフィール' },
+  avatar: { 'zh-CN': '用户头像', en: 'User avatar', ja: 'ユーザーのアバター' },
+  retrySync: { 'zh-CN': '{status} (点击重试)', en: '{status} (click to retry)', ja: '{status}（クリックして再試行）' },
+  noDescription: { 'zh-CN': '暂无描述', en: 'No description', ja: '説明はありません' },
+  subjectCounts: {
+    'zh-CN': '{blocks} 知识块 · {materials} 材料',
+    en: 'Knowledge blocks: {blocks} · Materials: {materials}',
+    ja: '知識ブロック {blocks} 件 · 資料 {materials} 件',
+  },
+}
+const navDescriptions = {
+  brand: { 'zh-CN': '智能学习与知识工作台', en: 'Workspace for learning and knowledge', ja: '学習と知識のワークスペース' },
+  home: { 'zh-CN': '日程与知识总览', en: 'Schedule and knowledge overview', ja: '予定と知識の概要' },
+  subjects: { 'zh-CN': '浏览与管理学科', en: 'Browse and manage subjects', ja: '科目の閲覧と管理' },
+  timeline: { 'zh-CN': '日程规划与任务安排', en: 'Plan your schedule and tasks', ja: '予定とタスクの管理' },
+  assets: { 'zh-CN': '文件、知识点与关联图谱', en: 'Files, knowledge blocks, and their relationships', ja: 'ファイル、知識ブロック、関連グラフ' },
+  focus: { 'zh-CN': '番茄钟专注与休息', en: 'Pomodoro focus sessions and breaks', ja: 'ポモドーロによる集中と休憩' },
+}
+
 const route = useRoute()
 const router = useRouter()
-defineProps<{ connectionProjection: ConnectionProjection }>()
+const { connectionProjection } = defineProps<{ connectionProjection: ConnectionProjection }>()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const subjectStore = useSubjectStore()
@@ -220,41 +253,62 @@ const handleThemeToggle = (event?: MouseEvent) => {
   settingsStore.toggleDark(event)
 }
 
-// Hover States
-const hoverState = ref<{
-  type: 'nav' | 'subject' | 'profile' | 'sync' | null
-  top: number
-  data: any
-}>({
-  type: null,
-  top: 0,
-  data: null
+type HoverTarget =
+  | { type: 'nav'; item: keyof typeof navDescriptions }
+  | { type: 'subject'; subject: Subject }
+  | { type: 'profile' }
+  | { type: 'theme' }
+
+const hoverState = ref<HoverTarget | null>(null)
+const hoverTop = ref(0)
+let closeTimeout: ReturnType<typeof setTimeout> | null = null
+
+const themeAction = computed(() => t(settingsStore.isDark ? messages.switchLight : messages.switchDark))
+const syncBadgeTitle = computed(() => connectionProjection.retryable
+  ? t(messages.retrySync, { status: connectionProjection.message })
+  : connectionProjection.message)
+
+const hoverTooltip = computed(() => {
+  const target = hoverState.value
+  if (target?.type === 'nav') {
+    return {
+      title: target.item === 'brand' ? 'Auralis' : t(navigationMessages[target.item]),
+      description: t(navDescriptions[target.item]),
+    }
+  }
+  if (target?.type === 'theme') {
+    return {
+      title: t(settingsStore.isDark ? messages.lightMode : messages.darkMode),
+      description: t(messages.switchTheme),
+    }
+  }
+  if (target?.type === 'profile') {
+    return {
+      title: authStore.username || t(messages.profile),
+      description: connectionProjection.message,
+    }
+  }
+  return null
 })
 
-let closeTimeout: any = null
-
-const handleMouseEnter = (event: MouseEvent, type: 'nav' | 'subject' | 'profile' | 'sync', data: any) => {
+const handleMouseEnter = (event: MouseEvent, target: HoverTarget) => {
   if (closeTimeout) {
     clearTimeout(closeTimeout)
     closeTimeout = null
   }
-  const target = event.currentTarget as HTMLElement
-  const sidebarEl = target.closest('.sidebar')
-  if (sidebarEl) {
-    const sidebarRect = sidebarEl.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    hoverState.value = {
-      type,
-      top: targetRect.top - sidebarRect.top + (targetRect.height / 2),
-      data
-    }
-  }
+  const element = event.currentTarget as HTMLElement
+  const sidebarEl = element.closest('.sidebar')
+  if (!sidebarEl) return
+  const sidebarRect = sidebarEl.getBoundingClientRect()
+  const targetRect = element.getBoundingClientRect()
+  hoverTop.value = targetRect.top - sidebarRect.top + (targetRect.height / 2)
+  hoverState.value = target
 }
 
 const handleMouseLeave = () => {
   if (closeTimeout) clearTimeout(closeTimeout)
   closeTimeout = setTimeout(() => {
-    hoverState.value.type = null
+    hoverState.value = null
   }, 100)
 }
 

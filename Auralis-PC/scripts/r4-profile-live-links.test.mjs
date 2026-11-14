@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import axios from 'axios'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { t } from '../src/i18n.ts'
+import { profileMessages } from '../src/views/Profile/profileMessages.ts'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { computed, ref, watch } from 'vue'
@@ -129,7 +131,7 @@ async function mountAiSettingsForm({
   const updates = []
   const notifications = []
   const settings = runInNewContext(outputText, {
-    computed, ref, watch, Error,
+    computed, ref, watch, Error, t, profileMessages,
     getAiSettings,
     updateAiSettings: async (command) => {
       updates.push(command)

@@ -2,9 +2,12 @@ import { defineStore } from 'pinia'
 import { ref, watch, nextTick } from 'vue'
 import { updateWindowTheme } from '@/api/tauri'
 
+const DEFAULT_FONT_SIZE = '14px'
+type FontSize = '12px' | typeof DEFAULT_FONT_SIZE | '16px'
+
 export const useSettingsStore = defineStore('settings', () => {
   const isDark = ref(typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false)
-  const fontSize = ref('14px')
+  const fontSize = ref<FontSize>(DEFAULT_FONT_SIZE)
   const compactLayout = ref(false)
 
   // Apply dark mode immediately
@@ -36,18 +39,20 @@ export const useSettingsStore = defineStore('settings', () => {
 
   watch(fontSize, (val) => {
     if (typeof document !== 'undefined') {
-      const sizeNum = val.match(/\d+/)
-      if (sizeNum) {
-        document.documentElement.style.setProperty('--font-size-base-override', sizeNum[0] + 'px')
-      }
+      const adjustment = Number.parseInt(val, 10) - Number.parseInt(DEFAULT_FONT_SIZE, 10)
+      document.documentElement.style.setProperty('--ui-font-size-adjustment', `${adjustment}px`)
     }
-  })
+  }, { immediate: true, flush: 'sync' })
 
   watch(compactLayout, (val) => {
     if (typeof document !== 'undefined') {
       document.documentElement.classList.toggle('compact-layout', val)
     }
-  })
+  }, { immediate: true, flush: 'sync' })
+
+  const setFontSize = (value: string) => {
+    fontSize.value = normalizeFontSize(value)
+  }
 
   const toggleDark = (event?: MouseEvent | { clientX: number; clientY: number }) => {
     if (typeof document === 'undefined') {
@@ -113,7 +118,23 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
-  return { isDark, fontSize, compactLayout, toggleDark }
+  return { isDark, fontSize, compactLayout, setFontSize, toggleDark }
 }, {
-  persist: true
+  persist: {
+    serializer: {
+      serialize: JSON.stringify,
+      deserialize: (value) => {
+        const settings = JSON.parse(value) as { isDark?: unknown; fontSize?: unknown; compactLayout?: unknown } | null
+        return {
+          ...(typeof settings?.isDark === 'boolean' ? { isDark: settings.isDark } : {}),
+          fontSize: normalizeFontSize(settings?.fontSize),
+          compactLayout: settings?.compactLayout === true,
+        }
+      },
+    },
+  },
 })
+
+function normalizeFontSize(value: unknown): FontSize {
+  return value === '12px' || value === '16px' ? value : DEFAULT_FONT_SIZE
+}

@@ -7,9 +7,9 @@
           <div class="brand-logo-mark">SC</div>
           <h1 class="brand-vertical-text">AURALIS</h1>
           <div class="brand-manifesto">
-            <p>重塑碎片信息</p>
-            <p>构建深度知识链接</p>
-            <p>让每一份思考都有迹可循</p>
+            <p>{{ t(messages.organize) }}</p>
+            <p>{{ t(messages.connect) }}</p>
+            <p>{{ t(messages.trace) }}</p>
           </div>
         </div>
         <!-- Decorative Shapes inside brand side -->
@@ -20,8 +20,8 @@
       <div class="form-side">
         <div class="login-box">
           <div class="form-header">
-            <h2 class="form-title">{{ isLogin ? '欢迎回来' : '开启新旅程' }}</h2>
-            <p class="form-subtitle">使用Auralis账号继续您的知识编排</p>
+            <h2 class="form-title">{{ t(isLogin ? messages.welcome : messages.newJourney) }}</h2>
+            <p class="form-subtitle">{{ t(messages.subtitle) }}</p>
           </div>
 
           <div class="auth-toggle">
@@ -31,21 +31,21 @@
               type="button"
               :disabled="loading"
               @click="toggleMode(true)"
-            >登录</button>
+            >{{ t(messages.login) }}</button>
             <button 
               class="toggle-btn" 
               :class="{ active: !isLogin }" 
               type="button"
               :disabled="loading"
               @click="toggleMode(false)"
-            >注册</button>
+            >{{ t(messages.register) }}</button>
           </div>
 
           <el-form :model="form" class="auth-form" @submit.prevent="handleAction">
             <el-form-item :error="fieldErrors.username?.[0]">
               <el-input
                 v-model="form.username" 
-                placeholder="用户名 / 邮箱" 
+                :placeholder="t(messages.username)"
                 size="large"
                 class="minimal-input"
                 :disabled="loading"
@@ -57,7 +57,7 @@
             <el-form-item v-if="!isLogin" :error="fieldErrors.displayName?.[0]">
               <el-input
                 v-model="form.displayName"
-                placeholder="显示名称 (选填)"
+                :placeholder="t(messages.displayName)"
                 size="large"
                 class="minimal-input"
                 :disabled="loading"
@@ -70,7 +70,7 @@
               <el-input
                 v-model="form.password" 
                 type="password" 
-                :placeholder="isLogin ? '密码' : '密码至少 12 位，UTF-8 最多 72 字节'"
+                :placeholder="t(isLogin ? messages.password : messages.passwordRequirements)"
                 size="large"
                 show-password
                 class="minimal-input"
@@ -87,14 +87,14 @@
 
             <button class="submit-btn" :disabled="loading" type="button" @click="handleAction">
               <span v-if="loading" class="loading-spinner"></span>
-              <span v-else>{{ isLogin ? '登 录' : '注 册' }}</span>
+              <span v-else>{{ t(isLogin ? messages.login : messages.register) }}</span>
             </button>
           </el-form>
 
           <div class="footer-links">
-            <a href="javascript:void(0)" @click="ElMessage.info('密码重置功能即将上线')">忘记密码？</a>
+            <a href="javascript:void(0)" @click="ElMessage.info(t(messages.resetComingSoon))">{{ t(messages.forgot) }}</a>
             <span class="divider">/</span>
-            <a href="javascript:void(0)" @click="ElMessage.info('隐私协议即将发布')">隐私与条款</a>
+            <a href="javascript:void(0)" @click="ElMessage.info(t(messages.privacyComingSoon))">{{ t(messages.privacy) }}</a>
           </div>
         </div>
       </div>
@@ -103,12 +103,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { t } from '@/i18n'
 import { useAuthStore } from '@/store/useAuthStore'
 import { ApiProblemError } from '@/api/httpError'
 import { normalizeFieldErrors, summarizeFieldErrors } from '@/api/problemFieldErrors'
 import { ElMessage } from 'element-plus'
+
+const messages = {
+  organize: { 'zh-CN': '重塑碎片信息', en: 'Organize scattered information', ja: '散らばった情報を整理する' },
+  connect: { 'zh-CN': '构建深度知识链接', en: 'Build meaningful connections', ja: '知識を深く結びつける' },
+  trace: { 'zh-CN': '让每一份思考都有迹可循', en: 'Keep track of every thought', ja: '一つひとつの思考をたどれるようにする' },
+  welcome: { 'zh-CN': '欢迎回来', en: 'Welcome back', ja: 'おかえりなさい' },
+  newJourney: { 'zh-CN': '开启新旅程', en: 'Create your account', ja: 'アカウントを作成' },
+  subtitle: { 'zh-CN': '使用Auralis账号继续您的知识编排', en: 'Use your Auralis account to organize your knowledge', ja: 'Auralis アカウントで知識を整理しましょう' },
+  login: { 'zh-CN': '登录', en: 'Sign in', ja: 'ログイン' },
+  register: { 'zh-CN': '注册', en: 'Sign up', ja: '新規登録' },
+  username: { 'zh-CN': '用户名 / 邮箱', en: 'Username or email', ja: 'ユーザー名またはメールアドレス' },
+  displayName: { 'zh-CN': '显示名称 (选填)', en: 'Display name (optional)', ja: '表示名（任意）' },
+  password: { 'zh-CN': '密码', en: 'Password', ja: 'パスワード' },
+  passwordRequirements: {
+    'zh-CN': '密码至少 12 位，UTF-8 最多 72 字节',
+    en: '12+ characters (72 UTF-8 bytes max)',
+    ja: '12文字以上・UTF-8で72バイト以内',
+  },
+  forgot: { 'zh-CN': '忘记密码？', en: 'Forgot password?', ja: 'パスワードをお忘れですか？' },
+  privacy: { 'zh-CN': '隐私与条款', en: 'Privacy and terms', ja: 'プライバシーと利用規約' },
+  resetComingSoon: { 'zh-CN': '密码重置功能即将上线', en: 'Password reset is coming soon', ja: 'パスワードの再設定は近日公開予定です' },
+  privacyComingSoon: { 'zh-CN': '隐私协议即将发布', en: 'The privacy policy is coming soon', ja: 'プライバシーポリシーは近日公開予定です' },
+  incomplete: { 'zh-CN': '请填写完整信息', en: 'Enter your username and password', ja: 'ユーザー名とパスワードを入力してください' },
+  registered: { 'zh-CN': '注册成功', en: 'Account created', ja: 'アカウントを作成しました' },
+  failed: { 'zh-CN': '操作失败', en: 'Something went wrong', ja: '操作に失敗しました' },
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -116,7 +143,8 @@ const authStore = useAuthStore()
 
 const isLogin = ref(true)
 const loading = ref(false)
-const generalError = ref('')
+const actionError = ref<string | null>()
+const generalError = computed(() => actionError.value === null ? t(messages.failed) : actionError.value)
 const fieldErrors = ref<Record<string, string[]>>({})
 
 const form = ref({
@@ -134,7 +162,7 @@ onMounted(() => {
 
 const toggleMode = (loginMode: boolean) => {
   isLogin.value = loginMode
-  generalError.value = ''
+  actionError.value = undefined
   fieldErrors.value = {}
 }
 
@@ -145,19 +173,19 @@ const clearFieldError = (field: string) => {
     fieldErrors.value = next
   }
   if (generalError.value) {
-    generalError.value = ''
+    actionError.value = undefined
   }
 }
 
 const handleAction = async () => {
-  generalError.value = ''
+  actionError.value = undefined
   fieldErrors.value = {}
 
   const username = form.value.username.trim()
   const password = form.value.password
 
   if (!username || !password) {
-    ElMessage.warning('请填写完整信息')
+    ElMessage.warning(t(messages.incomplete))
     return
   }
 
@@ -168,14 +196,14 @@ const handleAction = async () => {
         username,
         password,
       })
-      ElMessage.success('欢迎回来')
+      ElMessage.success(t(messages.welcome))
     } else {
       await authStore.register({
         username,
         password,
         displayName: form.value.displayName.trim() || username,
       })
-      ElMessage.success('注册成功')
+      ElMessage.success(t(messages.registered))
     }
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
@@ -183,21 +211,19 @@ const handleAction = async () => {
     if (error instanceof ApiProblemError) {
       const problem = error.problem
       fieldErrors.value = normalizeFieldErrors(problem.fieldErrors)
-      const msg = summarizeFieldErrors(problem.fieldErrors) || problem.detail || problem.title || '操作失败'
-      generalError.value = msg
-      ElMessage.error(msg)
+      actionError.value = summarizeFieldErrors(problem.fieldErrors) || problem.detail || problem.title || null
+      ElMessage.error(generalError.value ?? t(messages.failed))
     } else if (error && typeof error === 'object' && 'problem' in error) {
       const problem = (error as { problem: { detail?: string; title?: string; fieldErrors?: unknown } }).problem
       fieldErrors.value = normalizeFieldErrors(problem.fieldErrors)
-      const msg = summarizeFieldErrors(problem.fieldErrors) || problem.detail || problem.title || '操作失败'
-      generalError.value = msg
-      ElMessage.error(msg)
+      actionError.value = summarizeFieldErrors(problem.fieldErrors) || problem.detail || problem.title || null
+      ElMessage.error(generalError.value ?? t(messages.failed))
     } else if (error instanceof Error) {
-      generalError.value = error.message
+      actionError.value = error.message
       ElMessage.error(error.message)
     } else {
-      generalError.value = '操作失败'
-      ElMessage.error('操作失败')
+      actionError.value = null
+      ElMessage.error(t(messages.failed))
     }
   } finally {
     loading.value = false

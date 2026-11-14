@@ -69,8 +69,8 @@ test('keeps BYOK credentials out of browser request headers and browser storage'
   const aiGroup = profileSource.match(/<section[^>]+aria-labelledby="profile-ai-title"[^>]*>([\s\S]*?)<\/section>/)?.[1]
   assert.ok(aiGroup, 'Profile must render a dedicated AI settings group')
   assert.match(aiGroup, /@click="handleToggle\(autoOverviewSetting\)"/)
-  assert.match(aiGroup, /AI 使用额度/)
-  assert.match(aiGroup, /AI 模型与服务/)
+  assert.match(aiGroup, /t\(profileMessages\.aiUsage\)/)
+  assert.match(aiGroup, /t\(profileMessages\.modelsAndServices\)/)
   assert.match(aiGroup, /@click="handleSaveAiSettings"/)
   assert.equal([...profileSource.matchAll(/class="danger-zone"/g)].length, 1)
 })

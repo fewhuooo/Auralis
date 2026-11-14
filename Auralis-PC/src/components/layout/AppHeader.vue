@@ -11,7 +11,7 @@
         <span class="search-icon">
           <IconSearch :size="16" :stroke-width="1.6" />
         </span>
-        <span class="search-placeholder">搜索或唤醒个人知识库...</span>
+        <span class="search-placeholder">{{ t(messages.search) }}</span>
         <span class="search-shortcut">
           <kbd>Ctrl</kbd>
           <kbd>K</kbd>
@@ -71,8 +71,8 @@
         <button 
           type="button" 
           class="win-btn win-minimize" 
-          title="最小化" 
-          aria-label="最小化"
+          :title="t(messages.minimize)"
+          :aria-label="t(messages.minimize)"
           @click="handleWindowMinimize"
         >
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -83,8 +83,8 @@
         <button 
           type="button" 
           class="win-btn win-maximize" 
-          :title="isMaximized ? '向下还原' : '最大化'" 
-          :aria-label="isMaximized ? '向下还原' : '最大化'"
+          :title="windowSizeLabel"
+          :aria-label="windowSizeLabel"
           @click="handleWindowToggleMaximize"
         >
           <svg v-if="isMaximized" width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -99,8 +99,8 @@
         <button 
           type="button" 
           class="win-btn win-close" 
-          title="关闭" 
-          aria-label="关闭"
+          :title="t(messages.close)"
+          :aria-label="t(messages.close)"
           @click="handleWindowClose"
         >
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -117,9 +117,34 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IconSearch } from '@tabler/icons-vue'
+import { t } from '@/i18n'
+import { navigationMessages } from './navigationMessages'
 import { useAuthStore } from '@/store/useAuthStore'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { isTauriEnvironment, minimizeWindow, toggleMaximizeWindow, closeWindow, isWindowMaximized } from '@/api/tauri'
+
+const messages = {
+  search: { 'zh-CN': '搜索或唤醒个人知识库...', en: 'Search your knowledge base…', ja: 'ナレッジベースを検索…' },
+  minimize: { 'zh-CN': '最小化', en: 'Minimize', ja: '最小化' },
+  restore: { 'zh-CN': '向下还原', en: 'Restore window', ja: '元のサイズに戻す' },
+  maximize: { 'zh-CN': '最大化', en: 'Maximize', ja: '最大化' },
+  close: { 'zh-CN': '关闭', en: 'Close', ja: '閉じる' },
+  pausedTimer: {
+    'zh-CN': '番茄钟 · 已暂停 {time} (点击前往专注时钟)',
+    en: 'Pomodoro · Paused at {time} (open focus timer)',
+    ja: 'ポモドーロ · 一時停止中 {time}（集中タイマーを開く）',
+  },
+  breakTimer: {
+    'zh-CN': '番茄钟 · 茶歇中 {time} (点击前往专注时钟)',
+    en: 'Pomodoro · Break time {time} (open focus timer)',
+    ja: 'ポモドーロ · 休憩中 {time}（集中タイマーを開く）',
+  },
+  focusTimer: {
+    'zh-CN': '番茄钟 · 专注中 {time} (点击前往专注时钟)',
+    en: 'Pomodoro · Focusing {time} (open focus timer)',
+    ja: 'ポモドーロ · 集中中 {time}（集中タイマーを開く）',
+  },
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -128,6 +153,7 @@ const pomodoroStore = usePomodoroStore()
 
 const isDesktopApp = ref(isTauriEnvironment())
 const isMaximized = ref(false)
+const windowSizeLabel = computed(() => t(isMaximized.value ? messages.restore : messages.maximize))
 
 const syncMaximizedState = async () => {
   if (isDesktopApp.value) {
@@ -186,13 +212,10 @@ const formattedRemainingTime = computed(() => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 })
 
-const pomoPhaseText = computed(() => {
-  if (!pomodoroStore.isRunning) return '已暂停'
-  return pomodoroStore.isBreakPhase ? '茶歇中' : '专注中'
-})
-
 const pomodoroTooltip = computed(() => {
-  return `番茄钟 · ${pomoPhaseText.value} ${formattedRemainingTime.value} (点击前往专注时钟)`
+  const params = { time: formattedRemainingTime.value }
+  if (!pomodoroStore.isRunning) return t(messages.pausedTimer, params)
+  return t(pomodoroStore.isBreakPhase ? messages.breakTimer : messages.focusTimer, params)
 })
 
 const handlePomodoroClick = () => {
@@ -201,16 +224,19 @@ const handlePomodoroClick = () => {
   }
 }
 
-const pageTitleMap: Record<string, string> = {
-  '/': '首页',
-  '/asset': '资料管理',
-  '/timeline': '任务排期',
-  '/profile': '个人设置',
-  '/pomodoro': '专注时钟',
-  '/subjects': '学科空间',
+const pageTitleMap: Record<string, keyof typeof navigationMessages> = {
+  '/': 'home',
+  '/asset': 'assets',
+  '/timeline': 'timeline',
+  '/profile': 'settings',
+  '/pomodoro': 'focus',
+  '/subjects': 'subjects',
 }
 
-const currentPageTitle = computed(() => pageTitleMap[route.path] || 'Auralis')
+const currentPageTitle = computed(() => {
+  const page = pageTitleMap[route.path]
+  return page ? t(navigationMessages[page]) : 'Auralis'
+})
 
 const handleSearchClick = () => {
   window.dispatchEvent(new CustomEvent('open-search-palette'))
@@ -264,7 +290,7 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 15px;
+  font-size: calc(0.9375rem + var(--ui-font-size-adjustment));
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.2px;
@@ -329,6 +355,10 @@ onMounted(() => {
 
 .search-placeholder {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: left;
   letter-spacing: -0.1px;
 }

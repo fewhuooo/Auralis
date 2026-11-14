@@ -3,18 +3,26 @@
     <div class="database-startup__content">
       <template v-if="failed">
         <div role="alert">
-          <h1>无法打开本地数据库</h1>
-          <p>应用将在本地数据库就绪后启动。</p>
+          <h1>{{ t(messages.failed) }}</h1>
+          <p>{{ t(messages.waiting) }}</p>
         </div>
-        <button type="button" @click="failed && initialize()">重试</button>
+        <button type="button" @click="failed && initialize()">{{ t(messages.retry) }}</button>
       </template>
-      <p v-else role="status">正在启动 Auralis…</p>
+      <p v-else role="status">{{ t(messages.starting) }}</p>
     </div>
   </main>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { t } from '@/i18n'
+
+const messages = {
+  starting: { 'zh-CN': '正在启动 Auralis…', en: 'Starting Auralis…', ja: 'Auralis を起動中…' },
+  retry: { 'zh-CN': '重试', en: 'Retry', ja: '再試行' },
+  waiting: { 'zh-CN': '应用将在本地数据库就绪后启动。', en: 'The app will start when the local database is ready.', ja: 'ローカルデータベースの準備ができ次第、アプリが起動します。' },
+  failed: { 'zh-CN': '无法打开本地数据库', en: 'Unable to open the local database', ja: 'ローカルデータベースを開けません' },
+}
 
 const emit = defineEmits<{ ready: [] }>()
 const failed = ref(false)

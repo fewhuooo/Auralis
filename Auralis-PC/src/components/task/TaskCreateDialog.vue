@@ -16,12 +16,12 @@
     <div class="task-body">
       <!-- 任务名称 -->
       <div class="modal-form-group">
-        <label class="modal-form-label">任务名称 <span class="required">*</span></label>
+        <label class="modal-form-label">{{ t({ 'zh-CN': '任务名称', en: 'Task name', ja: 'タスク名' }) }} <span class="required">*</span></label>
         <input
           ref="nameInputRef"
           v-model="form.name"
           class="modal-form-input"
-          placeholder="请输入学习或专注任务名称..."
+          :placeholder="t({ 'zh-CN': '请输入学习或专注任务名称...', en: 'Enter a study or focus task…', ja: '学習・集中タスクの名前を入力…' })"
           autofocus
           @keyup.enter="handleSubmit"
         />
@@ -30,9 +30,9 @@
       <!-- 所属学科 -->
       <div v-if="!fixedSubjectId" class="modal-form-group">
         <div class="subject-header">
-          <label class="modal-form-label">所属学科 <span class="required">*</span></label>
+          <label class="modal-form-label">{{ t({ 'zh-CN': '所属学科', en: 'Subject', ja: '科目' }) }} <span class="required">*</span></label>
           <span v-if="resolvedSubjects.length > 0" class="subject-count-hint">
-            共 {{ resolvedSubjects.length }} 门
+            {{ t({ 'zh-CN': '共 {count} 门', en: 'Subjects: {count}', ja: '全{count}科目' }, { count: resolvedSubjects.length }) }}
           </span>
         </div>
         <div class="subject-grid">
@@ -54,25 +54,25 @@
             <span class="chip-name">{{ subj.name }}</span>
           </div>
           <div v-if="resolvedSubjects.length === 0" class="empty-hint">
-            暂无学科，请先创建学科空间
+            {{ t({ 'zh-CN': '暂无学科，请先创建学科空间', en: 'Create a subject first', ja: '先に科目を作成してください' }) }}
           </div>
         </div>
       </div>
       <div v-else-if="fixedSubjectName" class="modal-form-group">
-        <label class="modal-form-label">所属学科</label>
+        <label class="modal-form-label">{{ t({ 'zh-CN': '所属学科', en: 'Subject', ja: '科目' }) }}</label>
         <div class="fixed-badge">📘 {{ fixedSubjectName }}</div>
       </div>
 
       <!-- 专注时长 -->
       <div class="modal-form-group">
         <div class="duration-header">
-          <label class="modal-form-label">专注时长</label>
+          <label class="modal-form-label">{{ t({ 'zh-CN': '专注时长', en: 'Focus duration', ja: '集中時間' }) }}</label>
           <div class="duration-value-pill">
             <svg class="duration-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="9"/>
               <polyline points="12 7 12 12 15 15"/>
             </svg>
-            <span class="duration-pill-text">{{ form.duration }} 分钟 ({{ (form.duration / 60).toFixed(1) }}h)</span>
+            <span class="duration-pill-text">{{ t({ 'zh-CN': '{minutes} 分钟（{hours} 小时）', en: '{minutes} min ({hours} hr)', ja: '{minutes}分（{hours}時間）' }, { minutes: form.duration, hours: (form.duration / 60).toFixed(1) }) }}</span>
           </div>
         </div>
 
@@ -110,24 +110,24 @@
       <div class="modal-form-group">
         <div class="due-header">
           <label class="modal-form-label">
-            截止时间
-            <span class="optional-tag">可选</span>
+            {{ t({ 'zh-CN': '截止时间', en: 'Due date', ja: '期限' }) }}
+            <span class="optional-tag">{{ t({ 'zh-CN': '可选', en: 'Optional', ja: '任意' }) }}</span>
           </label>
           <button
             v-if="form.due"
             type="button"
             class="due-clear-btn"
-            title="清除截止时间"
+            :title="t({ 'zh-CN': '清除截止时间', en: 'Clear due date', ja: '期限をクリア' })"
             @click="form.due = ''"
           >
-            清除
+            {{ t({ 'zh-CN': '清除', en: 'Clear', ja: 'クリア' }) }}
           </button>
         </div>
         <div class="due-picker-wrap">
           <el-date-picker
             v-model="form.due"
             type="date"
-            placeholder="请选择截止日期（可选）"
+            :placeholder="t({ 'zh-CN': '请选择截止日期（可选）', en: 'Choose a due date (optional)', ja: '期限を選択（任意）' })"
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
             class="zen-date-picker"
@@ -139,20 +139,21 @@
     </div>
 
     <template #footer>
-      <button type="button" class="modal-btn modal-btn-secondary" :disabled="saving" @click="handleClose">取消</button>
+      <button type="button" class="modal-btn modal-btn-secondary" :disabled="saving" @click="handleClose">{{ t({ 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' }) }}</button>
       <button
         type="button"
         class="modal-btn modal-btn-primary"
         :disabled="!isSubmitEnabled"
         @click="handleSubmit"
       >
-        {{ saving ? '保存中…' : submitText }}
+        {{ saving ? t({ 'zh-CN': '保存中…', en: 'Saving…', ja: '保存中…' }) : submitText }}
       </button>
     </template>
   </ModalShell>
 </template>
 
 <script setup lang="ts">
+import { t } from '@/i18n'
 import { ref, reactive, computed, watch, nextTick, onUnmounted } from 'vue'
 import 'element-plus/theme-chalk/el-date-picker.css'
 import 'element-plus/theme-chalk/el-date-picker-panel.css'
@@ -183,8 +184,6 @@ const props = withDefaults(
     initialDesc?: string
   }>(),
   {
-    title: '新建学习任务',
-    submitText: '添加到待办',
     saving: false,
     subjects: undefined,
     fixedSubjectId: '',
@@ -196,6 +195,9 @@ const props = withDefaults(
     initialDesc: '',
   }
 )
+
+const title = computed(() => props.title ?? t({ 'zh-CN': '新建学习任务', en: 'New study task', ja: '学習タスクを作成' }))
+const submitText = computed(() => props.submitText ?? t({ 'zh-CN': '添加到待办', en: 'Add to to-do list', ja: 'やることリストに追加' }))
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void

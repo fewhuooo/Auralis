@@ -4,8 +4,8 @@
       <aside class="studio-left">
         <!-- 1. 用户基本资料 (User Profile Card) -->
         <div class="user-profile-card">
-          <div class="avatar-wrap" @click="triggerAvatarUpload" title="点击更换头像">
-            <img v-if="userAvatarUrl" :src="userAvatarUrl" class="user-avatar-img" alt="头像" />
+          <div class="avatar-wrap" @click="triggerAvatarUpload" :title="t(profileMessages.changeAvatarTitle)">
+            <img v-if="userAvatarUrl" :src="userAvatarUrl" class="user-avatar-img" :alt="t(profileMessages.avatar)" />
             <div v-else class="user-avatar">{{ userInitial }}</div>
             <div class="avatar-hover-overlay">
               <IconCamera :size="14" />
@@ -16,7 +16,7 @@
             <div class="user-badges">
               <span class="user-streak-pill">
                 <IconFlame :size="13" :stroke-width="2.2" class="streak-icon" />
-                本周专注天数 <strong>{{ continuousStudyDays }}</strong>
+                {{ t(profileMessages.focusDays, { count: continuousStudyDays }) }}
               </span>
               <span class="device-pill">{{ deviceName }}</span>
             </div>
@@ -26,16 +26,16 @@
         <!-- 2. 核心学习指标 (Study Overview) -->
         <div class="study-stats-card">
           <div class="study-stats-header">
-            <span class="study-stats-title">核心学习指标</span>
+            <span class="study-stats-title">{{ t(profileMessages.learningMetrics) }}</span>
           </div>
 
           <div class="stats-grid">
-            <div class="stat-cell" v-for="s in coreStats" :key="s.label">
+            <div class="stat-cell" v-for="s in coreStats" :key="s.icon.name">
               <div class="stat-top">
                 <div class="stat-icon-wrap">
                   <component :is="s.icon" :size="14" :stroke-width="2" class="stat-icon" />
                 </div>
-                <span class="stat-label">{{ s.label }}</span>
+                <span class="stat-label">{{ t(s.label) }}</span>
               </div>
               <span class="stat-value" :class="{ accent: s.accent }">{{ s.value }}</span>
             </div>
@@ -45,10 +45,10 @@
         <!-- 3. 学科知识分布 -->
         <div class="subject-dist-card">
           <div class="subject-dist-header">
-            <span class="subject-dist-title">学科知识分布</span>
+            <span class="subject-dist-title">{{ t(profileMessages.subjectDistribution) }}</span>
           </div>
           <div v-if="subjects.length === 0" class="no-data-hint">
-            暂无学科分布统计
+            {{ t(profileMessages.noSubjectData) }}
           </div>
           <div v-else class="subject-list">
             <div v-for="sub in subjects" :key="sub.name" class="subject-row">
@@ -57,7 +57,7 @@
               <div class="subject-bar-bg">
                 <div class="subject-bar-fill" :style="{ width: sub.pct + '%', backgroundColor: sub.color || '#8B9A6E' }"></div>
               </div>
-              <span class="subject-count-badge">{{ sub.count }} 块</span>
+              <span class="subject-count-badge">{{ t(profileMessages.blockCount, { count: sub.count }) }}</span>
             </div>
           </div>
         </div>
@@ -67,65 +67,65 @@
 
         <!-- 5. 账号与安全凭证管理 (Account & Security) -->
         <section class="account-card" aria-labelledby="profile-account-title">
-          <h2 id="profile-account-title" class="account-card-title">账号与安全凭证</h2>
+          <h2 id="profile-account-title" class="account-card-title">{{ t(profileMessages.accountSecurity) }}</h2>
 
           <div class="account-section" role="group" aria-labelledby="profile-account-details-title">
             <div class="account-section-header">
               <h3 id="profile-account-details-title" class="account-section-title setting-label-with-icon">
                 <IconId class="setting-icon" aria-hidden="true" />
-                账号资料
+                {{ t(profileMessages.accountProfile) }}
               </h3>
             </div>
             <div class="account-details account-section-body">
               <div class="account-detail">
-                <span class="cell-label">登录账号</span>
+                <span class="cell-label">{{ t(profileMessages.account) }}</span>
                 <span class="cell-val">{{ accountName }}</span>
               </div>
 
               <div class="account-detail">
-                <span class="cell-label">用户昵称</span>
+                <span class="cell-label">{{ t(profileMessages.nickname) }}</span>
                 <span v-if="!isEditingNickname" class="cell-val">{{ displayName }}</span>
                 <input
                   v-else
                   ref="nicknameInputRef"
                   v-model="newNickname"
                   class="cell-edit-input"
-                  aria-label="用户昵称"
-                  placeholder="输入新昵称"
+                  :aria-label="t(profileMessages.nickname)"
+                  :placeholder="t(profileMessages.nicknamePlaceholder)"
                   maxlength="20"
                   @keydown.enter="saveNickname"
                   @keydown.esc="cancelEditNickname"
                 />
-                <button v-if="!isEditingNickname" class="cell-btn" aria-label="修改昵称" @click="startEditNickname">
-                  修改
+                <button v-if="!isEditingNickname" class="cell-btn" :aria-label="t(profileMessages.editNickname)" @click="startEditNickname">
+                  {{ t(profileMessages.edit) }}
                 </button>
                 <div v-else class="cell-actions">
-                  <button class="cell-btn primary" @click="saveNickname">保存</button>
-                  <button class="cell-btn" @click="cancelEditNickname">取消</button>
+                  <button class="cell-btn primary" @click="saveNickname">{{ t(profileMessages.save) }}</button>
+                  <button class="cell-btn" @click="cancelEditNickname">{{ t(profileMessages.cancel) }}</button>
                 </div>
               </div>
 
               <div class="account-detail">
-                <span class="cell-label">用户头像</span>
+                <span class="cell-label">{{ t(profileMessages.userAvatar) }}</span>
                 <div class="mini-avatar">
-                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
+                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" :alt="t(profileMessages.avatar)" />
                   <span v-else>{{ userInitial }}</span>
                 </div>
                 <div class="cell-actions">
-                  <button v-if="userAvatarUrl" class="cell-btn" aria-label="重置头像" @click="resetAvatar">
-                    重置
+                  <button v-if="userAvatarUrl" class="cell-btn" :aria-label="t(profileMessages.resetAvatar)" @click="resetAvatar">
+                    {{ t(profileMessages.reset) }}
                   </button>
-                  <button class="cell-btn" aria-label="更换头像" @click="triggerAvatarUpload">
-                    更换
+                  <button class="cell-btn" :aria-label="t(profileMessages.changeAvatar)" @click="triggerAvatarUpload">
+                    {{ t(profileMessages.change) }}
                   </button>
                 </div>
               </div>
 
               <div class="account-detail">
-                <span class="cell-label">登录密码</span>
+                <span class="cell-label">{{ t(profileMessages.password) }}</span>
                 <span class="cell-sub">••••••••</span>
-                <button class="cell-btn" aria-label="修改密码" @click="openPasswordModal">
-                  修改
+                <button class="cell-btn" :aria-label="t(profileMessages.editPassword)" @click="openPasswordModal">
+                  {{ t(profileMessages.edit) }}
                 </button>
               </div>
             </div>
@@ -135,23 +135,23 @@
             <div class="account-section-header">
               <h3 id="profile-sessions-title" class="account-section-title setting-label-with-icon">
                 <IconDevices class="setting-icon" aria-hidden="true" />
-                登录设备管理
+                {{ t(profileMessages.devices) }}
               </h3>
-              <button class="cell-btn" type="button" @click="handleLogout">退出登录</button>
+              <button class="cell-btn" type="button" @click="handleLogout">{{ t(profileMessages.signOut) }}</button>
             </div>
             <div class="account-section-body">
-              <p v-if="sessionsLoading" class="session-empty">正在加载设备列表...</p>
+              <p v-if="sessionsLoading" class="session-empty">{{ t(profileMessages.loadingDevices) }}</p>
               <p v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</p>
-              <p v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</p>
+              <p v-else-if="sessions.length === 0" class="session-empty">{{ t(profileMessages.noOtherDevices) }}</p>
               <div v-else>
                 <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-operation">
                   <div class="row-info">
                     <div class="session-title-line">
-                      <span class="row-label">{{ session.deviceName || session.platform || '未知设备' }}</span>
-                      <span v-if="isCurrentSession(session)" class="session-current-pill">当前设备</span>
+                      <span class="row-label">{{ session.deviceName || session.platform || t(profileMessages.unknownDevice) }}</span>
+                      <span v-if="isCurrentSession(session)" class="session-current-pill">{{ t(profileMessages.currentDevice) }}</span>
                     </div>
                     <span class="row-desc">
-                      {{ session.platform || 'UNKNOWN' }} · 最近活跃 {{ formatSessionDate(session.lastUsedAt) }}
+                      {{ t(profileMessages.lastActive, { platform: session.platform || t(profileMessages.unknownDate), date: formatSessionDate(session.lastUsedAt) }) }}
                     </span>
                   </div>
                   <button
@@ -161,7 +161,7 @@
                     :disabled="revokingSessionId === session.id"
                     @click="handleRevokeSession(session)"
                   >
-                    {{ revokingSessionId === session.id ? '下线中...' : '下线' }}
+                    {{ t(revokingSessionId === session.id ? profileMessages.revoking : profileMessages.revoke) }}
                   </button>
                 </div>
               </div>
@@ -172,26 +172,26 @@
             <div class="account-section-header">
               <h3 id="profile-reset-title" class="account-section-title setting-label-with-icon">
                 <IconShieldLock class="setting-icon" aria-hidden="true" />
-                数据与账户重置
+                {{ t(profileMessages.accountReset) }}
               </h3>
             </div>
             <div class="account-section-body">
               <div class="account-operation">
                 <div class="row-info">
-                  <span class="row-label">重置本地离线数据</span>
-                  <span class="row-desc">清除本机离线数据和未同步草稿</span>
+                  <span class="row-label">{{ t(profileMessages.resetOfflineData) }}</span>
+                  <span class="row-desc">{{ t(profileMessages.resetOfflineDescription) }}</span>
                 </div>
-                <button class="cell-btn danger" type="button" aria-label="重置本地离线数据" @click="handleResetOfflineData">
-                  重置
+                <button class="cell-btn danger" type="button" :aria-label="t(profileMessages.resetOfflineData)" @click="handleResetOfflineData">
+                  {{ t(profileMessages.reset) }}
                 </button>
               </div>
               <div class="account-operation">
                 <div class="row-info">
-                  <span class="row-label">注销账户</span>
-                  <span class="row-desc">停用账户并清理云端数据</span>
+                  <span class="row-label">{{ t(profileMessages.closeAccount) }}</span>
+                  <span class="row-desc">{{ t(profileMessages.closeAccountDescription) }}</span>
                 </div>
-                <button class="cell-btn danger" type="button" aria-label="注销账户" @click="handleDeleteAccount">
-                  注销
+                <button class="cell-btn danger" type="button" :aria-label="t(profileMessages.closeAccount)" @click="handleDeleteAccount">
+                  {{ t(profileMessages.close) }}
                 </button>
               </div>
             </div>
@@ -201,18 +201,18 @@
 
       <!-- ===== RIGHT PANEL: 分项设置 ===== -->
       <main class="studio-right">
-        <h1 class="settings-title">个人偏好与设置</h1>
+        <h1 class="settings-title">{{ t(profileMessages.personalSettings) }}</h1>
 
         <!-- Settings Groups -->
         <div
           v-for="group in settingGroups"
-          :key="group.title"
+          :key="group.id"
           class="settings-group"
         >
           <div class="group-header">
             <h3 class="group-title setting-label-with-icon">
               <component :is="group.icon" class="setting-icon" aria-hidden="true" />
-              {{ group.title }}
+              {{ t(group.title) }}
             </h3>
           </div>
           <div class="group-items">
@@ -224,47 +224,49 @@
               <div class="row-info">
                 <span class="row-label setting-label-with-icon">
                   <component :is="item.icon" class="setting-icon" aria-hidden="true" />
-                  {{ item.label }}
+                  {{ t(item.label) }}
                 </span>
               </div>
               <div class="row-control" :class="{ 'sync-status-controls': item.id === 'sync_status' }">
-                <!-- Toggle -->
                 <button
                   v-if="item.type === 'toggle'"
                   class="toggle-btn"
+                  type="button"
+                  role="switch"
+                  :aria-checked="item.value"
+                  :aria-label="t(item.label)"
                   :class="{ 'is-on': item.value }"
                   @click="handleToggle(item)"
-                  :aria-label="item.label"
                 >
                   <span class="toggle-knob"></span>
                 </button>
-                <!-- Select -->
                 <select
-                  v-else-if="item.type === 'select'"
+                  v-else-if="item.id === 'lang'"
                   class="settings-select"
-                  v-model="item.value"
-                  :aria-label="item.label"
-                  @change="handleSelectChange(item)"
+                  :value="locale"
+                  :aria-label="t(item.label)"
+                  @change="setLocale(($event.target as HTMLSelectElement).value)"
                 >
-                  <option v-for="opt in item.options" :key="opt" :value="opt">{{ opt }}</option>
+                  <option v-for="option in localeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                 </select>
-                <!-- Input -->
-                <input
-                  v-else-if="item.type === 'input'"
-                  type="text"
-                  class="settings-input"
-                  v-model="item.value"
-                  :placeholder="item.placeholder"
-                  @blur="handleInputBlur(item)"
-                />
-                <!-- Status -->
-                <template v-else-if="item.type === 'status'">
+                <select
+                  v-else-if="item.id === 'font_size'"
+                  class="settings-select"
+                  :value="settingsStore.fontSize"
+                  :aria-label="t(item.label)"
+                  @change="settingsStore.setFontSize(($event.target as HTMLSelectElement).value)"
+                >
+                  <option>12px</option>
+                  <option>14px</option>
+                  <option>16px</option>
+                </select>
+                <template v-else>
                   <div class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired || hasPendingFocusSessions) }">
                     <span class="status-dot-indicator"></span>
-                    <span>{{ item.id === 'sync_status' ? syncStatusText : item.value }}</span>
+                    <span>{{ syncStatusText }}</span>
                   </div>
-                  <button v-if="item.id === 'sync_status'" class="action-btn primary" type="button" @click="handleSyncNow">
-                    {{ syncButtonText }}
+                  <button class="action-btn primary" type="button" @click="handleSyncNow">
+                    {{ t(syncButtonMessage) }}
                   </button>
                 </template>
               </div>
@@ -276,7 +278,7 @@
           <div class="group-header">
             <h3 id="profile-ai-title" class="group-title setting-label-with-icon">
               <IconSparkles class="setting-icon" aria-hidden="true" />
-              AI 设置
+              {{ t(profileMessages.aiSettings) }}
             </h3>
           </div>
 
@@ -284,9 +286,9 @@
             <div class="row-info">
               <span class="row-label setting-label-with-icon">
                 <IconFileDescription class="setting-icon" aria-hidden="true" />
-                {{ autoOverviewSetting.label }}
+                {{ t(autoOverviewSetting.label) }}
               </span>
-              <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
+              <span id="profile-auto-overview-desc" class="row-desc">{{ t(profileMessages.autoOverviewDescription) }}</span>
             </div>
             <div class="row-control">
               <button
@@ -294,7 +296,7 @@
                 type="button"
                 role="switch"
                 :aria-checked="autoOverviewSetting.value"
-                :aria-label="autoOverviewSetting.label"
+                :aria-label="t(autoOverviewSetting.label)"
                 aria-describedby="profile-auto-overview-desc"
                 :class="{ 'is-on': autoOverviewSetting.value }"
                 @click="handleToggle(autoOverviewSetting)"
@@ -308,7 +310,7 @@
             <div class="ai-subheader">
               <h4 id="profile-ai-model-title" class="group-title ai-subtitle setting-label-with-icon">
                 <IconCpu class="setting-icon" aria-hidden="true" />
-                AI 模型与服务
+                {{ t(profileMessages.modelsAndServices) }}
               </h4>
             </div>
 
@@ -317,7 +319,7 @@
                 <div class="row-info">
                   <label class="row-label setting-label-with-icon" for="profile-ai-provider">
                     <IconServer class="setting-icon" aria-hidden="true" />
-                    AI 服务商
+                    {{ t(profileMessages.aiProvider) }}
                   </label>
                 </div>
                 <div class="row-control byok-control-wrap">
@@ -338,7 +340,7 @@
                     Base URL
                   </label>
                   <span id="profile-ai-base-url-hint" class="row-desc">
-                    {{ canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
+                    {{ t(canonicalAiProvider === 'OPENAI_COMPATIBLE' ? profileMessages.compatibleUrlRequired : profileMessages.defaultUrl) }}
                   </span>
                 </div>
                 <div class="row-control byok-control-wrap">
@@ -359,7 +361,7 @@
                     API Key
                   </label>
                   <span v-if="!aiSettingsInitializing" id="profile-ai-key-status" class="row-desc">
-                    {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
+                    {{ t(currentProviderHasKey ? profileMessages.keyConfigured : profileMessages.keyNotConfigured) }}
                   </span>
                 </div>
                 <div class="row-control byok-control-wrap">
@@ -375,7 +377,7 @@
                     <button
                       type="button"
                       class="eye-toggle-btn"
-                      :title="showApiKey ? '隐藏密钥' : '显示密钥'"
+                      :title="t(showApiKey ? profileMessages.hideKey : profileMessages.showKey)"
                       @click="showApiKey = !showApiKey"
                     >
                       <IconEyeOff v-if="showApiKey" :size="15" />
@@ -389,7 +391,7 @@
                 <div class="row-info">
                   <label class="row-label setting-label-with-icon" for="profile-ai-model">
                     <IconMessages class="setting-icon" aria-hidden="true" />
-                    对话模型
+                    {{ t(profileMessages.chatModel) }}
                   </label>
                 </div>
                 <div class="row-control byok-control-wrap">
@@ -399,19 +401,19 @@
                       v-model="customChatModel"
                       type="text"
                       class="settings-input byok-input byok-model-input"
-                      placeholder="如 deepseek-chat"
+                      :placeholder="t(profileMessages.modelPlaceholder)"
                     />
                     <button
                       class="action-btn byok-detect-btn"
                       :disabled="detectingModels || aiSettingsBusy"
                       @click="handleDetectModels"
                     >
-                      {{ detectingModels ? '检测中...' : '自动检测' }}
+                      {{ t(detectingModels ? profileMessages.detectingModels : profileMessages.detectModels) }}
                     </button>
                   </div>
                   <!-- 自动检测模型快速选取托盘 -->
                   <div v-if="detectedModels.length > 0" class="detected-models-tray">
-                    <span class="tray-label">检测到 {{ detectedModels.length }} 个候选模型：</span>
+                    <span class="tray-label">{{ t(profileMessages.modelCandidates, { count: detectedModels.length }) }}</span>
                     <div class="tray-chips">
                       <button
                         v-for="m in detectedModels"
@@ -430,21 +432,21 @@
             </div>
 
             <div class="byok-action-footer ai-section-content">
-              <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
+              <span class="byok-tip">{{ t(aiSettingsInitializing ? profileMessages.loadingAiSettings : profileMessages.saveBeforeTest) }}</span>
               <div class="byok-btn-group">
                 <button
                   class="action-btn"
                   :disabled="testingConnection || aiSettingsBusy"
                   @click="handleTestConnection"
                 >
-                  {{ testingConnection ? '测试中...' : '测试连接' }}
+                  {{ t(testingConnection ? profileMessages.testingConnection : profileMessages.testConnection) }}
                 </button>
                 <button
                   class="action-btn primary"
                   :disabled="aiSettingsBusy"
                   @click="handleSaveAiSettings"
                 >
-                  {{ aiSettingsLoading ? '保存中...' : '保存 AI 配置' }}
+                  {{ t(aiSettingsLoading ? profileMessages.saving : profileMessages.saveAiSettings) }}
                 </button>
               </div>
             </div>
@@ -454,28 +456,28 @@
             <div class="ai-subheader">
               <h4 id="profile-ai-usage-title" class="group-title ai-subtitle setting-label-with-icon">
                 <IconGauge class="setting-icon" aria-hidden="true" />
-                AI 使用额度
+                {{ t(profileMessages.aiUsage) }}
               </h4>
               <button v-if="aiUsage && !loadingAiUsage && !aiUsageError" class="action-btn secondary" type="button" @click="fetchAiUsage">
-                刷新
+                {{ t(profileMessages.refresh) }}
               </button>
             </div>
 
             <div class="ai-section-content">
-              <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
+              <div v-if="loadingAiUsage" class="usage-loading">{{ t(profileMessages.loading) }}</div>
               <div v-else-if="aiUsageError" class="usage-error">
                 <span>{{ aiUsageError }}</span>
-                <button class="action-btn secondary" @click="fetchAiUsage">重试</button>
+                <button class="action-btn secondary" @click="fetchAiUsage">{{ t(profileMessages.retry) }}</button>
               </div>
               <div v-else-if="aiUsage" class="usage-content">
                 <!-- Hourly -->
                 <div class="usage-card">
                   <div class="usage-card-header">
                     <div class="usage-header-left">
-                      <span class="usage-plan-name">每小时额度</span>
-                      <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
+                      <span class="usage-plan-name">{{ t(profileMessages.hourlyLimit) }}</span>
+                      <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">{{ t(profileMessages.remainingPercent, { percent: hourlyUsagePercent }) }}</span>
                     </div>
-                    <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
+                    <span class="usage-reset-tag">{{ t(profileMessages.resetTime, { time: new Date(aiUsage.hourly.resetAt).toLocaleTimeString(locale) }) }}</span>
                   </div>
                   <!-- 进度条 -->
                   <div class="usage-progress-bar-wrap">
@@ -483,19 +485,19 @@
                   </div>
                   <div class="usage-grid">
                     <div class="usage-stat-box">
-                      <span class="usage-stat-label">总额度</span>
+                      <span class="usage-stat-label">{{ t(profileMessages.totalLimit) }}</span>
                       <span class="usage-stat-val">{{ aiUsage.hourly.limitTokens }} token</span>
                     </div>
                     <div class="usage-stat-box">
-                      <span class="usage-stat-label">剩余额度</span>
+                      <span class="usage-stat-label">{{ t(profileMessages.remainingLimit) }}</span>
                       <span class="usage-stat-val accent">{{ aiUsage.hourly.remainingTokens }} token</span>
                     </div>
                     <div class="usage-stat-box" >
-                      <span class="usage-stat-label">已用额度</span>
+                      <span class="usage-stat-label">{{ t(profileMessages.usedLimit) }}</span>
                       <span class="usage-stat-val">{{ aiUsage.hourly.chargedTokens }} token</span>
                     </div>
                     <div class="usage-stat-box" >
-                      <span class="usage-stat-label">预留额度</span>
+                      <span class="usage-stat-label">{{ t(profileMessages.reservedLimit) }}</span>
                       <span class="usage-stat-val">{{ aiUsage.hourly.reservedTokens }} token</span>
                     </div>
                   </div>
@@ -505,10 +507,10 @@
                 <div class="usage-card">
                   <div class="usage-card-header">
                     <div class="usage-header-left">
-                      <span class="usage-plan-name">每日额度</span>
-                      <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
+                      <span class="usage-plan-name">{{ t(profileMessages.dailyLimit) }}</span>
+                      <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">{{ t(profileMessages.remainingPercent, { percent: dailyUsagePercent }) }}</span>
                     </div>
-                    <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
+                    <span class="usage-reset-tag">{{ t(profileMessages.resetTime, { time: new Date(aiUsage.daily.resetAt).toLocaleString(locale) }) }}</span>
                   </div>
                   <!-- 进度条 -->
                   <div class="usage-progress-bar-wrap">
@@ -516,19 +518,19 @@
                   </div>
                   <div class="usage-grid">
                     <div class="usage-stat-box">
-                      <span class="usage-stat-label">总额度</span>
+                      <span class="usage-stat-label">{{ t(profileMessages.totalLimit) }}</span>
                       <span class="usage-stat-val">{{ aiUsage.daily.limitTokens }} token</span>
                     </div>
                     <div class="usage-stat-box">
-                      <span class="usage-stat-label">剩余额度</span>
+                      <span class="usage-stat-label">{{ t(profileMessages.remainingLimit) }}</span>
                       <span class="usage-stat-val accent">{{ aiUsage.daily.remainingTokens }} token</span>
                     </div>
-                    <div class="usage-stat-box" title="缺少实际 usage 时按保守估算">
-                      <span class="usage-stat-label">已结算（估算）</span>
+                    <div class="usage-stat-box" :title="t(profileMessages.usageEstimation)">
+                      <span class="usage-stat-label">{{ t(profileMessages.settledEstimate) }}</span>
                       <span class="usage-stat-val">{{ aiUsage.daily.chargedTokens }} token</span>
                     </div>
-                    <div class="usage-stat-box" title="在途预留为估算值，不代表最终实际用量">
-                      <span class="usage-stat-label">在途预留（估算）</span>
+                    <div class="usage-stat-box" :title="t(profileMessages.reservedEstimation)">
+                      <span class="usage-stat-label">{{ t(profileMessages.reservedEstimate) }}</span>
                       <span class="usage-stat-val">{{ aiUsage.daily.reservedTokens }} token</span>
                     </div>
                   </div>
@@ -609,6 +611,8 @@ import {
 } from '@/api/aiClient'
 import { isOnline, useSyncStore } from '@/store/useSyncStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
+import { locale, localeOptions, setLocale, t, type Message } from '@/i18n'
+import { profileMessages } from './profileMessages'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useStatsStore } from '@/store/useStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -648,9 +652,9 @@ const sessionsLoading = ref(false)
 const sessionsError = ref<string | null>(null)
 const revokingSessionId = ref<string | null>(null)
 
-const displayName = computed(() => authStore.user?.displayName || authStore.user?.username || 'Auralis 同学')
-const accountName = computed(() => authStore.user?.username || '未登录')
-const deviceName = computed(() => authStore.serverDeviceId ? `设备 ${authStore.serverDeviceId.slice(0, 8)}` : '未绑定设备')
+const displayName = computed(() => authStore.user?.displayName || authStore.user?.username || t(profileMessages.defaultDisplayName))
+const accountName = computed(() => authStore.user?.username || t(profileMessages.notSignedIn))
+const deviceName = computed(() => authStore.serverDeviceId ? t(profileMessages.deviceId, { id: authStore.serverDeviceId.slice(0, 8) }) : t(profileMessages.noDevice))
 
 const userInitial = computed(() => {
   const name = displayName.value
@@ -680,8 +684,8 @@ const handleAvatarFileSelected = async (event: Event) => {
   const mime = file.type?.toLowerCase() || ''
   if (!mime.includes('png') && !mime.includes('jpeg') && !mime.includes('jpg')) {
     ElNotification({
-      title: '文件类型不符',
-      message: '仅支持 PNG 或 JPEG 格式的图片文件',
+      title: t(profileMessages.unsupportedImage),
+      message: t(profileMessages.imageFormats),
       type: 'warning',
       duration: 3000,
     })
@@ -691,8 +695,8 @@ const handleAvatarFileSelected = async (event: Event) => {
 
   if (file.size > 5 * 1024 * 1024) {
     ElNotification({
-      title: '文件过大',
-      message: '头像图片大小不能超过 5MB',
+      title: t(profileMessages.imageTooLarge),
+      message: t(profileMessages.avatarSizeLimit),
       type: 'warning',
       duration: 3000,
     })
@@ -711,15 +715,15 @@ const handleAvatarFileSelected = async (event: Event) => {
       void authStore.loadAvatar()
     }
     ElNotification({
-      title: '头像已更新',
-      message: '个人头像已成功同步保存至云端',
+      title: t(profileMessages.avatarUpdated),
+      message: t(profileMessages.avatarSynced),
       type: 'success',
       duration: 2500,
     })
   } catch (err: any) {
     ElNotification({
-      title: '头像上传失败',
-      message: err?.problem?.detail || err?.message || '头像上传异常，请稍后重试',
+      title: t(profileMessages.avatarUploadFailed),
+      message: err?.problem?.detail || err?.message || t(profileMessages.avatarUploadRetry),
       type: 'error',
       duration: 3500,
     })
@@ -737,15 +741,15 @@ const resetAvatar = async () => {
     }
     if (requestedUserId) await authStore.clearAvatar(requestedUserId)
     ElNotification({
-      title: '已重置头像',
-      message: '已恢复默认首字母头像',
+      title: t(profileMessages.avatarReset),
+      message: t(profileMessages.avatarResetDescription),
       type: 'info',
       duration: 2500,
     })
   } catch (err: any) {
     ElNotification({
-      title: '重置头像失败',
-      message: err?.problem?.detail || err?.message || '网络连接异常，请稍后重试',
+      title: t(profileMessages.avatarResetFailed),
+      message: err?.problem?.detail || err?.message || t(profileMessages.networkRetry),
       type: 'error',
       duration: 3000,
     })
@@ -775,16 +779,16 @@ const saveNickname = async () => {
   const trimmed = newNickname.value.trim()
   if (!trimmed) {
     ElNotification({
-      title: '提示',
-      message: '昵称不能为空',
+      title: t(profileMessages.notice),
+      message: t(profileMessages.nicknameRequired),
       type: 'warning',
     })
     return
   }
   if (trimmed.length > 120) {
     ElNotification({
-      title: '提示',
-      message: '昵称最多 120 个字符',
+      title: t(profileMessages.notice),
+      message: t(profileMessages.nicknameTooLong),
       type: 'warning',
     })
     return
@@ -804,22 +808,22 @@ const saveNickname = async () => {
     }
     isEditingNickname.value = false
     ElNotification({
-      title: '更新成功',
-      message: '个人昵称已成功保存至云端',
+      title: t(profileMessages.updateSucceeded),
+      message: t(profileMessages.nicknameSaved),
       type: 'success',
     })
   } catch (err: any) {
     if (err?.status === 409 || err?.problem?.code === 'RESOURCE_VERSION_CONFLICT') {
       await authStore.fetchMe().catch(() => {})
       ElNotification({
-        title: '版本冲突',
-        message: '个人资料已被更新，已拉取最新数据，请重试',
+        title: t(profileMessages.versionConflict),
+        message: t(profileMessages.profileWasUpdated),
         type: 'warning',
       })
     } else {
       ElNotification({
-        title: '更新失败',
-        message: err?.problem?.detail || err?.message || '未能保存昵称，请稍后重试',
+        title: t(profileMessages.updateFailed),
+        message: err?.problem?.detail || err?.message || t(profileMessages.nicknameSaveFailed),
         type: 'error',
       })
     }
@@ -850,14 +854,14 @@ const submitPasswordChange = async ({ oldPassword, newPassword }: { oldPassword:
     })
     showPasswordModal.value = false
     ElNotification({
-      title: '修改成功',
-      message: '账号登录密码已成功更新。其他设备的登录会话已安全撤销。',
+      title: t(profileMessages.passwordChanged),
+      message: t(profileMessages.passwordSessionsRevoked),
       type: 'success',
       duration: 4000,
     })
     await authStore.fetchMe().catch(() => {})
   } catch (err: any) {
-    pwdError.value = err?.problem?.detail || err?.message || '更新密码失败，请核对原密码后重试'
+    pwdError.value = err?.problem?.detail || err?.message || t(profileMessages.passwordUpdateFailed)
   } finally {
     pwdSubmitting.value = false
   }
@@ -865,11 +869,11 @@ const submitPasswordChange = async ({ oldPassword, newPassword }: { oldPassword:
 
 // === Stats ===
 const coreStats = ref([
-  { label: '知识块', value: '0', accent: false, icon: IconNotes },
-  { label: '完成任务', value: '0', accent: false, icon: IconChecklist },
-  { label: '总专注时长', value: '0h', accent: true, icon: IconClock },
-  { label: '完成番茄', value: '0', accent: false, icon: IconFlame },
-  { label: '本周新增', value: '0', accent: false, icon: IconTrendingUp },
+  { label: profileMessages.knowledgeBlocks, value: '0', accent: false, icon: IconNotes },
+  { label: profileMessages.completedTasks, value: '0', accent: false, icon: IconChecklist },
+  { label: profileMessages.totalFocus, value: '0h', accent: true, icon: IconClock },
+  { label: profileMessages.completedPomodoros, value: '0', accent: false, icon: IconFlame },
+  { label: profileMessages.newThisWeek, value: '0', accent: false, icon: IconTrendingUp },
 ])
 
 // === Week bars ===
@@ -879,9 +883,9 @@ const weekBars = ref<any[]>([])
 const subjects = ref<any[]>([])
 
 const formatSessionDate = (value?: string) => {
-  if (!value) return '未知'
+  if (!value) return t(profileMessages.unknownDate)
   const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? '未知' : parsed.toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
+  return Number.isNaN(parsed.getTime()) ? t(profileMessages.unknownDate) : parsed.toLocaleString(locale.value, { dateStyle: 'short', timeStyle: 'short' })
 }
 
 const isCurrentSession = (session: SessionResponse) => Boolean(session.current || session.serverDeviceId === authStore.serverDeviceId)
@@ -893,7 +897,7 @@ const loadSessions = async () => {
     const response = await useAuthApi.listSessions()
     sessions.value = response?.items ?? []
   } catch (error) {
-    sessionsError.value = error instanceof Error ? error.message : '会话加载失败'
+    sessionsError.value = error instanceof Error ? error.message : t(profileMessages.sessionsLoadFailed)
   } finally {
     sessionsLoading.value = false
   }
@@ -905,9 +909,9 @@ const handleRevokeSession = async (session: SessionResponse) => {
   try {
     await useAuthApi.revokeSession(session.id)
     sessions.value = sessions.value.filter((item) => item.serverDeviceId !== session.serverDeviceId)
-    ElNotification({ title: '设备会话已撤销', message: '该设备无法续期，已有访问权限将在令牌到期后失效。', type: 'success', duration: 3000 })
+    ElNotification({ title: t(profileMessages.sessionRevoked), message: t(profileMessages.sessionRevokedDescription), type: 'success', duration: 3000 })
   } catch (error) {
-    ElNotification({ title: '撤销失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
+    ElNotification({ title: t(profileMessages.sessionRevokeFailed), message: error instanceof Error ? error.message : t(profileMessages.retryLater), type: 'error', duration: 3000 })
   } finally {
     revokingSessionId.value = null
   }
@@ -968,16 +972,16 @@ watch(
 
 const getAiSettingsValidationError = (provider: CanonicalAiProvider): string | null => {
   if (provider !== 'DEEPSEEK' && !customChatModel.value.trim()) {
-    return '当前服务商需要填写明确的聊天模型名称后才能保存。'
+    return t(profileMessages.providerNeedsModel)
   }
   if (provider === 'OPENAI_COMPATIBLE' && !customBaseUrl.value.trim()) {
-    return '请填写 OpenAI 兼容服务商提供的 Base URL。'
+    return t(profileMessages.providerNeedsBaseUrl)
   }
   return null
 }
 
 const notifyAiSettingsValidationError = (message: string) => {
-  ElNotification({ title: 'AI 配置不完整', message, type: 'warning', duration: 3500 })
+  ElNotification({ title: t(profileMessages.incompleteAiSettings), message, type: 'warning', duration: 3500 })
 }
 
 const requireSavedAiSettingsForProbe = (chatModel?: string): boolean => {
@@ -987,8 +991,8 @@ const requireSavedAiSettingsForProbe = (chatModel?: string): boolean => {
     return true
   }
   ElNotification({
-    title: '请先保存 AI 配置',
-    message: '填写服务商配置后点击「保存 AI 配置」，再进行模型检测或连接测试。',
+    title: t(profileMessages.saveAiBeforeProbe),
+    message: t(profileMessages.saveAiBeforeProbeDescription),
     type: 'warning',
     duration: 3500,
   })
@@ -1010,16 +1014,16 @@ const handleDetectModels = async () => {
       customChatModel.value = models[0]
     }
     ElNotification({
-      title: '检测完成',
-      message: `已获取到 ${models.length} 个可用模型，点击即可选用`,
+      title: t(profileMessages.detectionComplete),
+      message: t(profileMessages.detectionResult, { count: models.length }),
       type: 'success',
       duration: 3000,
     })
   } catch (error) {
     if (generation !== aiConnectionGeneration) return
     ElNotification({
-      title: '检测失败',
-      message: error instanceof Error ? error.message : '未能获取可用模型列表，请确认 Base URL 与 API Key 是否有效',
+      title: t(profileMessages.detectionFailed),
+      message: error instanceof Error ? error.message : t(profileMessages.detectionFailedDescription),
       type: 'error',
       duration: 4000,
     })
@@ -1041,15 +1045,15 @@ const handleTestConnection = async () => {
     if (generation !== aiConnectionGeneration || res.provider !== canonical) return
     if (res.reachable) {
       ElNotification({
-        title: '连接成功',
-        message: `服务商 [${canonical}] 联通正常，聊天模型 ${res.chatModel} 已验证。`,
+        title: t(profileMessages.connectionSucceeded),
+        message: t(profileMessages.verifiedModel, { provider: canonical, model: res.chatModel ?? '' }),
         type: 'success',
         duration: 3500,
       })
     } else {
       ElNotification({
-        title: '连接异常',
-        message: '未能联通该模型服务商，请检查网络代理与服务商状态',
+        title: t(profileMessages.connectionFailed),
+        message: t(profileMessages.connectionFailedDescription),
         type: 'warning',
         duration: 4000,
       })
@@ -1057,8 +1061,8 @@ const handleTestConnection = async () => {
   } catch (error) {
     if (generation !== aiConnectionGeneration) return
     ElNotification({
-      title: '连接测试失败',
-      message: error instanceof Error ? error.message : '未能连通目标服务商，请确认端点与密钥是否有效',
+      title: t(profileMessages.connectionTestFailed),
+      message: error instanceof Error ? error.message : t(profileMessages.connectionTestFailedDescription),
       type: 'error',
       duration: 4500,
     })
@@ -1110,9 +1114,9 @@ const handleSaveAiSettings = async () => {
       aiSettingsList.value[idx] = updated
     }
     if (idx < 0) aiSettingsList.value.push(updated)
-    ElNotification({ title: 'AI 配置已保存', message: `[${canonical}] AI 配置已成功保存。`, type: 'success', duration: 3000 })
+    ElNotification({ title: t(profileMessages.aiSettingsSaved), message: t(profileMessages.providerSaved, { provider: canonical }), type: 'success', duration: 3000 })
   } catch (error) {
-    ElNotification({ title: '保存失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
+    ElNotification({ title: t(profileMessages.saveFailed), message: error instanceof Error ? error.message : t(profileMessages.retryLater), type: 'error', duration: 3000 })
   } finally {
     aiSettingsLoading.value = false
   }
@@ -1122,11 +1126,11 @@ const syncStore = useSyncStore()
 const hasPendingFocusSessions = computed(() => pomodoroStore.pendingSessions.length > 0)
 
 const syncStatusText = computed(() => {
-  if (syncStore.isSyncing) return '正在与云端同步...'
-  if (syncStore.lastSyncError) return `同步异常 · ${syncStore.lastSyncError}`
-  if (syncStore.resetRequired) return '需要重置 · 等待重新同步'
-  if (hasPendingFocusSessions.value) return '有专注记录待上传'
-  return '已同步 · 状态正常'
+  if (syncStore.isSyncing) return t(profileMessages.syncing)
+  if (syncStore.lastSyncError) return t(profileMessages.syncError, { error: syncStore.lastSyncError })
+  if (syncStore.resetRequired) return t(profileMessages.resetRequired)
+  if (hasPendingFocusSessions.value) return t(profileMessages.pendingFocus)
+  return t(profileMessages.synced)
 })
 
 const loadStats = async () => {
@@ -1210,102 +1214,76 @@ const loadStats = async () => {
 }
 
 // === Settings ===
-interface SettingItem {
-  id: string
-  label: string
-  type: 'toggle' | 'select' | 'input' | 'status'
-  icon?: Icon
-  value?: any
-  options?: string[]
-  placeholder?: string
-}
+type ToggleSetting = { id: string; label: Message; type: 'toggle'; value: boolean }
+type SettingItem = (ToggleSetting | { id: 'lang' | 'font_size' | 'sync_status'; label: Message; type: 'select' | 'status' }) & { icon: Icon }
 
-const settingGroups = reactive([
+const settingGroups = reactive<{ id: string; title: Message; icon: Icon; items: SettingItem[] }[]>([
   {
-    title: '外观与显示',
+    id: 'display',
+    title: profileMessages.display,
     icon: IconDeviceDesktop,
     items: [
-      { id: 'dark', label: '深色模式', icon: IconMoon, type: 'toggle', value: settingsStore.isDark },
-      { id: 'compact', label: '紧凑布局', icon: IconLayoutRows, type: 'toggle', value: settingsStore.compactLayout },
-      { id: 'lang', label: '界面语言', icon: IconLanguage, type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
-      { id: 'font_size', label: '基础字号', icon: IconTextSize, type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
-    ] as SettingItem[]
+      { id: 'dark', label: profileMessages.darkMode, icon: IconMoon, type: 'toggle', get value() { return settingsStore.isDark } },
+      { id: 'compact', label: profileMessages.compactLayout, icon: IconLayoutRows, type: 'toggle', get value() { return settingsStore.compactLayout } },
+      { id: 'lang', label: profileMessages.interfaceLanguage, icon: IconLanguage, type: 'select' },
+      { id: 'font_size', label: profileMessages.baseFontSize, icon: IconTextSize, type: 'select' },
+    ],
   },
   {
-    title: '提醒',
+    id: 'reminders',
+    title: profileMessages.reminders,
     icon: IconBell,
     items: [
-      { id: 'task_remind', label: '任务提醒', icon: IconChecklist, type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
-      { id: 'focus_end', label: '专注结束提醒', icon: IconAlarm, type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
-    ] as SettingItem[]
+      { id: 'task_remind', label: profileMessages.taskReminder, icon: IconChecklist, type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
+      { id: 'focus_end', label: profileMessages.focusReminder, icon: IconAlarm, type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
+    ],
   },
   {
-    title: '同步与数据',
+    id: 'sync',
+    title: profileMessages.syncAndData,
     icon: IconCloud,
     items: [
-      { id: 'sync_status', label: '同步状态', icon: IconActivity, type: 'status', value: '已同步 · 状态正常' },
-      { id: 'auto_sync', label: '自动同步', icon: IconRefresh, type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
-      { id: 'wifi_only', label: '仅 Wi-Fi 同步', icon: IconWifi, type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
-    ] as SettingItem[]
+      { id: 'sync_status', label: profileMessages.syncStatus, icon: IconActivity, type: 'status' },
+      { id: 'auto_sync', label: profileMessages.autoSync, icon: IconRefresh, type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
+      { id: 'wifi_only', label: profileMessages.wifiOnly, icon: IconWifi, type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
+    ],
   },
 ])
 
-const syncButtonText = ref('立即同步')
+const syncButtonMessage = ref(profileMessages.syncNow)
 
 const autoOverviewSetting = reactive({
   id: 'auto_overview',
-  label: '自动生成概览',
+  label: profileMessages.autoOverview,
   type: 'toggle',
   value: localStorage.getItem('sc_setting_auto_overview') !== 'false',
-} satisfies SettingItem)
+} satisfies ToggleSetting)
 
-// === Handlers ===
-const handleToggle = (item: SettingItem) => {
+const handleToggle = (item: ToggleSetting) => {
+  if (item.id === 'dark') {
+    settingsStore.toggleDark()
+    return
+  }
+  if (item.id === 'compact') {
+    settingsStore.compactLayout = !settingsStore.compactLayout
+    return
+  }
   item.value = !item.value
-  switch (item.id) {
-    case 'dark':
-      settingsStore.toggleDark()
-      item.value = settingsStore.isDark
-      break
-    case 'compact':
-      settingsStore.compactLayout = item.value
-      break
-    case 'auto_sync':
-    case 'wifi_only':
-    case 'task_remind':
-    case 'focus_end':
-    case 'auto_overview':
-      localStorage.setItem(`sc_setting_${item.id}`, String(item.value))
-      ElNotification({
-        title: '设置已更新',
-        message: item.id === 'auto_overview'
-          ? '已保存自动生成概览偏好。此选项暂不控制生成。'
-          : `[${item.label}] 已切换为 ${item.value ? '开启' : '关闭'}`,
-        type: 'success',
-        duration: 2000
-      })
-      break
-  }
-}
-
-const handleSelectChange = (item: SettingItem) => {
-  if (item.id === 'font_size') {
-    settingsStore.fontSize = item.value
-  } else {
-    localStorage.setItem(`sc_setting_${item.id}`, item.value)
-  }
+  localStorage.setItem(`sc_setting_${item.id}`, String(item.value))
   ElNotification({
-    title: '设置已生效',
-    message: `[${item.label}] 已更新为: ${item.value}`,
+    title: t(profileMessages.settingsUpdated),
+    message: item.id === 'auto_overview'
+      ? t(profileMessages.autoOverviewSaved)
+      : t(item.value ? profileMessages.preferenceEnabled : profileMessages.preferenceDisabled, { label: t(item.label) }),
     type: 'success',
-    duration: 2000
+    duration: 2000,
   })
 }
 
 const handleSyncNow = async () => {
   const generation = authStore.loginGeneration
-  const previousText = syncButtonText.value
-  syncButtonText.value = '同步中...'
+  const previousText = syncButtonMessage.value
+  syncButtonMessage.value = profileMessages.syncingButton
   try {
     if (!isOnline()) throw new Error('NETWORK_OFFLINE')
     await syncStore.flushNow()
@@ -1314,23 +1292,19 @@ const handleSyncNow = async () => {
     await loadStats()
     if (authStore.loginGeneration !== generation) return
     if (hasPendingFocusSessions.value) {
-      syncButtonText.value = '部分记录待传'
-      ElNotification({ title: '专注记录待上传', message: '部分专注记录仍保存在此设备，可稍后重试。', type: 'warning', duration: 3000 })
+      syncButtonMessage.value = profileMessages.pendingRecordsButton
+      ElNotification({ title: t(profileMessages.pendingFocusUpload), message: t(profileMessages.pendingFocusDescription), type: 'warning', duration: 3000 })
       return
     }
-    syncButtonText.value = '✓ 同步成功'
-    ElNotification({ title: '同步成功', message: '本次同步已完成', type: 'success', duration: 3000 })
+    syncButtonMessage.value = profileMessages.syncSucceededButton
+    ElNotification({ title: t(profileMessages.syncCompleted), message: t(profileMessages.syncCompletedDescription), type: 'success', duration: 3000 })
   } catch (e) {
     if (authStore.loginGeneration !== generation || e instanceof SyncScopeChangedError) return
-    syncButtonText.value = '✕ 同步失败'
-    ElNotification({ title: '同步失败', message: '同步遇到错误，请检查网络后重试', type: 'error', duration: 3000 })
+    syncButtonMessage.value = profileMessages.syncFailedButton
+    ElNotification({ title: t(profileMessages.syncFailed), message: t(profileMessages.syncFailedDescription), type: 'error', duration: 3000 })
   } finally {
-    setTimeout(() => { syncButtonText.value = previousText }, 2500)
+    setTimeout(() => { syncButtonMessage.value = previousText }, 2500)
   }
-}
-
-const handleInputBlur = (_item: SettingItem) => {
-  // handled in backend
 }
 
 onMounted(async () => {
@@ -1352,9 +1326,9 @@ watch(() => pomodoroStore.syncRevision, (revision, previous) => {
 const handleLogout = async () => {
   const generation = authStore.loginGeneration
   try {
-    const action = await ElMessageBox.confirm('确定要退出当前设备的登录状态吗？', '退出登录', {
-      confirmButtonText: '退出',
-      cancelButtonText: '取消',
+    const action = await ElMessageBox.confirm(t(profileMessages.confirmSignOut), t(profileMessages.signOut), {
+      confirmButtonText: t(profileMessages.confirmExit),
+      cancelButtonText: t(profileMessages.cancel),
       type: 'warning',
     })
     if (action !== 'confirm') return
@@ -1367,11 +1341,11 @@ const handleLogout = async () => {
   try {
     await authStore.logout()
     if (authStore.isAuthenticated) return
-    ElNotification({ title: '已退出登录', message: '期待您的再次使用', type: 'success', duration: 2000 })
+    ElNotification({ title: t(profileMessages.signedOut), message: t(profileMessages.seeYouAgain), type: 'success', duration: 2000 })
   } catch (error) {
     if (error instanceof SyncScopeChangedError || authStore.isAuthenticated) return
     console.warn('[Profile] authStore.logout error, local session cleared:', error)
-    ElNotification({ title: '登出异常', message: '无法连接到服务器完成会话清理，本地状态已强制清除', type: 'warning', duration: 3000 })
+    ElNotification({ title: t(profileMessages.signOutError), message: t(profileMessages.signOutErrorDescription), type: 'warning', duration: 3000 })
   }
   await router.push('/login').catch(() => {
     if (!authStore.isAuthenticated && typeof window !== 'undefined' && window.location.pathname !== '/login') {
@@ -1383,17 +1357,17 @@ const handleLogout = async () => {
 const handleResetOfflineData = async () => {
   try {
     await ElMessageBox.confirm(
-      '将清空本地离线数据与未同步草稿，并重新同步云端完整数据。确认重置？',
-      '清除本地离线数据',
+      t(profileMessages.confirmLocalReset),
+      t(profileMessages.clearOfflineData),
       {
-        confirmButtonText: '重置离线数据',
-        cancelButtonText: '取消',
+        confirmButtonText: t(profileMessages.resetOfflineAction),
+        cancelButtonText: t(profileMessages.cancel),
         type: 'warning',
       }
     )
     ElNotification({
-      title: '离线数据已重置',
-      message: '本地离线数据已清空，正在重新同步云端数据...',
+      title: t(profileMessages.offlineDataReset),
+      message: t(profileMessages.offlineDataResync),
       type: 'warning',
       duration: 4000,
     })
@@ -1403,8 +1377,8 @@ const handleResetOfflineData = async () => {
     if (error === 'cancel' || error === 'close') return
     console.error('重置离线数据失败:', error)
     ElNotification({
-      title: '重置失败',
-      message: error instanceof Error ? error.message : '重置离线数据过程中出错，请稍后重试',
+      title: t(profileMessages.resetFailed),
+      message: error instanceof Error ? error.message : t(profileMessages.offlineResetRetry),
       type: 'error',
       duration: 4000,
     })
@@ -1414,13 +1388,13 @@ const handleResetOfflineData = async () => {
 const handleDeleteAccount = async () => {
   try {
     const { value: inputPwd } = await ElMessageBox.prompt(
-      '确认注销后，本机会退出登录，服务端会停用账户并在后台清理云端数据。本机保存的业务数据会保留。请输入登录密码确认注销。',
-      '注销账户确认',
+      t(profileMessages.confirmAccountClose),
+      t(profileMessages.accountCloseTitle),
       {
-        confirmButtonText: '确认注销',
-        cancelButtonText: '取消',
+        confirmButtonText: t(profileMessages.confirmClose),
+        cancelButtonText: t(profileMessages.cancel),
         inputType: 'password',
-        inputPlaceholder: '请输入当前账号密码',
+        inputPlaceholder: t(profileMessages.accountPasswordPlaceholder),
       }
     )
     if (!inputPwd) return
@@ -1429,16 +1403,16 @@ const handleDeleteAccount = async () => {
       const res = await useAuthApi.deleteAccount({ password: inputPwd })
       authStore.clearSession()
       ElNotification({
-        title: '注销申请已受理',
-        message: `您的注销请求已受理（单号: ${res.id ? String(res.id).slice(0, 8) : '已生成'}），数据收敛作业已启动。期待未来与您重逢。`,
+        title: t(profileMessages.accountCloseAccepted),
+        message: t(profileMessages.accountCloseRequest, { id: res.id ? String(res.id).slice(0, 8) : t(profileMessages.referenceGenerated) }),
         type: 'warning',
         duration: 6000,
       })
       await router.push('/login')
     } catch (apiErr: any) {
       ElNotification({
-        title: '注销失败',
-        message: apiErr?.problem?.detail || apiErr?.message || '密码错误或网络异常，无法注销账户',
+        title: t(profileMessages.accountCloseFailed),
+        message: apiErr?.problem?.detail || apiErr?.message || t(profileMessages.accountCloseFailedDescription),
         type: 'error',
         duration: 4000,
       })
@@ -1474,7 +1448,7 @@ const fetchAiUsage = async () => {
   } catch (err: any) {
     if (!isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentUsageAccountIdentity())) return
     aiUsage.value = null
-    aiUsageError.value = err.message || '加载 AI 额度失败'
+    aiUsageError.value = err.message || t(profileMessages.aiUsageLoadFailed)
   } finally {
     if (isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentUsageAccountIdentity())) {
       loadingAiUsage.value = false
@@ -1512,8 +1486,8 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background: var(--color-bg-secondary, #EEEEEE);
-  padding: 14px 18px 18px;
-  gap: 16px;
+  padding: calc(14px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction));
+  gap: calc(16px - var(--layout-gap-reduction));
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -1533,10 +1507,10 @@ onMounted(() => {
   box-shadow: 
     0 10px 30px -4px rgba(35, 45, 30, 0.08), 
     0 2px 8px -1px rgba(0, 0, 0, 0.04);
-  padding: 22px 20px;
+  padding: calc(22px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: calc(16px - var(--layout-gap-reduction));
   box-sizing: border-box;
   transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
@@ -1553,11 +1527,11 @@ onMounted(() => {
 .user-profile-card {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: calc(16px - var(--layout-gap-reduction));
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
-  padding: 18px 20px;
+  padding: calc(18px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
 }
@@ -1640,7 +1614,7 @@ onMounted(() => {
 }
 
 .user-name {
-  font-size: 17px;
+  font-size: calc(17px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.02em;
@@ -1712,7 +1686,7 @@ onMounted(() => {
 }
 
 .study-stats-title {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
@@ -1766,13 +1740,13 @@ onMounted(() => {
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 550;
   color: var(--text-muted, #7A7A75);
 }
 
 .stat-value {
-  font-size: 20px;
+  font-size: calc(20px + var(--ui-font-size-adjustment));
   font-weight: 800;
   color: var(--text-primary, #1C1C1A);
   line-height: 1;
@@ -1835,7 +1809,7 @@ onMounted(() => {
 }
 
 .subject-name {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 600;
   color: var(--text-secondary, #344139);
   width: 72px;
@@ -1893,10 +1867,10 @@ onMounted(() => {
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
-  padding: 16px 18px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: calc(14px - var(--layout-gap-reduction));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
@@ -2029,7 +2003,7 @@ onMounted(() => {
   box-shadow: 
     0 10px 30px -4px rgba(35, 45, 30, 0.08), 
     0 2px 8px -1px rgba(0, 0, 0, 0.04);
-  padding: 28px 36px;
+  padding: calc(28px - var(--panel-padding-reduction)) calc(36px - var(--panel-padding-reduction));
   display: block;
   box-sizing: border-box;
   transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
@@ -2042,10 +2016,10 @@ onMounted(() => {
   .studio-left {
     min-width: 320px;
     flex: 3.5;
-    padding: 16px 14px;
+    padding: calc(16px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
   }
   .studio-right {
-    padding: 20px 24px;
+    padding: calc(20px - var(--panel-padding-reduction)) calc(24px - var(--panel-padding-reduction));
   }
 }
 .studio-right > * {
@@ -2058,7 +2032,7 @@ onMounted(() => {
 
 /* 3.1 标头区 (Swiss Editorial Typography) */
 .settings-title {
-  font-size: 24px;
+  font-size: calc(24px + var(--ui-font-size-adjustment));
   font-weight: 850;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.03em;
@@ -2069,7 +2043,7 @@ onMounted(() => {
 /* 3.2 设置分组 (Settings Groups) */
 .settings-group {
   flex-shrink: 0;
-  margin-bottom: 22px;
+  margin-bottom: calc(22px - var(--layout-gap-reduction));
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 20px;
@@ -2086,7 +2060,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 22px;
+  padding: calc(16px - var(--card-padding-reduction)) calc(22px - var(--card-padding-reduction));
   border-bottom: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   background: rgba(0, 0, 0, 0.012);
   min-height: 50px;
@@ -2094,7 +2068,7 @@ onMounted(() => {
 }
 
 .group-title {
-  font-size: 14.5px;
+  font-size: calc(14.5px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
@@ -2110,7 +2084,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 22px;
+  padding: calc(15px - var(--card-padding-reduction)) calc(22px - var(--card-padding-reduction));
   border-bottom: 0.5px solid rgba(0, 0, 0, 0.05);
   gap: 20px;
   min-height: 54px;
@@ -2133,14 +2107,14 @@ onMounted(() => {
 }
 
 .row-label {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   font-weight: 650;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.15px;
 }
 
 .row-desc {
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   color: var(--text-muted, #7A7A75);
   line-height: 1.45;
 }
@@ -2231,7 +2205,7 @@ onMounted(() => {
   border-radius: 12px;
   color: var(--text-primary, #1C1C1A);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 550;
   padding: 7px 32px 7px 12px;
   cursor: pointer;
@@ -2250,7 +2224,7 @@ onMounted(() => {
   border-radius: 12px;
   color: var(--text-primary, #1C1C1A);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   padding: 7px 12px;
   width: 230px;
   outline: none;
@@ -2265,7 +2239,7 @@ onMounted(() => {
 .action-btn {
   padding: 7px 18px;
   border-radius: 9999px;
-  font-size: 12px;
+  font-size: calc(12px + var(--ui-font-size-adjustment));
   font-weight: 650;
   cursor: pointer;
   border: 0.5px solid var(--border-default, #E6E6E4);

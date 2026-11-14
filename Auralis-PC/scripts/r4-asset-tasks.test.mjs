@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
 import { computed, effectScope, nextTick, reactive, ref, watch } from 'vue'
+import { locale, t } from '../src/i18n.ts'
 
 test('Asset view removes demo tasks and uses real tasks', async () => {
   const assetSource = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
@@ -14,7 +15,7 @@ test('Asset view removes demo tasks and uses real tasks', async () => {
   assert.match(assetSource, /getTasksForAssetGroups/, 'Must partition tasks into unassigned, pending, and completed groups')
   assert.match(assetSource, /done: isCompletedTask\(task\)/, 'Asset task checkmarks must use the shared canonical/presentation completion rule')
   assert.match(assetSource, /:disabled="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\)"/)
-  assert.match(assetSource, /:title="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\) \? '任务时段已结束，完成状态不可取消'/)
+  assert.match(assetSource, /:title="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\) \? t\(\{\s*'zh-CN': '任务时段已结束，完成状态不可取消'/)
   assert.match(assetSource, /const previousDone = task\.done[\s\S]*?catch \(err\)[\s\S]*?task\.done = previousDone/, 'A failed status write must restore the tree checkmark')
   assert.match(assetTreeRebuilder, /rootNodes\.value = newRoots[\s\S]*?findTreeNode\(newRoots, selection\.id\)[\s\S]*?Object\.assign\(selection, refreshed/, 'Selected tasks must refresh after local and sync projections rebuild the tree')
   assert.match(assetSource, /未排期/, 'Must expose an unassigned task group')
@@ -93,7 +94,7 @@ test('Asset clears a removed file preview and can open another node from the rem
   assert.equal(view.selected.value.content, block.content)
 })
 
-async function createAssetFixture(t) {
+async function createAssetFixture(testContext) {
   const assetSource = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
   const setup = assetSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
   const script = ts.createSourceFile('Asset.ts', setup, ts.ScriptTarget.Latest, true)
@@ -140,11 +141,11 @@ async function createAssetFixture(t) {
   const block = { id: 'excerpt', subjectId: subject.id, sourceFileId: file.id, title: 'Excerpt', content: 'Example' }
   const sourceStore = reactive({ sources: [file, otherFile] })
   const bindings = {
-    computed, ref, watch, sourceStore, subjectStore: { subjects: [subject] },
+    computed, ref, watch, locale, t, sourceStore, subjectStore: { subjects: [subject] },
     blockStore: { recentBlocks: [block] }, taskStore: { allTasks: [] }, docProcessingStore: { jobs: [] },
   }
   const scope = effectScope()
-  t.after(() => scope.stop())
+  testContext.after(() => scope.stop())
   const view = scope.run(() => new Function(...Object.keys(bindings), outputText)(...Object.values(bindings)))
   return { view, sourceStore, file, otherFile, block }
 }

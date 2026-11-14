@@ -4,54 +4,54 @@
     <!-- ===== TIER-1: Icon Strip (72px fixed) ===== -->
     <nav class="tier1-strip">
       <div class="tier1-top">
-        <button class="tier1-btn" title="返回" @click="router.push('/subjects')">
+        <button class="tier1-btn" :title="t(messages.back)" @click="router.push('/subjects')">
           <IconArrowLeft :size="20" :stroke-width="1.6" />
-          <span class="tier1-btn-text">返回</span>
+          <span class="tier1-btn-text">{{ t(messages.back) }}</span>
         </button>
         <button
           class="tier1-btn"
           :class="{ 'is-active': tier2Open && tier2Mode === 'files' }"
-          title="学习材料"
+          :title="t(messages.learningMaterials)"
           @click="toggleTier2('files')"
         >
           <IconFileText :size="20" :stroke-width="1.6" />
-          <span class="tier1-btn-text">材料</span>
+          <span class="tier1-btn-text">{{ t(messages.materials) }}</span>
         </button>
         <button
           class="tier1-btn"
           :class="{ 'is-active': tier2Open && tier2Mode === 'outline' }"
-          title="总览"
+          :title="t(messages.overview)"
           @click="toggleTier2('outline')"
         >
           <IconList :size="20" :stroke-width="1.6" />
-          <span class="tier1-btn-text">总览</span>
+          <span class="tier1-btn-text">{{ t(messages.overview) }}</span>
         </button>
         <button
           class="tier1-btn"
           :class="{ 'is-active': centerView === 'blocks' }"
-          title="知识库"
+          :title="t(messages.knowledgeBase)"
           @click="centerView = 'blocks'; tier2Open = false"
         >
           <IconLayoutGrid :size="20" :stroke-width="1.6" />
-          <span class="tier1-btn-text">知识库</span>
+          <span class="tier1-btn-text">{{ t(messages.knowledgeBase) }}</span>
         </button>
         <button
           class="tier1-btn"
           :class="{ 'is-active': centerView === 'review' }"
-          title="复习"
+          :title="t(messages.review)"
           @click="centerView = 'review'; tier2Open = false"
         >
           <IconHistory :size="20" :stroke-width="1.6" />
-          <span class="tier1-btn-text">复习</span>
+          <span class="tier1-btn-text">{{ t(messages.review) }}</span>
         </button>
         <button
           class="tier1-btn"
           :class="{ 'is-active': centerView === 'stats' }"
-          title="统计"
+          :title="t(messages.statistics)"
           @click="centerView = 'stats'; tier2Open = false"
         >
           <IconChartBar :size="20" :stroke-width="1.6" />
-          <span class="tier1-btn-text">统计</span>
+          <span class="tier1-btn-text">{{ t(messages.statistics) }}</span>
         </button>
       </div>
       <div class="tier1-bottom">
@@ -69,8 +69,8 @@
       <!-- Files Mode -->
       <div v-if="tier2Mode === 'files'" class="drawer-content">
         <div class="drawer-header">
-          <h3 class="drawer-title">学习文件</h3>
-          <button class="drawer-action" @click="openRegisterModal" title="添加文件" aria-label="添加文件">
+          <h3 class="drawer-title">{{ t(messages.learningFiles) }}</h3>
+          <button class="drawer-action" @click="openRegisterModal" :title="t(messages.addFile)" :aria-label="t(messages.addFile)">
             <IconPlus :size="15" :stroke-width="2.4" />
           </button>
         </div>
@@ -91,8 +91,8 @@
               class="drawer-item-delete"
               type="button"
               :disabled="deletingFileId === file.id"
-              :aria-label="`删除文件 ${file.name}`"
-              title="删除文件"
+              :aria-label="t(messages.deleteNamedFile, { name: file.name })"
+              :title="t(messages.deleteFile)"
               @click.stop="handleDeleteFile(file)"
             >
               <IconX :size="14" :stroke-width="2" />
@@ -100,7 +100,7 @@
           </div>
         </div>
         <div class="drawer-empty" v-else>
-          <span>暂无学习文件</span>
+          <span>{{ t(messages.noFiles) }}</span>
         </div>
       </div>
 
@@ -108,11 +108,11 @@
       <div v-else-if="tier2Mode === 'outline'" class="drawer-content">
         <div class="drawer-header outline-header">
           <div class="outline-header-left">
-            <h3 class="drawer-title">总览</h3>
+            <h3 class="drawer-title">{{ t(messages.overview) }}</h3>
             <transition name="hint-capsule-fade">
-              <div v-if="isOutlineComposer" class="outline-header-hint-capsule" title="编辑大纲 Markdown 内容">
+              <div v-if="isOutlineComposer" class="outline-header-hint-capsule" :title="t(messages.editMarkdown)">
                 <span class="hint-dot"></span>
-                <span class="hint-text">Markdown 编辑</span>
+                <span class="hint-text">{{ t(messages.markdownEditor) }}</span>
               </div>
             </transition>
           </div>
@@ -120,8 +120,8 @@
             <button
               class="outline-add-button"
               :class="{ 'is-active': isOutlineComposer }"
-              :title="isOutlineComposer ? '关闭编排' : '编排大纲'"
-              :aria-label="isOutlineComposer ? '关闭编排' : '编排大纲'"
+              :title="isOutlineComposer ? t(messages.closeEditor) : t(messages.openEditor)"
+              :aria-label="isOutlineComposer ? t(messages.closeEditor) : t(messages.openEditor)"
               @click="isOutlineComposer = !isOutlineComposer"
             >
               <IconPlus :size="15" :stroke-width="2.4" class="outline-add-icon" />
@@ -134,19 +134,19 @@
               <header class="file-outline__header subject-overview__header">
                 <div class="file-outline__name subject-overview__name" style="cursor: default;">
                   <IconBook :size="13" :stroke-width="1.6" class="subject-icon" />
-                  <span class="subject-overview-title">学科大纲</span>
+                  <span class="subject-overview-title">{{ t(messages.subjectOutline) }}</span>
                 </div>
                 <span class="file-outline__actions">
                   <button
                     type="button"
                     class="composer-capsule-btn is-primary"
                     :disabled="isSavingSubjectOutline"
-                    title="保存大纲修改"
+                    :title="t(messages.saveChanges)"
                     @click="saveCurrentOutline"
                   >
                     <IconCheck v-if="!isSavingSubjectOutline" :size="10.5" :stroke-width="2.2" />
                     <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
-                    <span>{{ isSavingSubjectOutline ? '保存中' : '保存' }}</span>
+                    <span>{{ isSavingSubjectOutline ? t(messages.saving) : t(messages.save) }}</span>
                   </button>
                 </span>
               </header>
@@ -154,7 +154,7 @@
                 <textarea
                   v-model="subjectOutlineDraft"
                   class="composer-markdown-editor"
-                  placeholder="编辑学科大纲 Markdown..."
+                  :placeholder="t(messages.outlinePlaceholder)"
                   rows="6"
                 />
               </div>
@@ -169,13 +169,13 @@
                 <button
                   type="button"
                   class="overview-collapse-btn"
-                  :title="fileCardCollapsed[file.id] ? '展开文件大纲' : '收起文件大纲'"
+                  :title="fileCardCollapsed[file.id] ? t(messages.expandOutline) : t(messages.collapseOutline)"
                   @click="fileCardCollapsed[file.id] = !fileCardCollapsed[file.id]"
                 >
                   <IconChevronDown v-if="!fileCardCollapsed[file.id]" :size="13" :stroke-width="2" />
                   <IconChevronRight v-else :size="13" :stroke-width="2" />
                 </button>
-                <button type="button" class="file-outline__name" :title="`查看并编辑 ${file.name}`" @click="selectFile(file.id)">
+                <button type="button" class="file-outline__name" :title="t(messages.editNamedFile, { name: file.name })" @click="selectFile(file.id)">
                   <IconFileText :size="13" :stroke-width="1.6" class="subject-icon" />
                   <span class="subject-overview-title">{{ file.name }}</span>
                 </button>
@@ -184,39 +184,39 @@
                     type="button"
                     class="composer-capsule-btn is-primary"
                     :disabled="fileOutlineSaves.has(file.id) || !file.ingestionRevision || fileDraftRevisions[file.id] !== file.ingestionRevision"
-                    :title="`保存《${file.name}》大纲修改`"
+                    :title="t(messages.saveNamedOutline, { name: file.name })"
                     @click="saveFileOutline(file.id)"
                   >
                     <IconCheck v-if="!fileOutlineSaves.has(file.id)" :size="10.5" :stroke-width="2.2" />
                     <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
-                    <span>{{ fileOutlineSaves.has(file.id) ? '保存中' : '保存' }}</span>
+                    <span>{{ fileOutlineSaves.has(file.id) ? t(messages.saving) : t(messages.save) }}</span>
                   </button>
                 </span>
               </header>
               <div v-show="!fileCardCollapsed[file.id]" class="subject-overview__body">
                 <div v-if="!file.ingestionRevision" class="composer-file-empty-box" role="status">
-                  <span class="empty-hint">文件版本尚未确认，暂不能编辑或保存大纲。</span>
+                  <span class="empty-hint">{{ t(messages.revisionUnconfirmed) }}</span>
                 </div>
                 <div v-else-if="fileDraftRevisions[file.id] !== file.ingestionRevision && fileOutlineDraftHasUnsavedChanges(file.id)" class="composer-file-empty-box">
-                  <span class="empty-hint" role="status">文件版本已变化。旧版本的未保存草稿仍可复制。</span>
+                  <span class="empty-hint" role="status">{{ t(messages.revisionChanged) }}</span>
                   <button
                     type="button"
                     class="composer-capsule-btn"
                     :disabled="fileOutlineSaves.has(file.id)"
                     @click="initFileOutlineDraft(file, true)"
-                  >放弃草稿并切换版本</button>
+                  >{{ t(messages.discardDraft) }}</button>
                 </div>
                 <textarea
                   v-model="fileOutlineDrafts[file.id]"
                   class="composer-markdown-editor"
                   :readonly="!file.ingestionRevision || fileDraftRevisions[file.id] !== file.ingestionRevision"
-                  :placeholder="`编辑《${file.name}》大纲 Markdown...`"
+                  :placeholder="t(messages.editNamedOutline, { name: file.name })"
                   rows="5"
                 />
               </div>
             </article>
             <div v-if="!activeSourceFiles.length" class="drawer-empty" style="padding: 18px 0;">
-              <span>暂无学习文件</span>
+              <span>{{ t(messages.noFiles) }}</span>
             </div>
           </div>
         </div>
@@ -259,45 +259,45 @@
       <header class="center-status-bar">
         <div class="status-left">
           <span v-if="centerView === 'summary' && summaryTarget" class="status-file">
-            {{ summaryTarget.title }} · 总结
+            {{ t(messages.summaryFor, { name: summaryTarget.title }) }}
           </span>
           <span v-else-if="centerView === 'preview' && selectedFile" class="status-file">
             <IconFileText :size="14" :stroke-width="1.6" class="status-icon" /> {{ selectedFile.name }}
           </span>
           <span v-else-if="centerView === 'blocks'" class="status-file">
-            <IconNotes :size="14" :stroke-width="1.6" class="status-icon" /> 知识块 · {{ filteredBlocks.length }} 个知识块
+            <IconNotes :size="14" :stroke-width="1.6" class="status-icon" /> {{ t(messages.blocksCount, { count: filteredBlocks.length }) }}
           </span>
-          <span v-else-if="centerView === 'review'" class="status-file">{{ activeSubject?.name }} · 复习</span>
-          <span v-else-if="centerView === 'stats'" class="status-file">{{ activeSubject?.name }} · 统计</span>
+          <span v-else-if="centerView === 'review'" class="status-file">{{ t(messages.reviewFor, { name: activeSubject?.name ?? '' }) }}</span>
+          <span v-else-if="centerView === 'stats'" class="status-file">{{ t(messages.statsFor, { name: activeSubject?.name ?? '' }) }}</span>
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
-          <div v-if="centerView === 'preview' && selectedFile" class="preview-status-controls" aria-label="预览控制">
-            <div class="preview-control-group preview-zoom-controls" aria-label="缩放控制">
-              <button type="button" class="preview-status-button preview-status-button-icon" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
+          <div v-if="centerView === 'preview' && selectedFile" class="preview-status-controls" :aria-label="t(messages.previewControls)">
+            <div class="preview-control-group preview-zoom-controls" :aria-label="t(messages.zoomControls)">
+              <button type="button" class="preview-status-button preview-status-button-icon" :title="t(messages.zoomOut)" @click="filePreviewRef?.zoomOut()">−</button>
               <span class="preview-zoom-value" aria-live="polite">{{ previewZoomLabel }}</span>
-              <button type="button" class="preview-status-button preview-status-button-icon" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
-              <button type="button" class="preview-status-button preview-status-button-wide" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
+              <button type="button" class="preview-status-button preview-status-button-icon" :title="t(messages.zoomIn)" @click="filePreviewRef?.zoomIn()">＋</button>
+              <button type="button" class="preview-status-button preview-status-button-wide" :title="t(messages.resetZoom)" @click="filePreviewRef?.resetZoom()">{{ t(messages.reset) }}</button>
             </div>
-            <div class="preview-control-group preview-rotation-controls" aria-label="旋转控制">
-              <button type="button" class="preview-status-button preview-status-button-icon" title="向左旋转 90 度" aria-label="向左旋转 90 度" @click="filePreviewRef?.rotateLeft()">
+            <div class="preview-control-group preview-rotation-controls" :aria-label="t(messages.rotationControls)">
+              <button type="button" class="preview-status-button preview-status-button-icon" :title="t(messages.rotateLeft)" :aria-label="t(messages.rotateLeft)" @click="filePreviewRef?.rotateLeft()">
                 <IconArrowBackUp :size="14" :stroke-width="1.9" aria-hidden="true" />
               </button>
               <span class="preview-rotation-value" aria-live="polite">{{ previewRotation }}°</span>
-              <button type="button" class="preview-status-button preview-status-button-icon" title="向右旋转 90 度" aria-label="向右旋转 90 度" @click="filePreviewRef?.rotateRight()">
+              <button type="button" class="preview-status-button preview-status-button-icon" :title="t(messages.rotateRight)" :aria-label="t(messages.rotateRight)" @click="filePreviewRef?.rotateRight()">
                 <IconArrowForwardUp :size="14" :stroke-width="1.9" aria-hidden="true" />
               </button>
             </div>
           </div>
-          <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
-          <span class="status-page" v-else-if="centerView === 'summary'">AI 总结</span>
+          <span class="status-page" v-if="centerView === 'preview'">{{ t(messages.filePreview) }}</span>
+          <span class="status-page" v-else-if="centerView === 'summary'">{{ t(messages.aiSummary) }}</span>
         </div>
       </header>
 
       <!-- Center Content -->
       <div class="center-body">
         <!-- Collapse Left Button -->
-        <button class="edge-collapse edge-left" @click="toggleTier2Panel" :title="tier2Open ? '收起左栏' : '展开左栏'">
+        <button class="edge-collapse edge-left" @click="toggleTier2Panel" :title="tier2Open ? t(messages.collapseLeft) : t(messages.expandLeft)">
           <IconChevronLeft v-if="tier2Open" :size="12" :stroke-width="2.5" />
           <IconChevronRight v-else :size="12" :stroke-width="2.5" />
         </button>
@@ -341,8 +341,8 @@
           >
             <div v-if="selectedFile.ingestionStatus === 'FAILED'" class="file-processing-alert-banner">
               <div class="file-processing-alert-text">
-                <span class="file-processing-alert-badge">解析失败</span>
-                <span class="file-processing-alert-msg">{{ selectedFile.safeErrorDetail || '文件解析未完成' }}</span>
+                <span class="file-processing-alert-badge">{{ t(messages.processingFailed) }}</span>
+                <span class="file-processing-alert-msg">{{ selectedFile.safeErrorDetail || t(messages.processingIncomplete) }}</span>
               </div>
               <button
                 type="button"
@@ -350,7 +350,7 @@
                 :disabled="retryingSourceId === selectedFile.id"
                 @click="handleRetryFileProcessing(selectedFile.id)"
               >
-                {{ retryingSourceId === selectedFile.id ? '正在重试...' : '重试解析' }}
+                {{ retryingSourceId === selectedFile.id ? t(messages.retrying) : t(messages.retryProcessing) }}
               </button>
             </div>
 
@@ -377,29 +377,29 @@
                   transform: selectionPosition.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
                 }"
                 role="toolbar"
-                aria-label="选中文本操作"
+                :aria-label="t(messages.selectionActions)"
                 @mousedown.stop.prevent
               >
-                <span class="selection-summary">已选 {{ selectedText.length }} 字</span>
+                <span class="selection-summary">{{ t(messages.selectionLength, { count: selectedText.length }) }}</span>
                 <span class="selection-divider" aria-hidden="true"></span>
                 <button type="button" class="selection-btn action-quote" @click="addSelectionToChat">
                   <IconMessageCircle :size="13" :stroke-width="2" />
-                  <span>添加到提问</span>
+                  <span>{{ t(messages.addToQuestion) }}</span>
                 </button>
                 <button type="button" class="selection-btn action-save" @click="saveSelection">
                   <IconNotes :size="13" :stroke-width="2" />
-                  <span>保存为知识块</span>
+                  <span>{{ t(messages.saveAsBlock) }}</span>
                 </button>
-                <button type="button" class="selection-dismiss" aria-label="清除选区" title="清除选区" @click="clearSelection">
+                <button type="button" class="selection-dismiss" :aria-label="t(messages.clearSelection)" :title="t(messages.clearSelection)" @click="clearSelection">
                   <IconX :size="13" />
                 </button>
               </div>
             </Transition>
 
-            <footer class="preview-page-footer" aria-label="文档页码">
-              <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">上一页</button>
+            <footer class="preview-page-footer" :aria-label="t(messages.documentPages)">
+              <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">{{ t(messages.previousPage) }}</button>
               <span class="preview-page-count">{{ previewPage }} / {{ previewPageCount }}</span>
-              <button type="button" class="preview-page-button" :disabled="previewPage >= previewPageCount" @click="filePreviewRef?.nextPage()">下一页</button>
+              <button type="button" class="preview-page-button" :disabled="previewPage >= previewPageCount" @click="filePreviewRef?.nextPage()">{{ t(messages.nextPage) }}</button>
             </footer>
           </div>
 
@@ -411,12 +411,12 @@
                 <input
                   v-model="blockSearchQuery"
                   class="blocks-search-input"
-                  placeholder="搜索知识块内容、标题或概念..."
+                  :placeholder="t(messages.searchBlocks)"
                 />
                 <button
                   v-if="blockSearchQuery"
                   class="search-clear-btn"
-                  title="清空搜索"
+                  :title="t(messages.clearSearch)"
                   @click="blockSearchQuery = ''"
                 >
                   <IconX :size="12" />
@@ -425,11 +425,11 @@
 
               <div class="blocks-bar-actions">
                 <span class="blocks-count-badge">
-                  共 {{ filteredBlocks.length }} 条记录
+                  {{ t(messages.resultsCount, { count: filteredBlocks.length }) }}
                 </span>
                 <button class="blocks-add-btn" @click="openCreateDialog">
                   <IconPlus :size="14" :stroke-width="2.2" class="blocks-add-icon" />
-                  <span>录入知识块</span>
+                  <span>{{ t(messages.addBlock) }}</span>
                 </button>
               </div>
             </div>
@@ -442,24 +442,24 @@
                 :class="{ 'is-selected': selectedBlock?.id === block.id }"
                 role="button"
                 tabindex="0"
-                :aria-label="`查看知识块 ${block.title || '未命名知识块'}`"
+                :aria-label="t(messages.viewNamedBlock, { name: block.title || t(messages.untitledBlock) })"
                 @click="handleBlockClick(block)"
                 @keydown.enter="handleBlockClick(block)"
               >
                 <div class="block-card-header">
                   <div class="block-title-row">
                     <IconNotes :size="14" :stroke-width="1.8" class="block-title-badge-icon" />
-                    <h4 class="block-title" :title="block.title">{{ block.title || '未命名知识块' }}</h4>
-                    <span v-if="blockStore.knowledgeBlockConflicts[block.id]" class="block-time">更新未同步</span>
-                    <span v-else-if="blockStore.pendingKnowledgeBlockUpdates[block.id]" class="block-time">待同步</span>
+                    <h4 class="block-title" :title="block.title">{{ block.title || t(messages.untitledBlock) }}</h4>
+                    <span v-if="blockStore.knowledgeBlockConflicts[block.id]" class="block-time">{{ t(messages.updateNotSynced) }}</span>
+                    <span v-else-if="blockStore.pendingKnowledgeBlockUpdates[block.id]" class="block-time">{{ t(messages.pendingSync) }}</span>
                   </div>
                   <div class="block-card-hover-actions">
                     <button
                       type="button"
                       class="card-action-btn"
                       :class="{ 'is-copied': copiedBlockId === block.id }"
-                      :title="copiedBlockId === block.id ? '已复制内容' : '复制知识内容'"
-                      :aria-label="copiedBlockId === block.id ? '已复制内容' : '复制知识内容'"
+                      :title="copiedBlockId === block.id ? t(messages.copied) : t(messages.copyBlock)"
+                      :aria-label="copiedBlockId === block.id ? t(messages.copied) : t(messages.copyBlock)"
                       @click.stop="handleCopyCardContent(block)"
                     >
                       <IconCheck v-if="copiedBlockId === block.id" :size="13" :stroke-width="2.2" class="copy-success-icon" />
@@ -468,8 +468,8 @@
                     <button
                       type="button"
                       class="card-action-btn danger"
-                      title="删除知识块"
-                      aria-label="删除知识块"
+                      :title="t(messages.deleteBlock)"
+                      :aria-label="t(messages.deleteBlock)"
                       @click.stop="handleDeleteBlockCard(block.id, block.version)"
                     >
                       <IconTrash :size="13" :stroke-width="1.8" />
@@ -483,11 +483,11 @@
                     v-if="block.content"
                     v-html="renderMarkdown(block.content)"
                   ></div>
-                  <p class="block-preview empty" v-else>暂无详细内容</p>
+                  <p class="block-preview empty" v-else>{{ t(messages.noDetails) }}</p>
                 </div>
 
                 <div class="block-footer">
-                  <div class="block-source-wrapper" v-if="block.source" :title="`来源资料: ${block.source}`">
+                  <div class="block-source-wrapper" v-if="block.source" :title="t(messages.sourceName, { name: block.source })">
                     <IconFileText :size="11.5" :stroke-width="1.6" />
                     <span class="block-source-text">{{ block.source }}</span>
                   </div>
@@ -505,8 +505,8 @@
                 <div class="empty-icon-halo">
                   <IconNotes :size="36" :stroke-width="1.6" class="empty-halo-svg" />
                 </div>
-                <h3 style="font-size: 17px; font-weight: 750; color: var(--text-primary); letter-spacing: -0.015em; margin-bottom: 8px;">知识库暂无内容</h3>
-                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
+                <h3 style="font-size: 17px; font-weight: 750; color: var(--text-primary); letter-spacing: -0.015em; margin-bottom: 8px;">{{ t(messages.emptyKnowledge) }}</h3>
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">{{ t(messages.emptyKnowledgeHint) }}</p>
               </div>
               <div class="onboarding-grid" style="max-width: 640px; margin: 0 auto;">
                 <div class="onboarding-card" @click="openCreateDialog">
@@ -514,9 +514,9 @@
                     <IconPlus :size="24" :stroke-width="2" />
                   </div>
                   <div class="onboarding-card-body">
-                    <h4>手动新建知识块</h4>
-                    <p>手动录入笔记、重要定义或概念卡片，支持 Markdown 渲染。</p>
-                    <button class="onboarding-card-btn">手动录入</button>
+                    <h4>{{ t(messages.createBlock) }}</h4>
+                    <p>{{ t(messages.createBlockHint) }}</p>
+                    <button class="onboarding-card-btn">{{ t(messages.createManually) }}</button>
                   </div>
                 </div>
                 <div class="onboarding-card" @click="tier2Mode = 'files'; tier2Open = true; centerView = 'overview'">
@@ -524,9 +524,9 @@
                     <IconFileText :size="24" :stroke-width="2" />
                   </div>
                   <div class="onboarding-card-body">
-                    <h4>关联学习材料</h4>
-                    <p>去左侧材料列表中选择或登记文件，然后使用 AI 自动分析目录大纲。</p>
-                    <button class="onboarding-card-btn">查看材料</button>
+                    <h4>{{ t(messages.linkMaterials) }}</h4>
+                    <p>{{ t(messages.linkMaterialsHint) }}</p>
+                    <button class="onboarding-card-btn">{{ t(messages.viewMaterials) }}</button>
                   </div>
                 </div>
               </div>
@@ -542,19 +542,19 @@
                 </ElIcon>
                 <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
               </div>
-              <h2 class="onboarding-title">欢迎来到 {{ activeSubject?.name }} 智能学习工作区</h2>
-              <p class="onboarding-subtitle">{{ activeSubject?.description || '在这里，您可以轻松管理您的材料，使用 AI 进行章节大纲提取与核心概念提炼，打造您的专属记忆库。' }}</p>
+              <h2 class="onboarding-title">{{ t(messages.workspaceWelcome, { name: activeSubject?.name ?? '' }) }}</h2>
+              <p class="onboarding-subtitle">{{ activeSubject?.description || t(messages.workspaceDescription) }}</p>
             </div>
 
             <div class="onboarding-drag-capsule">
               <IconUpload :size="16" :stroke-width="2" />
-              <span>将 PDF 或图片文件拖入此处进行关联</span>
+              <span>{{ t(messages.dropMaterials) }}</span>
             </div>
           </div>
         </Transition>
 
         <!-- Collapse Right Button -->
-        <button class="edge-collapse edge-right" @click="rightCollapsed = !rightCollapsed" :title="rightCollapsed ? '展开 AI 助手' : '收起 AI 助手'">
+        <button class="edge-collapse edge-right" @click="rightCollapsed = !rightCollapsed" :title="rightCollapsed ? t(messages.expandAi) : t(messages.collapseAi)">
           <IconChevronRight v-if="rightCollapsed" :size="12" :stroke-width="2.5" />
           <IconChevronLeft v-else :size="12" :stroke-width="2.5" />
         </button>
@@ -569,7 +569,7 @@
       <div class="ai-header">
         <button
           class="ai-model-switch ai-file-switch"
-          :title="isScopeLocked ? '当前对话已固定参考资料范围（如需更换请点击右上角刷新开启新对话）' : aiSourceSummaryTitle"
+          :title="isScopeLocked ? t(messages.scopeLocked) : aiSourceSummaryTitle"
           @click="handleScopeSwitchClick"
         >
           <span class="model-icon-top">
@@ -583,22 +583,22 @@
         <div class="dropdown-mask" v-if="showModelMenu" @click="showModelMenu = false" style="position: fixed; inset: 0; z-index: 3;"></div>
         <div v-if="showModelMenu" class="ai-model-menu ai-file-menu" style="z-index: 4;" @click.stop>
           <div class="ai-menu-section-header">
-            <span>参考范围</span>
+            <span>{{ t(messages.referenceScope) }}</span>
           </div>
           <div class="mini-menu-item" :class="{ 'is-active': isAllAiSourcesSelected }" @click="selectAllAiSources">
             <span class="mini-menu-icon"><IconSparkles :size="16" :stroke-width="1.8" /></span>
             <div class="mini-menu-text">
-              <span class="mini-menu-label" :class="{ 'is-active': isAllAiSourcesSelected }">全学科资料</span>
-              <span class="mini-menu-desc">检索当前学科所有已就绪资料</span>
+              <span class="mini-menu-label" :class="{ 'is-active': isAllAiSourcesSelected }">{{ t(messages.allMaterials) }}</span>
+              <span class="mini-menu-desc">{{ t(messages.allMaterialsHint) }}</span>
             </div>
           </div>
 
           <template v-if="activeSourceFiles.length > 0">
             <div class="ai-menu-divider"></div>
             <div class="ai-menu-section-header">
-              <span>已关联文件</span>
+              <span>{{ t(messages.linkedFiles) }}</span>
               <span class="ai-menu-header-count" v-if="selectedAiSourceIds.length > 0 && !isAllAiSourcesSelected">
-                已选 {{ selectedAiSourceIds.length }} / {{ activeSourceFiles.length }}
+                {{ t(messages.selectedReferences, { selected: selectedAiSourceIds.length, total: activeSourceFiles.length }) }}
               </span>
             </div>
             <div
@@ -607,21 +607,21 @@
               class="mini-menu-item"
               :class="{ 'is-active': isAiSourceSelected(file.id), 'is-disabled': file.ingestionStatus !== 'READY' }"
               :aria-disabled="file.ingestionStatus !== 'READY'"
-              :title="file.ingestionStatus !== 'READY' ? '文件处理完成后才能用于 AI 检索' : undefined"
+              :title="file.ingestionStatus !== 'READY' ? t(messages.indexingRequired) : undefined"
               @click="toggleAiSource(file.id)"
             >
               <span class="mini-menu-icon"><IconFileText :size="16" :stroke-width="1.8" /></span>
               <div class="mini-menu-text">
                 <div class="mini-menu-label-row">
                   <span class="mini-menu-label" :class="{ 'is-active': isAiSourceSelected(file.id) }">{{ file.name }}</span>
-                  <span class="mini-menu-current-tag" v-if="file.id === selectedFileId">当前</span>
+                  <span class="mini-menu-current-tag" v-if="file.id === selectedFileId">{{ t(messages.currentFileTag) }}</span>
                 </div>
                 <span class="mini-menu-desc">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
               </div>
             </div>
           </template>
         </div>
-        <button class="ai-clear" @click="clearChat" title="刷新对话（开启新对话）" aria-label="刷新对话">
+        <button class="ai-clear" @click="clearChat" :title="t(messages.newConversationHint)" :aria-label="t(messages.refreshConversation)">
           <IconRotate :size="16" :stroke-width="2" />
         </button>
       </div>
@@ -649,18 +649,18 @@
                 </defs>
               </svg>
             </div>
-            <h3 class="welcome-title">今天想探索点什么？</h3>
-            <p class="welcome-desc">{{ aiGreetingName }}，结合当前参考资料，我随时可以为您梳理重点、解释概念或生成练习。</p>
+            <h3 class="welcome-title">{{ t(messages.chatWelcome) }}</h3>
+            <p class="welcome-desc">{{ t(messages.chatIntro, { name: aiGreetingName }) }}</p>
 
             <div class="preset-questions">
               <button
                 v-for="item in presetQuestions"
-                :key="item.label"
+                :key="item.prompt"
                 type="button"
                 class="preset-pill"
                 @click="sendPreset(item.prompt)"
               >
-                {{ item.label }}
+                {{ t(item.label) }}
               </button>
             </div>
           </div>
@@ -698,7 +698,7 @@
                 <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
                   <div class="citation-title">
                     <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
-                    <span>参考资料</span>
+                    <span>{{ t(messages.references) }}</span>
                     <span class="citation-count">{{ msg.citationFileNames.length }}</span>
                   </div>
                   <div class="citation-chips">
@@ -707,7 +707,7 @@
                       :key="fileName"
                       type="button"
                       class="citation-chip"
-                      :title="`定位并查看: ${fileName}`"
+                      :title="t(messages.openSource, { name: fileName })"
                       @click="handleCitationClick(fileName)"
                     >
                       <span class="citation-idx">[{{ idx + 1 }}]</span>
@@ -717,17 +717,17 @@
                 </div>
 
                 <div v-if="chatStore.recoverableTarget && chatStore.recoverableTarget.attemptId === msg.attemptId" class="chat-msg-interrupted-bar is-unknown">
-                  <span class="interrupted-hint">执行状态未知</span>
+                  <span class="interrupted-hint">{{ t(messages.unknownRun) }}</span>
                   <button type="button" class="chat-retry-reply-btn" :disabled="chatStore.isRecovering" @click="handleRecoverUnknown">
                     <IconRotate :size="12" :stroke-width="2" />
-                    <span>{{ chatStore.isRecovering ? '恢复中...' : '恢复状态' }}</span>
+                    <span>{{ chatStore.isRecovering ? t(messages.recovering) : t(messages.recoverStatus) }}</span>
                   </button>
                 </div>
                 <div v-else-if="(msg.status === 'FAILED' || msg.status === 'INTERRUPTED') && !isAiStreaming" class="chat-msg-interrupted-bar">
-                  <span class="interrupted-hint">{{ msg.status === 'FAILED' ? '生成失败' : '回复未完整输出' }}</span>
+                  <span class="interrupted-hint">{{ msg.status === 'FAILED' ? t(messages.generationFailed) : t(messages.partialReply) }}</span>
                   <button v-if="canSendWorkspaceChat" type="button" class="chat-retry-reply-btn" @click="handleRetryAssistantMessage(msg.id)">
                     <IconRotate :size="12" :stroke-width="2" />
-                    <span>重试回复</span>
+                    <span>{{ t(messages.retryReply) }}</span>
                   </button>
                 </div>
               </div>
@@ -757,14 +757,14 @@
         </div>
 
         <div v-if="chatStore.recoverableTarget" class="chat-recover-banner" role="alert">
-          <span class="chat-recover-message">当前会话执行状态未知，请恢复状态以释放会话。</span>
+          <span class="chat-recover-message">{{ t(messages.recoverConversationHint) }}</span>
           <button
             type="button"
             class="chat-recover-btn"
             :disabled="chatStore.isRecovering"
             @click="handleRecoverUnknown"
           >
-            {{ chatStore.isRecovering ? '正在恢复...' : '恢复状态' }}
+            {{ chatStore.isRecovering ? t(messages.recoveringConversation) : t(messages.recoverStatus) }}
           </button>
         </div>
         <div v-else-if="chatStore.lastError" class="chat-error" role="alert">
@@ -774,14 +774,14 @@
             type="button"
             class="chat-error-retry"
             @click="clearChat"
-          >开启新会话</button>
+          >{{ t(messages.startNewConversation) }}</button>
           <button
             v-else-if="pendingChatMessage"
             type="button"
             class="chat-error-retry"
             :disabled="!canSendWorkspaceChat"
             @click="retryChat"
-          >重试</button>
+          >{{ t(messages.retry) }}</button>
         </div>
       </div>
 
@@ -795,7 +795,7 @@
         >
           <span class="resume-pill-pulse-dot" />
           <span class="resume-pill-arrow">↓</span>
-          <span class="resume-pill-text">正在生成后续内容</span>
+          <span class="resume-pill-text">{{ t(messages.generating) }}</span>
         </button>
       </Transition>
 
@@ -806,14 +806,14 @@
           <div v-if="quotedSelection" class="chat-selection-quote-card">
             <div class="quote-header">
               <div class="quote-tag">
-                <span>已引用选中文本</span>
-                <span class="quote-length">({{ quotedSelection.length }} 字)</span>
+                <span>{{ t(messages.quotedText) }}</span>
+                <span class="quote-length">{{ t(messages.quoteLength, { count: quotedSelection.length }) }}</span>
               </div>
               <button
                 type="button"
                 class="quote-remove-btn"
-                title="移除引用"
-                aria-label="移除引用"
+                :title="t(messages.removeQuote)"
+                :aria-label="t(messages.removeQuote)"
                 @click="quotedSelection = ''"
               >
                 <IconX :size="12" :stroke-width="2" />
@@ -830,7 +830,7 @@
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            :placeholder="chatStore.isLegacySession ? '此历史会话未绑定资料范围，请开启新会话' : (quotedSelection ? '针对引用的内容输入问题，或直接发送...' : '问问 Auralis AI...')"
+            :placeholder="chatStore.isLegacySession ? t(messages.legacyChatPlaceholder) : (quotedSelection ? t(messages.quotedChatPlaceholder) : t(messages.chatPlaceholder))"
             :disabled="chatStore.isLegacySession"
             rows="1"
             @keydown.enter.exact="handleChatKeydown"
@@ -843,8 +843,8 @@
             :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
             :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
-            :title="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
-            :aria-label="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
+            :title="chatStore.isLegacySession ? t(messages.legacyChatDisabled) : (chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage)))"
+            :aria-label="chatStore.isLegacySession ? t(messages.legacyChatDisabled) : (chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage)))"
           >
             <IconX v-if="isAiStreaming" :size="16" :stroke-width="2" />
             <IconArrowUp v-else :size="16" :stroke-width="2" />
@@ -865,7 +865,7 @@
 
     <DocumentNotReadyDialog
       v-model="showNotReadyDialog"
-      :file-name="selectedFile?.name || '当前文件'"
+      :file-name="selectedFile?.name || t(messages.currentFile)"
       @cancel="showNotReadyDialog = false"
       @go-profile="goToProcessingCenter"
     />
@@ -880,7 +880,7 @@
     <!-- Register File Modal -->
     <FileRegisterDialog
       v-model="showRegisterModal"
-      title="登记本地参考文件"
+      :title="t(messages.registerFile)"
       :is-uploading="isUploading"
       :upload-progress="uploadProgress"
       :upload-stage="uploadStage"
@@ -894,8 +894,8 @@
     <!-- Create Task Modal -->
     <TaskCreateDialog
       v-model="showTaskModal"
-      title="创建学习任务"
-      submit-text="加入排期"
+      :title="t(messages.createTask)"
+      :submit-text="t(messages.addToSchedule)"
       :fixed-subject-id="activeSubject?.id"
       :fixed-subject-name="activeSubject?.name"
       @submit="handleAddTask"
@@ -927,6 +927,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { locale, t, type Message } from '@/i18n'
+import { messages } from './workspaceMessages'
 import { storeToRefs } from 'pinia'
 import { renderMarkdown } from '@/utils/markdown'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
@@ -1036,11 +1038,12 @@ const subjectId = computed(() => route.params.id as string)
 const timeAgo = (iso: string) => {
   if (!iso) return ''
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
-  if (m < 1) return '刚刚'
-  if (m < 60) return `${m}分钟前`
+  if (m < 1) return t(messages.justNow)
+  const formatter = new Intl.RelativeTimeFormat(locale.value, { style: 'short' })
+  if (m < 60) return formatter.format(-m, 'minute')
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}小时前`
-  return `${Math.floor(h / 24)}天前`
+  if (h < 24) return formatter.format(-h, 'hour')
+  return Number.isFinite(h) ? formatter.format(-Math.floor(h / 24), 'day') : ''
 }
 
 // ===== Tier-1 / Tier-2 State =====
@@ -2273,14 +2276,14 @@ const handleDeleteBlockCard = (id: string, version: number) => {
   void handleDeleteBlock(id, version)
 }
 interface PresetQuestionItem {
-  label: string
+  label: Message
   prompt: string
 }
 
 const presetQuestions: PresetQuestionItem[] = [
-  { label: '提炼当前核心要点', prompt: '总结当前文件的核心要点与关键脉络' },
-  { label: '梳理本章关键概念', prompt: '查找并梳理本章的核心概念与权威解释' },
-  { label: '生成三道自测考题', prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
+  { label: messages.presetKeyPoints, prompt: '总结当前文件的核心要点与关键脉络' },
+  { label: messages.presetConcepts, prompt: '查找并梳理本章的核心概念与权威解释' },
+  { label: messages.presetQuiz, prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
 ]
 
 const sendPreset = (q: string) => {
@@ -2673,76 +2676,76 @@ const aiChatReferenceOptions = () => {
 }
 
 const aiSourceSummaryText = computed(() => {
-  if (chatStore.isLegacySession) return '未绑定资料'
+  if (chatStore.isLegacySession) return t(messages.noReferences)
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
-    if (bound.retrievalMode === 'SUBJECT') return '全学科资料'
+    if (bound.retrievalMode === 'SUBJECT') return t(messages.allMaterials)
     if (bound.retrievalMode === 'AUTO') {
       const boundFile = activeSourceFiles.value.find(f => f.id === bound.currentSourceId)
-      return boundFile?.name || '当前文件'
+      return boundFile?.name || t(messages.currentFile)
     }
     const count = bound.sourceIds?.length || 0
     if (count === 1) {
       const file = activeSourceFiles.value.find(f => f.id === bound.sourceIds[0])
-      return file?.name || '1 份资料'
+      return file?.name || t(messages.oneReference)
     }
-    return `已选 ${count} 份资料`
+    return t(messages.referenceCount, { count })
   }
 
-  if (aiReferenceScope.value === 'SUBJECT') return '全学科资料'
-  if (aiReferenceScope.value === 'AUTO') return selectedFile.value?.name || '当前文件'
+  if (aiReferenceScope.value === 'SUBJECT') return t(messages.allMaterials)
+  if (aiReferenceScope.value === 'AUTO') return selectedFile.value?.name || t(messages.currentFile)
   const count = selectedAiSourceIds.value.length
   if (count === 1) {
     const file = activeSourceFiles.value.find(f => f.id === selectedAiSourceIds.value[0])
-    return file?.name || '1 份资料'
+    return file?.name || t(messages.oneReference)
   }
-  return `已选 ${count} 份资料`
+  return t(messages.referenceCount, { count })
 })
 
 const aiSourceSummaryTitle = computed(() => {
-  if (chatStore.isLegacySession) return '当前为历史会话（未绑定资料范围，不可继续提问）'
+  if (chatStore.isLegacySession) return t(messages.legacyChatDisabled)
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
       const count = activeSourceFiles.value.filter((file) =>
         file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
-      return `当前参考：全学科资料 (共 ${count} 份)`
+      return t(messages.allReferencesCount, { count })
     }
     if (bound.retrievalMode === 'AUTO') {
       const boundFile = activeSourceFiles.value.find(f => f.id === bound.currentSourceId)
-      return `当前参考：${boundFile?.name || '当前文件'}`
+      return t(messages.currentReference, { name: boundFile?.name || t(messages.currentFile) })
     }
     const count = bound.sourceIds?.length || 0
     if (count === 1) {
       const file = activeSourceFiles.value.find(f => f.id === bound.sourceIds[0])
-      return `当前参考：${file?.name || '1 份资料'}`
+      return t(messages.currentReference, { name: file?.name || t(messages.oneReference) })
     }
     const names = (bound.sourceIds || [])
       .map(id => activeSourceFiles.value.find(f => f.id === id)?.name)
       .filter(Boolean)
-      .join('、')
-    return `当前参考 (${count} 份)：${names}`
+      .join(locale.value === 'en' ? ', ' : '、')
+    return t(messages.currentReferenceList, { count, names })
   }
 
   if (aiReferenceScope.value === 'SUBJECT') {
     const count = activeSourceFiles.value.filter((file) =>
       file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
-    return `当前参考：全学科资料 (共 ${count} 份)`
+    return t(messages.allReferencesCount, { count })
   }
-  if (aiReferenceScope.value === 'AUTO') return `当前参考：${selectedFile.value?.name || '当前文件'}`
+  if (aiReferenceScope.value === 'AUTO') return t(messages.currentReference, { name: selectedFile.value?.name || t(messages.currentFile) })
   const count = selectedAiSourceIds.value.length
   if (count === 1) {
     const file = activeSourceFiles.value.find(f => f.id === selectedAiSourceIds.value[0])
-    return `当前参考：${file?.name || '1 份资料'}`
+    return t(messages.currentReference, { name: file?.name || t(messages.oneReference) })
   }
   const names = selectedAiSourceIds.value
     .map(id => activeSourceFiles.value.find(f => f.id === id)?.name)
     .filter(Boolean)
-    .join('、')
-  return `当前参考 (${count} 份)：${names}`
+    .join(locale.value === 'en' ? ', ' : '、')
+  return t(messages.currentReferenceList, { count, names })
 })
 
-const aiGreetingName = computed(() => authStore.username || '同学')
+const aiGreetingName = computed(() => authStore.username || t(messages.greetingName))
 
 const isChatComposing = ref(false)
 let lastChatCompositionEndTime = 0
@@ -3435,8 +3438,8 @@ onUnmounted(() => {
   width: 100%;
   overflow: hidden;
   background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
-  padding: 8px;
-  gap: 8px;
+  padding: calc(8px - var(--card-padding-reduction));
+  gap: calc(8px - var(--layout-gap-reduction));
 
   /* Zen Minimalist Theme override */
   --color-primary-accent: #8B9A6E;
@@ -3597,12 +3600,12 @@ html.dark .tier2-drawer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 18px 14px;
+  padding: calc(20px - var(--card-padding-reduction)) calc(18px - var(--card-padding-reduction)) calc(14px - var(--card-padding-reduction));
   flex-shrink: 0;
 }
 
 .drawer-title {
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   margin: 0;
@@ -3702,8 +3705,8 @@ html.dark .drawer-item:hover {
 }
 
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.drawer-item-name { font-size: 13.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
-.drawer-item-meta { font-size: 12px; color: var(--text-muted); font-feature-settings: "tnum"; }
+.drawer-item-name { font-size: calc(13.5px + var(--ui-font-size-adjustment)); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
+.drawer-item-meta { font-size: calc(12px + var(--ui-font-size-adjustment)); color: var(--text-muted); font-feature-settings: "tnum"; }
 
 .drawer-item-delete {
   display: flex;
@@ -4115,7 +4118,7 @@ html.dark .workspace-center {
 .status-left, .status-right { display: flex; align-items: center; gap: 10px; }
 .status-left { min-width: 0; flex: 1; }
 .status-right { flex: none; }
-.status-file { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.status-file { font-size: calc(13.5px + var(--ui-font-size-adjustment)); font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
 .status-left .status-file { min-width: 0; }
 .status-icon { color: var(--text-muted); opacity: 0.7; }
 .status-page { font-size: 12px; color: var(--text-muted); }
@@ -5077,7 +5080,7 @@ html.dark .ai-header {
   border: 1px solid var(--border-subtle, #e0deda);
   border-radius: 20px 20px 6px 20px;
   padding: 11px 18px;
-  font-size: 14px;
+  font-size: calc(14px + var(--ui-font-size-adjustment));
   line-height: 1.55;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
@@ -5093,7 +5096,7 @@ html.dark .ai-header {
   border: none !important;
   border-radius: 0 !important;
   padding: 2px 0 14px !important;
-  font-size: 14.5px;
+  font-size: calc(14.5px + var(--ui-font-size-adjustment));
   line-height: 1.74;
   color: var(--text-primary);
   box-shadow: none !important;
@@ -5305,7 +5308,7 @@ html.dark .chat-recover-banner {
 /* Input Area */
 .ai-input-area {
   flex-shrink: 0;
-  padding: 14px 16px 16px;
+  padding: calc(14px - var(--card-padding-reduction)) calc(16px - var(--card-padding-reduction)) calc(16px - var(--card-padding-reduction));
   border-top: 1px solid var(--border-subtle);
   background: var(--color-bg-primary, #F7F2EB);
 }
@@ -5337,7 +5340,7 @@ html.dark .ai-input-wrapper {
   background: transparent;
   border: none;
   outline: none;
-  font-size: 13.5px;
+  font-size: calc(13.5px + var(--ui-font-size-adjustment));
   color: var(--text-primary);
   font-family: inherit;
   line-height: 1.55;
@@ -6201,8 +6204,8 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .ai-spark-wrap, .ai-brand-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 16px; filter: drop-shadow(0 8px 20px rgba(139, 154, 110, 0.24)); transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .ai-brand-wrap:hover { transform: translateY(-2px) scale(1.03); }
 .ai-spark-svg, .ai-brand-svg { width: 56px; height: 56px; display: block; border-radius: 16px; }
-.welcome-title { font-size: 22.5px; font-weight: 650; color: var(--text-primary); margin: 0 0 8px; letter-spacing: -0.3px; line-height: 1.3; }
-.welcome-desc { font-size: 12.5px; font-weight: 400; color: var(--text-muted); margin: 0 0 26px; line-height: 1.55; max-width: 260px; }
+.welcome-title { font-size: calc(22.5px + var(--ui-font-size-adjustment)); font-weight: 650; color: var(--text-primary); margin: 0 0 8px; letter-spacing: -0.3px; line-height: 1.3; }
+.welcome-desc { font-size: calc(12.5px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); margin: 0 0 26px; line-height: 1.55; max-width: 260px; }
 .preset-questions { display: flex; flex-direction: column; align-items: center; gap: 9px; width: 100%; max-width: 260px; box-sizing: border-box; }
 .preset-pill { width: 100%; padding: 9px 20px; border-radius: 999px; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; font-weight: 550; letter-spacing: 0.8px; text-align: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02); user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
 .preset-pill:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); font-weight: 600; transform: translateY(-1.5px); box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.22), 0 2px 4px rgba(0, 0, 0, 0.03); }
@@ -6210,13 +6213,13 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 
 .assistant-spark-avatar { width: 34px; height: 34px; border: 0.5px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .assistant-spark-avatar svg { width: 20px; height: 20px; }
-.chat-msg-row.user .chat-bubble { background: var(--color-bg-card, #ffffff); color: var(--text-primary); border: 1px solid var(--border-subtle, #e0deda); border-radius: 20px 20px 6px 20px; padding: 11px 18px; font-size: 14px; line-height: 1.55; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.chat-msg-row.assistant .chat-bubble { background: transparent; border: none; border-radius: 0; padding: 2px 0 14px; font-size: 14.5px; line-height: 1.74; color: var(--text-primary); box-shadow: none; }
+.chat-msg-row.user .chat-bubble { background: var(--color-bg-card, #ffffff); color: var(--text-primary); border: 1px solid var(--border-subtle, #e0deda); border-radius: 20px 20px 6px 20px; padding: 11px 18px; font-size: calc(14px + var(--ui-font-size-adjustment)); line-height: 1.55; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.chat-msg-row.assistant .chat-bubble { background: transparent; border: none; border-radius: 0; padding: 2px 0 14px; font-size: calc(14.5px + var(--ui-font-size-adjustment)); line-height: 1.74; color: var(--text-primary); box-shadow: none; }
 
-.ai-input-area { padding: 16px 20px 24px; background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
+.ai-input-area { padding: calc(16px - var(--card-padding-reduction)) calc(20px - var(--card-padding-reduction)) calc(24px - var(--card-padding-reduction)); background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
 .ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: var(--color-bg-card, #ffffff); border: 1px solid var(--border-default, #e0deda); box-shadow: 0 4px 16px -2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .ai-chat-capsule:focus-within { background: var(--color-bg-card, #ffffff); border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0,0,0,0.05); transform: translateY(-1px); }
-.ai-input { flex: 1; background: transparent; font-size: 14.5px; line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
+.ai-input { flex: 1; background: transparent; font-size: calc(14.5px + var(--ui-font-size-adjustment)); line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
 .ai-input::placeholder { color: var(--text-muted); }
 .ai-send-btn { width: 36px; height: 36px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: var(--color-bg-card, #ffffff); border: 0.5px solid var(--border-subtle); color: var(--color-primary-accent, #8B9A6E); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .ai-send-btn.is-ready { background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)) !important; color: #fff !important; box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4) !important; }

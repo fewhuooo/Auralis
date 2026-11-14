@@ -24,6 +24,7 @@ register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64
 const ts = await import('typescript')
 const { createPinia, setActivePinia } = await import('pinia')
 const { ref } = await import('vue')
+const { t } = await import('../src/i18n.ts')
 const { useSubjectStore } = await import('../src/store/useSubjectStore.ts')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
@@ -55,7 +56,7 @@ function setupCallback(sourceFile, name, bindings) {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.None,
   })
-  return new Function(...Object.keys(bindings), compiled)(...Object.values(bindings))
+  return new Function('t', ...Object.keys(bindings), compiled)(t, ...Object.values(bindings))
 }
 
 const modalScript = await readSetupScript('components/subject/SubjectCreateModal.vue')

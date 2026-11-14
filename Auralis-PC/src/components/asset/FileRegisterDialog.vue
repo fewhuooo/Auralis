@@ -29,10 +29,10 @@
           <IconCloudUpload v-else :size="22" :stroke-width="1.6" />
         </div>
         <div class="drop-text">
-          {{ selectedFile ? selectedFile.name : '拖拽文件到此处，或点击选择' }}
+          {{ selectedFile ? selectedFile.name : t({ 'zh-CN': '拖拽文件到此处，或点击选择', en: 'Drop a file here or click to select', ja: 'ファイルをドロップするか、クリックして選択' }) }}
         </div>
         <div class="drop-hint">
-          {{ selectedFile ? '点击可更换其他文件' : hintText }}
+          {{ selectedFile ? t({ 'zh-CN': '点击可更换其他文件', en: 'Click to choose a different file', ja: 'クリックして別のファイルを選択' }) : hintText }}
         </div>
       </div>
 
@@ -47,7 +47,7 @@
       <!-- Upload Progress -->
       <div v-if="isUploading" class="upload-progress">
         <div class="progress-header">
-          <span class="stage-text">{{ isCompleted ? '导入完成' : (uploadStage || '正在导入本地文件...') }}</span>
+          <span class="stage-text">{{ isCompleted ? t({ 'zh-CN': '导入完成', en: 'Import complete', ja: '取り込み完了' }) : (uploadStage || t({ 'zh-CN': '正在导入本地文件...', en: 'Importing local file…', ja: 'ローカルファイルを取り込み中…' })) }}</span>
           <span class="progress-pct">{{ displayPercent }}%</span>
         </div>
         <div class="progress-track">
@@ -61,13 +61,13 @@
       <!-- File Name -->
       <div class="modal-form-group">
         <label class="modal-form-label">
-          文件名称 <span class="required">*</span>
+          {{ t({ 'zh-CN': '文件名称', en: 'File name', ja: 'ファイル名' }) }} <span class="required">*</span>
         </label>
         <input
           v-model="fileName"
           type="text"
           class="modal-form-input"
-          placeholder="例如: 计算机网络.pdf"
+          :placeholder="t({ 'zh-CN': '例如: 计算机网络.pdf', en: 'For example: Computer Networks.pdf', ja: '例：コンピューターネットワーク.pdf' })"
           :disabled="isUploading"
         />
       </div>
@@ -75,7 +75,7 @@
       <!-- Subject Selection -->
       <div class="modal-form-group">
         <label class="modal-form-label">
-          归档至 <span class="required">*</span>
+          {{ t({ 'zh-CN': '归档至', en: 'Subject', ja: '保存先の科目' }) }} <span class="required">*</span>
         </label>
         <div class="subject-grid">
           <div
@@ -88,7 +88,7 @@
             {{ subj.name }}
           </div>
           <div v-if="resolvedSubjects.length === 0" class="empty-hint">
-            暂无学科，请先创建学科空间
+            {{ t({ 'zh-CN': '暂无学科，请先创建学科空间', en: 'Create a subject first', ja: '先に科目を作成してください' }) }}
           </div>
         </div>
       </div>
@@ -101,7 +101,7 @@
         :disabled="isUploading"
         @click="handleClose"
       >
-        取消
+        {{ t({ 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' }) }}
       </button>
       <button
         type="button"
@@ -110,13 +110,14 @@
         @click="handleSubmit"
       >
         <IconRotate v-if="isUploading" :size="13" :stroke-width="2.2" class="is-spinning modal-btn-spinner" />
-        {{ isUploading ? (isCompleted ? '导入完成' : '导入中...') : submitText }}
+        {{ isUploading ? (isCompleted ? t({ 'zh-CN': '导入完成', en: 'Import complete', ja: '取り込み完了' }) : t({ 'zh-CN': '导入中...', en: 'Importing…', ja: '取り込み中…' })) : submitText }}
       </button>
     </template>
   </ModalShell>
 </template>
 
 <script setup lang="ts">
+import { t } from '@/i18n'
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { IconCloudUpload, IconFileCheck, IconRotate } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
@@ -143,9 +144,6 @@ const props = withDefaults(
     uploadStage?: string
   }>(),
   {
-    title: '上传参考文件',
-    submitText: '确认登记',
-    hintText: '支持 PDF、DOC、DOCX、PPT、PPTX 文件',
     acceptedExtensions: () => SUPPORTED_UPLOAD_EXTENSIONS,
     subjects: undefined,
     defaultSubjectId: '',
@@ -154,6 +152,10 @@ const props = withDefaults(
     uploadStage: '',
   }
 )
+
+const title = computed(() => props.title ?? t({ 'zh-CN': '上传参考文件', en: 'Upload a reference file', ja: '参考ファイルをアップロード' }))
+const submitText = computed(() => props.submitText ?? t({ 'zh-CN': '确认登记', en: 'Import file', ja: 'ファイルを取り込む' }))
+const hintText = computed(() => props.hintText ?? t({ 'zh-CN': '支持 PDF、DOC、DOCX、PPT、PPTX 文件', en: 'Supports PDF, DOC, DOCX, PPT, and PPTX', ja: 'PDF、DOC、DOCX、PPT、PPTX に対応' }))
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void

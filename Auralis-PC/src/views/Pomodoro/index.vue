@@ -13,8 +13,8 @@
         <!-- Card 1: Current Focus Task -->
         <div class="panel-card top-card">
           <div class="card-header">
-            <span class="card-title">当前专注</span>
-            <p class="card-sub-hint">{{ activeSession ? '本轮专注结束后可重新选择任务' : '选择要专注的任务，或开启自由专注' }}</p>
+            <span class="card-title">{{ t({ 'zh-CN': '当前专注', en: 'Current focus', ja: '現在の集中' }) }}</span>
+            <p class="card-sub-hint">{{ activeSession ? t({ 'zh-CN': '本轮专注结束后可重新选择任务', en: 'You can change tasks after this session', ja: 'このセッションの終了後にタスクを変更できます' }) : t({ 'zh-CN': '选择要专注的任务，或开启自由专注', en: 'Choose a task or start a free focus session', ja: 'タスクを選ぶか、フリー集中を開始できます' }) }}</p>
           </div>
 
           <div class="task-selector-wrap">
@@ -22,7 +22,7 @@
               :model-value="displayedTask.id"
               @change="onTaskChange"
               :disabled="Boolean(activeSession)"
-              placeholder="选择专注任务"
+              :placeholder="t({ 'zh-CN': '选择专注任务', en: 'Choose a focus task', ja: '集中するタスクを選択' })"
               size="large"
               class="task-selector zen-select"
               popper-class="zen-select-popper pomodoro-task-popper"
@@ -49,9 +49,9 @@
             <div class="banner-info">
               <div class="banner-title">{{ displayedTask.name }}</div>
               <div class="banner-meta-row">
-                <span class="banner-status-tag">{{ displayedTask.isFreeStudy ? '自由模式' : displayedTask.timeStr ? '已排期' : '关联任务' }}</span>
-                <span v-if="displayedTask.isFreeStudy" class="banner-desc">自主掌握心流节奏 · 自由专注</span>
-                <span v-else-if="displayedTask.timeStr" class="banner-desc">排期时间：{{ displayedTask.timeStr }}</span>
+                <span class="banner-status-tag">{{ displayedTask.isFreeStudy ? t({ 'zh-CN': '自由模式', en: 'Free focus', ja: 'フリー集中' }) : displayedTask.timeStr ? t({ 'zh-CN': '已排期', en: 'Scheduled', ja: '予定あり' }) : t({ 'zh-CN': '关联任务', en: 'Linked task', ja: '関連タスク' }) }}</span>
+                <span v-if="displayedTask.isFreeStudy" class="banner-desc">{{ t({ 'zh-CN': '自主掌握心流节奏 · 自由专注', en: 'Focus at your own pace', ja: '自分のペースで集中' }) }}</span>
+                <span v-else-if="displayedTask.timeStr" class="banner-desc">{{ t({ 'zh-CN': '排期时间：{time}', en: 'Scheduled for {time}', ja: '予定 {time}' }, { time: displayedTask.timeStr }) }}</span>
               </div>
             </div>
           </div>
@@ -60,15 +60,15 @@
         <!-- Card 2: Today's Data -->
         <div class="panel-card middle-card">
           <div class="card-header">
-            <span class="card-title">今日专注看板</span>
-            <p class="card-sub-hint">今日累计专注数据，暂停与休息不计入时长</p>
+            <span class="card-title">{{ t({ 'zh-CN': '今日专注看板', en: 'Today\'s focus', ja: '今日の集中' }) }}</span>
+            <p class="card-sub-hint">{{ t({ 'zh-CN': '今日累计专注数据，暂停与休息不计入时长', en: 'Daily focus totals exclude pauses and breaks', ja: '今日の集中時間には一時停止と休憩を含みません' }) }}</p>
           </div>
           <div class="stats-container">
             <div class="stat-col">
               <span class="stat-val">{{ completedToday }}</span>
               <div class="stat-label-row">
                 <IconCheck :size="15" :stroke-width="2.2" class="stat-icon" />
-                <span class="stat-label">今日番茄</span>
+                <span class="stat-label">{{ t({ 'zh-CN': '今日番茄', en: 'Pomodoros today', ja: '今日のポモドーロ' }) }}</span>
               </div>
             </div>
             
@@ -81,7 +81,7 @@
               </div>
               <div class="stat-label-row">
                 <IconFlame :size="15" :stroke-width="2.2" class="stat-icon" />
-                <span class="stat-label">专注时长</span>
+                <span class="stat-label">{{ t({ 'zh-CN': '专注时长', en: 'Focus time', ja: '集中時間' }) }}</span>
               </div>
             </div>
           </div>
@@ -94,6 +94,7 @@
 </template>
 
 <script setup lang="ts">
+import { locale, t } from '@/i18n'
 import { ref, computed, watch, onMounted } from 'vue'
 import { IconCheck, IconFlame } from '@tabler/icons-vue'
 import TimerCore from '@/components/pomodoro/TimerCore.vue'
@@ -103,12 +104,12 @@ import { usePomodoroStore } from '@/store/usePomodoroStore'
 const taskStore = useTaskStore()
 const pomodoroStore = usePomodoroStore()
 
-const FREE_STUDY_TASK = {
+const freeStudyTask = computed(() => ({
   id: 'free-study',
-  name: '自由学习',
-  timeStr: '随时开启专注',
+  name: t({ 'zh-CN': '自由学习', en: 'Free study', ja: '自由学習' }),
+  timeStr: t({ 'zh-CN': '随时开启专注', en: 'Start whenever you\'re ready', ja: 'いつでも集中を開始' }),
   isFreeStudy: true,
-}
+}))
 
 const currentTaskId = ref<string>('free-study')
 let userManuallySelected = false
@@ -121,9 +122,9 @@ function formatScheduledTime(scheduledAt?: string): string {
   const isToday = date.toDateString() === now.toDateString()
   const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   if (isToday) {
-    return `今日 ${timeStr}`
+    return t({ 'zh-CN': '今日 {time}', en: 'Today at {time}', ja: '今日 {time}' }, { time: timeStr })
   }
-  const dayName = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
+  const dayName = new Intl.DateTimeFormat(locale.value, { weekday: 'short' }).format(date)
   return `${dayName} ${timeStr}`
 }
 
@@ -136,36 +137,36 @@ const timelineTasks = computed(() => {
       const timeB = Date.parse(b.scheduledAt || '') || 0
       return timeA - timeB
     })
-    .map((t) => ({
-      id: t.id,
-      name: t.title || t.name || '未命名任务',
-      scheduledAt: t.scheduledAt,
-      durationMinutes: t.durationMinutes ?? t.duration ?? 30,
-      timeStr: formatScheduledTime(t.scheduledAt),
+    .map((task) => ({
+      id: task.id,
+      name: task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }),
+      scheduledAt: task.scheduledAt,
+      durationMinutes: task.durationMinutes ?? task.duration ?? 30,
+      timeStr: formatScheduledTime(task.scheduledAt),
       isFreeStudy: false,
     }))
 })
 
 // 补充自由学习任务作为首选
 const availableTasks = computed(() => {
-  return [FREE_STUDY_TASK, ...timelineTasks.value]
+  return [freeStudyTask.value, ...timelineTasks.value]
 })
 
 const selectedTask = computed(() => {
-  if (currentTaskId.value === 'free-study') return FREE_STUDY_TASK
-  return availableTasks.value.find((t) => t.id === currentTaskId.value) || FREE_STUDY_TASK
+  if (currentTaskId.value === 'free-study') return freeStudyTask.value
+  return availableTasks.value.find((t) => t.id === currentTaskId.value) || freeStudyTask.value
 })
 
 const activeSession = computed(() => pomodoroStore.runtime.activeSession)
 const displayedTask = computed(() => {
   const session = activeSession.value
   if (!session) return selectedTask.value
-  if (session.taskId === null) return FREE_STUDY_TASK
+  if (session.taskId === null) return freeStudyTask.value
 
   const task = taskStore.allTasks.find((item) => item.id === session.taskId)
   return {
     id: session.taskId,
-    name: task ? task.title || task.name || '未命名任务' : '关联任务暂不可见',
+    name: task ? task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }) : t({ 'zh-CN': '关联任务暂不可见', en: 'Linked task unavailable', ja: '関連タスクを表示できません' }),
     timeStr: formatScheduledTime(task?.scheduledAt),
     isFreeStudy: false,
   }
@@ -257,8 +258,8 @@ onMounted(async () => {
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 40px 36px;
-  gap: 64px;
+  padding: calc(40px - var(--layout-gap-reduction)) calc(36px - var(--layout-gap-reduction));
+  gap: calc(64px - var(--layout-gap-reduction));
   box-sizing: border-box;
 }
 
@@ -277,7 +278,7 @@ onMounted(async () => {
   flex: 3.6;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: calc(24px - var(--layout-gap-reduction));
   height: 100%;
   justify-content: center;
 }
@@ -287,7 +288,7 @@ onMounted(async () => {
   background: var(--color-bg-primary, #F7F2EB);
   border-radius: 24px;
   border: 0.5px solid var(--border-subtle, #E6E6E4);
-  padding: 26px 28px;
+  padding: calc(26px - var(--card-padding-reduction)) calc(28px - var(--card-padding-reduction));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 12px 30px -4px rgba(0, 0, 0, 0.05), 0 2px 8px -2px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
@@ -303,7 +304,7 @@ onMounted(async () => {
 }
 
 .card-title {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
   font-family: var(--font-family-base);
@@ -311,7 +312,7 @@ onMounted(async () => {
 }
 
 .card-sub-hint {
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   color: var(--text-muted, #7A7A75);
   margin-top: 4px;
   margin-bottom: 0;

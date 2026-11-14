@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { t } from '../src/i18n.ts'
+import { profileMessages } from '../src/views/Profile/profileMessages.ts'
 
 test('Profile confirms logout and only reports or navigates for the active login', async () => {
   const profileSource = await readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8')
 
   assert.match(profileSource, /@click="handleLogout"/, 'Must bind handleLogout to a button')
-  assert.match(profileSource, /退出登录/, 'Must contain Chinese text for logout')
+  assert.match(profileSource, /@click="handleLogout">\{\{ t\(profileMessages\.signOut\) \}\}/, 'Must display the sign-out label')
   const handlerSource = profileSource.match(/^const handleLogout = async \(\) => \{[\s\S]*?^\}/m)?.[0]
   assert.ok(handlerSource)
   class SyncScopeChangedError extends Error {}
-  const createHandler = new Function('authStore', 'ElMessageBox', 'ElNotification', 'router', 'SyncScopeChangedError', 'console',
+  const createHandler = new Function('authStore', 'ElMessageBox', 'ElNotification', 'router', 'SyncScopeChangedError', 'console', 't', 'profileMessages',
     `${handlerSource}\nreturn handleLogout`)
   const cases = [
     { label: 'current logout succeeds', authenticated: false, effects: ['已退出登录', '/login'] },
@@ -37,7 +39,7 @@ test('Profile confirms logout and only reports or navigates for the active login
     }
     const handleLogout = createHandler(authStore, { confirm }, ({ title }) => effects.push(title), {
       async push(path) { effects.push(path) },
-    }, SyncScopeChangedError, { warn() {} })
+    }, SyncScopeChangedError, { warn() {} }, t, profileMessages)
 
     await handleLogout()
 
