@@ -276,116 +276,6 @@
             </h3>
           </div>
 
-          <div class="settings-row">
-            <div class="row-info">
-              <span class="row-label setting-label-with-icon">
-                <IconFileDescription class="setting-icon" aria-hidden="true" />
-                {{ autoOverviewSetting.label }}
-              </span>
-              <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
-            </div>
-            <div class="row-control">
-              <button
-                class="toggle-btn"
-                type="button"
-                role="switch"
-                :aria-checked="autoOverviewSetting.value"
-                :aria-label="autoOverviewSetting.label"
-                aria-describedby="profile-auto-overview-desc"
-                :class="{ 'is-on': autoOverviewSetting.value }"
-                @click="handleToggle(autoOverviewSetting)"
-              >
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
-          </div>
-
-          <div class="ai-subheader">
-            <h4 class="group-title ai-subtitle setting-label-with-icon">
-              <IconGauge class="setting-icon" aria-hidden="true" />
-              AI 使用额度
-            </h4>
-          </div>
-          
-          <div class="group-items usage-group-body">
-            <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
-            <div v-else-if="aiUsageError" class="usage-error">
-              <span>{{ aiUsageError }}</span>
-              <button class="action-btn secondary" @click="fetchAiUsage">重试</button>
-            </div>
-            <div v-else-if="aiUsage" class="usage-content">
-              <!-- Hourly -->
-              <div class="usage-card">
-                <div class="usage-card-header">
-                  <div class="usage-header-left">
-                    <span class="usage-plan-name">每小时额度</span>
-                    <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
-                  </div>
-                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
-                </div>
-                <!-- 进度条 -->
-                <div class="usage-progress-bar-wrap">
-                  <div class="usage-progress-bar-fill" :style="{ width: hourlyUsagePercent + '%' }" :class="{ 'is-low': hourlyUsagePercent < 20 }"></div>
-                </div>
-                <div class="usage-grid">
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">总额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.hourly.limitTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">剩余额度</span>
-                    <span class="usage-stat-val accent">{{ aiUsage.hourly.remainingTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" >
-                    <span class="usage-stat-label">已用额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.hourly.chargedTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" >
-                    <span class="usage-stat-label">预留额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.hourly.reservedTokens }} token</span>
-                  </div>
-                </div>
-              </div>
-              
-              <!-- Daily -->
-              <div class="usage-card">
-                <div class="usage-card-header">
-                  <div class="usage-header-left">
-                    <span class="usage-plan-name">每日额度</span>
-                    <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
-                  </div>
-                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
-                </div>
-                <!-- 进度条 -->
-                <div class="usage-progress-bar-wrap">
-                  <div class="usage-progress-bar-fill" :style="{ width: dailyUsagePercent + '%' }" :class="{ 'is-low': dailyUsagePercent < 20 }"></div>
-                </div>
-                <div class="usage-grid">
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">总额度</span>
-                    <span class="usage-stat-val">{{ aiUsage.daily.limitTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box">
-                    <span class="usage-stat-label">剩余额度</span>
-                    <span class="usage-stat-val accent">{{ aiUsage.daily.remainingTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" title="缺少实际 usage 时按保守估算">
-                    <span class="usage-stat-label">已结算（估算）</span>
-                    <span class="usage-stat-val">{{ aiUsage.daily.chargedTokens }} token</span>
-                  </div>
-                  <div class="usage-stat-box" title="在途预留为估算值，不代表最终实际用量">
-                    <span class="usage-stat-label">在途预留（估算）</span>
-                    <span class="usage-stat-val">{{ aiUsage.daily.reservedTokens }} token</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="usage-actions">
-                <button class="action-btn secondary" @click="fetchAiUsage">刷新</button>
-              </div>
-            </div>
-          </div>
-
           <div class="ai-subheader byok-subheader">
             <h4 class="group-title ai-subtitle setting-label-with-icon">
               <IconCpu class="setting-icon" aria-hidden="true" />
@@ -421,49 +311,6 @@
                   >
                     {{ qp.name }}
                   </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="settings-row byok-field-row">
-              <div class="row-info">
-                <label class="row-label setting-label-with-icon" for="profile-ai-model">
-                  <IconMessages class="setting-icon" aria-hidden="true" />
-                  对话模型
-                </label>
-              </div>
-              <div class="row-control byok-control-wrap">
-                <div class="byok-model-detect-group">
-                  <input
-                    id="profile-ai-model"
-                    v-model="customChatModel"
-                    type="text"
-                    class="settings-input byok-input byok-model-input"
-                    placeholder="如 deepseek-chat"
-                  />
-                  <button
-                    class="action-btn byok-detect-btn"
-                    :disabled="detectingModels || aiSettingsBusy"
-                    @click="handleDetectModels"
-                  >
-                    {{ detectingModels ? '检测中...' : '自动检测' }}
-                  </button>
-                </div>
-                <!-- 自动检测模型快速选取托盘 -->
-                <div v-if="detectedModels.length > 0" class="detected-models-tray">
-                  <span class="tray-label">检测到 {{ detectedModels.length }} 个候选模型：</span>
-                  <div class="tray-chips">
-                    <button
-                      v-for="m in detectedModels"
-                      :key="m"
-                      type="button"
-                      class="model-chip"
-                      :class="{ 'is-selected': customChatModel === m }"
-                      @click="selectDetectedModel(m)"
-                    >
-                      {{ m }}
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -521,6 +368,49 @@
                 </div>
               </div>
             </div>
+
+            <div class="settings-row byok-field-row">
+              <div class="row-info">
+                <label class="row-label setting-label-with-icon" for="profile-ai-model">
+                  <IconMessages class="setting-icon" aria-hidden="true" />
+                  对话模型
+                </label>
+              </div>
+              <div class="row-control byok-control-wrap">
+                <div class="byok-model-detect-group">
+                  <input
+                    id="profile-ai-model"
+                    v-model="customChatModel"
+                    type="text"
+                    class="settings-input byok-input byok-model-input"
+                    placeholder="如 deepseek-chat"
+                  />
+                  <button
+                    class="action-btn byok-detect-btn"
+                    :disabled="detectingModels || aiSettingsBusy"
+                    @click="handleDetectModels"
+                  >
+                    {{ detectingModels ? '检测中...' : '自动检测' }}
+                  </button>
+                </div>
+                <!-- 自动检测模型快速选取托盘 -->
+                <div v-if="detectedModels.length > 0" class="detected-models-tray">
+                  <span class="tray-label">检测到 {{ detectedModels.length }} 个候选模型：</span>
+                  <div class="tray-chips">
+                    <button
+                      v-for="m in detectedModels"
+                      :key="m"
+                      type="button"
+                      class="model-chip"
+                      :class="{ 'is-selected': customChatModel === m }"
+                      @click="selectDetectedModel(m)"
+                    >
+                      {{ m }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="byok-action-footer">
@@ -542,7 +432,117 @@
               </button>
             </div>
           </div>
-        </section>
+
+          <div class="ai-subheader usage-subheader">
+            <h4 class="group-title ai-subtitle setting-label-with-icon">
+              <IconGauge class="setting-icon" aria-hidden="true" />
+              AI 使用额度
+            </h4>
+          </div>
+
+          <div class="group-items usage-group-body">
+            <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
+            <div v-else-if="aiUsageError" class="usage-error">
+              <span>{{ aiUsageError }}</span>
+              <button class="action-btn secondary" @click="fetchAiUsage">重试</button>
+            </div>
+            <div v-else-if="aiUsage" class="usage-content">
+              <!-- Hourly -->
+              <div class="usage-card">
+                <div class="usage-card-header">
+                  <div class="usage-header-left">
+                    <span class="usage-plan-name">每小时额度</span>
+                    <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
+                  </div>
+                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
+                </div>
+                <!-- 进度条 -->
+                <div class="usage-progress-bar-wrap">
+                  <div class="usage-progress-bar-fill" :style="{ width: hourlyUsagePercent + '%' }" :class="{ 'is-low': hourlyUsagePercent < 20 }"></div>
+                </div>
+                <div class="usage-grid">
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">总额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.hourly.limitTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">剩余额度</span>
+                    <span class="usage-stat-val accent">{{ aiUsage.hourly.remainingTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" >
+                    <span class="usage-stat-label">已用额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.hourly.chargedTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" >
+                    <span class="usage-stat-label">预留额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.hourly.reservedTokens }} token</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Daily -->
+              <div class="usage-card">
+                <div class="usage-card-header">
+                  <div class="usage-header-left">
+                    <span class="usage-plan-name">每日额度</span>
+                    <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
+                  </div>
+                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
+                </div>
+                <!-- 进度条 -->
+                <div class="usage-progress-bar-wrap">
+                  <div class="usage-progress-bar-fill" :style="{ width: dailyUsagePercent + '%' }" :class="{ 'is-low': dailyUsagePercent < 20 }"></div>
+                </div>
+                <div class="usage-grid">
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">总额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.daily.limitTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">剩余额度</span>
+                    <span class="usage-stat-val accent">{{ aiUsage.daily.remainingTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" title="缺少实际 usage 时按保守估算">
+                    <span class="usage-stat-label">已结算（估算）</span>
+                    <span class="usage-stat-val">{{ aiUsage.daily.chargedTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" title="在途预留为估算值，不代表最终实际用量">
+                    <span class="usage-stat-label">在途预留（估算）</span>
+                    <span class="usage-stat-val">{{ aiUsage.daily.reservedTokens }} token</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="usage-actions">
+                <button class="action-btn secondary" @click="fetchAiUsage">刷新</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-row ai-overview-row">
+            <div class="row-info">
+              <span class="row-label setting-label-with-icon">
+                <IconFileDescription class="setting-icon" aria-hidden="true" />
+                {{ autoOverviewSetting.label }}
+              </span>
+              <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
+            </div>
+            <div class="row-control">
+              <button
+                class="toggle-btn"
+                type="button"
+                role="switch"
+                :aria-checked="autoOverviewSetting.value"
+                :aria-label="autoOverviewSetting.label"
+                aria-describedby="profile-auto-overview-desc"
+                :class="{ 'is-on': autoOverviewSetting.value }"
+                @click="handleToggle(autoOverviewSetting)"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+</section>
       </main>
 
     <!-- Password Change Modal (修改密码弹窗) -->
@@ -2424,6 +2424,11 @@ onMounted(() => {
   padding: 14px 22px 0;
 }
 
+.usage-subheader,
+.ai-overview-row {
+  border-top: 0.5px solid var(--border-subtle);
+}
+
 .ai-subtitle {
   font-size: var(--font-size-body-sm);
 }
@@ -2530,7 +2535,6 @@ onMounted(() => {
 /* ===== 5. AI BYOK 配置区 (BYOK Settings) ===== */
 .byok-subheader {
   padding-bottom: 14px;
-  border-top: 0.5px solid var(--border-subtle);
 }
 
 .byok-control-wrap {
