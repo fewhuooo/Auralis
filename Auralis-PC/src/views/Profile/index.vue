@@ -42,10 +42,10 @@
           </div>
         </div>
 
-        <!-- 3. 学科知识分布 (TOP 5) -->
+        <!-- 3. 学科知识分布 -->
         <div class="subject-dist-card">
           <div class="subject-dist-header">
-            <span class="subject-dist-title">学科知识分布（前 5）</span>
+            <span class="subject-dist-title">学科知识分布</span>
           </div>
           <div v-if="subjects.length === 0" class="no-data-hint">
             暂无学科分布统计
