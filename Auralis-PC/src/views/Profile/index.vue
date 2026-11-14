@@ -7,7 +7,6 @@
           <div class="avatar-wrap" @click="triggerAvatarUpload" title="点击更换头像">
             <img v-if="userAvatarUrl" :src="userAvatarUrl" class="user-avatar-img" alt="头像" />
             <div v-else class="user-avatar">{{ userInitial }}</div>
-            <span class="user-status-dot" title="在线"></span>
             <div class="avatar-hover-overlay">
               <IconCamera :size="14" />
             </div>
@@ -46,8 +45,7 @@
         <!-- 3. 学科知识分布 (TOP 5) -->
         <div class="subject-dist-card">
           <div class="subject-dist-header">
-            <span class="subject-dist-title">学科知识分布</span>
-            <span class="subject-dist-subtitle">TOP 5</span>
+            <span class="subject-dist-title">学科知识分布（前 5）</span>
           </div>
           <div v-if="subjects.length === 0" class="no-data-hint">
             暂无学科分布统计
@@ -69,35 +67,24 @@
 
         <!-- 5. 账号与安全凭证管理 (Account & Security) -->
         <div class="account-card">
-          <div class="account-card-header">
-            <div class="account-title-wrap">
-              <span class="account-card-title">账号与安全凭证</span>
-            </div>
-            <div class="account-sec-status">
-              <span class="sec-dot"></span>
-              <span>安全运行中</span>
-            </div>
-          </div>
+          <span class="account-card-title">账号与安全凭证</span>
 
           <div class="account-card-body">
             <!-- 用户头像修改 -->
             <div class="account-cell">
               <div class="cell-main">
                 <span class="cell-label">用户头像</span>
-                <div class="avatar-cell-preview">
-                  <div class="mini-avatar">
-                    <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
-                    <span v-else>{{ userInitial }}</span>
-                  </div>
-                  <span class="cell-sub">自定义个人头像展示</span>
+                <div class="mini-avatar">
+                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
+                  <span v-else>{{ userInitial }}</span>
                 </div>
               </div>
               <div class="avatar-cell-actions">
-                <button v-if="userAvatarUrl" class="cell-btn" @click="resetAvatar">
+                <button v-if="userAvatarUrl" class="cell-btn" aria-label="重置头像" @click="resetAvatar">
                   重置
                 </button>
-                <button class="cell-btn" @click="triggerAvatarUpload">
-                  更换头像
+                <button class="cell-btn" aria-label="更换头像" @click="triggerAvatarUpload">
+                  更换
                 </button>
               </div>
             </div>
@@ -119,12 +106,12 @@
                   />
                 </div>
               </div>
-              <button v-if="!isEditingNickname" class="cell-btn" @click="startEditNickname">
-                修改昵称
+              <button v-if="!isEditingNickname" class="cell-btn" aria-label="修改昵称" @click="startEditNickname">
+                修改
               </button>
               <div v-else class="cell-edit-btns">
-                <button class="cell-btn primary" title="保存" @click="saveNickname">保存</button>
-                <button class="cell-btn" title="取消" @click="cancelEditNickname">取消</button>
+                <button class="cell-btn primary" @click="saveNickname">保存</button>
+                <button class="cell-btn" @click="cancelEditNickname">取消</button>
               </div>
             </div>
 
@@ -134,8 +121,8 @@
                 <span class="cell-label">登录密码</span>
                 <span class="cell-sub">••••••••</span>
               </div>
-              <button class="cell-btn" @click="openPasswordModal">
-                修改密码
+              <button class="cell-btn" aria-label="修改密码" @click="openPasswordModal">
+                修改
               </button>
             </div>
 
@@ -145,16 +132,6 @@
                 <span class="cell-label">登录账号</span>
                 <span class="cell-val">{{ accountName }}</span>
               </div>
-              <span class="cell-tag success">已认证</span>
-            </div>
-
-            <!-- 登录设备 -->
-            <div class="account-cell">
-              <div class="cell-main">
-                <span class="cell-label">当前设备</span>
-                <span class="cell-sub">{{ deviceName }}</span>
-              </div>
-              <span class="cell-tag default">当前授权</span>
             </div>
           </div>
 
@@ -195,15 +172,14 @@
           <section class="danger-zone" aria-labelledby="profile-reset-title">
             <div class="danger-header">
               <h3 id="profile-reset-title" class="account-section-title danger-title">数据与账户重置</h3>
-              <span class="danger-desc">不可逆操作，请谨慎执行</span>
             </div>
             <div class="danger-row">
               <div class="row-info">
                 <span class="row-label">重置本地离线数据</span>
                 <span class="row-desc">清除本机离线数据和未同步草稿</span>
               </div>
-              <button class="action-btn danger" type="button" @click="handleResetOfflineData">
-                重置数据
+              <button class="action-btn danger" type="button" aria-label="重置本地离线数据" @click="handleResetOfflineData">
+                重置
               </button>
             </div>
             <div class="danger-row">
@@ -211,8 +187,8 @@
                 <span class="row-label">注销账户</span>
                 <span class="row-desc">停用账户并清理云端数据</span>
               </div>
-              <button class="action-btn danger" type="button" @click="handleDeleteAccount">
-                注销账户
+              <button class="action-btn danger" type="button" aria-label="注销账户" @click="handleDeleteAccount">
+                注销
               </button>
             </div>
           </section>
@@ -221,14 +197,7 @@
 
       <!-- ===== RIGHT PANEL: 分项设置 ===== -->
       <main class="studio-right">
-        <div class="settings-header">
-          <div class="settings-header-badge">
-            <span class="badge-dot"></span>
-            <span>SYSTEM PREFERENCES</span>
-          </div>
-          <h1 class="settings-title">个人偏好与设置</h1>
-          <p class="settings-desc">个性化设置与多设备协同偏好</p>
-        </div>
+        <h1 class="settings-title">个人偏好与设置</h1>
 
         <!-- Settings Groups -->
         <div
@@ -246,8 +215,7 @@
               class="settings-row"
             >
               <div class="row-info">
-                <span class="row-label">{{ item.label }}</span>
-                <span class="row-desc">{{ item.desc }}</span>
+                <span v-if="item.type !== 'action'" class="row-label">{{ item.label }}</span>
               </div>
               <div class="row-control">
                 <!-- Toggle -->
@@ -265,6 +233,7 @@
                   v-else-if="item.type === 'select'"
                   class="settings-select"
                   v-model="item.value"
+                  :aria-label="item.label"
                   @change="handleSelectChange(item)"
                 >
                   <option v-for="opt in item.options" :key="opt" :value="opt">{{ opt }}</option>
@@ -305,7 +274,7 @@
           <div class="settings-row">
             <div class="row-info">
               <span class="row-label">{{ autoOverviewSetting.label }}</span>
-              <span id="profile-auto-overview-desc" class="row-desc">{{ autoOverviewSetting.desc }}</span>
+              <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
             </div>
             <div class="row-control">
               <button
@@ -325,7 +294,6 @@
 
           <div class="ai-subheader">
             <h4 class="group-title ai-subtitle">AI 使用额度</h4>
-            <span class="group-header-desc">账户当前周期的 AI 调用余量</span>
           </div>
           
           <div class="group-items usage-group-body">
@@ -339,7 +307,7 @@
               <div class="usage-card">
                 <div class="usage-card-header">
                   <div class="usage-header-left">
-                    <span class="usage-plan-name">每小时额度 (Hourly)</span>
+                    <span class="usage-plan-name">每小时额度</span>
                     <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
                   </div>
                   <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
@@ -372,7 +340,7 @@
               <div class="usage-card">
                 <div class="usage-card-header">
                   <div class="usage-header-left">
-                    <span class="usage-plan-name">每日额度 (Daily)</span>
+                    <span class="usage-plan-name">每日额度</span>
                     <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
                   </div>
                   <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
@@ -409,31 +377,19 @@
 
           <div class="ai-subheader byok-subheader">
             <h4 class="group-title ai-subtitle">AI 模型与服务</h4>
-            <span class="group-header-desc">配置自定义 AI 模型服务与密钥 (选填)</span>
-          </div>
-          <div class="byok-intro">
-            <div class="row-info">
-              <span class="row-label">自定义 AI 服务商</span>
-              <span class="row-desc">密钥均安全加密保存，仅在发起 AI 请求时使用</span>
-            </div>
-            <div class="byok-status-pill" :class="{ 'is-active': currentProviderHasKey }">
-              <span class="status-dot"></span>
-              <span>{{ currentProviderHasKey ? '已配置密钥' : '未配置密钥' }}</span>
-            </div>
           </div>
 
           <div class="group-items">
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <span class="row-label">AI 服务商</span>
-                <span class="row-desc">支持 DeepSeek、硅基流动或 OpenAI 兼容服务</span>
+                <label class="row-label" for="profile-ai-provider">AI 服务商</label>
               </div>
               <div class="row-control byok-control-wrap">
                 <input
+                  id="profile-ai-provider"
                   v-model="customProvider"
                   type="text"
                   class="settings-input byok-input"
-                  placeholder="如 DEEPSEEK / SILICONFLOW / OpenAI Compatible 服务商"
                   :disabled="aiSettingsInitializing"
                 />
                 <div class="quick-providers-bar">
@@ -454,16 +410,16 @@
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <span class="row-label">对话模型 (Chat Model)</span>
-                <span class="row-desc">如 deepseek-chat、gpt-4o 等</span>
+                <label class="row-label" for="profile-ai-model">对话模型</label>
               </div>
               <div class="row-control byok-control-wrap">
                 <div class="byok-model-detect-group">
                   <input
+                    id="profile-ai-model"
                     v-model="customChatModel"
                     type="text"
                     class="settings-input byok-input byok-model-input"
-                    placeholder="输入模型标识 (如 deepseek-chat / gpt-4o)"
+                    placeholder="如 deepseek-chat"
                   />
                   <button
                     class="action-btn byok-detect-btn"
@@ -494,31 +450,37 @@
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <span class="row-label">Base URL</span>
-                <span class="row-desc">接口请求地址 (选填，留空使用默认服务地址)</span>
+                <label class="row-label" for="profile-ai-base-url">Base URL</label>
+                <span id="profile-ai-base-url-hint" class="row-desc">
+                  {{ canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
+                </span>
               </div>
               <div class="row-control byok-control-wrap">
                 <input
+                  id="profile-ai-base-url"
                   v-model="customBaseUrl"
                   type="text"
                   class="settings-input byok-input"
-                  placeholder="https://api.deepseek.com"
+                  aria-describedby="profile-ai-base-url-hint"
                 />
               </div>
             </div>
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <span class="row-label">API Key</span>
-                <span class="row-desc">个人 API 密钥 (安全加密保存)</span>
+                <label class="row-label" for="profile-ai-key">API Key</label>
+                <span v-if="!aiSettingsInitializing" id="profile-ai-key-status" class="row-desc">
+                  {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
+                </span>
               </div>
               <div class="row-control byok-control-wrap">
                 <div class="api-key-input-wrapper">
                   <input
+                    id="profile-ai-key"
                     v-model="customApiKey"
                     :type="showApiKey ? 'text' : 'password'"
                     class="settings-input byok-input byok-key-input"
-                    :placeholder="currentProviderHasKey ? '•••••••• (已配置，留空保持原密钥)' : 'sk-...'"
+                    :aria-describedby="aiSettingsInitializing ? undefined : 'profile-ai-key-status'"
                     autocomplete="new-password"
                   />
                   <button
@@ -536,7 +498,7 @@
           </div>
 
           <div class="byok-action-footer">
-            <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '保存连接配置后可自动检测模型和测试连接' }}</span>
+            <span class="byok-tip">{{ aiSettingsInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
             <div class="byok-btn-group">
               <button
                 class="action-btn"
@@ -1218,7 +1180,6 @@ const loadStats = async () => {
 interface SettingItem {
   id: string
   label: string
-  desc: string
   type: 'toggle' | 'select' | 'action' | 'input' | 'status'
   value?: any
   options?: string[]
@@ -1231,26 +1192,26 @@ const settingGroups = reactive([
   {
     title: '外观与显示',
     items: [
-      { id: 'dark', label: '深色模式', desc: '适合夜间或弱光环境使用', type: 'toggle', value: settingsStore.isDark },
-      { id: 'compact', label: '紧凑布局', desc: '收紧界面间隙，在单屏内展示更多内容', type: 'toggle', value: settingsStore.compactLayout },
-      { id: 'lang', label: '界面语言', desc: '选择系统界面的主要显示语言', type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
-      { id: 'font_size', label: '基础字号', desc: '调整界面正文字号大小', type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
+      { id: 'dark', label: '深色模式', type: 'toggle', value: settingsStore.isDark },
+      { id: 'compact', label: '紧凑布局', type: 'toggle', value: settingsStore.compactLayout },
+      { id: 'lang', label: '界面语言', type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
+      { id: 'font_size', label: '基础字号', type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
     ] as SettingItem[]
   },
   {
     title: '提醒',
     items: [
-      { id: 'task_remind', label: '任务提醒', desc: '任务到期前发送系统提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
-      { id: 'focus_end', label: '专注结束提醒', desc: '专注倒计时结束时播放提示音与通知', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
+      { id: 'task_remind', label: '任务提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
+      { id: 'focus_end', label: '专注结束提醒', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
     ] as SettingItem[]
   },
   {
     title: '同步与数据',
     items: [
-      { id: 'sync_status', label: '同步状态', desc: '查看当前设备的同步状态', type: 'status', value: '已同步 · 状态正常' },
-      { id: 'auto_sync', label: '自动同步', desc: '在多设备间自动同步学习数据', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
-      { id: 'wifi_only', label: '仅 Wi-Fi 同步', desc: '使用移动网络时暂停同步，节省流量', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
-      { id: 'sync_now', label: '立即同步', desc: '立即检查并同步最新数据', type: 'action', btnText: '立即同步', variant: 'primary' },
+      { id: 'sync_status', label: '同步状态', type: 'status', value: '已同步 · 状态正常' },
+      { id: 'auto_sync', label: '自动同步', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
+      { id: 'wifi_only', label: '仅 Wi-Fi 同步', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
+      { id: 'sync_now', label: '立即同步', type: 'action', btnText: '立即同步', variant: 'primary' },
     ] as SettingItem[]
   },
 ])
@@ -1258,7 +1219,6 @@ const settingGroups = reactive([
 const autoOverviewSetting = reactive({
   id: 'auto_overview',
   label: '自动生成概览',
-  desc: '符合条件的资料解析完成后自动生成大纲和总结。此选项暂不控制生成。',
   type: 'toggle',
   value: localStorage.getItem('sc_setting_auto_overview') !== 'false',
 } satisfies SettingItem)
@@ -1613,30 +1573,6 @@ onMounted(() => {
   letter-spacing: -0.5px;
 }
 
-.user-status-dot {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #637748;
-  border: 2px solid #FAF7F2;
-  box-shadow: 0 0 6px rgba(99, 119, 72, 0.5);
-  animation: breathe-glow 2.4s ease-in-out infinite;
-}
-
-@keyframes breathe-glow {
-  0%, 100% {
-    box-shadow: 0 0 4px rgba(99, 119, 72, 0.4);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow: 0 0 10px rgba(99, 119, 72, 0.8);
-    transform: scale(1.08);
-  }
-}
-
 .avatar-hover-overlay {
   position: absolute;
   inset: 0;
@@ -1838,17 +1774,6 @@ onMounted(() => {
   letter-spacing: -0.2px;
 }
 
-.subject-dist-subtitle {
-  font-size: 11px;
-  font-weight: 700;
-  color: #637748;
-  background: rgba(139, 154, 110, 0.12);
-  padding: 2px 8px;
-  border-radius: 9999px;
-  border: 0.5px solid rgba(139, 154, 110, 0.25);
-  letter-spacing: 0.4px;
-}
-
 .no-data-hint {
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
@@ -1940,44 +1865,11 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
-.account-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.account-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .account-card-title {
   font-size: 13.5px;
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
-}
-
-.account-sec-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 650;
-  color: #637748;
-  background: rgba(139, 154, 110, 0.12);
-  padding: 2px 8px;
-  border-radius: 9999px;
-  border: 0.5px solid rgba(139, 154, 110, 0.25);
-}
-
-.sec-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #637748;
-  box-shadow: 0 0 5px rgba(99, 119, 72, 0.6);
 }
 
 .account-card-body {
@@ -2032,31 +1924,6 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.cell-tag {
-  font-size: 11.5px;
-  font-weight: 650;
-  padding: 3px 9px;
-  border-radius: 9999px;
-  flex-shrink: 0;
-}
-.cell-tag.success {
-  background: rgba(139, 154, 110, 0.14);
-  color: #637748;
-  border: 0.5px solid rgba(139, 154, 110, 0.25);
-}
-.cell-tag.default {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--text-muted, #7A7A75);
-  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-}
-
-.avatar-cell-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 3px;
 }
 
 .mini-avatar {
@@ -2217,47 +2084,13 @@ onMounted(() => {
 }
 
 /* 3.1 标头区 (Swiss Editorial Typography) */
-.settings-header {
-  margin-bottom: 26px;
-  flex-shrink: 0;
-}
-
-.settings-header-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(139, 154, 110, 0.12);
-  border: 0.5px solid rgba(139, 154, 110, 0.25);
-  border-radius: 9999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #637748;
-  letter-spacing: 0.06em;
-  margin-bottom: 10px;
-}
-.settings-header-badge .badge-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #637748;
-  box-shadow: 0 0 5px rgba(99, 119, 72, 0.5);
-}
-
 .settings-title {
   font-size: 24px;
   font-weight: 850;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.03em;
-  margin: 0 0 6px 0;
+  margin: 0 0 26px;
   line-height: 1.2;
-}
-
-.settings-desc {
-  font-size: 13px;
-  color: var(--text-muted, #7A7A75);
-  margin: 0;
-  letter-spacing: -0.1px;
 }
 
 /* 3.2 设置分组 (Settings Groups) */
@@ -2293,11 +2126,6 @@ onMounted(() => {
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
   margin: 0;
-}
-
-.group-header-desc {
-  font-size: 12px;
-  color: var(--text-muted, #7A7A75);
 }
 
 .group-items {
@@ -2513,11 +2341,6 @@ onMounted(() => {
 
 /* ===== 4. AI 使用额度卡片 (AI Usage Cards) ===== */
 .ai-subheader {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 16px;
   padding: 14px 22px 0;
 }
 
@@ -2628,48 +2451,6 @@ onMounted(() => {
 .byok-subheader {
   padding-bottom: 14px;
   border-top: 0.5px solid var(--border-subtle);
-}
-
-.byok-intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 22px;
-  border-bottom: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  background: rgba(139, 154, 110, 0.06);
-  gap: 16px;
-}
-
-.byok-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  font-size: 11.5px;
-  font-weight: 650;
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  color: var(--text-muted, #7A7A75);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.byok-status-pill.is-active {
-  background: rgba(139, 154, 110, 0.16);
-  border-color: rgba(139, 154, 110, 0.35);
-  color: #637748;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-muted, #7A7A75);
-  flex-shrink: 0;
-}
-.byok-status-pill.is-active .status-dot {
-  background: #637748;
-  box-shadow: 0 0 6px rgba(99, 119, 72, 0.7);
 }
 
 .byok-control-wrap {
@@ -2829,15 +2610,7 @@ onMounted(() => {
   padding: 10px 12px;
 }
 
-.danger-title,
-.danger-desc {
-  color: #B03A2E;
-}
-
-.danger-desc {
-  font-size: var(--font-size-caption);
-}
-
+.danger-title {
 .danger-row {
   display: flex;
   align-items: center;
@@ -2925,8 +2698,6 @@ html.dark .usage-stat-val {
 html.dark .stat-label,
 html.dark .row-desc,
 html.dark .cell-sub,
-html.dark .group-header-desc,
-html.dark .settings-desc,
 html.dark .byok-tip,
 html.dark .tray-label,
 html.dark .usage-stat-label,
@@ -2977,21 +2748,6 @@ html.dark .status-pill-badge {
   color: #FAF7F2;
 }
 
-html.dark .byok-intro {
-  background: rgba(139, 154, 110, 0.1);
-  border-bottom-color: rgba(163, 177, 155, 0.16);
-}
-html.dark .byok-status-pill {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.2);
-  color: #9AA096;
-}
-html.dark .byok-status-pill.is-active {
-  background: rgba(139, 154, 110, 0.2);
-  border-color: rgba(139, 154, 110, 0.35);
-  color: #9AB08F;
-}
-
 html.dark .group-header,
 html.dark .byok-action-footer {
   background: rgba(0, 0, 0, 0.12);
@@ -3016,7 +2772,6 @@ html.dark .danger-zone {
   border-color: rgba(217, 83, 79, 0.25);
 }
 html.dark .danger-title,
-html.dark .danger-desc,
 html.dark .session-error {
   color: var(--color-danger);
 }
@@ -3028,16 +2783,6 @@ html.dark .danger-header {
 }
 html.dark .danger-row {
   border-bottom-color: rgba(217, 83, 79, 0.1);
-}
-
-html.dark .settings-header-badge {
-  background: rgba(139, 154, 110, 0.16);
-  border-color: rgba(139, 154, 110, 0.3);
-  color: #9AB08F;
-}
-html.dark .settings-header-badge .badge-dot {
-  background: #9AB08F;
-  box-shadow: 0 0 5px rgba(154, 176, 143, 0.6);
 }
 
 /* ===== 9. 精雕细琢微交互增强体系 (Refinements V2) ===== */
