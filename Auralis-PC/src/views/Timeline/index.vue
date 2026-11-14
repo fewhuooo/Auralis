@@ -1025,6 +1025,11 @@ html.dark .btn-secondary {
 }
 
 /* 3. Day Mode Layout (3-Column Architecture) */
+.timeline-body,
+.weekly-view-container {
+  user-select: none;
+}
+
 .timeline-body {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(270px, 370px);
