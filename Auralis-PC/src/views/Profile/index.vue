@@ -69,111 +69,131 @@
         <section class="account-card" aria-labelledby="profile-account-title">
           <h2 id="profile-account-title" class="account-card-title">账号与安全凭证</h2>
 
-          <div class="account-details">
-            <div class="account-detail">
-              <span class="cell-label">登录账号</span>
-              <span class="cell-val">{{ accountName }}</span>
+          <div class="account-section" role="group" aria-labelledby="profile-account-details-title">
+            <div class="account-section-header">
+              <h3 id="profile-account-details-title" class="account-section-title setting-label-with-icon">
+                <IconId class="setting-icon" aria-hidden="true" />
+                账号资料
+              </h3>
             </div>
-
-            <div class="account-detail">
-              <span class="cell-label">用户昵称</span>
-              <span v-if="!isEditingNickname" class="cell-val">{{ displayName }}</span>
-              <input
-                v-else
-                ref="nicknameInputRef"
-                v-model="newNickname"
-                class="cell-edit-input"
-                aria-label="用户昵称"
-                placeholder="输入新昵称"
-                maxlength="20"
-                @keydown.enter="saveNickname"
-                @keydown.esc="cancelEditNickname"
-              />
-              <button v-if="!isEditingNickname" class="cell-btn" aria-label="修改昵称" @click="startEditNickname">
-                修改
-              </button>
-              <div v-else class="cell-actions">
-                <button class="cell-btn primary" @click="saveNickname">保存</button>
-                <button class="cell-btn" @click="cancelEditNickname">取消</button>
+            <div class="account-details account-section-body">
+              <div class="account-detail">
+                <span class="cell-label">登录账号</span>
+                <span class="cell-val">{{ accountName }}</span>
               </div>
-            </div>
 
-            <div class="account-detail">
-              <span class="cell-label">用户头像</span>
-              <div class="mini-avatar">
-                <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
-                <span v-else>{{ userInitial }}</span>
-              </div>
-              <div class="cell-actions">
-                <button v-if="userAvatarUrl" class="cell-btn" aria-label="重置头像" @click="resetAvatar">
-                  重置
+              <div class="account-detail">
+                <span class="cell-label">用户昵称</span>
+                <span v-if="!isEditingNickname" class="cell-val">{{ displayName }}</span>
+                <input
+                  v-else
+                  ref="nicknameInputRef"
+                  v-model="newNickname"
+                  class="cell-edit-input"
+                  aria-label="用户昵称"
+                  placeholder="输入新昵称"
+                  maxlength="20"
+                  @keydown.enter="saveNickname"
+                  @keydown.esc="cancelEditNickname"
+                />
+                <button v-if="!isEditingNickname" class="cell-btn" aria-label="修改昵称" @click="startEditNickname">
+                  修改
                 </button>
-                <button class="cell-btn" aria-label="更换头像" @click="triggerAvatarUpload">
-                  更换
+                <div v-else class="cell-actions">
+                  <button class="cell-btn primary" @click="saveNickname">保存</button>
+                  <button class="cell-btn" @click="cancelEditNickname">取消</button>
+                </div>
+              </div>
+
+              <div class="account-detail">
+                <span class="cell-label">用户头像</span>
+                <div class="mini-avatar">
+                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
+                  <span v-else>{{ userInitial }}</span>
+                </div>
+                <div class="cell-actions">
+                  <button v-if="userAvatarUrl" class="cell-btn" aria-label="重置头像" @click="resetAvatar">
+                    重置
+                  </button>
+                  <button class="cell-btn" aria-label="更换头像" @click="triggerAvatarUpload">
+                    更换
+                  </button>
+                </div>
+              </div>
+
+              <div class="account-detail">
+                <span class="cell-label">登录密码</span>
+                <span class="cell-sub">••••••••</span>
+                <button class="cell-btn" aria-label="修改密码" @click="openPasswordModal">
+                  修改
                 </button>
               </div>
-            </div>
-
-            <div class="account-detail">
-              <span class="cell-label">登录密码</span>
-              <span class="cell-sub">••••••••</span>
-              <button class="cell-btn" aria-label="修改密码" @click="openPasswordModal">
-                修改
-              </button>
             </div>
           </div>
 
           <section class="account-sessions" aria-labelledby="profile-sessions-title">
             <div class="account-section-header">
-              <h3 id="profile-sessions-title" class="account-section-title">登录设备管理</h3>
+              <h3 id="profile-sessions-title" class="account-section-title setting-label-with-icon">
+                <IconDevices class="setting-icon" aria-hidden="true" />
+                登录设备管理
+              </h3>
               <button class="cell-btn" type="button" @click="handleLogout">退出登录</button>
             </div>
-            <p v-if="sessionsLoading" class="session-empty">正在加载设备列表...</p>
-            <p v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</p>
-            <p v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</p>
-            <div v-else>
-              <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-operation">
-                <div class="row-info">
-                  <div class="session-title-line">
-                    <span class="row-label">{{ session.deviceName || session.platform || '未知设备' }}</span>
-                    <span v-if="isCurrentSession(session)" class="session-current-pill">当前设备</span>
+            <div class="account-section-body">
+              <p v-if="sessionsLoading" class="session-empty">正在加载设备列表...</p>
+              <p v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</p>
+              <p v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</p>
+              <div v-else>
+                <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-operation">
+                  <div class="row-info">
+                    <div class="session-title-line">
+                      <span class="row-label">{{ session.deviceName || session.platform || '未知设备' }}</span>
+                      <span v-if="isCurrentSession(session)" class="session-current-pill">当前设备</span>
+                    </div>
+                    <span class="row-desc">
+                      {{ session.platform || 'UNKNOWN' }} · 最近活跃 {{ formatSessionDate(session.lastUsedAt) }}
+                    </span>
                   </div>
-                  <span class="row-desc">
-                    {{ session.platform || 'UNKNOWN' }} · 最近活跃 {{ formatSessionDate(session.lastUsedAt) }}
-                  </span>
+                  <button
+                    v-if="session.id && !isCurrentSession(session)"
+                    class="cell-btn danger"
+                    type="button"
+                    :disabled="revokingSessionId === session.id"
+                    @click="handleRevokeSession(session)"
+                  >
+                    {{ revokingSessionId === session.id ? '下线中...' : '下线' }}
+                  </button>
                 </div>
-                <button
-                  v-if="session.id && !isCurrentSession(session)"
-                  class="cell-btn danger"
-                  type="button"
-                  :disabled="revokingSessionId === session.id"
-                  @click="handleRevokeSession(session)"
-                >
-                  {{ revokingSessionId === session.id ? '下线中...' : '下线' }}
-                </button>
               </div>
             </div>
           </section>
 
           <section class="danger-zone" aria-labelledby="profile-reset-title">
-            <h3 id="profile-reset-title" class="account-section-title">数据与账户重置</h3>
-            <div class="account-operation">
-              <div class="row-info">
-                <span class="row-label">重置本地离线数据</span>
-                <span class="row-desc">清除本机离线数据和未同步草稿</span>
-              </div>
-              <button class="cell-btn danger" type="button" aria-label="重置本地离线数据" @click="handleResetOfflineData">
-                重置
-              </button>
+            <div class="account-section-header">
+              <h3 id="profile-reset-title" class="account-section-title setting-label-with-icon">
+                <IconShieldLock class="setting-icon" aria-hidden="true" />
+                数据与账户重置
+              </h3>
             </div>
-            <div class="account-operation">
-              <div class="row-info">
-                <span class="row-label">注销账户</span>
-                <span class="row-desc">停用账户并清理云端数据</span>
+            <div class="account-section-body">
+              <div class="account-operation">
+                <div class="row-info">
+                  <span class="row-label">重置本地离线数据</span>
+                  <span class="row-desc">清除本机离线数据和未同步草稿</span>
+                </div>
+                <button class="cell-btn danger" type="button" aria-label="重置本地离线数据" @click="handleResetOfflineData">
+                  重置
+                </button>
               </div>
-              <button class="cell-btn danger" type="button" aria-label="注销账户" @click="handleDeleteAccount">
-                注销
-              </button>
+              <div class="account-operation">
+                <div class="row-info">
+                  <span class="row-label">注销账户</span>
+                  <span class="row-desc">停用账户并清理云端数据</span>
+                </div>
+                <button class="cell-btn danger" type="button" aria-label="注销账户" @click="handleDeleteAccount">
+                  注销
+                </button>
+              </div>
             </div>
           </section>
         </section>
@@ -564,11 +584,13 @@ import {
   IconCloud,
   IconCpu,
   IconDeviceDesktop,
+  IconDevices,
   IconEye,
   IconEyeOff,
   IconFileDescription,
   IconFlame,
   IconGauge,
+  IconId,
   IconKey,
   IconLanguage,
   IconLayoutRows,
@@ -578,6 +600,7 @@ import {
   IconNotes,
   IconRefresh,
   IconServer,
+  IconShieldLock,
   IconSparkles,
   IconTextSize,
   IconTrendingUp,
@@ -1896,12 +1919,14 @@ onMounted(() => {
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
 .account-card-title {
   margin: 0;
+  padding-block-end: 12px;
+  border-block-end: 1px solid var(--border-subtle);
   font-size: var(--font-size-body);
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
@@ -2559,8 +2584,8 @@ onMounted(() => {
 
 .account-sessions,
 .danger-zone {
-  border-top: 0.5px solid var(--border-subtle);
-  padding-top: 10px;
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: 14px;
 }
 
 .account-section-header {
@@ -2568,6 +2593,15 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-block-end: 6px;
+}
+
+.account-section-title .setting-icon {
+  color: var(--text-accent);
+}
+
+.account-section-body {
+  margin-inline-start: 24px;
 }
 
 .session-empty {
