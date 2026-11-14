@@ -260,6 +260,30 @@
             </h3>
           </div>
 
+          <div class="settings-row ai-overview-row">
+            <div class="row-info">
+              <span class="row-label setting-label-with-icon">
+                <IconFileDescription class="setting-icon" aria-hidden="true" />
+                {{ autoOverviewSetting.label }}
+              </span>
+              <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
+            </div>
+            <div class="row-control">
+              <button
+                class="toggle-btn"
+                type="button"
+                role="switch"
+                :aria-checked="autoOverviewSetting.value"
+                :aria-label="autoOverviewSetting.label"
+                aria-describedby="profile-auto-overview-desc"
+                :class="{ 'is-on': autoOverviewSetting.value }"
+                @click="handleToggle(autoOverviewSetting)"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+
           <div class="ai-subheader byok-subheader">
             <h4 class="group-title ai-subtitle setting-label-with-icon">
               <IconCpu class="setting-icon" aria-hidden="true" />
@@ -502,31 +526,7 @@
               </div>
             </div>
           </div>
-
-          <div class="settings-row ai-overview-row">
-            <div class="row-info">
-              <span class="row-label setting-label-with-icon">
-                <IconFileDescription class="setting-icon" aria-hidden="true" />
-                {{ autoOverviewSetting.label }}
-              </span>
-              <span id="profile-auto-overview-desc" class="row-desc">保存偏好，暂不控制生成。</span>
-            </div>
-            <div class="row-control">
-              <button
-                class="toggle-btn"
-                type="button"
-                role="switch"
-                :aria-checked="autoOverviewSetting.value"
-                :aria-label="autoOverviewSetting.label"
-                aria-describedby="profile-auto-overview-desc"
-                :class="{ 'is-on': autoOverviewSetting.value }"
-                @click="handleToggle(autoOverviewSetting)"
-              >
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
-          </div>
-</section>
+        </section>
       </main>
 
     <!-- Password Change Modal (修改密码弹窗) -->
@@ -2333,8 +2333,7 @@ onMounted(() => {
   padding: 14px 22px 0;
 }
 
-.usage-subheader,
-.ai-overview-row {
+.usage-subheader {
   border-top: 0.5px solid var(--border-subtle);
 }
 
@@ -2526,7 +2525,6 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 22px;
-  background: rgba(0, 0, 0, 0.015);
   border-top: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   gap: 16px;
 }
@@ -2739,9 +2737,12 @@ html.dark .status-pill-badge {
   color: #FAF7F2;
 }
 
-html.dark .group-header,
-html.dark .byok-action-footer {
+html.dark .group-header {
   background: rgba(0, 0, 0, 0.12);
+  border-color: rgba(163, 177, 155, 0.14);
+}
+
+html.dark .byok-action-footer {
   border-color: rgba(163, 177, 155, 0.14);
 }
 
