@@ -328,19 +328,6 @@
                     class="settings-input byok-input"
                     :disabled="aiSettingsInitializing"
                   />
-                  <div class="quick-providers-bar">
-                    <button
-                      v-for="qp in quickProviders"
-                      :key="qp.provider"
-                      type="button"
-                      class="quick-preset-chip"
-                      :class="{ 'is-active': normalizeProvider(customProvider) === qp.provider }"
-                      :disabled="aiSettingsInitializing"
-                      @click="applyQuickProvider(qp)"
-                    >
-                      {{ qp.name }}
-                    </button>
-                  </div>
                 </div>
               </div>
 
@@ -931,11 +918,11 @@ const dayMapping: Record<string, string> = {
 }
 
 // === BYOK AI Settings ===
-const quickProviders = [
-  { name: 'DeepSeek', provider: 'DEEPSEEK', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
-  { name: 'SiliconFlow', provider: 'SILICONFLOW', model: 'deepseek-ai/DeepSeek-V3', baseUrl: 'https://api.siliconflow.cn/v1' },
-  { name: 'OpenAI 兼容', provider: 'OPENAI_COMPATIBLE', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
-] as const
+const defaultAiBaseUrls: Record<CanonicalAiProvider, string> = {
+  DEEPSEEK: 'https://api.deepseek.com',
+  SILICONFLOW: 'https://api.siliconflow.cn/v1',
+  OPENAI_COMPATIBLE: '',
+}
 
 const defaultDeepSeekModel = 'deepseek-chat'
 const customProvider = ref('DEEPSEEK')
@@ -956,24 +943,14 @@ const currentProviderSetting = computed(() =>
   aiSettingsList.value.find((item) => item.provider === canonicalAiProvider.value),
 )
 const currentProviderHasKey = computed(() => Boolean(currentProviderSetting.value?.hasApiKey))
-const effectiveAiBaseUrl = computed(() => {
-  const provider = canonicalAiProvider.value
-  return customBaseUrl.value.trim() || (provider === 'OPENAI_COMPATIBLE'
-    ? ''
-    : quickProviders.find((preset) => preset.provider === provider)?.baseUrl || '')
-})
+const effectiveAiBaseUrl = computed(() => customBaseUrl.value.trim() || defaultAiBaseUrls[canonicalAiProvider.value])
 
-const loadAiProviderForm = (provider: CanonicalAiProvider, preset?: (typeof quickProviders)[number]) => {
+const loadAiProviderForm = (provider: CanonicalAiProvider) => {
   const saved = currentProviderSetting.value
   customApiKey.value = ''
   showApiKey.value = false
-  customBaseUrl.value = saved?.baseUrl ?? preset?.baseUrl ?? ''
-  customChatModel.value = saved?.chatModel ?? preset?.model ?? (provider === 'DEEPSEEK' ? defaultDeepSeekModel : '')
-}
-
-const applyQuickProvider = (preset: (typeof quickProviders)[number]) => {
-  customProvider.value = preset.provider
-  loadAiProviderForm(preset.provider, preset)
+  customBaseUrl.value = saved?.baseUrl ?? ''
+  customChatModel.value = saved?.chatModel ?? (provider === 'DEEPSEEK' ? defaultDeepSeekModel : '')
 }
 
 watch(canonicalAiProvider, (provider) => loadAiProviderForm(provider), { flush: 'sync' })
@@ -2881,40 +2858,6 @@ html.dark .session-current-pill {
   box-shadow: 0 0 6px rgba(212, 168, 126, 0.5);
 }
 
-/* 9.4 Provider 快速预设 (Quick Provider Presets) */
-.quick-providers-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  width: 100%;
-  flex-wrap: wrap;
-}
-.quick-preset-chip {
-  padding: 3px 9px;
-  border-radius: 9999px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: rgba(0, 0, 0, 0.035);
-  border: 0.5px solid rgba(0, 0, 0, 0.08);
-  color: var(--text-secondary, #344139);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  font-family: inherit;
-}
-.quick-preset-chip:hover {
-  background: rgba(139, 154, 110, 0.12);
-  border-color: rgba(139, 154, 110, 0.3);
-  color: #637748;
-  transform: translateY(-1px);
-}
-.quick-preset-chip.is-active {
-  background: rgba(139, 154, 110, 0.18);
-  border-color: #8B9A6E;
-  color: #637748;
-  font-weight: 700;
-}
-
 /* 9.5 API Key 密码框与显隐小眼睛 (Eye Toggle) */
 .api-key-input-wrapper {
   position: relative;
@@ -2979,22 +2922,6 @@ html.dark .usage-percent-badge {
   background: rgba(139, 154, 110, 0.2);
   border-color: rgba(139, 154, 110, 0.35);
   color: #9AB08F;
-}
-
-html.dark .quick-preset-chip {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(163, 177, 155, 0.16);
-  color: #C0C5BD;
-}
-html.dark .quick-preset-chip:hover {
-  background: rgba(139, 154, 110, 0.16);
-  border-color: rgba(139, 154, 110, 0.35);
-  color: #9AB08F;
-}
-html.dark .quick-preset-chip.is-active {
-  background: rgba(139, 154, 110, 0.24);
-  border-color: #9AB08F;
-  color: #FAF7F2;
 }
 
 html.dark .eye-toggle-btn {

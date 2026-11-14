@@ -123,7 +123,7 @@ async function mountAiSettingsForm({
     ${normalizeProvider.replace('export ', '')}
     ${form}
     ;({ customProvider, customBaseUrl, customChatModel, customApiKey, detectingModels, detectedModels,
-        quickProviders, applyQuickProvider, loadAiSettings, handleSaveAiSettings, handleTestConnection,
+        loadAiSettings, handleSaveAiSettings, handleTestConnection,
         handleDetectModels })
   `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } })
   const updates = []
@@ -158,7 +158,7 @@ test('Profile loads the selected Provider settings and requires an explicit save
   })
   await form.loading
   form.customApiKey.value = 'synthetic-deepseek-key'
-  form.applyQuickProvider(form.quickProviders.find((preset) => preset.provider === compatibleSettings.provider))
+  form.customProvider.value = compatibleSettings.provider
   assert.equal(form.customApiKey.value, '')
   assert.equal(form.customBaseUrl.value, compatibleSettings.baseUrl)
   assert.equal(form.customChatModel.value, compatibleSettings.chatModel)
@@ -177,7 +177,8 @@ test('Profile loads the selected Provider settings and requires an explicit save
   assert.equal(form.notifications.at(-1).title, '请先保存 AI 配置')
 
   form.customApiKey.value = 'synthetic-draft-endpoint-key'
-  form.applyQuickProvider(form.quickProviders.find((preset) => preset.provider === compatibleSettings.provider))
+  form.customProvider.value = 'DeepSeek'
+  form.customProvider.value = compatibleSettings.provider
   assert.equal(form.customBaseUrl.value, compatibleSettings.baseUrl)
   assert.equal(form.customApiKey.value, '')
 
@@ -214,7 +215,7 @@ test('Profile discards late model candidates after switching Providers or changi
   await form.loading
   const previous = form.handleDetectModels()
   assert.equal(requests[0].provider, 'DEEPSEEK')
-  form.applyQuickProvider(form.quickProviders.find((preset) => preset.provider === compatibleSettings.provider))
+  form.customProvider.value = compatibleSettings.provider
   form.customChatModel.value = ''
   const current = form.handleDetectModels()
   assert.equal(requests[1].provider, 'OPENAI_COMPATIBLE')
