@@ -7,7 +7,7 @@ import {
 } from '@/api/useTaskApi'
 import { useAuthStore } from '@/store/useAuthStore'
 import { getLocalRepository } from '@/services/localDb'
-import { LocalConflictError, taskScheduleState, type LocalCommitInput, type LocalRepository } from '@/services/localRepository'
+import { LocalConflictError, taskScheduleState, type LocalCommitInput, type LocalRepository, type LocalScheduleBatchCommitInput } from '@/services/localRepository'
 import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { isOnline, useSyncStore } from '@/store/useSyncStore'
@@ -631,9 +631,10 @@ export const useTaskStore = defineStore('task', () => {
 
       const source = plan.models.find((model) => model.id === intent.taskId)
       if (!source) throw new Error('排期事务缺少源任务')
-      const expectedScheduleState = taskScheduleState(tasks.map((task) => ({
+      const baselineRows = tasks.map((task) => ({
         id: task.id, version: task.version, deletedAt: task.deletedAt, value: taskDto(task),
-      })))
+      }))
+      const expectedScheduleState = taskScheduleState(baselineRows)
 
       if (intent.type === 'week') {
         const pending = await (await repository()).listUnresolved('TASK')
@@ -652,20 +653,23 @@ export const useTaskStore = defineStore('task', () => {
         await assertScheduleDaySynced(intent.dateKey, source.id)
       }
 
-      return commitOfflineSchedule(plan, source, expectedScheduleState)
+      return commitOfflineSchedule(plan, source, {
+        expectedScheduleState,
+        expectedSwapScheduleState: plan.mutationType === 'SCHEDULE_SWAP' ? taskScheduleState(baselineRows, false) : undefined,
+      })
     })
   }
 
   async function commitOfflineSchedule(
     plan: TimelineDropPlan,
     source: TaskModel,
-    expectedScheduleState: string,
+    baseline: Pick<LocalScheduleBatchCommitInput, 'expectedScheduleState' | 'expectedSwapScheduleState'>,
   ): Promise<ScheduleInsertionResult> {
     const payload = plan.mutationType === 'SCHEDULE_UNSCHEDULE' ? updatePayload(source) : plan.payload
     const repo = await repository()
     try {
       await repo.commitScheduleMutation({
-        expectedScheduleState,
+        ...baseline,
         items: plan.models.map((model) => ({
           resourceType: 'TASK',
           resourceId: model.id,

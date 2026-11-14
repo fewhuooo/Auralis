@@ -1721,6 +1721,47 @@ test('a second swap accepts the same source time after the first swap receipt re
   assert.equal((await repository.read('TASK', b.id)).value.scheduledAt, b.scheduledAt);
 });
 
+test('a swap saves with current versions when a receipt settles between planning and local write', async () => {
+  const dateKey = '2099-10-06';
+  const at = (time) => new Date(`${dateKey}T${time}:00`).toISOString();
+  const a = deadlineTask('swap-version-a', { scheduledAt: at('09:00'), dueAt: at('20:00'), durationMinutes: 30 });
+  const b = deadlineTask('swap-version-b', { scheduledAt: at('10:00'), dueAt: at('20:00'), durationMinutes: 30 });
+  const { taskStore, repository } = await createTaskStoreFixture([a, b]);
+  await taskStore.loadLocalTasks();
+  const swap = { type: 'swap', taskId: a.id, targetTaskId: b.id, dateKey };
+  await taskStore.applyTimelineDrop({ ...swap, sourceScheduledAt: a.scheduledAt });
+
+  const [first] = await repository.claimPending(200);
+  const commit = repository.commitScheduleMutation.bind(repository);
+  repository.commitScheduleMutation = async (input) => {
+    assert.equal(input.mutation.baseVersion, a.version, 'the second swap planned before the receipt');
+    await repository.resolveScheduleMutation({
+      clientMutationId: first.clientMutationId,
+      status: 'applied',
+      items: first.payload._localExpectedTasks.map(({ id, value }) => ({
+        resourceType: 'TASK', resourceId: id, version: value.version + 1, deletedAt: null,
+        value: { ...value, title: `Updated ${id}`, scheduledAt: value.scheduledAt.replace('.000Z', 'Z') },
+      })),
+    });
+    return commit(input);
+  };
+  await taskStore.applyTimelineDrop({ ...swap, sourceScheduledAt: b.scheduledAt });
+
+  const pending = await repository.listUnresolved('TASK');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].baseVersion, a.version + 1);
+  assert.equal(pending[0].payload.sourceBaseVersion, a.version + 1);
+  assert.equal(pending[0].payload.targetBaseVersion, b.version + 1);
+  for (const original of [a, b]) {
+    const row = await repository.read('TASK', original.id);
+    assert.equal(row.version, original.version + 1);
+    assert.equal(row.value.version, row.version);
+    assert.equal(row.value.title, `Updated ${original.id}`);
+    assert.equal(row.value.scheduledAt, original.scheduledAt);
+    assert.deepEqual(pending[0].payload._localExpectedTasks.find(({ id }) => id === original.id).value, row.value);
+  }
+});
+
 test('one real sync-store flush drains saved schedule intentions and stops on PROCESSING', async () => {
   const { useSyncApi } = await import('../src/api/useSyncApi.ts');
   const originalPush = useSyncApi.pushChanges;

@@ -26,6 +26,7 @@ import {
 } from '@/services/legacyLocalData'
 import { DOCUMENT_JOB_PHASES, type CreateDocumentProcessingJobInput, type DocumentJobPhase, type DocumentJobTransitionOptions, type DocumentProcessingJob } from '@/types/documentProcessing'
 import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
+import { parseDueTimestamp } from '@/services/taskViewRules'
 
 export type LocalResourceKey = { resourceType: string; resourceId: string }
 
@@ -61,6 +62,7 @@ export interface LocalScheduleBatchCommitInput<T = unknown> {
   items: Array<Omit<LocalCommitInput<T>, 'mutation'>>
   mutation: LocalMutationInput
   expectedScheduleState?: string
+  expectedSwapScheduleState?: string
 }
 
 export interface LocalScheduleMutationResolution {
@@ -293,11 +295,18 @@ function projectKnowledgeBlockConflictResolution(
 }
 
 /** Detect optimistic schedule edits too: they intentionally retain server versions. */
-export function taskScheduleState(rows: ReadonlyArray<Pick<LocalEntity<unknown>, 'id' | 'version' | 'deletedAt' | 'value'>>): string {
-  const instant = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : value ?? null
+export function taskScheduleState(
+  rows: ReadonlyArray<Pick<LocalEntity<unknown>, 'id' | 'version' | 'deletedAt' | 'value'>>,
+  includeVersions = true,
+): string {
+  const instant = (value: unknown, parse = Date.parse) => {
+    const timestamp = typeof value === 'string' ? parse(value) : Number.NaN
+    return Number.isFinite(timestamp) ? timestamp : value ?? null
+  }
   return JSON.stringify(rows.filter((row) => row.deletedAt === null).map((row) => {
     const value = row.value as Record<string, unknown>
-    return [row.id, row.version, value.status, instant(value.scheduledAt), instant(value.dueAt), value.durationMinutes ?? 30]
+    return [row.id, includeVersions ? row.version : null, value.status, instant(value.scheduledAt),
+      instant(value.dueAt, parseDueTimestamp), value.durationMinutes ?? 30]
   }).sort((left, right) => String(left[0]).localeCompare(String(right[0]))))
 }
 
@@ -905,7 +914,46 @@ export class LocalRepository {
       || !taskIds.every((taskId) => affectedTaskIds.includes(taskId))) {
       throw new Error('A schedule mutation must fence every optimistic Task row')
     }
-    mutation.payload._localExpectedTasks = input.items.map((item) => ({ id: item.resourceId, value: clone(item.value) }))
+    const prepareEntities = (rows: LocalEntity<T>[]): LocalEntity<T>[] => {
+      const baselineChanged = input.expectedScheduleState !== undefined
+        && taskScheduleState(rows) !== input.expectedScheduleState
+      const targetTaskId = mutation.payload.targetTaskId
+      if (baselineChanged && (mutation.mutationType !== 'SCHEDULE_SWAP'
+        || mutation.payload.sourceTaskId !== mutation.resourceId
+        || targetTaskId === mutation.resourceId || typeof targetTaskId !== 'string'
+        || taskIds.length !== 2 || !taskIds.includes(targetTaskId)
+        || input.expectedSwapScheduleState !== taskScheduleState(rows, false))) {
+        throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
+      }
+      const existingById = new Map(rows.map((row) => [row.id, row]))
+      const entities = input.items.map((item): LocalEntity<T> => {
+        const existing = existingById.get(item.resourceId) ?? null
+        if (!existing || existing.deletedAt !== null) {
+          throw new LocalConflictError(existing, `TASK/${item.resourceId} is not active locally`)
+        }
+        if (!baselineChanged || existing.version < item.version) {
+          this.assertBaseVersion(existing, item.expectedLocalVersion, item.resourceType, item.resourceId)
+        }
+        if (!baselineChanged) return { ...existing, syncStatus: 'pending', value: clone(item.value) }
+
+        // A receipt can advance versions without changing the calculated swap. Keep the latest Task fields.
+        if (!existing.value || typeof existing.value !== 'object'
+          || !item.value || typeof item.value !== 'object' || !('scheduledAt' in item.value)) {
+          throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
+        }
+        if (item.resourceId === mutation.resourceId) {
+          mutation.baseVersion = existing.version
+          mutation.payload.sourceBaseVersion = existing.version
+        } else {
+          mutation.payload.targetBaseVersion = existing.version
+        }
+        return { ...existing, syncStatus: 'pending', value: {
+          ...existing.value, scheduledAt: item.value.scheduledAt, version: existing.version,
+        } }
+      })
+      mutation.payload._localExpectedTasks = entities.map((entity) => ({ id: entity.id, value: clone(entity.value) }))
+      return entities
+    }
     const prepareAppend = (unresolved: LocalMutation[]) => {
       const schedules = unresolved.filter(isScheduleCommand).sort(mutationOrder)
       if (unresolved.some((pending) => isScheduleCommand(pending)
@@ -922,30 +970,13 @@ export class LocalRepository {
 
     if (this.sql) {
       return this.runSqlTransaction(async (database) => {
-        if (input.expectedScheduleState !== undefined) {
-          const currentRows = await database.select<LocalResourceRow>(
-            `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
-             FROM local_resource_records WHERE user_id = $1 AND resource_type = 'TASK'`, [this.userId],
-          )
-          if (taskScheduleState(currentRows.map(resourceFromRow)) !== input.expectedScheduleState) {
-            throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
-          }
-        }
-        const resourcePredicates = input.items.map((_, index) =>
-          `(resource_type = $${index * 2 + 2} AND resource_id = $${index * 2 + 3})`)
+        const resourceFilter = input.expectedScheduleState !== undefined ? '' : ` AND resource_id IN (${taskIds.map((_, index) => `$${index + 2}`).join(', ')})`
         const existingRows = await database.select<LocalResourceRow>(
           `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
-           FROM local_resource_records WHERE user_id = $1 AND (${resourcePredicates.join(' OR ')})`,
-          [this.userId, ...input.items.flatMap((item) => [item.resourceType, item.resourceId])],
+           FROM local_resource_records WHERE user_id = $1 AND resource_type = 'TASK'${resourceFilter}`,
+          input.expectedScheduleState !== undefined ? [this.userId] : [this.userId, ...taskIds],
         )
-        const existingByKey = new Map(existingRows.map((row) => [resourceKey(row.resource_type, row.resource_id), resourceFromRow(row)]))
-        for (const item of input.items) {
-          const existing = existingByKey.get(resourceKey(item.resourceType, item.resourceId)) ?? null
-          if (!existing || existing.deletedAt !== null) {
-            throw new LocalConflictError(existing, `TASK/${item.resourceId} is not active locally`)
-          }
-          this.assertBaseVersion(existing, item.expectedLocalVersion, item.resourceType, item.resourceId)
-        }
+        const entities = prepareEntities(existingRows.map(resourceFromRow<T>))
         const unresolvedRows = await database.select<LocalMutationRow>(
           `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
                   payload, status, created_at, error, in_flight_at, remote_payload, remote_version
@@ -961,15 +992,6 @@ export class LocalRepository {
         )
         if (duplicateId.length > 0) throw new LocalConflictError(null, `Mutation ${mutation.clientMutationId} already exists`)
 
-        const entities = input.items.map((item): LocalEntity<T> => ({
-          id: item.resourceId,
-          resourceType: 'TASK',
-          userId: this.userId,
-          version: item.version,
-          deletedAt: null,
-          syncStatus: 'pending',
-          value: clone(item.value),
-        }))
         for (const entity of entities) {
           await database.execute(
             `INSERT INTO local_resource_records
@@ -995,32 +1017,13 @@ export class LocalRepository {
 
     return this.withBrowserStateLock(() => {
       const state = this.readBrowserState()
-      if (input.expectedScheduleState !== undefined && taskScheduleState(state.resources.filter((row) =>
-        row.userId === this.userId && row.resourceType === 'TASK')) !== input.expectedScheduleState) {
-        throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
-      }
+      const entities = prepareEntities(state.resources.filter((row) => row.userId === this.userId
+        && row.resourceType === 'TASK') as LocalEntity<T>[])
       prepareAppend(state.mutations.filter((pending) => pending.userId === this.userId
         && pending.resourceType === 'TASK' && isUnresolved(pending)))
-      for (const item of input.items) {
-        const existing = state.resources.find((resource) => resource.userId === this.userId
-          && resource.resourceType === item.resourceType && resource.id === item.resourceId) ?? null
-        if (!existing || existing.deletedAt !== null) {
-          throw new LocalConflictError(existing, `TASK/${item.resourceId} is not active locally`)
-        }
-        this.assertBaseVersion(existing, item.expectedLocalVersion, item.resourceType, item.resourceId)
-      }
       if (state.mutations.some((item) => item.userId === this.userId && item.clientMutationId === mutation.clientMutationId)) {
         throw new LocalConflictError(null, `Mutation ${mutation.clientMutationId} already exists`)
       }
-      const entities = input.items.map((item): LocalEntity<T> => ({
-        id: item.resourceId,
-        resourceType: 'TASK',
-        userId: this.userId,
-        version: item.version,
-        deletedAt: null,
-        syncStatus: 'pending',
-        value: clone(item.value),
-      }))
       for (const entity of entities) {
         const index = state.resources.findIndex((resource) => resource.userId === this.userId
           && resource.resourceType === 'TASK' && resource.id === entity.id)

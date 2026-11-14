@@ -1603,20 +1603,24 @@ for (const backend of ['browser', 'sqlite']) {
     try {
       await first.upsert('TASK', 'a', a, { version: 2 });
       await first.upsert('TASK', 'b', b, { version: 4 });
-      const baseline = taskScheduleState(await first.list('TASK'));
+      const baseline = await first.list('TASK');
       await second.commitScheduleMutation({
         items: [{ resourceType: 'TASK', resourceId: 'a', value: { ...a, scheduledAt: '2099-10-06T11:00:00Z' },
           version: 2, expectedLocalVersion: 2, deletedAt: null }],
         mutation: { clientMutationId: 'other-window', resourceType: 'TASK', resourceId: 'a', mutationType: 'SCHEDULE_INSERTION',
           baseVersion: 2, payload: { taskId: 'a', baseVersion: 2, _localAffectedTaskIds: ['a'] } },
       });
-      await assert.rejects(first.commitScheduleMutation({
-        expectedScheduleState: baseline,
-        items: [{ resourceType: 'TASK', resourceId: 'b', value: { ...b, scheduledAt: '2099-10-06T11:00:00Z' },
-          version: 4, expectedLocalVersion: 4, deletedAt: null }],
-        mutation: { clientMutationId: 'stale-window', resourceType: 'TASK', resourceId: 'b', mutationType: 'SCHEDULE_INSERTION',
-          baseVersion: 4, payload: { taskId: 'b', baseVersion: 4, _localAffectedTaskIds: ['b'] } },
-      }), /排期已在其他窗口更新/);
+      const swap = {
+        expectedScheduleState: taskScheduleState(baseline),
+        expectedSwapScheduleState: taskScheduleState(baseline, false),
+        items: [
+          { resourceType: 'TASK', resourceId: 'a', value: { ...a, scheduledAt: b.scheduledAt }, version: 2, expectedLocalVersion: 2, deletedAt: null },
+          { resourceType: 'TASK', resourceId: 'b', value: { ...b, scheduledAt: a.scheduledAt }, version: 4, expectedLocalVersion: 4, deletedAt: null },
+        ],
+        mutation: { clientMutationId: 'stale-window', resourceType: 'TASK', resourceId: 'a', mutationType: 'SCHEDULE_SWAP',
+          baseVersion: 2, payload: { sourceTaskId: 'a', sourceBaseVersion: 2, targetTaskId: 'b', targetBaseVersion: 4, _localAffectedTaskIds: ['a', 'b'] } },
+      };
+      await assert.rejects(first.commitScheduleMutation(swap), /排期已在其他窗口更新/);
       assert.equal((await first.read('TASK', 'a')).value.scheduledAt, '2099-10-06T11:00:00Z');
       assert.equal((await first.read('TASK', 'b')).value.scheduledAt, b.scheduledAt);
       assert.equal((await first.listUnresolved('TASK')).length, 1);
