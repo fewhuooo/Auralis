@@ -1902,7 +1902,7 @@ onMounted(() => {
 
 .account-card-title {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--font-size-body);
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
@@ -2553,7 +2553,7 @@ onMounted(() => {
 .account-section-title {
   margin: 0;
   color: var(--text-primary);
-  font-size: var(--font-size-body-sm);
+  font-size: var(--font-size-label);
   font-weight: 750;
 }
 
@@ -2594,6 +2594,10 @@ onMounted(() => {
 .account-operation .row-label,
 .account-operation .row-desc {
   overflow-wrap: anywhere;
+}
+
+.account-operation .row-label {
+  font-size: var(--font-size-body-sm);
 }
 
 .session-title-line {
