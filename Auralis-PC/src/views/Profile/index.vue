@@ -159,10 +159,64 @@
             </div>
           </div>
 
+          <section class="account-sessions" aria-labelledby="profile-sessions-title">
+            <h3 id="profile-sessions-title" class="account-section-title">登录设备管理</h3>
+            <p v-if="sessionsLoading" class="session-empty">正在加载设备列表...</p>
+            <p v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</p>
+            <p v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</p>
+            <div v-else class="account-card-body">
+              <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-cell session-row">
+                <div class="row-info">
+                  <div class="session-title-line">
+                    <span class="row-label">{{ session.deviceName || session.platform || '未知设备' }}</span>
+                    <span v-if="isCurrentSession(session)" class="session-current-pill">当前设备</span>
+                  </div>
+                  <span class="row-desc">
+                    {{ session.platform || 'UNKNOWN' }} · 最近活跃 {{ formatSessionDate(session.lastUsedAt) }}
+                  </span>
+                </div>
+                <button
+                  v-if="session.id && !isCurrentSession(session)"
+                  class="action-btn danger"
+                  type="button"
+                  :disabled="revokingSessionId === session.id"
+                  @click="handleRevokeSession(session)"
+                >
+                  {{ revokingSessionId === session.id ? '下线中...' : '下线' }}
+                </button>
+              </div>
+            </div>
+          </section>
+
           <!-- 账号快捷操作 -->
           <div class="account-card-actions">
             <button class="account-btn danger" type="button" @click="handleLogout">退出登录</button>
           </div>
+
+          <section class="danger-zone" aria-labelledby="profile-reset-title">
+            <div class="danger-header">
+              <h3 id="profile-reset-title" class="account-section-title danger-title">数据与账户重置</h3>
+              <span class="danger-desc">不可逆操作，请谨慎执行</span>
+            </div>
+            <div class="danger-row">
+              <div class="row-info">
+                <span class="row-label">重置本地离线数据</span>
+                <span class="row-desc">清除本机离线数据和未同步草稿</span>
+              </div>
+              <button class="action-btn danger" type="button" @click="handleResetOfflineData">
+                重置数据
+              </button>
+            </div>
+            <div class="danger-row">
+              <div class="row-info">
+                <span class="row-label">注销账户</span>
+                <span class="row-desc">停用账户并清理云端数据</span>
+              </div>
+              <button class="action-btn danger" type="button" @click="handleDeleteAccount">
+                注销账户
+              </button>
+            </div>
+          </section>
         </div>
       </aside>
 
@@ -245,10 +299,34 @@
           </div>
         </div>
 
-        <!-- AI Usage Guard B -->
-        <div class="settings-group ai-usage-group">
+        <section class="settings-group" aria-labelledby="profile-ai-title">
           <div class="group-header">
-            <h3 class="group-title">AI 使用额度</h3>
+            <h3 id="profile-ai-title" class="group-title">AI 设置</h3>
+          </div>
+
+          <div class="settings-row">
+            <div class="row-info">
+              <span class="row-label">{{ autoOverviewSetting.label }}</span>
+              <span id="profile-auto-overview-desc" class="row-desc">{{ autoOverviewSetting.desc }}</span>
+            </div>
+            <div class="row-control">
+              <button
+                class="toggle-btn"
+                type="button"
+                role="switch"
+                :aria-checked="autoOverviewSetting.value"
+                :aria-label="autoOverviewSetting.label"
+                aria-describedby="profile-auto-overview-desc"
+                :class="{ 'is-on': autoOverviewSetting.value }"
+                @click="handleToggle(autoOverviewSetting)"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="ai-subheader">
+            <h4 class="group-title ai-subtitle">AI 使用额度</h4>
             <span class="group-header-desc">账户当前周期的 AI 调用余量</span>
           </div>
           
@@ -330,12 +408,9 @@
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- AI BYOK Settings -->
-        <div class="settings-group byok-group">
-          <div class="group-header">
-            <h3 class="group-title">AI 模型与服务</h3>
+          <div class="ai-subheader byok-subheader">
+            <h4 class="group-title ai-subtitle">AI 模型与服务</h4>
             <span class="group-header-desc">配置自定义 AI 模型服务与密钥 (选填)</span>
           </div>
           <div class="byok-intro">
@@ -482,130 +557,7 @@
               </button>
             </div>
           </div>
-        </div>
-
-        <!-- Data & Privacy Settings -->
-        <div class="settings-group privacy-group">
-          <div class="group-header">
-            <h3 class="group-title">数据与隐私</h3>
-            <span class="group-header-desc">数据备份、缓存清理与隐私策略</span>
-          </div>
-          <div class="group-items">
-            <div class="settings-row">
-              <div class="row-info">
-                <span class="row-label">本地数据导出</span>
-                <span class="row-desc">导出全部笔记卡片与任务排期数据为备份文件</span>
-              </div>
-              <div class="row-control">
-                <button class="action-btn" @click="handleExportData">
-                  导出 JSON
-                </button>
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="row-info">
-                <span class="row-label">清理本地缓存</span>
-                <span class="row-desc">释放本地临时存储空间，不影响笔记内容与登录状态</span>
-              </div>
-              <div class="row-control">
-                <button class="action-btn" @click="handleClearCache">
-                  清理缓存
-                </button>
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="row-info">
-                <span class="row-label">运行诊断日志</span>
-                <span class="row-desc">记录运行日志，便于排查使用问题</span>
-              </div>
-              <div class="row-control">
-                <button
-                  class="toggle-btn"
-                  :class="{ 'is-on': isDiagnosticLogEnabled }"
-                  @click="toggleDiagnosticLog"
-                  aria-label="运行诊断日志"
-                >
-                  <span class="toggle-knob"></span>
-                </button>
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="row-info">
-                <span class="row-label">AI 数据处理说明</span>
-                <span class="row-desc">仅在主动发起问答或资料解析时传输必要内容，严格保障个人数据隐私</span>
-              </div>
-              <div class="row-control">
-                <span class="privacy-scope-badge">隐私保护</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Auth sessions -->
-        <div class="settings-group session-group">
-          <div class="group-header">
-            <h3 class="group-title">登录设备管理</h3>
-            <span class="group-header-desc">查看已登录的设备并可管理下线</span>
-          </div>
-          <div v-if="sessionsLoading" class="session-empty">正在加载设备列表...</div>
-          <div v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</div>
-          <div v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</div>
-          <div v-else class="group-items">
-            <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="settings-row session-row">
-              <div class="session-row-main">
-                <div class="row-info">
-                  <div class="session-title-line">
-                    <span class="row-label">{{ session.deviceName || session.platform || '未知设备' }}</span>
-                    <span v-if="isCurrentSession(session)" class="session-current-pill">当前设备</span>
-                  </div>
-                  <span class="row-desc">
-                    {{ session.platform || 'UNKNOWN' }} · 最近活跃 {{ formatSessionDate(session.lastUsedAt) }}
-                  </span>
-                </div>
-              </div>
-              <div class="row-control">
-                <button
-                  v-if="session.id && !isCurrentSession(session)"
-                  class="action-btn danger"
-                  :disabled="revokingSessionId === session.id"
-                  @click="handleRevokeSession(session)"
-                >
-                  {{ revokingSessionId === session.id ? '下线中...' : '下线' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
-        <!-- Danger Zone -->
-        <div class="danger-zone">
-          <div class="group-header danger-header">
-            <h3 class="group-title danger-title">数据与账户重置</h3>
-            <span class="group-header-desc danger-desc">不可逆操作，请谨慎执行</span>
-          </div>
-          <div class="danger-row">
-            <div class="row-info">
-              <span class="row-label">重置本地离线数据</span>
-              <span class="row-desc">清空本地数据并重新从云端下载完整数据</span>
-            </div>
-            <button class="action-btn danger" @click="handleResetOfflineData">
-              重置数据
-            </button>
-          </div>
-          <div class="danger-row">
-            <div class="row-info">
-              <span class="row-label">注销账户</span>
-              <span class="row-desc">永久注销账号并删除所有个人笔记与设置，不可恢复</span>
-            </div>
-            <button class="action-btn danger" @click="handleDeleteAccount">
-              注销账户
-            </button>
-          </div>
-        </div>
+        </section>
       </main>
 
     <!-- Password Change Modal (修改密码弹窗) -->
@@ -660,7 +612,6 @@ import { useStatsStore } from '@/store/useStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { SyncScopeChangedError } from '@/api/request'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore } from '@/store/useTaskStore'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
@@ -687,7 +638,6 @@ const knowledgeStore = useKnowledgeStore()
 const statsStore = useStatsStore()
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
-const taskStore = useTaskStore()
 const pomodoroStore = usePomodoroStore()
 const router = useRouter()
 
@@ -1297,12 +1247,11 @@ const settingGroups = reactive([
     ] as SettingItem[]
   },
   {
-    title: '提醒与自动化',
-    desc: '统一配置任务提醒、专注时钟与文件解析等主动通知',
+    title: '提醒',
+    desc: '配置任务和专注结束提醒',
     items: [
       { id: 'task_remind', label: '任务提醒', desc: '任务到期前发送系统提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
       { id: 'focus_end', label: '专注结束提醒', desc: '专注倒计时结束时播放提示音与通知', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
-      { id: 'auto_overview', label: '自动生成概览', desc: '资料导入完成后自动构建思维导图', type: 'toggle', value: localStorage.getItem('sc_setting_auto_overview') !== 'false' },
     ] as SettingItem[]
   },
   {
@@ -1315,15 +1264,15 @@ const settingGroups = reactive([
       { id: 'sync_now', label: '立即同步', desc: '立即检查并同步最新数据', type: 'action', btnText: '立即同步', variant: 'primary' },
     ] as SettingItem[]
   },
-  {
-    title: 'AI 功能',
-    desc: '按需开启或关闭学习工作流中的各项 AI 智能辅助能力',
-    items: [
-      { id: 'auto_tag', label: 'AI 自动标签', desc: '导入资料时自动分类并提炼关键标签', type: 'toggle', value: localStorage.getItem('sc_setting_auto_tag') !== 'false' },
-      { id: 'auto_summary', label: 'AI 自动总结', desc: '导入资料后自动提炼核心知识点摘要', type: 'toggle', value: localStorage.getItem('sc_setting_auto_summary') !== 'false' },
-    ] as SettingItem[]
-  },
 ])
+
+const autoOverviewSetting = reactive({
+  id: 'auto_overview',
+  label: '自动生成概览',
+  desc: '符合条件的资料解析完成后自动生成大纲和总结。此选项暂不控制生成。',
+  type: 'toggle',
+  value: localStorage.getItem('sc_setting_auto_overview') !== 'false',
+} satisfies SettingItem)
 
 // === Handlers ===
 const handleToggle = (item: SettingItem) => {
@@ -1338,15 +1287,15 @@ const handleToggle = (item: SettingItem) => {
       break
     case 'auto_sync':
     case 'wifi_only':
-    case 'auto_tag':
-    case 'auto_summary':
     case 'task_remind':
     case 'focus_end':
     case 'auto_overview':
       localStorage.setItem(`sc_setting_${item.id}`, String(item.value))
       ElNotification({
         title: '设置已更新',
-        message: `[${item.label}] 已切换为 ${item.value ? '开启' : '关闭'}`,
+        message: item.id === 'auto_overview'
+          ? '已保存自动生成概览偏好。此选项暂不控制生成。'
+          : `[${item.label}] 已切换为 ${item.value ? '开启' : '关闭'}`,
         type: 'success',
         duration: 2000
       })
@@ -1363,59 +1312,6 @@ const handleSelectChange = (item: SettingItem) => {
   ElNotification({
     title: '设置已生效',
     message: `[${item.label}] 已更新为: ${item.value}`,
-    type: 'success',
-    duration: 2000
-  })
-}
-
-const handleExportData = async () => {
-  try {
-    await Promise.all([
-      knowledgeStore.loadLocalBlocks(),
-      taskStore.loadLocalTasks(),
-    ])
-    const exportBundle = {
-      version: 1,
-      appName: 'Auralis',
-      exportedAt: new Date().toISOString(),
-      user: {
-        id: authStore.user?.id,
-        username: authStore.user?.username,
-        displayName: displayName.value,
-      },
-      knowledgeBlocks: knowledgeStore.recentBlocks || [],
-      tasks: taskStore.allTasks || [],
-      metadata: {
-        knowledgeCount: (knowledgeStore.recentBlocks || []).length,
-        taskCount: (taskStore.allTasks || []).length,
-      },
-    }
-    const jsonData = JSON.stringify(exportBundle, null, 2)
-    const blob = new Blob([jsonData], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `auralis_backup_${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    ElNotification({
-      title: '导出成功',
-      message: `已导出 ${exportBundle.metadata.knowledgeCount} 条知识块与 ${exportBundle.metadata.taskCount} 项任务`,
-      type: 'success',
-      duration: 3500,
-    })
-  } catch (err: any) {
-    ElNotification({ title: '导出失败', message: err?.message || '获取数据失败', type: 'error', duration: 3000 })
-  }
-}
-
-const isDiagnosticLogEnabled = ref(localStorage.getItem('sc_setting_diagnostic_log') === 'true')
-const toggleDiagnosticLog = () => {
-  isDiagnosticLogEnabled.value = !isDiagnosticLogEnabled.value
-  localStorage.setItem('sc_setting_diagnostic_log', String(isDiagnosticLogEnabled.value))
-  ElNotification({
-    title: '设置已更新',
-    message: `运行诊断日志已${isDiagnosticLogEnabled.value ? '开启' : '关闭'}`,
     type: 'success',
     duration: 2000
   })
@@ -1447,8 +1343,6 @@ const handleAction = async (item: SettingItem) => {
     } finally {
       setTimeout(() => { item.btnText = orig }, 2500)
     }
-  } else if (item.id === 'export') {
-    await handleExportData()
   }
 }
 
@@ -1501,25 +1395,6 @@ const handleLogout = async () => {
       window.location.assign('/login')
     }
   })
-}
-
-const handleClearCache = async () => {
-  try {
-    await ElMessageBox.confirm('将清除临时渲染缓存，不影响你的笔记数据、云端存储与登录状态。确认继续？', '清理本地缓存', {
-      confirmButtonText: '清除',
-      cancelButtonText: '取消',
-      type: 'info',
-    })
-    const cacheKeys = [
-      'auralis_view_cache',
-      'auralis_temp_index',
-    ]
-    cacheKeys.forEach((k) => localStorage.removeItem(k))
-    ElNotification({ title: '缓存已清除', message: '本地界面临时缓存已清理完毕', type: 'success', duration: 3000 })
-    await loadStats()
-  } catch {
-    // User cancelled
-  }
 }
 
 const handleResetOfflineData = async () => {
@@ -2445,9 +2320,6 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
 }
-.group-header-desc.danger-desc {
-  color: rgba(176, 58, 46, 0.85);
-}
 
 .group-items {
   padding: 4px 0;
@@ -2661,8 +2533,21 @@ onMounted(() => {
 
 
 /* ===== 4. AI 使用额度卡片 (AI Usage Cards) ===== */
+.ai-subheader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 14px 22px 0;
+}
+
+.ai-subtitle {
+  font-size: var(--font-size-body-sm);
+}
+
 .usage-group-body {
-  padding: 18px 22px !important;
+  padding: 12px 22px 18px;
 }
 
 .usage-loading {
@@ -2761,8 +2646,9 @@ onMounted(() => {
 
 
 /* ===== 5. AI BYOK 配置区 (BYOK Settings) ===== */
-.byok-group {
-  border-color: rgba(139, 154, 110, 0.28);
+.byok-subheader {
+  padding-bottom: 14px;
+  border-top: 0.5px solid var(--border-subtle);
 }
 
 .byok-intro {
@@ -2902,46 +2788,46 @@ onMounted(() => {
 }
 
 
-/* ===== 6. 数据与隐私及会话管理 (Privacy & Sessions) ===== */
-.privacy-group {
-  border-color: rgba(139, 154, 110, 0.2);
+/* ===== 6. 登录设备和数据重置 (Account Security) ===== */
+.account-section-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-body-sm);
+  font-weight: 750;
 }
 
-.privacy-scope-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  background: rgba(139, 154, 110, 0.12);
-  border: 0.5px solid rgba(139, 154, 110, 0.25);
-  font-size: 12px;
-  font-weight: 650;
-  color: #637748;
+.account-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 0.5px solid var(--border-subtle);
+  padding-top: 14px;
 }
 
 .session-empty {
-  padding: 20px 22px;
-  font-size: 12.5px;
-  color: var(--text-muted, #7A7A75);
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .session-error {
   color: #C2413E;
 }
 
-.session-row {
-  padding: 15px 22px;
+.session-row .row-label,
+.session-row .row-desc {
+  overflow-wrap: anywhere;
 }
-.session-row-main {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex: 1;
-  min-width: 0;
-}
+
 .session-title-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.session-title-line .row-label {
+  min-width: 0;
 }
 .session-current-pill {
   font-size: 11px;
@@ -2953,45 +2839,46 @@ onMounted(() => {
   color: #637748;
 }
 
-
-/* ===== 7. 危险操作区 (Danger Zone) ===== */
 .danger-zone {
-  flex-shrink: 0;
-  margin-bottom: 24px;
   background: rgba(217, 83, 79, 0.035);
   border: 0.5px solid rgba(217, 83, 79, 0.2);
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(217, 83, 79, 0.03);
+  border-radius: 13px;
 }
 
 .danger-header {
   border-bottom: 0.5px solid rgba(217, 83, 79, 0.15);
-  background: rgba(217, 83, 79, 0.04);
-  padding: 16px 22px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  padding: 10px 12px;
 }
-.danger-title {
+
+.danger-title,
+.danger-desc {
   color: #B03A2E;
-  font-size: 14.5px;
-  font-weight: 750;
-  margin: 0;
+}
+
+.danger-desc {
+  font-size: var(--font-size-caption);
 }
 
 .danger-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 22px;
+  padding: 10px 12px;
   border-bottom: 0.5px solid rgba(217, 83, 79, 0.08);
-  gap: 20px;
-  min-height: 54px;
-  box-sizing: border-box;
+  gap: 10px;
 }
 .danger-row:last-child {
   border-bottom: none;
+}
+
+.account-card .action-btn {
+  padding-inline: 12px;
+}
+
+.account-card .action-btn:focus-visible,
+[aria-labelledby="profile-ai-title"] .toggle-btn:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
 }
 
 
@@ -3150,8 +3037,15 @@ html.dark .danger-zone {
   background: rgba(217, 83, 79, 0.06);
   border-color: rgba(217, 83, 79, 0.25);
 }
+html.dark .danger-title,
+html.dark .danger-desc,
+html.dark .session-error {
+  color: var(--color-danger);
+}
+html.dark .session-current-pill {
+  color: #9AB08F;
+}
 html.dark .danger-header {
-  background: rgba(217, 83, 79, 0.08);
   border-bottom-color: rgba(217, 83, 79, 0.2);
 }
 html.dark .danger-row {
@@ -3211,14 +3105,6 @@ html.dark .settings-header-badge .badge-dot {
 .settings-group:hover .group-icon-wrap {
   transform: scale(1.06);
   background: rgba(139, 154, 110, 0.18);
-}
-.group-icon-wrap.danger {
-  background: rgba(217, 83, 79, 0.1);
-  color: #B03A2E;
-}
-.danger-zone:hover .group-icon-wrap.danger {
-  transform: scale(1.06);
-  background: rgba(217, 83, 79, 0.18);
 }
 .group-title-texts {
   display: flex;
@@ -3363,11 +3249,6 @@ html.dark .account-cell:hover .cell-icon-wrap,
 html.dark .settings-group:hover .group-icon-wrap {
   background: rgba(139, 154, 110, 0.28);
   color: #B8CCAF;
-}
-
-html.dark .group-icon-wrap.danger {
-  background: rgba(217, 83, 79, 0.16);
-  color: #E68582;
 }
 
 html.dark .usage-progress-bar-wrap {

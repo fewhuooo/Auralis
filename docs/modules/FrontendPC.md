@@ -858,17 +858,16 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 - `localDb.init` 在 `Database.load` 后调用内部 Tauri 命令 `initialize_local_database_pool`，完成固定单连接、关闭旧池后才暴露数据库及执行 SQL；既有 JS 队列和 native snapshot 保留。实际 Rust 池事务测试 1/1、cargo fmt/check 退出 0，真实 Tauri 重启验收另行记录。
 - 最终 PC type-check、check:subject-icons、check:subject-workspace 与 build 均退出 0，test:r4-pc 470/470；失败恢复 focused 67/67。Source 清理在 resetRequired/snapshot 修复窗口保留本地草稿，清理边界重读当前墓碑；单个 reviewer 本任务 BLOCKER/IMPORTANT 均 0。
 
-#### 当前未接通业务效果的偏好（用户要求汇总，保留设置）
+#### 当前未接通业务效果的偏好
 
 | 类别 | 项目 | 实现情况 |
 | --- | --- | --- |
 | 显示 | 紧凑布局、基础字号、界面语言 | 有值保存或局部 class/style 设置，未形成全局布局、字号和语言切换效果 |
 | 提醒 | 任务提醒、专注结束提醒 | 保存选择；没有接通任务通知、声音或桌面通知 |
-| 自动化 | 自动生成概览、AI 自动标签、AI 自动总结 | 保存选择；现有业务没有消费这些开关 |
+| AI | 自动生成概览 | 保存选择；符合条件的文件解析完成后自动生成大纲和总结，生成流程独立于此偏好 |
 | 同步 | 自动同步、仅 Wi-Fi 同步 | 保存选择；后台同步没有依这些设置启停或限制网络 |
-| AI/诊断 | 诊断日志 | 保存选择；诊断日志输出没有消费此设置 |
 
-共 11 项。RAG 语义搜索关闭项已从个人中心移除。深色模式与“立即同步”已有实际执行路径，不计入此表。
+共 8 项。RAG 语义搜索关闭项已从个人中心移除。深色模式与“立即同步”已有实际执行路径，不计入此表。
 
 已保存的旧本地 `sc_setting_rag` 偏好不再参与聊天行为；客户端忽略该值，不清理本地数据或执行数据库迁移。
 
@@ -878,7 +877,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 - **资产中心**：全局与学科文件树暂时都把 Source 状态固定显示为“正常”，未反映实际解析状态；该项按 IMPORTANT 登记在 [问题和审查](../current/IssuesAndReview.md)。
 - **登录与账户**：忘记密码、隐私与条款入口目前是占位提示。Profile 提交异步注销请求后退出登录，页面没有注销作业进度查询。文档处理主密钥只用于本机加密 cache/package，产品已决定不增加通用密钥备份/恢复入口；密钥确认丢失后的自动新建、废弃旧续传状态并从原文件重处理尚未实现，当前仍报告 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`，详见[密钥恢复设计](../design/2026-09-04-pc-document-encryption-recovery-design.md)。
 - **时间轴与通知**：时间轴能展示任务完成状态及从任务描述解析出的知识块关联，但没有手动完成操作或独立知识块选择器。应用只有临时操作通知，没有持久收件箱。
-- **数据边界**：Profile JSON 导出包含基本用户信息、本地知识块和任务，不含原始文件，也不是完整本地数据库备份；Local Asset 无备份/导出/恢复能力。一般偏好仍按上方 12 项清单保存在端侧，尚无通用服务端偏好同步。
+- **数据边界**：Local Asset 尚无备份、导出和恢复闭环。一般偏好保存在端侧，尚无通用服务端偏好同步。
 - **范围与验收**：上述登录恢复、注销进度、时间轴补充操作和通知收件箱仍为 OPTIONAL/待产品范围确认；文档处理密钥丢失后的自动重新处理策略已确认，待代码实现与验收。状态、证据与关闭条件见 [当前问题](../current/IssuesAndReview.md)。本节静态盘点不代表 GUI 或真实服务已验收。
 
 ### 2026-10-01 首页与学科工作区知识块内容展示全面重构与正文/摘要解耦（Knowledge Blocks Redesign & Content Decoupling）
@@ -1464,7 +1463,7 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 
 时间轴中的已完成排期任务保留其原 `scheduledAt` 槽位，并处于固定状态：Store 拒绝移动、替换和取消排期，Timeline/Dashboard 不提供相应拖放或取消入口；将任务恢复为未完成后才可再次调整。本地加载仅接受 API 领域状态 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`；弃用的展示态缓存（例如 `completed`）不再转换或兼容，而是忽略并由后续在线刷新按现行契约重建。
 
-R4 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone、v6 outbox 状态与 reset 保留未解决写入。Tauri 路径在应用生命周期只加载、建表和迁移一次，所有 SQL 插件命令经单一队列串行执行；同步 snapshot 通过 Rust `replace_local_resource_snapshot` 在同一 SQLite 连接的显式事务中完成，并启用 WAL 与 5 秒 `busy_timeout`。同步 Store 以共享 cursor cycle 和 500ms 合并调度处理启动、实时、联网、读写请求；push/pull 完成后只发布本地投影变化，领域 Store 重新 hydration 本地库。`DocumentProcessingRuntime` 仅在启动 FILE 处理前 `flushNow()`，确认本地 SOURCE 已为 `synced`。`localDb.ts` 初始化只建立和升级现行 v13 schema。已存在的旧表、列和值原样保留，旧 CRUD 和旧建表路径已移除。浏览器原全局业务键及 `legacy_unassigned` 备份保留。Profile 的缓存清理只删除 `auralis_view_cache` 和 `auralis_temp_index` 两个临时界面键，离线重置通过 Sync Store 使用当前账号的现行仓储。知识块读写与导出使用 `useKnowledgeStore`。
+R4 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone、v6 outbox 状态与 reset 保留未解决写入。Tauri 路径在应用生命周期只加载、建表和迁移一次，所有 SQL 插件命令经单一队列串行执行；同步 snapshot 通过 Rust `replace_local_resource_snapshot` 在同一 SQLite 连接的显式事务中完成，并启用 WAL 与 5 秒 `busy_timeout`。同步 Store 以共享 cursor cycle 和 500ms 合并调度处理启动、实时、联网、读写请求；push/pull 完成后只发布本地投影变化，领域 Store 重新 hydration 本地库。`DocumentProcessingRuntime` 仅在启动 FILE 处理前 `flushNow()`，确认本地 SOURCE 已为 `synced`。`localDb.ts` 初始化只建立和升级现行 v13 schema。已存在的旧表、列和值原样保留，旧 CRUD 和旧建表路径已移除。浏览器原全局业务键及 `legacy_unassigned` 备份保留。Profile 的离线重置通过 Sync Store 使用当前账号的现行仓储。知识块读写使用 `useKnowledgeStore`。
 
 ## C4/C5 文档处理与上传边界
 
@@ -1493,7 +1492,7 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 - Asset：上传、处理状态和资料组织；首屏并行读取 Subject、Source、KnowledgeBlock 与 Task 的本地 Store 投影，任一项读取失败仍构建其余本地树并关闭 loading。各 Store 随后独立刷新云端结果、通过其 repository cache 写回本地；资产页监听四类投影及文档处理任务并重建树，不重新显示 loading。文件树节点（全部文件与各学科文件）由 Source 的实际 `ingestionStatus` 与 `useDocumentProcessingStore` 本地任务真实驱动，按已就绪（READY）、解析失败（FAILED）、待本机处理（AWAITING_CLIENT）及处理中（PARSING/INDEXING/VALIDATING/PENDING 等）渲染对应的状态圆点、详情徽标及悬浮说明，不再硬编码固定为“正常”。资产树的“全部任务”和各学科任务目录均来自 `useTaskStore` 的当前用户任务，不注入静态演示任务。任务按 `未排期`、`未完成`、`已完成` 三个并列分组，截止时间存在时按截止时间排序；任务完成切换回写 Task API/repository。任务编辑器不再提供认知负荷按钮，改为 30 分钟步进的预计用时，并可保存标题、备注、截止日期和时长。`/asset?focus=unassigned-tasks` 会展开并聚焦“未排期”。真实 Source 文件以 `FilePreview` 为唯一预览实现，TreeNode 透传 Source 的 `id`、`assetId`、`name` 和 `fileType`；旧 `PdfViewer`、首页 PDF 伴读入口和 Asset 的 `filePath`/Markdown 预览分支均不保留。
 - Asset 关系星图使用真实 Subject、Source 和 KnowledgeBlock 投影。Source 连接所属 Subject；KnowledgeBlock 的 `sourceFileId` 指向同学科现存 Source 时连接该 Source，否则连接所属 Subject，不补造关系。力导向计算包含对称节点互斥、按关系类型设目标长度的弹簧吸引、弱重力与速度阻尼；节点初始位置由稳定 ID 决定，初始 RAF 在收敛或 180 帧上限后停止。同范围数据刷新保留存活节点坐标与相机，切换全局/学科范围时重新适配视图。画布使用 ResizeObserver 与设备像素比绘制，提供适配视图、指针中心滚轮缩放、平移及任意节点拖动。鼠标、触控和触控笔共用 Pointer Events 与指针捕获；超过移动阈值后暂停初始模拟，被拖节点保持在指针坐标，关联邻居实时通过弹簧力响应并重画连线，每段响应最多 36 帧并在收敛时提前停止，释放后最多运行 30 帧低强度松弛。用户摆放在同范围更新中保留。点击文件节点选择树中 Source 并在中栏显示 `FilePreview`；点击知识块节点在中栏显示对应编辑器，通过 Dashboard 的 `open-block-detail` 事件打开详情。拖动或 pointercancel 不触发预览。
 - Dashboard/Timeline：排期和任务时间管理，排期队列展示无 `scheduledAt` 且未完成/未取消的所有活跃任务，截止时间（`dueAt`）用于提醒、排序及新排期完整结束上限；拖放、按天排期、换位与顺延必须保证每个新安排完整结束于各自截止时刻或之前，无截止不限制。Task Store 以认证态的 `serverDeviceId` 访问用户隔离的本地 repository；首次加载先渲染本地任务，后台 Sync read 更新 Store，读取失败时保留当前投影。Dashboard 切日调用 `setSelectedDay` 重建内存槽位；Timeline 切日保留现有 `await taskStore.loadLocalTasks()` 本地重读，不能清空已有任务。按槽排期和同日改期在进入写队列前捕获具体本地日期，提交窗口与来源校验使用该日期，等待期间切日不会改变已发起落点。周视图日期列传入完整 `dateKey`，按天入口支持活动的已有排期任务改日，沿用完整冲突、过去时间与截止校验。Timeline 重挂载从 Store 的完整选中日期初始化标题与日期栏，和任务槽位保持一致。Timeline 页面支持单任务与换位拖拽、半小时网格槽位渲染；Dashboard 首页看盘采用轻量线性卡片列表，无网格槽位，不作为可拖拽调时，按开始时间升序排列。启动 fetch 和运行中分钟级检查会执行到期转换：有 `scheduledAt` 的任务在 `scheduledAt + durationMinutes` 结束时刻到达后更新为完成并保留排期；无 `scheduledAt` 的 TODO/IN_PROGRESS 活动任务在有效 `dueAt <= now` 时自动完成并保留真实截止时间，DONE/CANCELLED、空或无效截止时间不产生完成写入；卡片继续通过 due-badge 展示截止日期。自动检查在 TASK 投影刷新时也会执行，应用关闭期间到期的任务在下次启动补处理。转换失败保留原数据并记录错误。首页和独立时间轴统一展示当前/所选日期所在的完整自然周（周日至周六），避免只保存 `dayCode` 时跨周解析到下一周。首页日期格在日数字上方显示 `Sun` 至 `Sat` 英文星期缩写，选中日期使用固定约 `36px × 36px` 圆形绿色背景，顶栏以“时间轴 · X月”显示月份。日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记；已排期任务拖动到新槽位时以目标槽位覆盖旧 `scheduledAt`。时间轴“导入任务”进入资产库未排期分组。普通任务更新、按天排期和取消排期通过 `useTaskStore` 写入本地 repository/outbox 并在后台同步；按槽插入与标题交换由 `useTaskStore` 在本地计算后一次保存所有受影响 Task 和单条稳定 ID 排期命令，在线与离线使用同一条 Sync 路径；断网时保留本地投影等待重放，服务端拒绝或版本冲突时按返回的 Task 数组恢复投影并提示用户。2026-10-07 放置与交换修复：按天择槽覆盖 22:30；交换发 API 前校验双方实际新起点位于 08:00–22:30，紧邻 compact 以原共同窗口的本地日期为边界；越界保留整组数据。在线响应原子合并保护较新版本与墓碑，投影重读当前 Repository；专项 127/127、PC 542/542，类型/静态/构建和唯一只读审查通过；真实环境验收及完整证据见现行实施记录。
-- Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
+- Profile。左栏「账号与安全凭证」集中个人资料、登录设备管理、退出登录、重置本地离线数据和注销账户。右栏「AI 设置」集中自动生成概览偏好、使用额度和模型服务配置。统计通过 `useStatsStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
 - Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和本机今日专注数据；实际秒数排除暂停与休息，中断保存耗时但不增加完成轮次，自然结束才增加一次。使用时间戳与持久状态恢复，路由切换不重置。新会话使用稳定 UUID，普通局域网 HTTP 下使用现有 UUIDv7 工具。任务选择器与时间轴联动，提供已排期任务和「自由学习」；运行与暂停时显示本轮已绑定的任务或自由学习。
 - 专注记录完成时尝试上传，后台核心同步结束后补传待发事件。进入 Profile 时若有待发事件则请求后台同步；「立即同步」等待核心同步后补传专注，再刷新服务端全设备聚合。单条业务拒绝保留原事件并继续处理其他记录；服务暂不可用或连接中断时停止本次尝试，等待现有同步触发重试。未 ACK 的本机事件只计入本机历史，Profile 显示待上传状态。
 

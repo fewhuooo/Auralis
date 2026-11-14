@@ -66,16 +66,13 @@ test('keeps BYOK credentials out of browser request headers and browser storage'
   assert.match(profileSource, /apiKey:\s*key \|\| undefined/)
   assert.match(profileSource, /customApiKey\.value = ''/)
   assert.doesNotMatch(profileSource, /auralis_custom_(api_key|base_url)/i)
-  assert.match(
-    profileSource,
-    /<\/div>\s*<\/div>\s*<\/div>\s*<\/div>\s*<!-- AI BYOK Settings -->/,
-    'Profile must render the BYOK group outside the repeated preference groups',
-  )
-  assert.equal(
-    [...profileSource.matchAll(/<div class="danger-zone">/g)].length,
-    1,
-    'Profile must retain exactly one danger zone after inserting the BYOK settings group',
-  )
+  const aiGroup = profileSource.match(/<section[^>]+aria-labelledby="profile-ai-title"[^>]*>([\s\S]*?)<\/section>/)?.[1]
+  assert.ok(aiGroup, 'Profile must render a dedicated AI settings group')
+  assert.match(aiGroup, /@click="handleToggle\(autoOverviewSetting\)"/)
+  assert.match(aiGroup, /AI 使用额度/)
+  assert.match(aiGroup, /AI 模型与服务/)
+  assert.match(aiGroup, /@click="handleSaveAiSettings"/)
+  assert.equal([...profileSource.matchAll(/class="danger-zone"/g)].length, 1)
 })
 
 test('persists stable clientRequestId and submissionId without automatic offline chargeable replay', async () => {

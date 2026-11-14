@@ -73,7 +73,7 @@ test('avatar blob request accepts PNG success and Problem Details errors', async
   assert.equal(effectiveAccept, avatarAccept, 'Per-request Accept must override the shared JSON default')
 })
 
-test('Profile connects real AI endpoints and decouples cache clear from offline reset', async () => {
+test('Profile connects real AI endpoints and keeps device and reset actions in the account area', async () => {
   const profileSource = await readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8')
 
   // AI discovery
@@ -93,11 +93,12 @@ test('Profile connects real AI endpoints and decouples cache clear from offline 
   assert.match(connectionHandler, /testAiConnection\(/, 'Connection test must call the backend chat test')
   assert.doesNotMatch(connectionHandler, /listAiModels\(/, 'Connection test must work independently of model discovery')
 
-  // Data & State
-  assert.match(profileSource, /tasks:\s*taskStore\.allTasks/, 'Must export both knowledge blocks and tasks')
-  assert.match(profileSource, /handleClearCache/, 'Must retain light cache clearing')
-  assert.match(profileSource, /handleResetOfflineData/, 'Must have dedicated dangerous offline reset handler')
-  assert.match(profileSource, /@click="handleResetOfflineData"/, 'Dangerous reset button must bind to handleResetOfflineData')
+  const accountPanel = profileSource.match(/<aside class="studio-left">([\s\S]*?)<\/aside>/)?.[1]
+  assert.ok(accountPanel, 'Must render the left account panel')
+  assert.match(accountPanel, /@click="handleRevokeSession\(session\)"/, 'Account panel must allow revoking other devices')
+  assert.match(accountPanel, /@click="handleResetOfflineData"/, 'Account panel must expose offline reset')
+  assert.match(accountPanel, /@click="handleDeleteAccount"/, 'Account panel must expose account deletion')
+  assert.doesNotMatch(profileSource, /handleExportData|handleClearCache|sc_setting_(?:diagnostic_log|auto_tag|auto_summary)/)
   assert.match(profileSource, /syncStore\.resetOfflineData\(\)/, 'Offline reset handler must call syncStore.resetOfflineData()')
   assert.match(profileSource, /useAuthApi\.deleteAccount\(\{/, 'Must call deleteAccount on server')
   assert.match(profileSource, /syncStatusText/, 'Must bind dynamic sync status text')

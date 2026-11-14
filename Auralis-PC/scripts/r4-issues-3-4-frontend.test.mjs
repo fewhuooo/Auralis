@@ -104,15 +104,10 @@ test('generic API availability updates the global connection projection', async 
   assert.equal(projectConnectionStatus({ ...readyInput, serviceUnavailable: availability.serviceUnavailable.value }).level, 'ready')
 })
 
-test('Profile copy describes the actual partial export and server-mediated AI processing', async () => {
+test('Profile password copy describes one-way hashing', async () => {
   const profile = await read('src/views/Profile/index.vue')
   assert.match(profile, /密码采用单向哈希保存/)
   assert.doesNotMatch(profile, /凭证加密托管/)
-  assert.match(profile, /导出当前本地知识块与任务数据为 JSON/)
-  assert.doesNotMatch(profile, /完整打包导出/)
-  assert.doesNotMatch(profile, /端到端加密通道/)
-  assert.match(profile, /Auralis 服务端转发/)
-  assert.match(profile, /实际处理方式以服务商隐私政策为准/)
 })
 
 test('workspace renders chat errors inside the chat region', async () => {
