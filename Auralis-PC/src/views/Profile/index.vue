@@ -14,7 +14,6 @@
           </div>
           <div class="user-profile-meta">
             <h2 class="user-name">{{ displayName }}</h2>
-            <p class="user-handle">{{ accountName }} · UID: {{ shortUserId }}</p>
             <div class="user-badges">
               <span class="user-streak-pill">
                 <IconFlame :size="13" :stroke-width="2.2" class="streak-icon" />
@@ -133,7 +132,7 @@
             <div class="account-cell">
               <div class="cell-main">
                 <span class="cell-label">登录密码</span>
-                <span class="cell-sub">•••••••• · 密码采用单向哈希保存</span>
+                <span class="cell-sub">••••••••</span>
               </div>
               <button class="cell-btn" @click="openPasswordModal">
                 修改密码
@@ -239,7 +238,6 @@
         >
           <div class="group-header">
             <h3 class="group-title">{{ group.title }}</h3>
-            <span class="group-header-desc" v-if="group.desc">{{ group.desc }}</span>
           </div>
           <div class="group-items">
             <div
@@ -439,7 +437,6 @@
                   :disabled="aiSettingsInitializing"
                 />
                 <div class="quick-providers-bar">
-                  <span class="quick-preset-label">快速预设:</span>
                   <button
                     v-for="qp in quickProviders"
                     :key="qp.provider"
@@ -649,11 +646,6 @@ const revokingSessionId = ref<string | null>(null)
 const displayName = computed(() => authStore.user?.displayName || authStore.user?.username || 'Auralis 同学')
 const accountName = computed(() => authStore.user?.username || '未登录')
 const deviceName = computed(() => authStore.serverDeviceId ? `设备 ${authStore.serverDeviceId.slice(0, 8)}` : '未绑定设备')
-
-const shortUserId = computed(() => {
-  const id = authStore.user?.id
-  return id ? id.slice(0, 8) : '本地'
-})
 
 const userInitial = computed(() => {
   const name = displayName.value
@@ -1238,7 +1230,6 @@ interface SettingItem {
 const settingGroups = reactive([
   {
     title: '外观与显示',
-    desc: '个性化主题外观、界面紧凑度与全局基础字号',
     items: [
       { id: 'dark', label: '深色模式', desc: '适合夜间或弱光环境使用', type: 'toggle', value: settingsStore.isDark },
       { id: 'compact', label: '紧凑布局', desc: '收紧界面间隙，在单屏内展示更多内容', type: 'toggle', value: settingsStore.compactLayout },
@@ -1248,7 +1239,6 @@ const settingGroups = reactive([
   },
   {
     title: '提醒',
-    desc: '配置任务和专注结束提醒',
     items: [
       { id: 'task_remind', label: '任务提醒', desc: '任务到期前发送系统提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
       { id: 'focus_end', label: '专注结束提醒', desc: '专注倒计时结束时播放提示音与通知', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
@@ -1256,7 +1246,6 @@ const settingGroups = reactive([
   },
   {
     title: '同步与数据',
-    desc: '管理多设备增量同步策略、网络环境与传输状态',
     items: [
       { id: 'sync_status', label: '同步状态', desc: '查看当前设备的同步状态', type: 'status', value: '已同步 · 状态正常' },
       { id: 'auto_sync', label: '自动同步', desc: '在多设备间自动同步学习数据', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
@@ -1687,16 +1676,6 @@ onMounted(() => {
   letter-spacing: -0.02em;
   margin: 0;
   line-height: 1.25;
-}
-
-.user-handle {
-  font-size: 12px;
-  color: var(--text-muted, #7A7A75);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: -0.1px;
 }
 
 .user-badges {
@@ -2945,7 +2924,6 @@ html.dark .usage-stat-val {
 
 html.dark .stat-label,
 html.dark .row-desc,
-html.dark .user-handle,
 html.dark .cell-sub,
 html.dark .group-header-desc,
 html.dark .settings-desc,
@@ -3155,7 +3133,7 @@ html.dark .settings-header-badge .badge-dot {
   box-shadow: 0 0 6px rgba(212, 168, 126, 0.5);
 }
 
-/* 9.4 Provider 快速预设标签 (Quick Provider Presets) */
+/* 9.4 Provider 快速预设 (Quick Provider Presets) */
 .quick-providers-bar {
   display: flex;
   align-items: center;
@@ -3163,12 +3141,6 @@ html.dark .settings-header-badge .badge-dot {
   margin-top: 8px;
   width: 100%;
   flex-wrap: wrap;
-}
-.quick-preset-label {
-  font-size: 12px;
-  color: var(--text-muted, #7A7A75);
-  font-weight: 600;
-  margin-right: 2px;
 }
 .quick-preset-chip {
   padding: 3px 9px;

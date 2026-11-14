@@ -1,10 +1,7 @@
 <template>
   <section class="processing-center" aria-labelledby="processing-center-title">
     <div class="processing-center-heading">
-      <div>
-        <h3 id="processing-center-title">文件解析进度</h3>
-        <p>处理完成后，文件即可用于智能问答与阅读。</p>
-      </div>
+      <h3 id="processing-center-title">文件解析进度</h3>
       <button type="button" class="processing-refresh" :disabled="store.loading || !store.isRuntimeAvailable" @click="refresh">刷新</button>
     </div>
     <div v-if="!store.isRuntimeAvailable" class="processing-empty">文件解析仅可在 Auralis 桌面端运行。请在桌面端打开本文件，解析完成后即可提问。</div>
@@ -268,7 +265,6 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .processing-center { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 20px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-card, rgba(255,255,255,.45)); }
 .processing-center-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
 .processing-center h3 { margin: 0; font-size: 16px; color: var(--text-primary); }
-.processing-center p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; }
 .processing-refresh, .processing-actions button { border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1)); border-radius: 9999px; padding: 4px 10px; background: var(--color-bg-card, #ffffff); color: var(--text-secondary); cursor: pointer; font-size: 11.5px; font-weight: 500; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); white-space: nowrap; flex-shrink: 0; }
 .processing-refresh:hover:not(:disabled), .processing-actions button:hover:not(:disabled) { border-color: var(--color-zen-sage, #8b9a6e); color: var(--text-primary); transform: translateY(-0.5px); }
 .processing-empty { padding: 20px 0 4px; color: var(--text-muted); font-size: 13px; }

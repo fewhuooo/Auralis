@@ -104,9 +104,9 @@ test('generic API availability updates the global connection projection', async 
   assert.equal(projectConnectionStatus({ ...readyInput, serviceUnavailable: availability.serviceUnavailable.value }).level, 'ready')
 })
 
-test('Profile password copy describes one-way hashing', async () => {
+test('Profile displays only a mask in the password summary', async () => {
   const profile = await read('src/views/Profile/index.vue')
-  assert.match(profile, /密码采用单向哈希保存/)
+  assert.match(profile, /<span class="cell-label">登录密码<\/span>\s*<span class="cell-sub">••••••••<\/span>/)
   assert.doesNotMatch(profile, /凭证加密托管/)
 })
 
