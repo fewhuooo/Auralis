@@ -66,20 +66,45 @@
         <DocumentProcessingCenter />
 
         <!-- 5. 账号与安全凭证管理 (Account & Security) -->
-        <div class="account-card">
-          <span class="account-card-title">账号与安全凭证</span>
+        <section class="account-card" aria-labelledby="profile-account-title">
+          <h2 id="profile-account-title" class="account-card-title">账号与安全凭证</h2>
 
-          <div class="account-card-body">
-            <!-- 用户头像修改 -->
-            <div class="account-cell">
-              <div class="cell-main">
-                <span class="cell-label">用户头像</span>
-                <div class="mini-avatar">
-                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
-                  <span v-else>{{ userInitial }}</span>
-                </div>
+          <div class="account-details">
+            <div class="account-detail">
+              <span class="cell-label">登录账号</span>
+              <span class="cell-val">{{ accountName }}</span>
+            </div>
+
+            <div class="account-detail">
+              <span class="cell-label">用户昵称</span>
+              <span v-if="!isEditingNickname" class="cell-val">{{ displayName }}</span>
+              <input
+                v-else
+                ref="nicknameInputRef"
+                v-model="newNickname"
+                class="cell-edit-input"
+                aria-label="用户昵称"
+                placeholder="输入新昵称"
+                maxlength="20"
+                @keydown.enter="saveNickname"
+                @keydown.esc="cancelEditNickname"
+              />
+              <button v-if="!isEditingNickname" class="cell-btn" aria-label="修改昵称" @click="startEditNickname">
+                修改
+              </button>
+              <div v-else class="cell-actions">
+                <button class="cell-btn primary" @click="saveNickname">保存</button>
+                <button class="cell-btn" @click="cancelEditNickname">取消</button>
               </div>
-              <div class="avatar-cell-actions">
+            </div>
+
+            <div class="account-detail">
+              <span class="cell-label">用户头像</span>
+              <div class="mini-avatar">
+                <img v-if="userAvatarUrl" :src="userAvatarUrl" class="mini-avatar-img" alt="头像" />
+                <span v-else>{{ userInitial }}</span>
+              </div>
+              <div class="cell-actions">
                 <button v-if="userAvatarUrl" class="cell-btn" aria-label="重置头像" @click="resetAvatar">
                   重置
                 </button>
@@ -89,59 +114,25 @@
               </div>
             </div>
 
-            <!-- 用户昵称编辑 -->
-            <div class="account-cell" :class="{ 'is-editing': isEditingNickname }">
-              <div class="cell-main">
-                <span class="cell-label">用户昵称</span>
-                <span v-if="!isEditingNickname" class="cell-val">{{ displayName }}</span>
-                <div v-else class="cell-edit-wrap">
-                  <input
-                    ref="nicknameInputRef"
-                    v-model="newNickname"
-                    class="cell-edit-input"
-                    placeholder="输入新昵称"
-                    maxlength="20"
-                    @keydown.enter="saveNickname"
-                    @keydown.esc="cancelEditNickname"
-                  />
-                </div>
-              </div>
-              <button v-if="!isEditingNickname" class="cell-btn" aria-label="修改昵称" @click="startEditNickname">
-                修改
-              </button>
-              <div v-else class="cell-edit-btns">
-                <button class="cell-btn primary" @click="saveNickname">保存</button>
-                <button class="cell-btn" @click="cancelEditNickname">取消</button>
-              </div>
-            </div>
-
-            <!-- 登录密码 -->
-            <div class="account-cell">
-              <div class="cell-main">
-                <span class="cell-label">登录密码</span>
-                <span class="cell-sub">••••••••</span>
-              </div>
+            <div class="account-detail">
+              <span class="cell-label">登录密码</span>
+              <span class="cell-sub">••••••••</span>
               <button class="cell-btn" aria-label="修改密码" @click="openPasswordModal">
                 修改
               </button>
             </div>
-
-            <!-- 登录账号 -->
-            <div class="account-cell">
-              <div class="cell-main">
-                <span class="cell-label">登录账号</span>
-                <span class="cell-val">{{ accountName }}</span>
-              </div>
-            </div>
           </div>
 
           <section class="account-sessions" aria-labelledby="profile-sessions-title">
-            <h3 id="profile-sessions-title" class="account-section-title">登录设备管理</h3>
+            <div class="account-section-header">
+              <h3 id="profile-sessions-title" class="account-section-title">登录设备管理</h3>
+              <button class="cell-btn" type="button" @click="handleLogout">退出登录</button>
+            </div>
             <p v-if="sessionsLoading" class="session-empty">正在加载设备列表...</p>
             <p v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</p>
             <p v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</p>
-            <div v-else class="account-card-body">
-              <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-cell session-row">
+            <div v-else>
+              <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-operation">
                 <div class="row-info">
                   <div class="session-title-line">
                     <span class="row-label">{{ session.deviceName || session.platform || '未知设备' }}</span>
@@ -153,7 +144,7 @@
                 </div>
                 <button
                   v-if="session.id && !isCurrentSession(session)"
-                  class="action-btn danger"
+                  class="cell-btn danger"
                   type="button"
                   :disabled="revokingSessionId === session.id"
                   @click="handleRevokeSession(session)"
@@ -164,35 +155,28 @@
             </div>
           </section>
 
-          <!-- 账号快捷操作 -->
-          <div class="account-card-actions">
-            <button class="account-btn danger" type="button" @click="handleLogout">退出登录</button>
-          </div>
-
           <section class="danger-zone" aria-labelledby="profile-reset-title">
-            <div class="danger-header">
-              <h3 id="profile-reset-title" class="account-section-title danger-title">数据与账户重置</h3>
-            </div>
-            <div class="danger-row">
+            <h3 id="profile-reset-title" class="account-section-title">数据与账户重置</h3>
+            <div class="account-operation">
               <div class="row-info">
                 <span class="row-label">重置本地离线数据</span>
                 <span class="row-desc">清除本机离线数据和未同步草稿</span>
               </div>
-              <button class="action-btn danger" type="button" aria-label="重置本地离线数据" @click="handleResetOfflineData">
+              <button class="cell-btn danger" type="button" aria-label="重置本地离线数据" @click="handleResetOfflineData">
                 重置
               </button>
             </div>
-            <div class="danger-row">
+            <div class="account-operation">
               <div class="row-info">
                 <span class="row-label">注销账户</span>
                 <span class="row-desc">停用账户并清理云端数据</span>
               </div>
-              <button class="action-btn danger" type="button" aria-label="注销账户" @click="handleDeleteAccount">
+              <button class="cell-btn danger" type="button" aria-label="注销账户" @click="handleDeleteAccount">
                 注销
               </button>
             </div>
           </section>
-        </div>
+        </section>
       </aside>
 
       <!-- ===== RIGHT PANEL: 分项设置 ===== -->
@@ -1902,80 +1886,57 @@ onMounted(() => {
 
 /* 2.5 账号与安全凭证管理 (Account & Security) */
 .account-card {
+  --account-danger-text: #AB3734;
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
 .account-card-title {
+  margin: 0;
   font-size: 13.5px;
   font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
 }
 
-.account-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.account-cell {
-  display: flex;
+.account-detail {
+  display: grid;
+  grid-template-columns: 5em minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  border-radius: 13px;
-  padding: 10px 14px;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.account-cell:hover {
-  border-color: rgba(139, 154, 110, 0.35);
-  box-shadow: 0 3px 8px rgba(35, 45, 30, 0.04);
+  gap: 8px;
+  min-height: 38px;
+  padding-block: 4px;
+  box-sizing: border-box;
+  font-size: var(--font-size-body-sm);
 }
 
-.cell-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
+.account-detail + .account-detail {
+  border-top: 0.5px solid var(--border-subtle);
 }
 
 .cell-label {
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--text-muted, #7A7A75);
-  letter-spacing: 0.1px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .cell-val {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-primary, #1C1C1A);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .cell-sub {
-  font-size: 12px;
-  color: var(--text-secondary, #4A4A45);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-muted);
 }
 
 .mini-avatar {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: linear-gradient(135deg, #8B9A6E 0%, #6E8052 100%);
   display: flex;
@@ -1994,31 +1955,32 @@ onMounted(() => {
   object-fit: cover;
 }
 
-.avatar-cell-actions {
+.cell-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .cell-btn {
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 9999px;
-  font-size: 12px;
+  font-size: var(--font-size-caption);
   font-weight: 650;
-  border: 0.5px solid var(--border-default, #E6E6E4);
-  background: #FFFFFF;
-  color: var(--text-secondary, #344139);
+  border: 0.5px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: inherit;
   flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  white-space: nowrap;
 }
 .cell-btn:hover {
-  border-color: #8B9A6E;
-  color: #637748;
-  background: #FAF7F2;
-  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  background: var(--color-bg-primary);
+}
+.cell-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 .cell-btn.primary {
   background: linear-gradient(135deg, #8B9A6E 0%, #768759 100%);
@@ -2031,13 +1993,10 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(139, 154, 110, 0.35);
 }
 
-.cell-edit-wrap {
-  width: 100%;
-  margin-top: 3px;
-}
 .cell-edit-input {
   width: 100%;
-  font-size: 12px;
+  min-width: 0;
+  font-size: var(--font-size-caption);
   padding: 5px 10px;
   border-radius: 8px;
   border: 0.5px solid #8B9A6E;
@@ -2048,44 +2007,6 @@ onMounted(() => {
   box-sizing: border-box;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
   transition: all 0.2s;
-}
-
-.cell-edit-btns {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.account-card-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-.account-btn {
-  flex: 1;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 11px;
-  font-size: 12.5px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  font-family: inherit;
-  border: 0.5px solid transparent;
-}
-.account-btn.danger {
-  background: rgba(217, 83, 79, 0.08);
-  border-color: rgba(217, 83, 79, 0.25);
-  color: #C2413E;
-}
-.account-btn.danger:hover {
-  background: rgba(217, 83, 79, 0.16);
-  border-color: #C2413E;
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(217, 83, 79, 0.18);
 }
 
 
@@ -2375,18 +2296,6 @@ onMounted(() => {
   transform: translateY(-1.5px);
 }
 
-.action-btn.danger {
-  background: rgba(217, 83, 79, 0.08);
-  border-color: rgba(217, 83, 79, 0.25);
-  color: #C2413E;
-}
-.action-btn.danger:hover {
-  background: rgba(217, 83, 79, 0.16);
-  border-color: #C2413E;
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(217, 83, 79, 0.18);
-}
-
 .status-pill-badge {
   display: inline-flex;
   align-items: center;
@@ -2640,26 +2549,42 @@ onMounted(() => {
   font-weight: 750;
 }
 
-.account-sessions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.account-sessions,
+.danger-zone {
   border-top: 0.5px solid var(--border-subtle);
-  padding-top: 14px;
+  padding-top: 10px;
+}
+
+.account-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .session-empty {
-  margin: 0;
+  margin: 4px 0 2px;
   font-size: var(--font-size-caption);
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 .session-error {
-  color: #C2413E;
+  color: var(--account-danger-text);
 }
 
-.session-row .row-label,
-.session-row .row-desc {
+.account-operation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 7px;
+}
+
+.account-operation + .account-operation {
+  border-top: 0.5px solid var(--border-subtle);
+}
+
+.account-operation .row-label,
+.account-operation .row-desc {
   overflow-wrap: anywhere;
 }
 
@@ -2683,38 +2608,17 @@ onMounted(() => {
   color: #637748;
 }
 
-.danger-zone {
-  background: rgba(217, 83, 79, 0.035);
-  border: 0.5px solid rgba(217, 83, 79, 0.2);
-  border-radius: 13px;
+.cell-btn.danger {
+  border-color: color-mix(in srgb, var(--account-danger-text) 28%, transparent);
+  color: var(--account-danger-text);
 }
 
-.danger-header {
-  border-bottom: 0.5px solid rgba(217, 83, 79, 0.15);
-  padding: 10px 12px;
+.cell-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--account-danger-text) 8%, transparent);
+  border-color: var(--account-danger-text);
 }
 
-.danger-title {
-  color: var(--color-danger);
-}
-
-.danger-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 0.5px solid rgba(217, 83, 79, 0.08);
-  gap: 10px;
-}
-.danger-row:last-child {
-  border-bottom: none;
-}
-
-.account-card .action-btn {
-  padding-inline: 12px;
-}
-
-.account-card .action-btn:focus-visible,
+.cell-btn:focus-visible,
 [aria-labelledby="profile-ai-title"] .toggle-btn:focus-visible {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;
@@ -2751,14 +2655,16 @@ html.dark .settings-group:hover {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
+html.dark .account-card {
+  --account-danger-text: var(--color-danger);
+}
+
 html.dark .stat-cell,
-html.dark .account-cell,
 html.dark .usage-card {
   background: #1F241F;
   border-color: rgba(163, 177, 155, 0.14);
 }
 html.dark .stat-cell:hover,
-html.dark .account-cell:hover,
 html.dark .usage-card:hover {
   border-color: rgba(163, 177, 155, 0.35);
 }
@@ -2815,14 +2721,12 @@ html.dark .cell-edit-input:focus {
 }
 
 html.dark .action-btn,
-html.dark .cell-btn,
 html.dark .model-chip {
   background: #1D231D;
   border-color: rgba(163, 177, 155, 0.22);
   color: #FAF7F2;
 }
 html.dark .action-btn:hover,
-html.dark .cell-btn:hover,
 html.dark .model-chip:hover {
   border-color: #9AB08F;
   color: #9AB08F;
@@ -2854,44 +2758,11 @@ html.dark .device-pill {
   color: #C0C5BD;
 }
 
-html.dark .danger-zone {
-  background: rgba(217, 83, 79, 0.06);
-  border-color: rgba(217, 83, 79, 0.25);
-}
-html.dark .danger-title,
-html.dark .session-error {
-  color: var(--color-danger);
-}
 html.dark .session-current-pill {
   color: #9AB08F;
 }
-html.dark .danger-header {
-  border-bottom-color: rgba(217, 83, 79, 0.2);
-}
-html.dark .danger-row {
-  border-bottom-color: rgba(217, 83, 79, 0.1);
-}
 
 /* ===== 9. 精雕细琢微交互增强体系 (Refinements V2) ===== */
-
-/* 9.1 账号单元格专属属性图标底座 */
-.cell-icon-wrap {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: rgba(139, 154, 110, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #637748;
-  flex-shrink: 0;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.account-cell:hover .cell-icon-wrap {
-  background: rgba(139, 154, 110, 0.2);
-  color: #516439;
-  transform: scale(1.05);
-}
 
 /* 9.2 分组标头分类图标徽章 (Group Icon Badges) */
 .group-title-wrap {
@@ -3044,12 +2915,10 @@ html.dark .danger-row {
 }
 
 /* 9.7 深色模式对应补充 */
-html.dark .cell-icon-wrap,
 html.dark .group-icon-wrap {
   background: rgba(139, 154, 110, 0.18);
   color: #9AB08F;
 }
-html.dark .account-cell:hover .cell-icon-wrap,
 html.dark .settings-group:hover .group-icon-wrap {
   background: rgba(139, 154, 110, 0.28);
   color: #B8CCAF;
