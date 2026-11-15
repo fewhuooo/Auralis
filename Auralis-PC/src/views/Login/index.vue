@@ -98,14 +98,13 @@
                     maxlength="6"
                     @input="clearFieldError('emailCode')"
                   />
-                  <el-button
-                    size="large"
-                    native-type="button"
-                    :loading="sendingCode"
+                  <button
+                    class="verification-button"
+                    type="button"
                     :disabled="busy || resendRemaining > 0"
-                    :aria-label="t(messages.sendCode)"
+                    :aria-busy="sendingCode"
                     @click="sendCode"
-                  >{{ resendRemaining > 0 ? t(messages.resendCountdown, { seconds: resendRemaining }) : t(messages.sendCode) }}</el-button>
+                  >{{ sendingCode ? t(messages.sendingCode) : resendRemaining > 0 ? t(messages.resendCountdown, { seconds: resendRemaining }) : t(messages.sendCode) }}</button>
                 </div>
               </el-form-item>
             </template>
@@ -187,6 +186,7 @@ const messages = {
   email: { 'zh-CN': '邮箱', en: 'Email address', ja: 'メールアドレス' },
   emailCode: { 'zh-CN': '邮箱验证码', en: 'Verification code', ja: 'メール認証コード' },
   sendCode: { 'zh-CN': '发送验证码', en: 'Send code', ja: 'コードを送信' },
+  sendingCode: { 'zh-CN': '发送中…', en: 'Sending…', ja: '送信中…' },
   resendCountdown: { 'zh-CN': '{seconds} 秒', en: '{seconds} s', ja: '{seconds}秒' },
   codeSent: { 'zh-CN': '如果此邮箱可以注册，您将收到验证码。', en: 'If this email can be used to sign up, you’ll receive a verification code.', ja: '登録可能なメールアドレスには認証コードが届きます。' },
   resetCodeRequested: { 'zh-CN': '如果此邮箱已注册，您将收到验证码。', en: 'If this email is registered, you’ll receive a verification code.', ja: '登録済みのメールアドレスには認証コードが届きます。' },
@@ -703,7 +703,6 @@ function isUsername(value: string): boolean {
 
 .verification-row {
   display: flex;
-  align-items: center;
   width: 100%;
   gap: 8px;
 }
@@ -712,8 +711,37 @@ function isUsername(value: string): boolean {
   min-width: 0;
 }
 
-.verification-row .el-button {
-  min-width: 4.5rem;
+.verification-button {
+  flex: 0 0 auto;
+  min-inline-size: 8em;
+  padding-inline: 12px;
+  border: 1px solid var(--border-accent);
+  border-radius: 12px;
+  background: var(--color-sage-bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.verification-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-zen-sage) 20%, var(--color-bg-primary));
+  border-color: var(--color-zen-sage);
+}
+
+.verification-button:focus-visible {
+  outline: 2px solid var(--color-zen-sage);
+  outline-offset: 2px;
+}
+
+.verification-button:disabled {
+  background: var(--color-bg-tertiary);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 .login-box--verification .form-header,
