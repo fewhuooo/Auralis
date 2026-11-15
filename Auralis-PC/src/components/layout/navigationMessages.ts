@@ -13,9 +13,10 @@ export const navigationMessages = {
 export function getConnectionStatusMessages() {
   return {
     error: t({ 'zh-CN': defaultConnectionStatusMessages.error, en: 'Service temporarily unavailable', ja: 'サービスは一時的に利用できません' }),
-    offline: t({ 'zh-CN': defaultConnectionStatusMessages.offline, en: 'Offline. Local changes will sync when you reconnect.', ja: 'オフラインです。再接続するとローカルの変更が同期されます' }),
+    offline: t({ 'zh-CN': defaultConnectionStatusMessages.offline, en: 'Offline. Changes are saved on this device.', ja: 'オフラインです。変更はこの端末に保存されています' }),
     reconnecting: t({ 'zh-CN': defaultConnectionStatusMessages.reconnecting, en: 'Restoring the live connection', ja: 'リアルタイム接続を復旧中' }),
     syncing: t({ 'zh-CN': defaultConnectionStatusMessages.syncing, en: 'Syncing', ja: '同期中' }),
+    paused: t({ 'zh-CN': defaultConnectionStatusMessages.paused, en: 'Automatic sync paused', ja: '自動同期を一時停止中' }),
     ready: t({ 'zh-CN': defaultConnectionStatusMessages.ready, en: 'Synced', ja: '同期済み' }),
   }
 }

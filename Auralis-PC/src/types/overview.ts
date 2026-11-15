@@ -2,6 +2,7 @@ export type OverviewMode = 'ALL' | 'OUTLINE' | 'SUMMARY'
 export type OverviewCacheStatus = 'READY' | 'FAILED'
 export type FileOverviewTrigger = 'SOURCE_READY' | 'RESUME_BOOTSTRAP' | 'RESUME_ONLINE' | 'RESUME_SYNC' | 'JOB_CHANGED' | 'MANUAL_RETRY'
 export type OverviewSkipCode =
+  | 'AUTO_OVERVIEW_DISABLED'
   | 'SOURCE_NOT_ELIGIBLE'
   | 'SOURCE_NOT_READY'
   | 'SOURCE_UNAVAILABLE'

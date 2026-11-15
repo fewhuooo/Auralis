@@ -2,7 +2,7 @@
   <ElConfigProvider :locale="elementLocale">
     <Transition name="shell-fade" mode="out-in">
       <div v-if="isAuthenticatedRoute" key="auth-shell" class="app-shell">
-        <AppSidebar :connection-projection="connectionProjection" />
+        <AppSidebar :connection-projection="connectionProjection" @retry-sync="syncStore.flushNow().catch(() => {})" />
         <div class="app-body">
           <AppHeader />
           <main class="app-content">
@@ -58,6 +58,7 @@ import { useTaskStore } from '@/store/useTaskStore'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { realtimeController, type RealtimeStatus } from '@/services/realtimeController'
 import { projectConnectionStatus, type ConnectionProjection } from '@/services/connectionStatusProjection'
+import { autoSyncEnabled } from '@/services/desktopPreferences'
 import { serviceUnavailable } from '@/services/serviceAvailability'
 import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
 import { setBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
@@ -83,6 +84,7 @@ const connectionProjection = computed<ConnectionProjection>(() => projectConnect
   serviceUnavailable: serviceUnavailable.value,
   realtime: realtimeStatus.value,
   syncing: syncStore.isSyncing,
+  autoSyncPaused: !autoSyncEnabled.value,
   chatError: chatStore.lastError,
   chatErrorCode: chatStore.lastErrorCode,
 }, getConnectionStatusMessages()))

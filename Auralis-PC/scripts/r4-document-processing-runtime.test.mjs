@@ -74,7 +74,7 @@ test('runtime discovers processing Sources once, shares one bounded sync cycle, 
   let syncCalls = 0
   let hydrateCalls = 0
   let loadSourcesCalls = 0
-  syncStore.triggerSync = async () => {
+  syncStore.flushBackground = async () => {
     syncCalls += 1
     models = syncCalls === 1
       ? [sourceModel('source-ready', 'READY'), sourceModel('source-failed', 'FAILED'), sourceModel('source-added-mid-cycle', 'INDEXING')]
@@ -129,7 +129,7 @@ test('resumePending does not wait for overview generation before Source reconcil
   let syncCalls = 0
   let resolveOverview
   const overviewPending = new Promise((resolve) => { resolveOverview = resolve })
-  syncStore.triggerSync = async () => { syncCalls += 1 }
+  syncStore.flushBackground = async () => { syncCalls += 1 }
   sourceStore.refreshLocalProjection = async () => sourceStore.sources
 
   const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 1, sourceReconciliationWaitMs: 0 })
@@ -172,7 +172,7 @@ test('runtime stop cancels a pending reconciliation timer and prevents later syn
   sourceStore.sources = models
   let syncCalls = 0
   let hydrateCalls = 0
-  syncStore.triggerSync = async () => { syncCalls += 1 }
+  syncStore.flushBackground = async () => { syncCalls += 1 }
   sourceStore.refreshLocalProjection = async () => { hydrateCalls += 1; return models }
 
   const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 3, sourceReconciliationWaitMs: 10 })
@@ -210,7 +210,7 @@ test('runtime scope change prevents an old reconciliation cycle from syncing aga
   sourceStore.sources = models
   let syncCalls = 0
   let hydrateCalls = 0
-  syncStore.triggerSync = async () => { syncCalls += 1 }
+  syncStore.flushBackground = async () => { syncCalls += 1 }
   sourceStore.refreshLocalProjection = async () => { hydrateCalls += 1; return models }
 
   const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 3, sourceReconciliationWaitMs: 10 })
@@ -457,7 +457,7 @@ test('runtime uses the owner-scoped local-first Asset input resolver for parser 
 test('Tauri document runtime flushes pending sync mutations before bootstrapping sources', async () => {
   const runtime = await source('src/services/documentProcessing/runtime.ts')
   assert.match(runtime, /import\s+\{\s*useSyncStore\s*\}\s+from\s+'@\/store\/useSyncStore'/)
-  const syncIndex = runtime.indexOf('await useSyncStore().triggerSync()')
+  const syncIndex = runtime.indexOf('await useSyncStore().flushBackground()')
   const sourceBootstrapIndex = runtime.indexOf('await sourceStore.loadSources().catch', syncIndex)
   assert.ok(syncIndex >= 0, 'runtime must attempt an initial sync cycle')
   assert.ok(sourceBootstrapIndex > syncIndex, 'source bootstrap must run after the initial sync attempt')

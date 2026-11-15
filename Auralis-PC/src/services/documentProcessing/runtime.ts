@@ -324,7 +324,7 @@ export class DocumentProcessingRuntime {
       requestReadSync: async () => {
         if (!isCurrent()) return
         const syncStore = useSyncStore()
-        await syncStore.triggerSync().catch(() => undefined)
+        await syncStore.flushBackground().catch(() => undefined)
         if (!isCurrent()) return
         await useSourceStore().refreshLocalProjection(scope).catch(() => undefined)
         if (!isCurrent()) return
@@ -545,7 +545,7 @@ export class DocumentProcessingRuntime {
     }
     if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
 
-    await useSyncStore().triggerSync().catch((error) => {
+    await useSyncStore().flushBackground().catch((error) => {
       console.warn('[DocumentRuntime] pending sync bootstrap deferred', error)
     })
     if (!this.isCurrentStart(generation, userId, serverDeviceId)) return

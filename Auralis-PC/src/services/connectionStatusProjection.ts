@@ -1,4 +1,4 @@
-export type ConnectionLevel = 'error' | 'offline' | 'reconnecting' | 'syncing' | 'ready'
+export type ConnectionLevel = 'error' | 'offline' | 'reconnecting' | 'syncing' | 'paused' | 'ready'
 
 export interface ConnectionStatusInput {
   online: boolean
@@ -7,6 +7,7 @@ export interface ConnectionStatusInput {
   serviceUnavailable: boolean
   realtime: 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
   syncing: boolean
+  autoSyncPaused?: boolean
   chatError: string | null
   chatErrorCode?: string | null
 }
@@ -20,9 +21,10 @@ export interface ConnectionProjection {
 
 export const defaultConnectionStatusMessages: Readonly<Record<ConnectionLevel, string>> = {
   error: '服务暂时不可用',
-  offline: '当前离线，本地修改会在恢复网络后同步',
+  offline: '当前离线，本地修改已保存在此设备',
   reconnecting: '实时连接恢复中',
   syncing: '同步中',
+  paused: '自动同步已暂停',
   ready: '已同步',
 }
 
@@ -62,6 +64,15 @@ export function projectConnectionStatus(
       level: 'syncing',
       code: 'SYNCING',
       message: messages.syncing,
+      retryable: true,
+    }
+  }
+
+  if (input.autoSyncPaused) {
+    return {
+      level: 'paused',
+      code: 'AUTO_SYNC_PAUSED',
+      message: messages.paused,
       retryable: true,
     }
   }

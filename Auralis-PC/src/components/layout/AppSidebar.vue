@@ -153,7 +153,7 @@
           class="avatar-sync-badge"
           :class="`status-${connectionProjection.level}`"
           :title="syncBadgeTitle"
-          @click.stop="triggerSyncRetry"
+          @click.stop="$emit('retrySync')"
         >
           <span class="avatar-sync-ripple" :class="`status-${connectionProjection.level}`"></span>
           <span class="avatar-sync-dot" :class="`status-${connectionProjection.level}`"></span>
@@ -201,7 +201,6 @@ import { navigationMessages } from './navigationMessages'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
-import { useSyncStore } from '@/store/useSyncStore'
 import type { ConnectionProjection } from '@/services/connectionStatusProjection'
 import {
   getLegacySubjectIcon,
@@ -220,6 +219,7 @@ const messages = {
   switchTheme: { 'zh-CN': '点击切换主题界面', en: 'Switch the appearance theme', ja: '外観テーマを切り替える' },
   profile: { 'zh-CN': '个人中心', en: 'Profile', ja: 'プロフィール' },
   avatar: { 'zh-CN': '用户头像', en: 'User avatar', ja: 'ユーザーのアバター' },
+  syncNow: { 'zh-CN': '{status}（点击立即同步）', en: '{status} (click to sync now)', ja: '{status}（クリックして今すぐ同期）' },
   retrySync: { 'zh-CN': '{status} (点击重试)', en: '{status} (click to retry)', ja: '{status}（クリックして再試行）' },
   noDescription: { 'zh-CN': '暂无描述', en: 'No description', ja: '説明はありません' },
   subjectCounts: {
@@ -240,10 +240,10 @@ const navDescriptions = {
 const route = useRoute()
 const router = useRouter()
 const { connectionProjection } = defineProps<{ connectionProjection: ConnectionProjection }>()
+defineEmits<{ retrySync: [] }>()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const subjectStore = useSubjectStore()
-const syncStore = useSyncStore()
 
 const userInitial = computed(() => {
   return authStore.username ? authStore.username.charAt(0).toUpperCase() : 'U'
@@ -265,7 +265,7 @@ let closeTimeout: ReturnType<typeof setTimeout> | null = null
 
 const themeAction = computed(() => t(settingsStore.isDark ? messages.switchLight : messages.switchDark))
 const syncBadgeTitle = computed(() => connectionProjection.retryable
-  ? t(messages.retrySync, { status: connectionProjection.message })
+  ? t(connectionProjection.level === 'paused' ? messages.syncNow : messages.retrySync, { status: connectionProjection.message })
   : connectionProjection.message)
 
 const hoverTooltip = computed(() => {
@@ -317,10 +317,6 @@ const keepHoverCard = () => {
     clearTimeout(closeTimeout)
     closeTimeout = null
   }
-}
-
-const triggerSyncRetry = () => {
-  syncStore.requestBackgroundSync('online')
 }
 
 onMounted(async () => {
@@ -710,7 +706,7 @@ onUnmounted(() => {
   background: #D47B7B;
   box-shadow: 0 0 6px rgba(212, 123, 123, 0.8);
 }
-.avatar-sync-dot.status-offline, .avatar-sync-dot.status-reconnecting {
+.avatar-sync-dot.status-offline, .avatar-sync-dot.status-reconnecting, .avatar-sync-dot.status-paused {
   background: #C89B6D;
   box-shadow: 0 0 6px rgba(200, 155, 109, 0.8);
 }
@@ -722,7 +718,7 @@ onUnmounted(() => {
   background: #D47B7B;
   box-shadow: 0 0 8px rgba(212, 123, 123, 0.7);
 }
-.sync-dot.status-offline, .sync-dot.status-reconnecting {
+.sync-dot.status-offline, .sync-dot.status-reconnecting, .sync-dot.status-paused {
   background: #C89B6D;
   box-shadow: 0 0 8px rgba(200, 155, 109, 0.7);
 }

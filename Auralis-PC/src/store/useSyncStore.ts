@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { useSyncApi } from '@/api/useSyncApi'
+import { autoSyncEnabled } from '@/services/desktopPreferences'
 import { completeUpload, createUploadIntent, uploadToObjectStorage } from '@/api/useAssetApi'
 import { getLocalRepository, getLocalAssetRepository, getOverviewRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
@@ -34,17 +35,26 @@ export function isOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
+export class SyncOfflineError extends Error {
+  readonly code = 'SYNC_OFFLINE'
+}
+
 export function runCoreSyncWithAssetQueueWakeup<T>(
   assetQueue: Pick<LocalAssetSyncQueue, 'wakeUp'>,
   isScopeCurrent: () => boolean,
   runCoreCycle: () => Promise<T>,
+  canProcessAsset?: () => boolean,
+  shouldAwaitAssets?: () => boolean,
 ): Promise<T> {
-  void assetQueue.wakeUp().catch(error => {
+  const assetWork = assetQueue.wakeUp(canProcessAsset).catch(error => {
     if (!isScopeCurrent()) return
     const safe = classifyClientError(error, 'SYNC')
     logClientError('[useSyncStore] Asset queue wakeup deferred', error, safe)
   })
-  return runCoreCycle()
+  return runCoreCycle().then(async result => {
+    if (shouldAwaitAssets?.()) await assetWork
+    return result
+  })
 }
 
 export const getClientId = (): string => {
@@ -84,17 +94,10 @@ export const useSyncStore = defineStore('sync', () => {
   let cyclePromiseKey: symbol | null = null
   let syncRequestedKey: symbol | null = null
   let syncRequested = false
+  let cycleMode: { manual: boolean } | null = null
   const scheduler = createSyncScheduler({
     delayMs: 500,
-    run: async () => {
-      const scope = activeSyncScope
-      await flushNow()
-      if (!scope?.isCurrent()) return
-      // A focus record can reference a task just pushed by the core cycle.
-      void usePomodoroStore().flushPending().catch((error) => {
-        if (scope.isCurrent()) console.warn('[useSyncStore] Focus session sync deferred', error)
-      })
-    },
+    run: () => flushBackground().catch(() => undefined),
   })
 
   let assetQueuePromise: Promise<LocalAssetSyncQueue> | null = null
@@ -139,6 +142,10 @@ export const useSyncStore = defineStore('sync', () => {
     if (!scope.isCurrent()) throw new SyncScopeChangedError()
   }
 
+  watch(autoSyncEnabled, (enabled) => {
+    if (enabled) requestBackgroundSync('online')
+  })
+
   watch(
     () => ({ userId: authStore.user?.id, deviceId: authStore.serverDeviceId, sessionId: authStore.sessionId }),
     (newVal, oldVal) => {
@@ -147,6 +154,7 @@ export const useSyncStore = defineStore('sync', () => {
         activeSyncScope = createSyncScopeTicket()
         syncRequestedKey = null
         syncRequested = false
+        cycleMode = null
         cursor.value = null
         resetRequired.value = false
         lastSyncError.value = null
@@ -217,7 +225,16 @@ export const useSyncStore = defineStore('sync', () => {
               uploadToObjectStorage,
               completeUpload: (assetId) => completeUpload(assetId, queueScope),
             },
-            onWakeup: () => { if (isQueueCurrent()) requestBackgroundSync('write') },
+            onWakeup: () => {
+              if (!isQueueCurrent()) return
+              if (cyclePromiseKey === queueScope.key && cycleMode?.manual) {
+                syncRequestedKey = queueScope.key
+                syncRequested = true
+                return
+              }
+              requestBackgroundSync('write')
+            },
+            wakeOnOnline: false,
           })
 
           if (
@@ -326,7 +343,7 @@ export const useSyncStore = defineStore('sync', () => {
     }
     // Pull the latest Subject/Source projection first; runCycle performs the
     // bounded Overview/Review reconciliation after that core snapshot is current.
-    scheduler.request()
+    requestBackgroundSync('realtime')
   }
   const overviewOnlineHandler = (): void => { requestBackgroundSync('online') }
   if (typeof window !== 'undefined') {
@@ -341,7 +358,7 @@ export const useSyncStore = defineStore('sync', () => {
     window.dispatchEvent(new CustomEvent('auralis-sync-updated'))
   }
 
-  async function runCycle(scope: StoreSyncScopeTicket): Promise<void> {
+  async function runCycle(scope: StoreSyncScopeTicket, canContinue: () => boolean, isManual: () => boolean): Promise<void> {
     requireCurrentSyncScope(scope)
     const repositoryForSync = await getRepository(scope)
     requireCurrentSyncScope(scope)
@@ -351,6 +368,7 @@ export const useSyncStore = defineStore('sync', () => {
     try {
       const assetQueue = await getAssetQueue(scope)
       requireCurrentSyncScope(scope)
+      if (!canContinue()) return
       const result = await runCoreSyncWithAssetQueueWakeup(assetQueue, scope.isCurrent, () => runSyncCycle({
         repository: repositoryForSync,
         api: useSyncApi,
@@ -365,7 +383,7 @@ export const useSyncStore = defineStore('sync', () => {
           publishProjectionChange({ resourceTypes: new Set(['TASK']) })
           publishUpdated()
         },
-      }))
+      }), canContinue, isManual)
       requireCurrentSyncScope(scope)
       cursor.value = result.cursor
       resetRequired.value = false
@@ -375,32 +393,45 @@ export const useSyncStore = defineStore('sync', () => {
       }
       // This call is deliberately part of the completed core cycle: startup's
       // initial sync can finish before runtime event listeners are registered.
-      try {
-        await reconcileOverviews(scope)
-      } catch (error) {
-        if (!scope.isCurrent()) throw new SyncScopeChangedError()
-        console.warn('[useSyncStore] Overview reconciliation deferred', error)
+      if (canContinue()) {
+        try {
+          await reconcileOverviews(scope)
+        } catch (error) {
+          if (!scope.isCurrent()) throw new SyncScopeChangedError()
+          console.warn('[useSyncStore] Overview reconciliation deferred', error)
+        }
       }
       requireCurrentSyncScope(scope)
 
-      try {
-        const { ReviewSyncService } = await import('@/services/reviewSyncService')
-        const { localDb, getLocalSqlDatabase } = await import('@/services/localDb')
-        await localDb.init()
-        requireCurrentSyncScope(scope)
-        const reviewSync = new ReviewSyncService(getLocalSqlDatabase(), repositoryForSync)
-        const reviewResult = await reviewSync.syncAllPending(scope.userId, scope.serverDeviceId, scope)
-        requireCurrentSyncScope(scope)
-        reviewSyncError.value = reviewResult.protocolBlocked
-          ? '复习数据仍保存在本机；服务器需要更新到复习同步协议 v2 后才能上传。'
-          : reviewResult.conflictCount > 0
-            ? '复习记录在其他设备发生变化；本机操作已保留，请联网后明确处理冲突。'
-            : null
-        publishProjectionChange({ resourceTypes: new Set(['REVIEW_STATE', 'STATS']) as any })
-        publishUpdated()
-      } catch (error) {
-        if (!scope.isCurrent()) throw new SyncScopeChangedError()
-        console.warn('[useSyncStore] Review sync deferred', error)
+      if (canContinue()) {
+        try {
+          const { ReviewSyncService } = await import('@/services/reviewSyncService')
+          const { localDb, getLocalSqlDatabase } = await import('@/services/localDb')
+          await localDb.init()
+          requireCurrentSyncScope(scope)
+          if (canContinue()) {
+            const reviewSync = new ReviewSyncService(getLocalSqlDatabase(), repositoryForSync)
+            const reviewResult = await reviewSync.syncAllPending(scope.userId, scope.serverDeviceId, scope)
+            requireCurrentSyncScope(scope)
+            reviewSyncError.value = reviewResult.protocolBlocked
+              ? '复习数据仍保存在本机；服务器需要更新到复习同步协议 v2 后才能上传。'
+              : reviewResult.conflictCount > 0
+                ? '复习记录在其他设备发生变化；本机操作已保留，请联网后明确处理冲突。'
+                : null
+            publishProjectionChange({ resourceTypes: new Set(['REVIEW_STATE', 'STATS']) })
+            publishUpdated()
+          }
+        } catch (error) {
+          if (!scope.isCurrent()) throw new SyncScopeChangedError()
+          console.warn('[useSyncStore] Review sync deferred', error)
+        }
+      }
+      requireCurrentSyncScope(scope)
+      // A focus record can reference a task just pushed by the core cycle.
+      if (canContinue()) {
+        await usePomodoroStore().flushPending(canContinue).catch((error) => {
+          if (scope.isCurrent()) console.warn('[useSyncStore] Focus session sync deferred', error)
+        })
       }
       requireCurrentSyncScope(scope)
 
@@ -448,17 +479,25 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  async function flushNow(): Promise<void> {
-    if (!isOnline()) return
+  async function flush(manual: boolean): Promise<void> {
     const scope = activeSyncScope
     if (!scope || !scope.isCurrent() || !authStore.isAuthenticated) return
-    if (cyclePromise && cyclePromiseKey === scope.key) {
+    if (!isOnline()) {
+      if (manual) throw new SyncOfflineError('SYNC_OFFLINE')
+      return
+    }
+    if (!manual && !autoSyncEnabled.value) return
+    const scopeKey = scope.key
+    if (cyclePromise && cyclePromiseKey === scope.key && cycleMode) {
+      if (manual) cycleMode.manual = true
       syncRequestedKey = scope.key
       syncRequested = true
       return cyclePromise
     }
 
-    const scopeKey = scope.key
+    const mode = { manual }
+    cycleMode = mode
+    const canContinue = (): boolean => scope.isCurrent() && (mode.manual || autoSyncEnabled.value)
     const pending = Promise.resolve().then(async () => {
       try {
         do {
@@ -467,12 +506,14 @@ export const useSyncStore = defineStore('sync', () => {
             syncRequested = false
             syncRequestedKey = null
           }
-          await runCycle(scope)
+          if (!canContinue()) break
+          await runCycle(scope, canContinue, () => mode.manual)
         } while (syncRequested && isOnline())
       } finally {
         if (cyclePromiseKey === scopeKey) {
           cyclePromise = null
           cyclePromiseKey = null
+          cycleMode = null
           if (syncRequestedKey === scopeKey) {
             syncRequested = false
             syncRequestedKey = null
@@ -485,9 +526,16 @@ export const useSyncStore = defineStore('sync', () => {
     return pending
   }
 
+  async function flushNow(): Promise<void> {
+    await flush(true)
+  }
+
+  async function flushBackground(): Promise<void> {
+    await flush(false)
+  }
+
   function requestBackgroundSync(_reason: 'startup' | 'write' | 'realtime' | 'online' | 'read'): void {
-    if (!useAuthStore().isAuthenticated) return
-    void getAssetQueue().catch(e => console.error('[useSyncStore] Failed to init asset queue:', e))
+    if (!authStore.isAuthenticated || !autoSyncEnabled.value) return
     scheduler.request()
   }
 
@@ -525,6 +573,7 @@ export const useSyncStore = defineStore('sync', () => {
     acknowledgeScheduleSyncError,
     reviewSyncError,
     requestBackgroundSync,
+    flushBackground,
     flushNow,
     triggerSync,
     pullChanges,

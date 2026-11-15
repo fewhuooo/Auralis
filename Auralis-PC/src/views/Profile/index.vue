@@ -261,11 +261,11 @@
                   <option>16px</option>
                 </select>
                 <template v-else>
-                  <div class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired || hasPendingFocusSessions) }">
+                  <div class="status-pill-badge" :class="{ 'is-warning': item.id === 'sync_status' && (syncStore.lastSyncError || syncStore.resetRequired || !autoSyncEnabled || hasPendingFocusSessions) }">
                     <span class="status-dot-indicator"></span>
                     <span>{{ syncStatusText }}</span>
                   </div>
-                  <button class="action-btn primary" type="button" @click="handleSyncNow">
+                  <button class="action-btn primary" type="button" :disabled="syncButtonMessage === profileMessages.syncingButton" @click="handleSyncNow">
                     {{ t(syncButtonMessage) }}
                   </button>
                 </template>
@@ -561,7 +561,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, shallowRef, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IconActivity,
@@ -591,7 +591,6 @@ import {
   IconSparkles,
   IconTextSize,
   IconTrendingUp,
-  IconWifi,
   type Icon,
 } from '@tabler/icons-vue'
 import { isCurrentUsageRequest, nextRequestGeneration } from '@/services/aiUsageGuardHelper.ts'
@@ -607,7 +606,8 @@ import {
   type AiUsageView,
   type CanonicalAiProvider,
 } from '@/api/aiClient'
-import { isOnline, useSyncStore } from '@/store/useSyncStore'
+import { SyncOfflineError, useSyncStore } from '@/store/useSyncStore'
+import { autoOverviewEnabled, autoSyncEnabled, setAutoOverviewEnabled, setAutoSyncEnabled } from '@/services/desktopPreferences'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { locale, localeOptions, setLocale, t, type Message } from '@/i18n'
 import { profileMessages } from './profileMessages'
@@ -1127,6 +1127,7 @@ const syncStatusText = computed(() => {
   if (syncStore.isSyncing) return t(profileMessages.syncing)
   if (syncStore.lastSyncError) return t(profileMessages.syncError, { error: syncStore.lastSyncError })
   if (syncStore.resetRequired) return t(profileMessages.resetRequired)
+  if (!autoSyncEnabled.value) return t(profileMessages.syncPaused)
   if (hasPendingFocusSessions.value) return t(profileMessages.pendingFocus)
   return t(profileMessages.synced)
 })
@@ -1212,7 +1213,7 @@ const loadStats = async () => {
 }
 
 // === Settings ===
-type ToggleSetting = { id: string; label: Message; type: 'toggle'; value: boolean }
+type ToggleSetting = { id: 'dark' | 'compact' | 'auto_sync' | 'auto_overview'; label: Message; type: 'toggle'; value: boolean }
 type SettingItem = (ToggleSetting | { id: 'lang' | 'font_size' | 'sync_status'; label: Message; type: 'select' | 'status' }) & { icon: Icon }
 
 const settingGroups = reactive<{ id: string; title: Message; icon: Icon; items: SettingItem[] }[]>([
@@ -1233,19 +1234,19 @@ const settingGroups = reactive<{ id: string; title: Message; icon: Icon; items: 
     icon: IconCloud,
     items: [
       { id: 'sync_status', label: profileMessages.syncStatus, icon: IconActivity, type: 'status' },
-      { id: 'auto_sync', label: profileMessages.autoSync, icon: IconRefresh, type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
-      { id: 'wifi_only', label: profileMessages.wifiOnly, icon: IconWifi, type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
+      { id: 'auto_sync', label: profileMessages.autoSync, icon: IconRefresh, type: 'toggle', get value() { return autoSyncEnabled.value } },
     ],
   },
 ])
 
-const syncButtonMessage = ref(profileMessages.syncNow)
+const syncButtonMessage = shallowRef(profileMessages.syncNow)
+let syncFeedbackTimer: ReturnType<typeof setTimeout> | undefined
 
 const autoOverviewSetting = reactive({
   id: 'auto_overview',
   label: profileMessages.autoOverview,
   type: 'toggle',
-  value: localStorage.getItem('sc_setting_auto_overview') !== 'false',
+  get value() { return autoOverviewEnabled.value },
 } satisfies ToggleSetting)
 
 const handleToggle = (item: ToggleSetting) => {
@@ -1257,13 +1258,12 @@ const handleToggle = (item: ToggleSetting) => {
     settingsStore.compactLayout = !settingsStore.compactLayout
     return
   }
-  item.value = !item.value
-  localStorage.setItem(`sc_setting_${item.id}`, String(item.value))
+  const enabled = !item.value
+  if (item.id === 'auto_sync') setAutoSyncEnabled(enabled)
+  if (item.id === 'auto_overview') setAutoOverviewEnabled(enabled)
   ElNotification({
     title: t(profileMessages.settingsUpdated),
-    message: item.id === 'auto_overview'
-      ? t(profileMessages.autoOverviewSaved)
-      : t(item.value ? profileMessages.preferenceEnabled : profileMessages.preferenceDisabled, { label: t(item.label) }),
+    message: t(enabled ? profileMessages.preferenceEnabled : profileMessages.preferenceDisabled, { label: t(item.label) }),
     type: 'success',
     duration: 2000,
   })
@@ -1271,13 +1271,11 @@ const handleToggle = (item: ToggleSetting) => {
 
 const handleSyncNow = async () => {
   const generation = authStore.loginGeneration
-  const previousText = syncButtonMessage.value
+  clearTimeout(syncFeedbackTimer)
   syncButtonMessage.value = profileMessages.syncingButton
   try {
-    if (!isOnline()) throw new Error('NETWORK_OFFLINE')
     await syncStore.flushNow()
     if (authStore.loginGeneration !== generation) return
-    await pomodoroStore.flushPending()
     await loadStats()
     if (authStore.loginGeneration !== generation) return
     if (hasPendingFocusSessions.value) {
@@ -1290,9 +1288,10 @@ const handleSyncNow = async () => {
   } catch (e) {
     if (authStore.loginGeneration !== generation || e instanceof SyncScopeChangedError) return
     syncButtonMessage.value = profileMessages.syncFailedButton
-    ElNotification({ title: t(profileMessages.syncFailed), message: t(profileMessages.syncFailedDescription), type: 'error', duration: 3000 })
+    const message = e instanceof SyncOfflineError ? profileMessages.syncOfflineDescription : profileMessages.syncFailedDescription
+    ElNotification({ title: t(profileMessages.syncFailed), message: t(message), type: 'error', duration: 3000 })
   } finally {
-    setTimeout(() => { syncButtonMessage.value = previousText }, 2500)
+    syncFeedbackTimer = setTimeout(() => { syncButtonMessage.value = profileMessages.syncNow }, 2500)
   }
 }
 

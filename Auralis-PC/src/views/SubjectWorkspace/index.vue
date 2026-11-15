@@ -998,6 +998,7 @@ import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
 import { OverviewResultsSyncService, runOverviewConflictResolutionOnce } from '@/services/overviewResultsSyncService'
 import { subscribeOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
+import { autoSyncEnabled } from '@/services/desktopPreferences'
 import type { FileOverviewRecord, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import { shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
 import type { KnowledgeBlockModel, SourceFileModel } from '@/services/domainMappers'
@@ -1499,6 +1500,7 @@ const ensureOverviewRuntime = async () => {
 }
 
 const resolveOverviewSyncConflict = (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, choice: 'LOCAL' | 'REMOTE', silent = false) => {
+  if (silent && !autoSyncEnabled.value) return Promise.resolve()
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
   const capturedSubjectId = subjectId.value
@@ -1555,6 +1557,7 @@ const resolveOverviewSyncConflict = (scopeType: 'FILE' | 'SUBJECT', scopeId: str
       },
       getCurrentSources: mapCurrentSources,
     }
+    if (silent && !autoSyncEnabled.value) return
     try {
       await new OverviewResultsSyncService(overviewRepository,userId,serverDeviceId)
         .resolveConflict(scopeType,scopeId,revisionKey,choice,options)

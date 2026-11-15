@@ -424,6 +424,90 @@ test('sync cycle reruns when a mutation is queued during an active cycle', () =>
   assert.match(source, /while\s*\(syncRequested\s*&&\s*isOnline\(\)\)/);
 });
 
+test('automatic sync pauses queued work, manual sync can drain it, and re-enabling resumes pending writes', async (t) => {
+  const { createPinia, disposePinia, setActivePinia } = await import('pinia');
+  const { nextTick } = await import('vue');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  const { useSyncStore, SyncOfflineError } = await import('../src/store/useSyncStore.ts');
+  const { setAutoSyncEnabled } = await import('../src/services/desktopPreferences.ts');
+  const { getLocalRepository } = await import('../src/services/localDb.ts');
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const userId = 'sync-preference-user';
+  const deviceId = 'sync-preference-device';
+  const authStore = useAuthStore();
+  authStore.setSession({
+    user: { id: userId, email: 'sync-preference@example.test' },
+    tokens: { accessToken: 'test-token', refreshToken: 'test-refresh' },
+    sessionId: 'sync-preference-session', serverDeviceId: deviceId,
+  });
+  const repository = await getLocalRepository(userId, deviceId);
+  const syncStore = useSyncStore();
+  const pendingIds = async () => (await repository.listUnresolved()).map(mutation => mutation.clientMutationId);
+  const write = async (id) => {
+    const task = { id, title: id, version: 1 };
+    await repository.upsert('TASK', id, task, { version: task.version });
+    await repository.enqueueMutation({ clientMutationId: id, resourceType: 'TASK', resourceId: id,
+      mutationType: 'UPDATE', baseVersion: task.version, payload: task });
+  };
+  await repository.saveCursor('preference-cursor');
+  const uploaded = [];
+  let pulls = 0;
+  t.mock.method(useSyncApi, 'pushChanges', async ({ mutations }) => {
+    uploaded.push(...mutations.map(mutation => mutation.clientMutationId));
+    return { results: mutations.map(mutation => ({ clientMutationId: mutation.clientMutationId,
+      resourceType: 'TASK', resourceId: mutation.resourceId, mutationType: mutation.mutationType, decision: 'APPLIED',
+      current: { ...mutation.payload, version: 2 } })) };
+  });
+  t.mock.method(useSyncApi, 'pullChanges', async () => {
+    pulls += 1;
+    return { changes: [], nextCursor: 'preference-cursor', hasMore: false, resetRequired: false };
+  });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    await write('manual');
+    syncStore.requestBackgroundSync('startup');
+    setAutoSyncEnabled(false);
+    syncStore.requestBackgroundSync('write');
+    syncStore.requestBackgroundSync('online');
+    syncStore.requestBackgroundSync('realtime');
+    t.mock.timers.tick(500);
+    await syncStore.flushBackground();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(uploaded, []);
+    assert.equal(pulls, 0);
+    assert.equal((await repository.read('TASK', 'manual')).value.title, 'manual');
+    assert.deepEqual(await pendingIds(), ['manual']);
+
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
+    try {
+      await assert.rejects(syncStore.flushNow(), SyncOfflineError);
+      assert.deepEqual(await pendingIds(), ['manual']);
+    } finally {
+      if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+      else delete globalThis.navigator;
+    }
+    await syncStore.flushNow();
+    assert.deepEqual(uploaded, ['manual']);
+    assert.deepEqual(await pendingIds(), []);
+
+    await write('automatic');
+    setAutoSyncEnabled(true);
+    await nextTick();
+    t.mock.timers.tick(500);
+    for (let attempt = 0; attempt < 50 && (pulls < 2 || syncStore.isSyncing); attempt += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.deepEqual(uploaded, ['manual', 'automatic']);
+    assert.deepEqual(await pendingIds(), []);
+    assert.equal(pulls, 2);
+  } finally {
+    setAutoSyncEnabled(true);
+    disposePinia(pinia);
+  }
+});
+
 test('Pinia sync store delegates transport and projection reconciliation to the shared cycle', () => {
   const source = fs.readFileSync(new URL('../src/store/useSyncStore.ts', import.meta.url), 'utf8');
   assert.match(source, /import\s*\{\s*runSyncCycle\s*\}\s*from\s*'@\/services\/syncCycle'/);

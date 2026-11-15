@@ -1,5 +1,6 @@
 import { computeSubjectInputFingerprint, isOverviewSaveNotCurrent } from './overviewRepository.ts'
 import { classifyOverviewFailure } from './overviewFailurePolicy.ts'
+import { autoOverviewEnabled } from '@/services/desktopPreferences'
 import type {
   FileOverviewRecord,
   OverviewApi,
@@ -205,6 +206,7 @@ export class OverviewGenerationService {
   }
 
   async generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult> {
+    if (!autoOverviewEnabled.value) return skippedResult('AUTO_OVERVIEW_DISABLED')
     const serviceGeneration = this.cancellationGeneration
     this.log({ event: 'TRIGGER', trigger, sourceId, revision: ingestionRevision, mode: 'ALL' })
     if (!(await this.isEligible(sourceId, ingestionRevision))) {
@@ -231,6 +233,7 @@ export class OverviewGenerationService {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision: ingestionRevision, mode: 'ALL', outcome: 'PARTIAL_REQUIRES_MANUAL_RETRY' })
       return skippedResult('PARTIAL_REQUIRES_MANUAL_RETRY')
     }
+    if (!autoOverviewEnabled.value) return skippedResult('AUTO_OVERVIEW_DISABLED')
     return this.runFile(sourceId, ingestionRevision, 'ALL', undefined, trigger)
   }
 
@@ -338,7 +341,7 @@ export class OverviewGenerationService {
   }
 
   async resumePending(trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult[]> {
-    if (!this.listReadyFiles) return []
+    if (!autoOverviewEnabled.value || !this.listReadyFiles) return []
     let files: ReadyFile[]
     try { files = await this.listReadyFiles() } catch {
       console.warn('[OverviewGeneration] ready-file scan failed')
@@ -346,6 +349,7 @@ export class OverviewGenerationService {
     }
     const results: OverviewRegenerationResult[] = []
     for (const file of files) {
+      if (!autoOverviewEnabled.value) break
       try {
         results.push(await this.generateReadyFileOverview(file.sourceId, file.ingestionRevision, trigger))
       } catch (error) {
@@ -516,6 +520,7 @@ export class OverviewGenerationService {
     const retryKey = this.dispatchedRequestKey('FILE', sourceId, JSON.stringify([revision, mode, instruction?.trim() ?? '']))
     const previousRequestId = this.dispatchedRequestIds.get(retryKey)
     const controller = new AbortController()
+    const manualConsumers = new Set(manualConsumer ? [manualConsumer.id] : [])
     const startedAt = monotonicNow()
     const task: Promise<OverviewRegenerationResult> = (async () => {
       const request = withInstruction({ sourceId, mode,
@@ -528,6 +533,10 @@ export class OverviewGenerationService {
         }
         const generationBaseline = await this.repository.captureGenerationBaseline?.('FILE',sourceId,revision,mode)
         if (controller.signal.aborted || !(await this.isEligible(sourceId,revision))) return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
+        if (!autoOverviewEnabled.value && manualConsumers.size === 0) {
+          this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: 'AUTO_OVERVIEW_DISABLED' })
+          return skippedResult('AUTO_OVERVIEW_DISABLED')
+        }
         const generated = await raceWithAbort(this.api.generateSourceOverview(request, {
           requestId, signal: controller.signal,
           onRequestDispatched: () => this.dispatchedRequestIds.set(retryKey, requestId),
@@ -573,7 +582,7 @@ export class OverviewGenerationService {
       ingestionRevision: revision,
       controller,
       automaticOwner: trigger !== 'MANUAL_RETRY',
-      manualConsumers: new Set(manualConsumer ? [manualConsumer.id] : []),
+      manualConsumers,
     }
     if (manualConsumer) manualConsumer.entry = entry
     this.inFlight.set(key, entry)

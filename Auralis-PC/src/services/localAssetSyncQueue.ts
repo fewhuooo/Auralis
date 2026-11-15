@@ -27,6 +27,7 @@ export interface LocalAssetSyncQueueOptions {
   draftService: LocalSourceDraftService
   api?: AssetSyncApi
   onWakeup?: () => void
+  wakeOnOnline?: boolean
   now?: () => string
 }
 
@@ -144,8 +145,8 @@ export class LocalAssetSyncQueue {
   private readonly api: AssetSyncApi
   private readonly onWakeup?: () => void
   private readonly now: () => string
-  private isProcessing = false
-  private rerunRequested = false
+  private processing: Promise<void> | null = null
+  private rerun: (() => boolean) | null = null
   private disposed = false
   private readonly onlineHandler?: () => void
 
@@ -161,7 +162,7 @@ export class LocalAssetSyncQueue {
     this.onWakeup = options.onWakeup
     this.now = options.now ?? (() => new Date().toISOString())
 
-    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    if (options.wakeOnOnline !== false && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       this.onlineHandler = () => {
         void this.wakeUp()
       }
@@ -199,8 +200,8 @@ export class LocalAssetSyncQueue {
     return this.assetRepository.recoverInflightJobs()
   }
 
-  wakeUp(): Promise<void> {
-    return this.processQueue()
+  wakeUp(canProcess?: () => boolean): Promise<void> {
+    return this.processQueue(canProcess)
   }
 
   async retryNow(jobId?: string): Promise<void> {
@@ -221,31 +222,28 @@ export class LocalAssetSyncQueue {
     if (this.disposed) return
   }
 
-  async processQueue(): Promise<void> {
-    if (this.disposed) return
-    if (this.isProcessing) {
-      this.rerunRequested = true
-      return
+  processQueue(canProcess: () => boolean = () => true): Promise<void> {
+    if (this.disposed || !canProcess()) return Promise.resolve()
+    if (this.processing) {
+      this.rerun = canProcess
+      return this.processing
     }
 
-    this.isProcessing = true
-    this.rerunRequested = false
-
-    try {
-      while (!this.disposed) {
-        const currentTime = this.now()
-        const job = await this.assetRepository.claimNextSyncJob(currentTime)
-        if (this.disposed || !job) break
-
-        await this.processSingleJob(job.jobId, job.localAssetId, job.attempt, job.serverAssetId)
-      }
-    } finally {
-      this.isProcessing = false
-      if (this.rerunRequested && !this.disposed) {
-        this.rerunRequested = false
-        void this.processQueue()
-      }
-    }
+    this.processing = (async () => {
+      let enabled = canProcess
+      do {
+        this.rerun = null
+        while (!this.disposed && enabled()) {
+          const currentTime = this.now()
+          const job = await this.assetRepository.claimNextSyncJob(currentTime)
+          if (this.disposed || !job) break
+          await this.processSingleJob(job.jobId, job.localAssetId, job.attempt, job.serverAssetId)
+        }
+        if (!this.rerun) return
+        enabled = this.rerun
+      } while (!this.disposed)
+    })().finally(() => { this.processing = null })
+    return this.processing
   }
 
   private async processSingleJob(

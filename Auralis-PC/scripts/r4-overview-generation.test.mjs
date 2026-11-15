@@ -36,6 +36,7 @@ function createTestLockManager() {
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: createTestLockManager() } })
 
 const { OverviewGenerationService } = await import('../src/services/overviewGenerationService.ts')
+const { setAutoOverviewEnabled } = await import('../src/services/desktopPreferences.ts')
 const { OverviewRepository } = await import('../src/services/overviewRepository.ts')
 const { validateGeneratedOverviewResponse } = await import('../src/api/overviewResponseValidator.ts')
 const { classifyOverviewFailure, overviewFailureMessage } = await import('../src/services/overviewFailurePolicy.ts')
@@ -191,6 +192,93 @@ function readyService(repository, generateSourceOverview) {
     }),
   })
 }
+
+test('disabling automatic overviews skips ready files but allows explicit file generation', async (t) => {
+  t.after(() => setAutoOverviewEnabled(true))
+  setAutoOverviewEnabled(false)
+  const repository = new FakeOverviewRepository()
+  const calls = []
+  const service = readyService(repository, async request => {
+    calls.push(request)
+    return response(request.mode)
+  })
+
+  for (const trigger of [...automaticTriggers, 'MANUAL_RETRY']) {
+    assert.deepEqual(await service.generateReadyFileOverview('source-1', 'rev-1', trigger), {
+      status: 'SKIPPED', code: 'AUTO_OVERVIEW_DISABLED',
+    })
+  }
+  assert.deepEqual(calls, [])
+  assert.equal(await repository.getFileOverview('source-1', 'rev-1'), null)
+
+  assert.equal((await service.regenerateFileOverview('source-1', 'OUTLINE')).status, 'STARTED')
+  assert.deepEqual(calls, [{ sourceId: 'source-1', mode: 'OUTLINE' }])
+  assert.equal((await repository.getFileOverview('source-1', 'rev-1')).outlineMarkdown, outlineMarkdown)
+})
+
+test('disabling automatic overviews during preflight skips the pending request without caching a failure', async (t) => {
+  t.after(() => setAutoOverviewEnabled(true))
+  const repository = new FakeOverviewRepository()
+  const baselineReached = Promise.withResolvers()
+  const baseline = Promise.withResolvers()
+  repository.captureGenerationBaseline = () => {
+    baselineReached.resolve()
+    return baseline.promise
+  }
+  const calls = []
+  const service = readyService(repository, async request => {
+    calls.push(request)
+    return response(request.mode)
+  })
+  const pending = service.generateReadyFileOverview('source-1', 'rev-1', 'SOURCE_READY')
+  await baselineReached.promise
+
+  setAutoOverviewEnabled(false)
+  baseline.resolve('baseline')
+  assert.deepEqual(await pending, { status: 'SKIPPED', code: 'AUTO_OVERVIEW_DISABLED' })
+  assert.deepEqual(calls, [])
+  assert.equal(await repository.getFileOverview('source-1', 'rev-1'), null)
+})
+
+test('disabling during a ready-file scan preserves the dispatched result and skips subsequent files', async (t) => {
+  t.after(() => setAutoOverviewEnabled(true))
+  const repository = new FakeOverviewRepository()
+  const firstDispatch = Promise.withResolvers()
+  const firstResult = Promise.withResolvers()
+  const calls = []
+  let scans = 0
+  const service = new OverviewGenerationService({
+    repository,
+    api: { async generateSourceOverview(request) {
+      calls.push(request.sourceId)
+      if (request.sourceId === 'first') {
+        firstDispatch.resolve()
+        return firstResult.promise
+      }
+      return response(request.mode)
+    } },
+    sourceApi: { async get(id) { return { id, type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' } } },
+    listReadyFiles: async () => {
+      scans += 1
+      return ['first', 'second'].map(sourceId => ({ sourceId, ingestionRevision: 'rev-1' }))
+    },
+  })
+  const running = service.resumePending('RESUME_BOOTSTRAP')
+  await firstDispatch.promise
+
+  setAutoOverviewEnabled(false)
+  firstResult.resolve(response('ALL'))
+  assert.deepEqual((await running).map(result => result.status), ['STARTED'])
+  assert.deepEqual(await service.resumePending('RESUME_ONLINE'), [])
+  assert.equal(scans, 1)
+  assert.equal((await repository.getFileOverview('first', 'rev-1')).summaryMarkdown, summaryMarkdown)
+  assert.equal(await repository.getFileOverview('second', 'rev-1'), null)
+
+  setAutoOverviewEnabled(true)
+  assert.deepEqual(calls, ['first'])
+  await service.resumePending('JOB_CHANGED')
+  assert.deepEqual(calls, ['first', 'second'])
+})
 
 test('automatic triggers require a missing cache and never retry failed or partial records', async () => {
   const records = [

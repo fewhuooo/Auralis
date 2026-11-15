@@ -108,7 +108,9 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     if (nextRuntime.runStartedAtMs === null) stopTicker()
     else startTicker()
     if (finalizedSession) {
-      void flushPending().catch((error) => console.error('Failed to sync focus sessions:', error))
+      void import('@/store/useSyncStore').then(({ useSyncStore }) => {
+        useSyncStore().requestBackgroundSync('write')
+      }).catch((error) => console.error('Failed to schedule focus session sync:', error))
     }
   }
 
@@ -209,7 +211,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     await initializing
   }
 
-  async function flushPending(): Promise<number> {
+  async function flushPending(canContinue: () => boolean = () => true): Promise<number> {
     const scopeToken = currentScope(authStore)?.token
     if (!scopeToken || (typeof navigator !== 'undefined' && navigator.onLine === false)) return 0
     await initialize()
@@ -232,7 +234,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
           flight.requested = false
           const sentBeforeBatch = sent
           for (const event of await scopedRepository.listPending()) {
-            if (!requestScope.isCurrent()) break
+            if (!requestScope.isCurrent() || !canContinue()) break
             try {
               await useFocusSessionApi.create(event, requestScope)
             } catch (error) {
@@ -249,7 +251,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
             await refreshLocalSessions()
             if (requestScope.isCurrent()) syncRevision.value += sent - sentBeforeBatch
           }
-        } while (flight.requested && requestScope.isCurrent())
+        } while (flight.requested && requestScope.isCurrent() && canContinue())
         return sent
       }).finally(() => {
         if (flushFlight === flight) flushFlight = null
