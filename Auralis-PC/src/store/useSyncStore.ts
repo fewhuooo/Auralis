@@ -234,6 +234,9 @@ export const useSyncStore = defineStore('sync', () => {
               }
               requestBackgroundSync('write')
             },
+            onRetryDue: () => {
+              if (isQueueCurrent()) void flushBackground().catch(() => undefined)
+            },
             wakeOnOnline: false,
           })
 
@@ -383,7 +386,7 @@ export const useSyncStore = defineStore('sync', () => {
           publishProjectionChange({ resourceTypes: new Set(['TASK']) })
           publishUpdated()
         },
-      }), canContinue, isManual)
+      }), () => canContinue() && isOnline(), isManual)
       requireCurrentSyncScope(scope)
       cursor.value = result.cursor
       resetRequired.value = false
@@ -534,6 +537,15 @@ export const useSyncStore = defineStore('sync', () => {
     await flush(false)
   }
 
+  async function getUnfinishedAssetUploadStatus(): Promise<'pending' | 'failed' | null> {
+    const scope = activeSyncScope
+    if (!scope?.isCurrent()) return null
+    const assetRepository = await getLocalAssetRepository(scope.userId, scope.serverDeviceId)
+    const status = await assetRepository.getUnfinishedUploadStatus()
+    requireCurrentSyncScope(scope)
+    return status
+  }
+
   function requestBackgroundSync(_reason: 'startup' | 'write' | 'realtime' | 'online' | 'read'): void {
     if (!authStore.isAuthenticated || !autoSyncEnabled.value) return
     scheduler.request()
@@ -573,6 +585,7 @@ export const useSyncStore = defineStore('sync', () => {
     acknowledgeScheduleSyncError,
     reviewSyncError,
     requestBackgroundSync,
+    getUnfinishedAssetUploadStatus,
     flushBackground,
     flushNow,
     triggerSync,

@@ -46,6 +46,12 @@ export class LocalSourceDraftService {
   }
 
   async createDraft(input: CreateDraftInput): Promise<LocalSourceDraft> {
+    return withLocalAssetLifecycleLock(this.assetRepository.userId, this.assetRepository.serverDeviceId, () =>
+      this.createDraftUnlocked(input))
+  }
+
+  /** Caller must hold the owner/device asset lifecycle lock. */
+  async createDraftUnlocked(input: CreateDraftInput): Promise<LocalSourceDraft> {
     const now = this.now()
     const localContentRevision = input.localContentRevision ?? uuidv7()
     if (!UUID_REGEX.test(localContentRevision)) {
@@ -53,7 +59,7 @@ export class LocalSourceDraftService {
     }
 
     // 1. Create draft record in LocalAssetRepository
-    const draft = await this.assetRepository.createSourceDraft({
+    const draft = await this.assetRepository.createSourceDraftUnlocked({
       localSourceId: input.localSourceId,
       localAssetId: input.localAssetId,
       subjectId: input.subjectId,
@@ -78,7 +84,7 @@ export class LocalSourceDraftService {
       assetSizeBytes: input.assetSizeBytes,
     }
 
-    await this.localRepository.upsert('SOURCE', input.localSourceId, localView, {
+    await this.localRepository.upsertUnlocked('SOURCE', input.localSourceId, localView, {
       version: 0,
       deletedAt: null,
       syncStatus: 'pending',

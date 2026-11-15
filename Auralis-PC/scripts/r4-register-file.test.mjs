@@ -17,8 +17,6 @@ test('subject file registration validates prerequisites and exposes upload state
   assert.match(source, /await sourceStore\.createFileSource\(\s*targetSubjectId,\s*registerForm\.value\.name\.trim\(\),\s*asset\.id,\s*'\[\]',\s*asset\.sizeBytes,\s*\)/)
   assert.match(sourceStore, /async function createFileSource\([\s\S]*assetSizeBytes\?: number,?\s*\)/)
   assert.match(sourceStore, /assetSizeBytes: normalizedAssetSizeBytes/)
-  assert.match(sourceStore, /const \{ assetSizeBytes: _assetSizeBytes, \.\.\.mutationView \} = localView/)
-  assert.match(sourceStore, /payload: mutationView as unknown as Record<string, unknown>/)
   assert.match(sourceStore, /function scheduleSync\(\): void/)
   const createFileSource = sourceStore.slice(sourceStore.indexOf('async function createFileSource'), sourceStore.indexOf('async function addSourceFile'))
   assert.doesNotMatch(createFileSource, /await scheduleSync\(\)/)

@@ -1178,8 +1178,20 @@ const handleSyncNow = async () => {
   try {
     await syncStore.flushNow()
     if (authStore.loginGeneration !== generation) return
+    const assetUploadStatus = await syncStore.getUnfinishedAssetUploadStatus()
     await loadStats()
     if (authStore.loginGeneration !== generation) return
+    if (assetUploadStatus) {
+      const failed = assetUploadStatus === 'failed'
+      syncButtonMessage.value = failed ? profileMessages.syncFailedButton : profileMessages.pendingAssetUpload
+      ElNotification({
+        title: t(failed ? profileMessages.failedAssetUpload : profileMessages.pendingAssetUpload),
+        message: t(failed ? profileMessages.failedAssetDescription : profileMessages.pendingAssetDescription),
+        type: failed ? 'error' : 'warning',
+        duration: 3000,
+      })
+      return
+    }
     if (hasPendingFocusSessions.value) {
       syncButtonMessage.value = profileMessages.pendingRecordsButton
       ElNotification({ title: t(profileMessages.pendingFocusUpload), message: t(profileMessages.pendingFocusDescription), type: 'warning', duration: 3000 })

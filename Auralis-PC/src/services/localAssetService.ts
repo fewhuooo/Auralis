@@ -368,7 +368,7 @@ export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
   }): Promise<Blob> {
     const found = this.blobs.get(args.localAssetId)
     if (!found || !found.blob) {
-      throw new Error('FILE_MISSING: Asset file missing from transient storage')
+      throw new Error('LOCAL_ASSET_TRANSIENT_FILE_MISSING: Asset file missing from transient storage')
     }
     return found.blob
   }

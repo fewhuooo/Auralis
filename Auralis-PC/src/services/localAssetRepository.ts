@@ -464,7 +464,13 @@ export class LocalAssetRepository {
   // --- Local Source Drafts ---
 
   async createSourceDraft(input: CreateSourceDraftInput): Promise<LocalSourceDraft> {
-    return withLocalAssetLifecycleLock(this.userId, this.serverDeviceId, () => this.serializeWrite(async () => {
+    return withLocalAssetLifecycleLock(this.userId, this.serverDeviceId, () =>
+      this.createSourceDraftUnlocked(input))
+  }
+
+  /** Caller must hold the owner/device asset lifecycle lock. */
+  async createSourceDraftUnlocked(input: CreateSourceDraftInput): Promise<LocalSourceDraft> {
+    return this.serializeWrite(async () => {
       const asset = await this.getAssetFile(input.localAssetId)
       if (!asset) throw new Error('LOCAL_ASSET_NOT_FOUND')
       if (asset.state === 'DELETING') throw new Error('LOCAL_ASSET_DELETE_FENCED')
@@ -508,7 +514,7 @@ export class LocalAssetRepository {
       store.drafts.push(draft)
       this.writeBrowserStore(store)
       return clone(draft)
-    }))
+    })
   }
 
   async getSourceDraft(localSourceId: string): Promise<LocalSourceDraft | null> {
@@ -810,6 +816,38 @@ export class LocalAssetRepository {
     return found ? clone(found) : null
   }
 
+  async getNextRetryAt(): Promise<string | null> {
+    if (this.sql) {
+      await this.ensureSql()
+      const rows = await this.sql.select<{ next_retry_at: string | null }>(
+        `SELECT MIN(next_retry_at) AS next_retry_at FROM local_asset_sync_jobs
+         WHERE user_id = $1 AND device_id = $2 AND phase = 'PENDING'`,
+        [this.userId, this.serverDeviceId],
+      )
+      return rows[0]?.next_retry_at ?? null
+    }
+    return this.readBrowserStore().jobs
+      .flatMap(job => job.phase === 'PENDING' && job.nextRetryAt ? [job.nextRetryAt] : [])
+      .sort()[0] ?? null
+  }
+
+  async getUnfinishedUploadStatus(): Promise<'pending' | 'failed' | null> {
+    if (this.sql) {
+      await this.ensureSql()
+      const rows = await this.sql.select<{ phase: LocalAssetSyncPhase }>(
+        `SELECT phase FROM local_asset_sync_jobs
+         WHERE user_id = $1 AND device_id = $2 AND phase <> 'SYNCED'
+         ORDER BY CASE WHEN phase = 'FAILED' THEN 0 ELSE 1 END LIMIT 1`,
+        [this.userId, this.serverDeviceId],
+      )
+      if (rows[0]?.phase === 'FAILED') return 'failed'
+      return rows[0] ? 'pending' : null
+    }
+    const jobs = this.readBrowserStore().jobs
+    if (jobs.some(job => job.phase === 'FAILED')) return 'failed'
+    return jobs.some(job => job.phase !== 'SYNCED') ? 'pending' : null
+  }
+
   async claimNextSyncJob(now?: string): Promise<LocalAssetSyncJob | null> {
     return this.serializeWrite(async () => {
       const currentTime = now ?? this.now()
@@ -908,15 +946,15 @@ export class LocalAssetRepository {
     })
   }
 
-  async scheduleRetry(
+  async recordSyncFailure(
     jobId: string,
     errorCode: string,
     errorDetail: string,
-    nextRetryAt: string,
-  ): Promise<LocalAssetSyncJob> {
+    nextRetryAt: string | null,
+  ): Promise<LocalAssetSyncJob | null> {
     return this.serializeWrite(async () => {
       const current = await this.getSyncJob(jobId)
-      if (!current) throw new Error('LOCAL_ASSET_SYNC_JOB_NOT_FOUND')
+      if (!current) return null
 
       const now = this.now()
       const safeCode = /^[A-Z0-9_]{1,64}$/.test(errorCode) ? errorCode : 'SYNC_FAILED'
@@ -924,7 +962,7 @@ export class LocalAssetRepository {
 
       const updated: LocalAssetSyncJob = {
         ...current,
-        phase: 'PENDING',
+        phase: nextRetryAt ? 'PENDING' : 'FAILED',
         safeErrorCode: safeCode,
         safeErrorDetail: safeDetail,
         nextRetryAt,
@@ -935,9 +973,9 @@ export class LocalAssetRepository {
         await this.ensureSql()
         await this.sql.execute(
           `UPDATE local_asset_sync_jobs
-           SET phase = 'PENDING', safe_error_code = $1, safe_error_detail = $2, next_retry_at = $3, updated_at = $4
-           WHERE user_id = $5 AND device_id = $6 AND job_id = $7`,
-          [safeCode, safeDetail, nextRetryAt, now, this.userId, this.serverDeviceId, jobId],
+           SET phase = $1, safe_error_code = $2, safe_error_detail = $3, next_retry_at = $4, updated_at = $5
+           WHERE user_id = $6 AND device_id = $7 AND job_id = $8`,
+          [updated.phase, safeCode, safeDetail, nextRetryAt, now, this.userId, this.serverDeviceId, jobId],
         )
         return updated
       }
@@ -949,7 +987,7 @@ export class LocalAssetRepository {
         this.writeBrowserStore(store)
         return clone(updated)
       }
-      throw new Error('LOCAL_ASSET_SYNC_JOB_NOT_FOUND')
+      return null
     })
   }
 

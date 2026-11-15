@@ -333,6 +333,90 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   }
 })
 
+test('FILE registration during an original PUT cannot miss the READY draft release or send CREATE early', async () => {
+  setActivePinia(createPinia())
+  const auth = useAuthStore()
+  const userId = 'user-ready-fence'
+  const deviceId = 'device-ready-fence'
+  auth.user = { id: userId, email: 'ready-fence@example.com' }
+  auth.serverDeviceId = deviceId
+
+  const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const asset = await useAssetStore().upload(new File(['PDF fixture'], 'course-notes.pdf', { type: 'application/pdf' }))
+  const assetRepo = await getLocalAssetRepository(userId, deviceId)
+  const sourceRepo = await getLocalRepository(userId, deviceId)
+  const draftService = getOrCreateLocalSourceDraftService(assetRepo, sourceRepo)
+  const serverAssetId = 'ee333333-4444-4555-8888-999999999999'
+  const putStarted = createDeferred()
+  const allowPut = createDeferred()
+  const writingProjection = createDeferred()
+  const allowProjection = createDeferred()
+  const native = new TransientBrowserAssetAdapter()
+  native.uploadAssetToRemote = async (args) => {
+    putStarted.resolve()
+    await allowPut.promise
+    return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
+  }
+  const originalUpsert = sourceRepo.upsertUnlocked
+  sourceRepo.upsertUnlocked = async function (...args) {
+    writingProjection.resolve()
+    await allowProjection.promise
+    return originalUpsert.apply(this, args)
+  }
+  const queue = new LocalAssetSyncQueue({
+    assetRepository: assetRepo,
+    assetService: new LocalAssetService(assetRepo, { nativeAdapter: native }),
+    draftService,
+    api: {
+      createUploadIntent: async () => ({
+        assetId: serverAssetId, uploadUrl: 'https://storage.invalid/course-notes', uploadStatus: 'UPLOADING',
+      }),
+      completeUpload: async () => ({ id: serverAssetId, uploadStatus: 'READY' }),
+    },
+  })
+  const queueWork = queue.wakeUp()
+  let registration
+  try {
+    await waitForSignal(putStarted.promise, 'PUT after remote ID mapping')
+    assert.equal((await assetRepo.getAssetFile(asset.id)).serverAssetId, serverAssetId)
+    registration = useSourceStore().createFileSource('study-subject', 'Course notes', asset.id, '[]', asset.sizeBytes)
+    await waitForSignal(writingProjection.promise, 'registration holds lifecycle lock and writes the draft')
+    assert.equal((await sourceRepo.listUnresolved()).length, 0)
+
+    allowPut.resolve()
+    await waitForCondition(async () => (await assetRepo.getAssetFile(asset.id)).state === 'SYNCED', 'original Asset READY')
+    assert.equal((await sourceRepo.listUnresolved()).length, 0, 'queue release waits until draft projection is recorded')
+    allowProjection.resolve()
+    const sourceId = await registration
+    await queueWork
+
+    const [mutation] = await sourceRepo.listUnresolved()
+    assert.equal((await sourceRepo.listUnresolved()).length, 1)
+    assert.equal(mutation.resourceId, sourceId)
+    assert.equal(mutation.mutationType, 'CREATE')
+    assert.equal(mutation.payload.assetId, serverAssetId)
+    assert.equal((await sourceRepo.read('SOURCE', sourceId)).value.assetId, serverAssetId)
+
+    const readySourceId = await useSourceStore().createFileSource('study-subject', 'Ready notes', asset.id, '[]', asset.sizeBytes)
+    assert.equal(await draftService.getDraft(readySourceId), null)
+    const readyMutation = (await sourceRepo.listUnresolved()).find(item => item.resourceId === readySourceId)
+    assert.equal(readyMutation.payload.assetId, serverAssetId)
+    assert.equal(readyMutation.payload.assetSizeBytes, undefined)
+    assert.equal((await sourceRepo.read('SOURCE', readySourceId)).value.assetSizeBytes, asset.sizeBytes)
+
+    await assetRepo.transitionAssetState(asset.id, 'CORRUPT')
+    const cachedSourceId = await useSourceStore().createFileSource('study-subject', 'Use remote copy', serverAssetId)
+    assert.equal(await draftService.getDraft(cachedSourceId), null)
+    assert.equal((await sourceRepo.listUnresolved()).find(item => item.resourceId === cachedSourceId).payload.assetId, serverAssetId)
+  } finally {
+    allowPut.resolve()
+    allowProjection.resolve()
+    await Promise.allSettled([queueWork, registration])
+    sourceRepo.upsertUnlocked = originalUpsert
+    queue.dispose()
+  }
+})
+
 test('useSourceStore keeps imported and hydrated projections scoped to the requested subject, including an empty subject', async () => {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -1766,6 +1850,64 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
     releaseLocalAssetSyncQueue(userB, deviceB)
   }
 });
+
+test('useSyncStore wakes the original upload at its persisted retry time without another action', async (context) => {
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: new Date('2026-11-15T02:00:00.000Z') })
+  setActivePinia(createPinia())
+  const auth = useAuthStore()
+  const sync = useSyncStore()
+  const assetStore = useAssetStore()
+  const userId = 'user-asset-due-time'
+  const deviceId = 'device-asset-due-time'
+  const background = sync.requestBackgroundSync
+  const originalAdapter = activeAssetFlowAdapter
+  sync.requestBackgroundSync = () => {}
+  let attempts = 0
+  activeAssetFlowAdapter = async (config) => {
+    const response = (data) => ({ data, status: 200, statusText: 'OK', headers: {}, config })
+    switch (config.url) {
+      case '/api/assets/upload-intents':
+        attempts++
+        if (attempts === 1) throw Object.assign(new Error('temporary server error'), { response: { status: 503 } })
+        return response({ assetId: 'ready-asset', uploadStatus: 'READY' })
+      case '/api/sync/snapshot':
+        return response({ snapshotCursor: '0', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] })
+      case '/api/sync/pull':
+        return response({ nextCursor: '0', changes: [], hasMore: false })
+      default:
+        return response({})
+    }
+  }
+  try {
+    auth.setSession({
+      user: { id: userId, email: 'asset-due-time@example.com' },
+      tokens: { accessToken: 'test-access', refreshToken: 'test-refresh' },
+      sessionId: 'session-asset-due-time',
+      serverDeviceId: deviceId,
+    })
+    const asset = await assetStore.upload(new File(['PDF fixture'], 'retry.pdf', { type: 'application/pdf' }))
+    const { getLocalAssetRepository } = await import('../src/services/localDb.ts')
+    const repository = await getLocalAssetRepository(userId, deviceId)
+    await sync.flushNow()
+    assert.equal(await sync.getUnfinishedAssetUploadStatus(), 'pending')
+    const job = await repository.getActiveSyncJobForAsset(asset.id)
+    assert.equal(attempts, 1)
+    const timeToRetry = Date.parse(job.nextRetryAt) - Date.now()
+
+    context.mock.timers.tick(timeToRetry - 1)
+    await sync.flushNow()
+    assert.equal(attempts, 1, 'sync before the retry deadline must preserve backoff')
+    context.mock.timers.tick(1)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(attempts, 2, 'reaching the persisted deadline triggers one background attempt')
+    assert.equal(await repository.getActiveSyncJobForAsset(asset.id), null)
+    assert.equal(await sync.getUnfinishedAssetUploadStatus(), null)
+  } finally {
+    releaseLocalAssetSyncQueue(userId, deviceId)
+    sync.requestBackgroundSync = background
+    activeAssetFlowAdapter = originalAdapter
+  }
+})
 
 test('a queued A upload that returns 401 after B login cannot refresh or retry with B credentials', async () => {
   const pinia = createPinia()

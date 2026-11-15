@@ -38,6 +38,13 @@ public class SubjectLockCoordinator {
         lockSubjects(userId, subjectIds, false);
     }
 
+    @Transactional
+    public boolean lockSubjectIfActive(UUID userId, UUID subjectId) {
+        return subjectRepository.findForUpdateByIdAndUserId(subjectId, userId)
+                .filter(subject -> subject.getDeletedAt() == null)
+                .isPresent();
+    }
+
     private void lockSubjects(UUID userId, Collection<UUID> subjectIds, boolean requireActive) {
         if (subjectIds == null || subjectIds.stream().anyMatch(Objects::isNull)) {
             throw notFound();

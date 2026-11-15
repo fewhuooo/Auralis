@@ -6,9 +6,11 @@ import {
   type UploadIntentResponse,
   type AssetView,
 } from '@/api/useAssetApi'
+import { ApiProblemError } from '@/api/httpError'
 import type { LocalAssetRepository } from '@/services/localAssetRepository'
 import type { LocalAssetService } from '@/services/localAssetService'
 import type { LocalSourceDraftService } from '@/services/localSourceDraftService'
+import type { LocalAssetSyncPhase } from '@/types/localAsset'
 
 export interface AssetSyncApi {
   createUploadIntent(data: UploadIntentRequest): Promise<UploadIntentResponse>
@@ -27,6 +29,7 @@ export interface LocalAssetSyncQueueOptions {
   draftService: LocalSourceDraftService
   api?: AssetSyncApi
   onWakeup?: () => void
+  onRetryDue?: () => void
   wakeOnOnline?: boolean
   now?: () => string
 }
@@ -38,6 +41,7 @@ function computeNextRetryAt(attempt: number, nowMs: number): string {
 }
 
 function sanitizeErrorCode(error: unknown): string {
+  if (error instanceof ApiProblemError && error.problem.code) return error.problem.code
   if (error && typeof error === 'object' && 'code' in error && typeof (error as Record<string, unknown>).code === 'string') {
     const code = ((error as Record<string, unknown>).code as string).trim().toUpperCase()
     if (/^[A-Z0-9_]{1,64}$/.test(code)) return code
@@ -50,7 +54,12 @@ function sanitizeErrorCode(error: unknown): string {
     'LOCAL_ASSET_UPLOAD_HEADER_INVALID',
     'LOCAL_ASSET_UPLOAD_HEADER_FORBIDDEN',
     'LOCAL_ASSET_UPLOAD_URL_INVALID',
+    'LOCAL_ASSET_UPLOAD_REQUEST_INVALID',
+    'LOCAL_ASSET_UPLOAD_REDIRECT_REJECTED',
+    'LOCAL_ASSET_SIZE_MISMATCH',
+    'LOCAL_ASSET_HASH_MISMATCH',
     'LOCAL_ASSET_FILE_MISSING',
+    'LOCAL_ASSET_TRANSIENT_FILE_MISSING',
     'LOCAL_ASSET_FILE_AMBIGUOUS',
     'LOCAL_ASSET_BUSY',
     'NATIVE_UPLOAD_RECEIPT_MISMATCH',
@@ -74,6 +83,19 @@ function sanitizeErrorCode(error: unknown): string {
     return 'ASSET_ORPHANED'
   }
   return 'SYNC_FAILED'
+}
+
+function isTerminalUploadError(code: string, phase: LocalAssetSyncPhase): boolean {
+  if (phase === 'CREATING_REMOTE_ASSET'
+    && ['VALIDATION_FAILED', 'UPLOAD_VALIDATION_FAILED', 'MUTATION_REJECTED'].includes(code)) return true
+  return [
+    'ASSET_ORPHANED',
+    'LOCAL_ASSET_UPLOAD_PAYLOAD_MISMATCH',
+    'LOCAL_ASSET_SIZE_MISMATCH',
+    'LOCAL_ASSET_HASH_MISMATCH',
+    'LOCAL_ASSET_TRANSIENT_FILE_MISSING',
+    'LOCAL_ASSET_FILE_AMBIGUOUS',
+  ].includes(code)
 }
 
 export class QueueDisposedError extends Error {
@@ -144,6 +166,8 @@ export class LocalAssetSyncQueue {
   private readonly draftService: LocalSourceDraftService
   private readonly api: AssetSyncApi
   private readonly onWakeup?: () => void
+  private readonly onRetryDue?: () => void
+  private retryTimer?: ReturnType<typeof setTimeout>
   private readonly now: () => string
   private processing: Promise<void> | null = null
   private rerun: (() => boolean) | null = null
@@ -160,6 +184,7 @@ export class LocalAssetSyncQueue {
       completeUpload,
     }
     this.onWakeup = options.onWakeup
+    this.onRetryDue = options.onRetryDue
     this.now = options.now ?? (() => new Date().toISOString())
 
     if (options.wakeOnOnline !== false && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -191,6 +216,7 @@ export class LocalAssetSyncQueue {
 
   dispose(): void {
     this.disposed = true
+    clearTimeout(this.retryTimer)
     if (this.onlineHandler && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
       window.removeEventListener('online', this.onlineHandler)
     }
@@ -213,7 +239,7 @@ export class LocalAssetSyncQueue {
       if (this.disposed) return
       if (job && job.phase === 'PENDING') {
         if (this.disposed) return
-        await this.assetRepository.scheduleRetry(jobId, job.safeErrorCode ?? 'SYNC_FAILED', job.safeErrorDetail ?? '', currentTime)
+        await this.assetRepository.recordSyncFailure(jobId, job.safeErrorCode ?? 'SYNC_FAILED', job.safeErrorDetail ?? '', currentTime)
         if (this.disposed) return
       }
     }
@@ -229,6 +255,7 @@ export class LocalAssetSyncQueue {
       return this.processing
     }
 
+    clearTimeout(this.retryTimer)
     this.processing = (async () => {
       let enabled = canProcess
       do {
@@ -238,6 +265,13 @@ export class LocalAssetSyncQueue {
           const job = await this.assetRepository.claimNextSyncJob(currentTime)
           if (this.disposed || !job) break
           await this.processSingleJob(job.jobId, job.localAssetId, job.attempt, job.serverAssetId)
+        }
+        if (!this.rerun && !this.disposed && enabled() && this.onRetryDue) {
+          const nextRetryAt = await this.assetRepository.getNextRetryAt()
+          if (!this.rerun && !this.disposed && nextRetryAt) {
+            const remainingMs = Date.parse(nextRetryAt) - Date.parse(this.now())
+            this.retryTimer = setTimeout(this.onRetryDue, Math.max(0, remainingMs))
+          }
         }
         if (!this.rerun) return
         enabled = this.rerun
@@ -381,7 +415,6 @@ export class LocalAssetSyncQueue {
       console.error('[LocalAssetSyncQueue] processSingleJob failed:', error)
       const safeCode = sanitizeErrorCode(error)
       const safeDetail = sanitizeErrorDetail(error)
-      const nextRetryAt = computeNextRetryAt(attempt, Date.now())
 
       // Transition asset to SYNC_FAILED so local state remains observable without corrupting file
       try {
@@ -402,8 +435,11 @@ export class LocalAssetSyncQueue {
       // already-claimed network request was in flight.  The durable delete
       // fence wins; never recreate the upload row from error recovery.
       const remainingJob = await this.assetRepository.getSyncJob(jobId)
-      if (!remainingJob) return
-      await this.assetRepository.scheduleRetry(jobId, safeCode, safeDetail, nextRetryAt)
+      if (!remainingJob || this.disposed) return
+      const nextRetryAt = isTerminalUploadError(safeCode, remainingJob.phase)
+        ? null
+        : computeNextRetryAt(attempt, Date.parse(this.now()))
+      await this.assetRepository.recordSyncFailure(jobId, safeCode, safeDetail, nextRetryAt)
       if (this.disposed) return
     }
   }

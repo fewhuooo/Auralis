@@ -4,6 +4,7 @@ import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionClaim;
 import com.auralis.app.ai.ingestion.IngestionCompletionService;
+import com.auralis.app.ai.ingestion.IngestionWorker;
 import com.auralis.app.ai.ingestion.TextChunk;
 import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.identity.AuthResult;
@@ -40,6 +41,8 @@ import com.auralis.app.realtime.RealtimeEventView;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -92,6 +95,7 @@ class ParsedDocumentCompleteTests {
     @Autowired private ChangeLogService changeLogService;
     @Autowired private RealtimeEventPublisher realtimeEventPublisher;
     @Autowired private IngestionCompletionService ingestionCompletionService;
+    @Autowired private IngestionWorker ingestionWorker;
     @MockitoSpyBean private IngestionJobService ingestionJobService;
 
     @BeforeEach
@@ -228,6 +232,55 @@ class ParsedDocumentCompleteTests {
         assertThat(realtimeEvents).noneMatch(event -> event.type() == RealtimeEventType.SYNC_CHANGED
                 && "SOURCE".equals(event.resourceType())
                 && fixture.source().id().equals(event.resourceId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void finishesDeletedSubjectsQueuedFileAndLetsAnotherOwnersFileReachReady(boolean exhausted) throws Exception {
+        Fixture removed = fixture("subject-deleted-" + exhausted);
+        Upload removedUpload = upload(removed, "removed document");
+        UUID removedOwner = removed.owner().user().id();
+        UUID removedSource = removed.source().id();
+        UUID removedJob = parsedDocumentService.complete(
+                removedOwner, removedSource, removedUpload.document().getId()).ingestionJobId();
+        UUID subjectId = removed.source().subjectId();
+        subjectService.delete(removedOwner, subjectId, subjectService.get(removedOwner, subjectId).version());
+        long deletedVersion = sourceRepository.findById(removedSource).orElseThrow().getVersion();
+
+        int maxAttempts = 3;
+        if (exhausted) {
+            // Re-create a queue head whose leases already expired under the old worker.
+            Instant now = Instant.now();
+            for (int remaining = maxAttempts + 1; remaining > 0; remaining--) {
+                Instant startedAt = now.minusSeconds(2L * remaining);
+                ingestionJobService.claimById(
+                        removedOwner, removedJob, startedAt, startedAt.plusSeconds(1), maxAttempts).orElseThrow();
+            }
+            assertThat(ingestionJobRepository.findById(removedJob).orElseThrow().getFailureCount())
+                    .isEqualTo(maxAttempts);
+        }
+
+        Fixture other = fixture("subject-deleted-other-owner-" + exhausted);
+        Upload otherUpload = upload(other, "other document");
+        UUID otherOwner = other.owner().user().id();
+        UUID otherSource = other.source().id();
+        UUID otherJob = parsedDocumentService.complete(
+                otherOwner, otherSource, otherUpload.document().getId()).ingestionJobId();
+
+        assertThat(ingestionWorker.processNext()).isTrue();
+        assertThat(ingestionJobRepository.findById(removedJob).orElseThrow()).satisfies(job -> {
+            assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
+            assertThat(job.getErrorCode()).isEqualTo("INGESTION_REVISION_STALE");
+        });
+        assertThat(sourceRepository.findById(removedSource).orElseThrow().getVersion()).isEqualTo(deletedVersion);
+
+        Instant now = Instant.now();
+        var next = ingestionJobService.claimNext(now, now.plusSeconds(60), maxAttempts).orElseThrow();
+        assertThat(next.getId()).isEqualTo(otherJob);
+        assertThat(ingestionCompletionService.complete(IngestionClaim.from(next), other.source().ingestionRevision(),
+                List.of(new TextChunk(0, "other document", 0, 14)), List.of(java.util.Collections.nCopies(1024, 0.1)),
+                now)).isTrue();
+        assertThat(sourceService.get(otherOwner, otherSource).ingestionStatus()).isEqualTo(SourceIngestionStatus.READY);
     }
 
     @Test

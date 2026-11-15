@@ -2,11 +2,11 @@ import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSourceApi, type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
+import { SyncScopeChangedError } from '@/api/request'
 import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
 import { getOrCreateLocalAssetService } from '@/services/localAssetService'
 import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import type { LocalRepository } from '@/services/localRepository'
-import type { LocalAssetRepository } from '@/services/localAssetRepository'
 import { getOrCreateLocalSourceDraftService } from '@/services/localSourceDraftService'
 import { mapSourceView, sortSources, type SourceFileModel } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
@@ -288,103 +288,75 @@ export const useSourceStore = defineStore('source', () => {
       : undefined
 
     const authStore = useAuthStore()
-    const repo = await repository()
     const ownerId = authStore.user?.id
     const deviceId = authStore.serverDeviceId
+    const loginGeneration = authStore.loginGeneration
     if (!ownerId || !deviceId) throw new Error('Sources require an authenticated user and device')
 
-    let localAssetRepo: LocalAssetRepository | null = null
-    if (authStore.user?.id && authStore.serverDeviceId) {
-      localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    const requireCurrentScope = (): void => {
+      if (authStore.loginGeneration !== loginGeneration || authStore.user?.id !== ownerId
+        || authStore.serverDeviceId !== deviceId) throw new SyncScopeChangedError()
     }
+    const [repo, assetRepo] = await Promise.all([
+      getLocalRepository(ownerId, deviceId),
+      getLocalAssetRepository(ownerId, deviceId),
+    ])
+    const id = uuidv7()
+    const { view, isDraft } = await withLocalAssetLifecycleLock(ownerId, deviceId, async () => {
+      requireCurrentScope()
+      const localAsset = await assetRepo.getAssetFile(assetId) ?? await assetRepo.getAssetFileByServerId(assetId)
+      if (localAsset?.state === 'DELETING') throw new Error('LOCAL_ASSET_DELETE_FENCED')
+      if ((await repo.read('SUBJECT', subjectId))?.deletedAt) throw new Error('RESOURCE_DELETED')
 
-    const localAsset = localAssetRepo ? await localAssetRepo.getAssetFile(assetId) : null
-
-    // If this is a local asset without serverAssetId, create draft and local projection,
-    // and hold back outbox mutation until asset is READY.
-    if (localAsset && !localAsset.serverAssetId) {
-      const id = uuidv7()
-      const draftService = getOrCreateLocalSourceDraftService(localAssetRepo!, repo)
-      await draftService.createDraft({
-        localSourceId: id,
-        localAssetId: assetId,
-        subjectId,
-        title,
-        outline,
-        assetSizeBytes: normalizedAssetSizeBytes,
-      })
-      const localView: SourceView = {
+      // A corrupt local copy can still refer to a READY server asset when no original upload is outstanding.
+      const useDraft = localAsset !== null && localAsset.state !== 'SYNCED'
+        && (localAsset.state !== 'CORRUPT' || await assetRepo.getActiveSyncJobForAsset(localAsset.localAssetId) !== null)
+      const now = new Date().toISOString()
+      const view: SourceView = {
         id,
         subjectId,
         type: 'FILE',
         title,
-        assetId,
+        assetId: useDraft ? localAsset.localAssetId : localAsset?.serverAssetId ?? assetId,
         outline,
         version: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        deletedAt: undefined,
+        createdAt: now,
+        updatedAt: now,
         ingestionStatus: 'AWAITING_CLIENT',
         assetSizeBytes: normalizedAssetSizeBytes,
       }
-      const model = mapSourceView(localView)
-      replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], activeSubjectId.value ?? subjectId)
-      scheduleSync()
-      if (documentScheduler) {
-        void documentScheduler.schedule(id)
-          .catch((error) => console.warn('[SourceStore] offline document scheduling failed', error))
+      requireCurrentScope()
+      if (useDraft) {
+        await getOrCreateLocalSourceDraftService(assetRepo, repo).createDraftUnlocked({
+          localSourceId: id,
+          localAssetId: localAsset.localAssetId,
+          subjectId,
+          title,
+          outline,
+          assetSizeBytes: normalizedAssetSizeBytes,
+        })
+        return { view, isDraft: true }
       }
-      return id
-    }
 
-    const targetAssetId = localAsset?.serverAssetId ?? assetId
-    const payload: SourceCreateRequest = {
-      baseVersion: 0,
-      subjectId,
-      type: 'FILE',
-      title,
-      assetId: targetAssetId,
-      outline,
-    }
-    const id = uuidv7()
-    const localView: SourceView = {
-      ...payload,
-      id,
-      version: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deletedAt: undefined,
-      ingestionStatus: 'AWAITING_CLIENT',
-      assetSizeBytes: normalizedAssetSizeBytes,
-    }
-    const { assetSizeBytes: _assetSizeBytes, ...mutationView } = localView
-    const commitSource = async (): Promise<void> => {
+      const { assetSizeBytes: _assetSizeBytes, ...mutationView } = view
       await repo.commitMutationUnlocked({
-        resourceType: 'SOURCE', resourceId: id, value: localView, version: 0, deletedAt: null,
+        resourceType: 'SOURCE', resourceId: id, value: view, version: 0, deletedAt: null,
         mutation: createStableMutation({
           clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'CREATE', baseVersion: 0,
-          payload: mutationView as unknown as Record<string, unknown>,
+          payload: { ...mutationView, baseVersion: 0 },
         }),
       })
-    }
-    if (localAsset?.serverAssetId) {
-      await withLocalAssetLifecycleLock(ownerId, deviceId, async () => {
-        const currentAsset = await localAssetRepo!.getAssetFile(assetId)
-        if (!currentAsset || currentAsset.state === 'DELETING') throw new Error('LOCAL_ASSET_DELETE_FENCED')
-        await commitSource()
-      })
-    } else {
-      await repo.commitMutation({
-        resourceType: 'SOURCE', resourceId: id, value: localView, version: 0, deletedAt: null,
-        mutation: createStableMutation({
-          clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'CREATE', baseVersion: 0,
-          payload: mutationView as unknown as Record<string, unknown>,
-        }),
-      })
-    }
-    const model = mapSourceView(localView)
+      return { view, isDraft: false }
+    })
+
+    requireCurrentScope()
+    const model = mapSourceView(view)
     replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], activeSubjectId.value ?? subjectId)
     scheduleSync()
+    if (isDraft && documentScheduler) {
+      void documentScheduler.schedule(id)
+        .catch((error) => console.warn('[SourceStore] offline document scheduling failed', error))
+    }
     return id
   }
 

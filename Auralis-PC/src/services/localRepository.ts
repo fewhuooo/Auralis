@@ -532,9 +532,9 @@ export class LocalRepository {
   ): Promise<LocalEntity<T>> {
     if (resourceType === 'SOURCE') {
       return withLocalAssetLifecycleLock(this.userId, this.serverDeviceId, () =>
-        this.upsertInternal(resourceType, resourceId, value, options))
+        this.upsertUnlocked(resourceType, resourceId, value, options))
     }
-    return this.upsertInternal(resourceType, resourceId, value, options)
+    return this.upsertUnlocked(resourceType, resourceId, value, options)
   }
 
   async upsertFromSync<T>(
@@ -740,7 +740,8 @@ export class LocalRepository {
     })
   }
 
-  private async upsertInternal<T>(
+  /** Caller must hold the owner-scoped lifecycle lock for SOURCE writes. */
+  async upsertUnlocked<T>(
     resourceType: string,
     resourceId: string,
     value: T,

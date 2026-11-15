@@ -331,7 +331,7 @@ test('sync job claim, retry scheduling, and completion work with time boundaries
     assert.equal(await repo.claimNextSyncJob('2026-09-16T12:00:00.000Z'), null)
 
     // Schedule retry with backoff time in future
-    await repo.scheduleRetry(job1.jobId, 'NETWORK_OFFLINE', 'No route to host', '2026-09-16T12:05:00.000Z')
+    await repo.recordSyncFailure(job1.jobId, 'NETWORK_OFFLINE', 'No route to host', '2026-09-16T12:05:00.000Z')
     const retriedJob = await repo.getSyncJob(job1.jobId)
     assert.equal(retriedJob.phase, 'PENDING')
     assert.equal(retriedJob.safeErrorCode, 'NETWORK_OFFLINE')

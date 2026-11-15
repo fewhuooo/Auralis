@@ -350,6 +350,134 @@ test('LocalAssetSyncQueue: network failure applies bounded backoff without affec
   }
 })
 
+test('LocalAssetSyncQueue settles a rejected original upload without arming a retry for invalid data', async (context) => {
+  const { ApiProblemError } = await import('../src/api/httpError.ts')
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: new Date('2026-11-15T02:00:00.000Z') })
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const sourceRepo = new LocalRepository('terminal-asset-user', 'terminal-asset-device', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('terminal-asset-user', 'terminal-asset-device', { sql: sqlite })
+    const service = new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() })
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286812'
+    const file = new File([], 'empty.pdf', { type: 'application/pdf' })
+    await service.importAsset({
+      localAssetId, file, originalName: file.name, mimeType: file.type, sizeBytes: file.size,
+    })
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+    let wakes = 0
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService: service,
+      draftService: new LocalSourceDraftService(assetRepo, sourceRepo),
+      onRetryDue: () => { wakes++ },
+      api: {
+        createUploadIntent: async () => {
+          throw new ApiProblemError({ title: 'Invalid file', status: 400, code: 'VALIDATION_FAILED' })
+        },
+      },
+    })
+
+    await queue.wakeUp()
+    const rejected = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(rejected.phase, 'FAILED')
+    assert.equal(rejected.safeErrorCode, 'VALIDATION_FAILED')
+    assert.equal(rejected.nextRetryAt, null)
+    assert.equal(await assetRepo.getUnfinishedUploadStatus(), 'failed')
+    context.mock.timers.tick(300_000)
+    await queue.wakeUp()
+    assert.equal((await assetRepo.getSyncJob(job.jobId)).attempt, 1)
+    assert.equal(wakes, 0)
+  } finally {
+    queue?.dispose()
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue stops when a reloaded browser queue no longer has the original file', async () => {
+  const sourceRepo = new LocalRepository('reloaded-asset-user', 'reloaded-asset-device')
+  const assetRepo = new LocalAssetRepository('reloaded-asset-user', 'reloaded-asset-device')
+  const beforeReload = new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() })
+  const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286812'
+  const file = new File(['PDF fixture'], 'missing-after-reload.pdf', { type: 'application/pdf' })
+  await beforeReload.importAsset({
+    localAssetId, file, originalName: file.name, mimeType: file.type, sizeBytes: file.size,
+  })
+  const job = await assetRepo.enqueueSyncJob(localAssetId)
+  const queue = new LocalAssetSyncQueue({
+    assetRepository: assetRepo,
+    assetService: new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() }),
+    draftService: new LocalSourceDraftService(assetRepo, sourceRepo),
+    api: {
+      createUploadIntent: async () => ({
+        assetId: 'ee333333-4444-4555-8888-999999999999',
+        uploadUrl: 'https://storage.invalid/missing-after-reload',
+        uploadStatus: 'UPLOADING',
+      }),
+      completeUpload: () => assert.fail('a lost browser file must not be completed'),
+    },
+  })
+  try {
+    await queue.wakeUp()
+    const rejected = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(rejected.phase, 'FAILED')
+    assert.equal(rejected.safeErrorCode, 'LOCAL_ASSET_TRANSIENT_FILE_MISSING')
+    assert.equal(rejected.nextRetryAt, null)
+  } finally {
+    queue.dispose()
+  }
+})
+
+test('LocalAssetSyncQueue still wakes unrelated retries when a deleted job loses failure settlement', async (context) => {
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: new Date('2026-11-15T02:00:00.000Z') })
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const sourceRepo = new LocalRepository('delete-retry-user', 'delete-retry-device', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('delete-retry-user', 'delete-retry-device', { sql: sqlite })
+    const service = new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() })
+    const [deletingId, waitingId] = ['d3b07384-d113-4f4b-a2c3-4d64f0286812', 'ee333333-4444-4555-8888-999999999999']
+    const file = new File(['PDF fixture'], 'queued.pdf', { type: 'application/pdf' })
+    for (const localAssetId of [deletingId, waitingId]) {
+      await service.importAsset({
+        localAssetId, file, originalName: file.name, mimeType: file.type, sizeBytes: file.size,
+      })
+      await assetRepo.enqueueSyncJob(localAssetId)
+    }
+    const waiting = await assetRepo.getActiveSyncJobForAsset(waitingId)
+    const deleting = await assetRepo.getActiveSyncJobForAsset(deletingId)
+    const retryAt = new Date(Date.now() + 5000).toISOString()
+    await assetRepo.recordSyncFailure(waiting.jobId, 'NETWORK_ERROR', 'Pending retry', retryAt)
+    const record = assetRepo.recordSyncFailure.bind(assetRepo)
+    assetRepo.recordSyncFailure = async (jobId, ...args) => {
+      assert.equal(jobId, deleting.jobId)
+      await assetRepo.cancelSyncJobsForAsset(deletingId)
+      return record(jobId, ...args)
+    }
+    let wakes = 0
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService: service,
+      draftService: new LocalSourceDraftService(assetRepo, sourceRepo),
+      onRetryDue: () => { wakes++ },
+      api: { createUploadIntent: async () => { throw new Error('temporary network error') } },
+    })
+
+    await queue.wakeUp()
+    assert.equal(await assetRepo.getSyncJob(deleting.jobId), null)
+    assert.equal((await assetRepo.getSyncJob(waiting.jobId)).nextRetryAt, retryAt)
+    context.mock.timers.tick(4999)
+    assert.equal(wakes, 0)
+    context.mock.timers.tick(1)
+    assert.equal(wakes, 1)
+  } finally {
+    queue?.dispose()
+    sqlite.close()
+  }
+})
+
 test('LocalAssetSyncQueue: recoverInflightJobs resets interrupted jobs to PENDING on restart', async () => {
   const sqlite = new TemporarySqlite()
   let queue
@@ -485,7 +613,7 @@ test('LocalAssetSyncQueue: native retryable/expired errors are correctly classif
 
     // Test RETRYABLE
     throwErrorMsg = 'LOCAL_ASSET_UPLOAD_RETRYABLE: Transient network issue'
-    await assetRepo.scheduleRetry(job.jobId, 'SYNC_FAILED', 'reset', new Date().toISOString())
+    await assetRepo.recordSyncFailure(job.jobId, 'SYNC_FAILED', 'reset', new Date().toISOString())
     await queue.processQueue()
     updatedJob = await assetRepo.getSyncJob(job.jobId)
     assert.equal(updatedJob.phase, 'PENDING')
@@ -823,7 +951,7 @@ test('LocalAssetSyncQueue: dispose during completeUpload (with started barrier) 
   }
 })
 
-test('LocalAssetSyncQueue: dispose during catch block error handling prevents transition to SYNC_FAILED and scheduleRetry', async () => {
+test('LocalAssetSyncQueue: dispose during catch block error handling prevents transition to SYNC_FAILED and recordSyncFailure', async () => {
   const sqlite = new TemporarySqlite()
   let queue
   try {
@@ -865,7 +993,7 @@ test('LocalAssetSyncQueue: dispose during catch block error handling prevents tr
     await queue.processQueue()
 
     const currentJob = await assetRepo.getSyncJob(job.jobId)
-    assert.equal(currentJob.safeErrorCode, null, 'scheduleRetry must not be called when disposed')
+    assert.equal(currentJob.safeErrorCode, null, 'recordSyncFailure must not be called when disposed')
     assert.equal(currentJob.nextRetryAt, null)
 
     const assetFile = await assetRepo.getAssetFile(localAssetId)
@@ -901,7 +1029,7 @@ test('LocalAssetSyncQueue: retryNow early returns without action when disposed',
     const job = await assetRepo.enqueueSyncJob(localAssetId)
     // Put job in PENDING with future retry
     const futureTime = new Date(Date.now() + 600000).toISOString()
-    await assetRepo.scheduleRetry(job.jobId, 'SYNC_FAILED', 'error', futureTime)
+    await assetRepo.recordSyncFailure(job.jobId, 'SYNC_FAILED', 'error', futureTime)
 
     queue = new LocalAssetSyncQueue({
       assetRepository: assetRepo,

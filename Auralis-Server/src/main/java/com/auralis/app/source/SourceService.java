@@ -439,10 +439,9 @@ public class SourceService {
 
     private SourceEntity lockForIngestion(UUID userId, UUID id) {
         var subjectId = sourceRepository.findSubjectIdByIdAndUserId(id, userId);
-        if (subjectId.isEmpty()) {
+        if (subjectId.isEmpty() || !subjectLockCoordinator.lockSubjectIfActive(userId, subjectId.get())) {
             return null;
         }
-        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId.get()));
         return sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(id, userId).orElse(null);
     }
 
