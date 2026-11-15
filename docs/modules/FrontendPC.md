@@ -1047,7 +1047,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 
 - 账户区展示当前账号的用户名，头像和密码使用服务端接口。
   - **头像**：接入 `useAuthApi.getAvatarBlob`（`GET /api/auth/me/avatar`）在挂载时动态读取真实图片 Blob 并转为安全的 ObjectURL；上传接入 `useAuthApi.uploadAvatar`（`POST /api/auth/me/avatar`），客户端校验 PNG/JPEG 且 ≤5MB；重置接入 `useAuthApi.resetAvatar`（`DELETE /api/auth/me/avatar`）；彻底废弃本地 localStorage 存储头像数据；
-  - **改密**：新密码至少 12 个 UTF-16 代码单元、最多 72 个 UTF-8 字节。`useAuthApi.changePassword`（`PUT /api/auth/password`）传递 `baseVersion`、`currentPassword` 与 `newPassword`；原密码不匹配在表单内提示，Bearer 失效仍走刷新。密码更新后提示会话撤销边界并刷新版本。
+  - **改密**：新密码至少 12 个 UTF-16 代码单元、最多 72 个 UTF-8 字节。`useAuthApi.changePassword`（`PUT /api/auth/password`）传递 `baseVersion`、`currentPassword` 与 `newPassword`。原密码不匹配在表单内提示。改密成功后，刷新个人资料的请求会给当前设备自动续期并更新用户版本，其他设备需重新登录。
 - **AI 设置（3 类）服务端规范化与真实探测测试**：
   - **Provider 归一化**：在 `aiClient.ts` 中提供 `normalizeProvider`，将自由输入与通用兼容端点映射为服务端支持的 `OPENAI_COMPATIBLE`，识别 DeepSeek 和 SiliconFlow，保持界面友好名称展示；
   - **模型自动检测**：`handleDetectModels()` 接入 `listAiModels`（`GET /api/ai/settings/{provider}/models`），从已加密保存的云端 BYOK 获取真实 `/models` 列表并渲染模型托盘；未配置时给出明确引导，彻底消除硬编码 mock；

@@ -250,7 +250,7 @@ public class IdentityService {
     }
 
     @Transactional
-    public void changePassword(UUID userId, long baseVersion, String currentPassword, String newPassword) {
+    public void changePassword(UUID userId, UUID currentDeviceId, long baseVersion, String currentPassword, String newPassword) {
         UserEntity user = userRepository.findForUpdateById(userId)
                 .filter(found -> found.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(this::unauthenticated);
@@ -263,9 +263,8 @@ public class IdentityService {
             throw new IdentityException("VALIDATION_FAILED", "New password must differ from the current password");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        Instant now = clock.instant();
-        refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId)
-                .forEach(session -> session.revoke(now));
+        user.incrementCredentialGeneration();
+        refreshSessionRepository.revokeForOtherDevices(userId, currentDeviceId, clock.instant());
     }
 
     @Transactional

@@ -117,10 +117,10 @@
               <button class="cell-btn" type="button" @click="handleLogout">{{ t(profileMessages.signOut) }}</button>
             </div>
             <div class="account-section-body">
-              <p v-if="sessionsLoading" class="session-empty">{{ t(profileMessages.loadingDevices) }}</p>
+              <p v-if="sessionsLoading && sessions.length === 0" class="session-empty">{{ t(profileMessages.loadingDevices) }}</p>
               <p v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</p>
               <p v-else-if="sessions.length === 0" class="session-empty">{{ t(profileMessages.noOtherDevices) }}</p>
-              <div v-else>
+              <div v-if="sessions.length > 0">
                 <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="account-operation">
                   <div class="row-info">
                     <div class="session-title-line">
@@ -747,6 +747,7 @@ const submitPasswordChange = async ({ oldPassword, newPassword }: { oldPassword:
       currentPassword: oldPassword,
       newPassword: newPassword,
     })
+    sessions.value = sessions.value.filter(isCurrentSession)
     showPasswordModal.value = false
     ElNotification({
       title: t(profileMessages.passwordChanged),
@@ -754,7 +755,7 @@ const submitPasswordChange = async ({ oldPassword, newPassword }: { oldPassword:
       type: 'success',
       duration: 4000,
     })
-    await authStore.fetchMe().catch(() => {})
+    await Promise.all([loadSessions(), authStore.fetchMe().catch(() => {})])
   } catch (err: any) {
     pwdError.value = err?.problem?.detail || err?.message || t(profileMessages.passwordUpdateFailed)
   } finally {
@@ -785,16 +786,20 @@ const formatSessionDate = (value?: string) => {
 
 const isCurrentSession = (session: SessionResponse) => Boolean(session.current || session.serverDeviceId === authStore.serverDeviceId)
 
+let sessionsLoadGeneration = 0
 const loadSessions = async () => {
+  const generation = ++sessionsLoadGeneration
   sessionsLoading.value = true
   sessionsError.value = null
   try {
     const response = await useAuthApi.listSessions()
+    if (generation !== sessionsLoadGeneration) return
     sessions.value = response?.items ?? []
   } catch (error) {
+    if (generation !== sessionsLoadGeneration) return
     sessionsError.value = error instanceof Error ? error.message : t(profileMessages.sessionsLoadFailed)
   } finally {
-    sessionsLoading.value = false
+    if (generation === sessionsLoadGeneration) sessionsLoading.value = false
   }
 }
 

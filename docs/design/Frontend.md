@@ -466,7 +466,7 @@ type-check exit0、相关scheduler/UI测试最终51/51通过；首轮旧静态�
 
 ### 2026-09-26 注销账户密码确认交互
 
-注销确认提示本机会退出登录并保留本地业务数据，服务端会停用账户并后台清理云端数据。注销 API 返回 202 后清除本地会话并跳转登录页。注销或改密时，确认密码不匹配返回 `UNAUTHENTICATED` 与 `Invalid credentials`，留在个人空间显示接口错误；Bearer token 无效返回 `Authentication is required` 时仍执行全局 access token 刷新与重新认证流程。
+注销确认提示本机会退出登录并保留本地业务数据，服务端会停用账户并后台清理云端数据。注销 API 返回 202 后清除本地会话并跳转登录页。注销或改密时，确认密码不匹配返回 `UNAUTHENTICATED` 与 `Invalid credentials`，留在个人空间显示接口错误。Bearer token 无效返回 `Authentication is required` 时走全局续期流程。改密成功后，当前设备自动续期并刷新设备列表，其他设备重新登录。
 
 设备管理按稳定设备标识显示当前设备。撤销其他设备后，提示该设备无法续期，已有访问权限会在 access token 到期后失效。
 

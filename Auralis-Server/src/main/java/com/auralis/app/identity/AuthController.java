@@ -104,7 +104,8 @@ public class AuthController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AuthDtos.PasswordChangeRequest request) {
         identityService.changePassword(
-                principal.userId(), request.baseVersion(), request.currentPassword(), request.newPassword());
+                principal.userId(), principal.serverDeviceId(), request.baseVersion(),
+                request.currentPassword(), request.newPassword());
     }
 
     @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

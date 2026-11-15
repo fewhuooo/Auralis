@@ -191,7 +191,7 @@ New internal Provider invocations carry a server-resolved credential source with
 | POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
 | GET | /api/auth/me | 返回当前用户公开资料，需 Bearer access token |
 | PUT | /api/auth/me | 按 baseVersion 更新当前用户昵称，返回 UserView |
-| PUT | /api/auth/password | 校验原密码并修改密码，撤销该用户 refresh sessions，HTTP 204 |
+| PUT | /api/auth/password | 校验原密码并修改密码，保留当前设备的续期会话，撤销其他设备的续期会话，HTTP 204 |
 | POST | /api/auth/me/avatar | 上传当前用户 PNG/JPEG 头像并规范化保存，HTTP 204 |
 | GET | /api/auth/me/avatar | 读取当前用户私有 PNG 头像；无头像返回 404 |
 | DELETE | /api/auth/me/avatar | 重置当前用户头像，HTTP 204 |
@@ -279,7 +279,7 @@ New internal Provider invocations carry a server-resolved credential source with
 - `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult，其中 `tokens` 和 `sessionId` 一起轮换，`serverDeviceId` 继续标识该设备。旧 refresh token 立即失效。
 - AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName, version, hasAvatar }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`serverDeviceId`。
 - `GET /api/auth/me` 返回 `UserView { id, username, displayName, version, hasAvatar }`。`PUT /api/auth/me` 接受 `{baseVersion,displayName}`，服务端修剪昵称并限制为 1–120 字符，版本不一致返回 `409 RESOURCE_VERSION_CONFLICT`；`hasAvatar` 按读取时 `user_avatars` 行存在性计算，不递增用户版本。头像图片单独读写，不进入 UserView。
-- `PUT /api/auth/password` 接受 `{baseVersion,currentPassword,newPassword}`，新密码与注册密码采用相同长度要求，且不得与原密码相同。服务端校验原密码和用户版本，更新密码哈希并撤销该用户全部 refresh sessions。已签发的 access JWT 仍遵循原 15 分钟有效期边界。原密码错误返回 HTTP 401 `UNAUTHENTICATED`，detail 为 `Invalid credentials`。无效 Bearer 的 detail 为 `Authentication is required`。
+- `PUT /api/auth/password` 接受 `{baseVersion,currentPassword,newPassword}`，新密码与注册密码采用相同长度要求，且不得与原密码相同。服务端校验原密码和用户版本，更新密码哈希，递增凭据代次，并按已认证的 `serverDeviceId` 保留当前设备的续期会话。之前签发的 access JWT 在后续认证时被拒绝。当前设备可正常续期并取得新凭据，其他设备的续期会话被撤销，须重新登录。原密码错误返回 HTTP 401 `UNAUTHENTICATED`，detail 为 `Invalid credentials`。无效 Bearer 的 detail 为 `Authentication is required`。
 - `PUT /api/auth/password` 是已登录且持有当前密码的改密接口。API 目前没有通用用户偏好同步或完整数据备份/导出端点。
 - `POST /api/auth/me/avatar` 使用 `multipart/form-data` 的 `file` 字段，只接受实际 PNG/JPEG、原文件最大 5 MiB、边长不超过 4096 像素且总像素不超过 1600 万；Spring multipart 单文件接收上限为 5 MiB，完整请求上限为 6 MiB，以容纳表单封装开销。服务端解码并统一重编码为 PNG，私有存储于当前用户头像表。`GET /api/auth/me/avatar` 只返回当前用户头像且设置 no-store/nosniff；客户端须接受 `image/png`，并可同时接受 `application/problem+json` 用于错误响应，不能仅发送 `Accept: application/json`。`DELETE /api/auth/me/avatar` 删除当前用户头像。头像不复用资料 Asset 上传协议。
 - `DELETE /api/auth/me` 接受 `{password}` 并返回 HTTP 202 `{id,status,requestedAt}`，表示注销清理已受理而非永久删除已完成。服务端在事务中停用用户、撤销 refresh sessions、持久化 Asset 与 ParsedDocument 对象键；上传意图签发与停用用户通过用户锁串行化。后台任务等待既有上传签名有效期及缓冲后，按键幂等清理对象并在用户归属锁下重扫，最后按 owner 显式删除关联数据和用户，保留不含用户外键的完成记录。已完成作业继续分批复扫已记录对象键，处理预签名 PUT 晚到造成的对象重现；对象清理失败保留作业并重试。没有公开的跨账户作业状态查询路由。
@@ -290,7 +290,7 @@ New internal Provider invocations carry a server-resolved credential source with
 ### 鉴权和安全错误
 
 - 注册、登录、刷新为公开路径；登出、当前用户和会话路径使用 `Authorization: Bearer <accessToken>`。
-- access JWT 有效期配置默认 900 秒；refresh session 默认 2,592,000 秒（30 天）。JWT 只含 `sub`、`sid`、`serverDeviceId`、`typ=access`、`iat`、`exp`；refresh token 只保存 SHA-256 hash。
+- access JWT 有效期配置默认 900 秒。JWT 包含 `sub`、`sid`、`serverDeviceId`、`credentialGeneration`、`typ=access`、`iat`、`exp`。refresh session 默认 2,592,000 秒（30 天），refresh token 只保存 SHA-256 hash。
 - 未登录、无效、过期、撤销或重放 refresh token 返回 HTTP 401、错误码 `UNAUTHENTICATED` 和安全 detail，不返回 token 内容。refresh token 不能作为 access token 使用。
 - 重复使用已轮换的 refresh token 会撤销整个 rotation family；跨用户撤销不存在的 owner-scoped session 返回 HTTP 404、`RESOURCE_NOT_FOUND`，不泄漏归属。
 - 参数校验返回 HTTP 400、`VALIDATION_FAILED` 和 `fieldErrors`；重复用户名返回 HTTP 409、`MUTATION_REJECTED`。安全过滤器错误也返回 `application/problem+json` 和 `X-Trace-Id`。
@@ -415,7 +415,7 @@ PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约�
 
 除公开注册、登录和刷新路径外，业务请求使用 Authorization: Bearer access-token。
 
-- access JWT 有效期 15 分钟，只包含最小 subject、session/device、签发和过期信息。
+- access JWT 有效期 15 分钟，包含 subject、session/device、凭据代次、签发和过期信息。
 - refresh session 有效期 30 天；每次刷新执行 rotation。
 - refresh token 只保存不可逆 hash，不能作为普通 access token 使用。
 - refresh token 重放会撤销对应 rotation 链。

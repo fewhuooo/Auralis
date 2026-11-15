@@ -43,4 +43,10 @@ public interface RefreshSessionRepository extends JpaRepository<RefreshSessionEn
     @Query("update RefreshSessionEntity session set session.revokedAt = :revokedAt "
             + "where session.userId = :userId and session.revokedAt is null")
     int revokeAllForUser(@Param("userId") UUID userId, @Param("revokedAt") Instant revokedAt);
+
+    @Modifying
+    @Query("update RefreshSessionEntity session set session.revokedAt = :revokedAt "
+            + "where session.userId = :userId and session.serverDeviceId <> :currentDeviceId and session.revokedAt is null")
+    void revokeForOtherDevices(@Param("userId") UUID userId, @Param("currentDeviceId") UUID currentDeviceId,
+                               @Param("revokedAt") Instant revokedAt);
 }

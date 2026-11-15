@@ -503,34 +503,54 @@ class AuthControllerTests {
     }
 
     @Test
-    void changesPasswordOnlyAfterVerifyingCurrentPasswordAndRevokesRefreshSessions() throws Exception {
-        JsonNode alice = register("alice", "password-alice", "Alice's browser");
-        String token = alice.path("tokens").path("accessToken").asText();
+    void changingPasswordPreservesCurrentDeviceRefreshAndRevokesOtherDevices() throws Exception {
+        JsonNode current = register("alice", "password-alice", "Alice's browser");
+        JsonNode other = login("alice", "password-alice-other");
+        String currentAccess = current.path("tokens").path("accessToken").asText();
+        String otherAccess = other.path("tokens").path("accessToken").asText();
 
         mockMvc.perform(put("/api/auth/password")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(currentAccess))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"baseVersion\":0,\"currentPassword\":\"wrong password\",\"newPassword\":\"a longer new password\"}"))
                 .andExpect(status().isUnauthorized());
+        for (String accessToken : List.of(currentAccess, otherAccess)) {
+            mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.version").value(0));
+        }
+        JsonNode rotatedCurrent = refresh(current);
+        JsonNode rotatedOther = refresh(other);
 
         mockMvc.perform(put("/api/auth/password")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(rotatedCurrent.path("tokens").path("accessToken").asText()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"baseVersion\":0,\"currentPassword\":\"correct horse battery staple\",\"newPassword\":\"a longer new password\"}"))
                 .andExpect(status().isNoContent());
+        for (JsonNode rotated : List.of(rotatedCurrent, rotatedOther)) {
+            mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION,
+                            bearer(rotated.path("tokens").path("accessToken").asText())))
+                    .andExpect(status().isUnauthorized());
+        }
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"refreshToken\":\"" + alice.path("tokens").path("refreshToken").asText() + "\"}"))
+                        .content("{\"refreshToken\":\"" + rotatedOther.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        JsonNode renewedCurrent = refresh(rotatedCurrent);
+        assertThat(renewedCurrent.path("serverDeviceId")).isEqualTo(current.path("serverDeviceId"));
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION,
+                        bearer(renewedCurrent.path("tokens").path("accessToken").asText())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("alice", "correct horse battery staple", "password-alice-next")))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("alice", "password-alice", "password-alice-next")))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"alice\",\"password\":\"a longer new password\","
-                                + "\"clientDeviceKey\":\"password-alice-next\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}"))
+                        .content(loginJson("alice", "a longer new password", "password-alice-next")))
                 .andExpect(status().isOk());
     }
 
@@ -807,7 +827,7 @@ class AuthControllerTests {
                     Thread.currentThread().interrupt();
                     throw new IllegalStateException(exception);
                 }
-                identityService.changePassword(userId, 0,
+                identityService.changePassword(userId, UUID.fromString(alice.path("serverDeviceId").asText()), 0,
                         "correct horse battery staple", "a different long password");
                 return null;
             });
@@ -816,7 +836,7 @@ class AuthControllerTests {
                     .isInstanceOf(ExecutionException.class)
                     .hasCauseInstanceOf(IdentityException.class);
             assertThat(refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId))
-                    .allMatch(session -> session.getRevokedAt() != null);
+                    .singleElement().satisfies(session -> assertThat(session.getRevokedAt()).isNull());
         }
     }
 
@@ -890,6 +910,13 @@ class AuthControllerTests {
                                 AuthTestAccounts.registrationFields(mockMvc, email))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION, org.hamcrest.Matchers.startsWith("/api/auth/sessions/")))
+                .andReturn());
+    }
+
+    private JsonNode refresh(JsonNode auth) throws Exception {
+        return json(mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + auth.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk())
                 .andReturn());
     }
 
