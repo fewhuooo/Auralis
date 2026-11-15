@@ -2,7 +2,7 @@
 
 ### 2026-11-15 登录注册
 
-上线发信需配置并验证实际 SMTP 服务。PC 原生窗口操作和桌面、手机、平板真实邮箱注册、登录、过期续期与重置仍待交互验收。PC 全量回归有 2 项基线失败；Mobile 类型检查仍报 Review API 缺两项类型与平板工作区两处类型错误，均在基线复现。Server 全量有一项 AI 策略基线断言失败及 PostgreSQL 连接配置和 TLS 测试环境报错。见 [SMTP 部署配置](../operations/Deployment.md) 和 `D:/Temp/auralis-auth-formal-full.log`。
+桌面试测的 QQ SMTP 注册验证码已实际投递。上线环境的 SMTP 配置，以及 PC 原生窗口操作和三端完整注册、登录、过期续期与重置仍待交互验收。PC 全量回归有 2 项基线失败。Mobile 类型检查仍报 Review API 缺两项类型与平板工作区两处类型错误，均在基线复现。Server 全量有一项 AI 策略基线断言失败及 PostgreSQL 连接配置和 TLS 测试环境报错。见 [SMTP 部署配置](../operations/Deployment.md) 和 `D:/Temp/auralis-auth-formal-full.log`。
 
 ### 2026-11-14 PC 个人中心
 

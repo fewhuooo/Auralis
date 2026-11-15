@@ -85,27 +85,28 @@
                 />
               </el-form-item>
               <el-form-item :error="fieldErrors.emailCode?.[0]">
-                <div class="verification-row">
-                  <el-input
-                    v-model="form.emailCode"
-                    :aria-label="t(messages.emailCode)"
-                    :placeholder="t(messages.emailCode)"
-                    size="large"
-                    class="minimal-input"
-                    :disabled="busy"
-                    autocomplete="one-time-code"
-                    inputmode="numeric"
-                    maxlength="6"
-                    @input="clearFieldError('emailCode')"
-                  />
-                  <button
-                    class="verification-button"
-                    type="button"
-                    :disabled="busy || resendRemaining > 0"
-                    :aria-busy="sendingCode"
-                    @click="sendCode"
-                  >{{ sendingCode ? t(messages.sendingCode) : resendRemaining > 0 ? t(messages.resendCountdown, { seconds: resendRemaining }) : t(messages.sendCode) }}</button>
-                </div>
+                <el-input
+                  v-model="form.emailCode"
+                  :aria-label="t(messages.emailCode)"
+                  :placeholder="t(messages.emailCode)"
+                  size="large"
+                  class="minimal-input"
+                  :disabled="busy"
+                  autocomplete="one-time-code"
+                  inputmode="numeric"
+                  maxlength="6"
+                  @input="clearFieldError('emailCode')"
+                >
+                  <template #suffix>
+                    <button
+                      class="verification-button"
+                      type="button"
+                      :disabled="busy || resendRemaining > 0"
+                      :aria-busy="sendingCode"
+                      @click="sendCode"
+                    >{{ sendingCode ? t(messages.sendingCode) : resendRemaining > 0 ? t(messages.resendCountdown, { seconds: resendRemaining }) : t(messages.sendCode) }}</button>
+                  </template>
+                </el-input>
               </el-form-item>
             </template>
 
@@ -701,35 +702,25 @@ function isUsername(value: string): boolean {
   to { transform: rotate(360deg); }
 }
 
-.verification-row {
-  display: flex;
-  width: 100%;
-  gap: 8px;
-}
-
-.verification-row .el-input {
-  min-width: 0;
-}
-
 .verification-button {
-  flex: 0 0 auto;
-  min-inline-size: 8em;
-  padding-inline: 12px;
-  border: 1px solid var(--border-accent);
-  border-radius: 12px;
-  background: var(--color-sage-bg);
+  min-inline-size: 7.5em;
+  padding: 5px 0 5px 10px;
+  border: 0;
+  border-inline-start: 1px solid var(--border-subtle);
+  background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.25;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .verification-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-zen-sage) 20%, var(--color-bg-primary));
-  border-color: var(--color-zen-sage);
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .verification-button:focus-visible {
@@ -738,8 +729,6 @@ function isUsername(value: string): boolean {
 }
 
 .verification-button:disabled {
-  background: var(--color-bg-tertiary);
-  border-color: var(--border-subtle);
   color: var(--text-muted);
   cursor: not-allowed;
 }
