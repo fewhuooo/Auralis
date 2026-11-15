@@ -814,7 +814,7 @@ export class LocalAssetService {
    */
   async readAssetFile(
     identity: ResolveAssetIdentity,
-    options: { name?: string; mimeType?: string } = {},
+    options: { name?: string; mimeType?: string; allowCloudFallbackOnCorruption?: boolean } = {},
   ): Promise<LocalAssetFileReadResult | null> {
     const record = 'localAssetId' in identity && identity.localAssetId
       ? await this.repository.getAssetFile(identity.localAssetId)
@@ -828,10 +828,16 @@ export class LocalAssetService {
     try {
       readResult = await this.readAssetBytes(record.localAssetId, record.sizeBytes, record.sha256)
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // An upload intent can reserve a server ID while the source is still a local draft.
+      if (options.allowCloudFallbackOnCorruption && record.serverAssetId
+        && (record.state === 'SYNCED' || identity.serverAssetId === record.serverAssetId)
+        && (message === 'LOCAL_ASSET_SIZE_MISMATCH' || message === 'LOCAL_ASSET_HASH_MISMATCH')) {
+        return null
+      }
       // A record whose managed file disappeared is a local miss. Mark it
       // corrupt and let the caller decide whether an online server fallback
-      // is available; hash/frame errors must remain hard failures.
-      const message = error instanceof Error ? error.message : String(error)
+      // is available.
       if (!/FILE_MISSING|LOCAL_ASSET_NOT_FOUND/i.test(message)) throw error
       if (record.state !== 'CORRUPT' && record.state !== 'DELETING') {
         await this.repository.transitionAssetState(record.localAssetId, 'CORRUPT').catch(() => undefined)

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
-import { register } from 'node:module'
+import { readFile } from 'node:fs/promises'
+import { register, stripTypeScriptTypes } from 'node:module'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import axios from 'axios'
+import { computed, effectScope, reactive, ref, watch } from 'vue'
 
 let activeAssetFlowAdapter = async (config) => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config })
 axios.defaults.adapter = (config) => activeAssetFlowAdapter(config)
@@ -237,6 +239,103 @@ test('useAssetStore falls back only for a missing local asset and fences an owne
     globalThis.fetch = async () => ({ ok: false, status: 503 })
     await assert.rejects(() => assetStore.resolveSourceInput('server-only-asset'), /ASSET_DOWNLOAD_FAILED_503/)
   } finally {
+    request.post = originalPost
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('FilePreview uses cloud bytes after a known integrity error on a synced local copy', async () => {
+  setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-preview-recovery', email: 'preview@example.test' }
+  authStore.serverDeviceId = 'device-preview-recovery'
+  const assetStore = useAssetStore()
+  const { getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const { getPreviewSourceIdentity, resolveFileCapability } = await import('../src/utils/filePreview.ts')
+  const { PreviewRequestGate } = await import('../src/components/preview/PreviewRequestGate.ts')
+  const repo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+  const syncedRecord = await repo.createAssetFile({
+    localAssetId: 'local-synced-preview', serverAssetId: 'server-synced-preview',
+    originalName: 'lecture.pdf', mimeType: 'application/pdf', sizeBytes: 64,
+    sha256: 'a'.repeat(64), state: 'SYNCED',
+  })
+  const localOnlyRecord = await repo.createAssetFile({
+    localAssetId: 'local-only-preview', originalName: 'offline.pdf',
+    mimeType: 'application/pdf', sizeBytes: 32, sha256: 'b'.repeat(64),
+  })
+  const originalWindow = globalThis.window
+  const originalPost = request.post
+  const originalFetch = globalThis.fetch
+  const requestedUrls = []
+  const downloadedUrls = []
+  let nativeError = 'LOCAL_ASSET_SIZE_MISMATCH'
+  globalThis.window = {
+    setTimeout,
+    __TAURI_INTERNALS__: {
+      async invoke(command) {
+        assert.equal(command, 'read_local_asset_bytes')
+        throw nativeError
+      },
+    },
+  }
+  request.post = async (url) => {
+    requestedUrls.push(url)
+    return { url: 'https://object.test/lecture', originalName: 'lecture.pdf', mimeType: 'application/pdf' }
+  }
+  globalThis.fetch = async (url) => {
+    downloadedUrls.push(url)
+    return new Response('cloud original')
+  }
+  const scope = effectScope()
+  try {
+    await assert.rejects(() => assetStore.resolveSourceInput(syncedRecord.serverAssetId), /LOCAL_ASSET_SIZE_MISMATCH/)
+    assert.deepEqual(requestedUrls, [])
+
+    const sfc = await readFile(new URL('../src/components/FilePreview.vue', import.meta.url), 'utf8')
+    const setupScript = sfc.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
+    const props = reactive({ bare: true, file: { id: 'synced-source', assetId: syncedRecord.serverAssetId } })
+    const bindings = {
+      computed, ref, watch, onUnmounted: () => {},
+      useAuthStore, useAssetStore, getPreviewSourceIdentity, resolveFileCapability, PreviewRequestGate,
+      withDefaults: input => input, defineProps: () => props, defineEmits: () => () => {}, defineExpose: () => {},
+    }
+    const setup = new Function(...Object.keys(bindings), stripTypeScriptTypes(setupScript)
+      + '\nreturn { previewFile, errorMessage, retry };')
+    const preview = scope.run(() => setup(...Object.values(bindings)))
+    await waitForCondition(() => preview.previewFile.value, 'fallback after a size mismatch')
+    assert.equal(await preview.previewFile.value.text(), 'cloud original')
+    assert.equal(preview.previewFile.value.name, 'lecture.pdf')
+
+    nativeError = 'LOCAL_ASSET_HASH_MISMATCH'
+    preview.retry()
+    await waitForCondition(() => preview.previewFile.value, 'fallback after a hash mismatch')
+    assert.equal(await preview.previewFile.value.text(), 'cloud original')
+
+    props.file = { id: 'offline-source', assetId: localOnlyRecord.localAssetId }
+    await waitForCondition(() => preview.errorMessage.value, 'integrity error on the local-only file')
+    assert.equal(preview.errorMessage.value, nativeError)
+    assert.equal(preview.previewFile.value, null)
+
+    const pendingUploadRecord = await repo.mapServerAssetId(localOnlyRecord.localAssetId, 'reserved-server-asset')
+    preview.retry()
+    await waitForCondition(() => preview.errorMessage.value, 'integrity error on a file with a pending upload')
+    assert.equal(preview.errorMessage.value, nativeError)
+    assert.equal(preview.previewFile.value, null)
+
+    nativeError = 'LOCAL_ASSET_READ_FAILED'
+    props.file = { id: 'synced-source', assetId: syncedRecord.serverAssetId }
+    await waitForCondition(() => preview.errorMessage.value === nativeError, 'unexpected read error')
+    assert.equal(preview.previewFile.value, null)
+    assert.deepEqual(requestedUrls, [
+      '/api/assets/server-synced-preview/download-url',
+      '/api/assets/server-synced-preview/download-url',
+    ])
+    assert.deepEqual(downloadedUrls, ['https://object.test/lecture', 'https://object.test/lecture'])
+    assert.deepEqual(await repo.getAssetFile(syncedRecord.localAssetId), syncedRecord)
+    assert.deepEqual(await repo.getAssetFile(localOnlyRecord.localAssetId), pendingUploadRecord)
+  } finally {
+    scope.stop()
+    globalThis.window = originalWindow
     request.post = originalPost
     globalThis.fetch = originalFetch
   }

@@ -76,6 +76,7 @@ async function loadPreview(): Promise<void> {
   originalName.value = ''
   signedUrl.value = null
   isLoading.value = false
+  isRendererLoading.value = false
   errorMessage.value = null
   currentPage.value = 1
   totalPages.value = 1
@@ -92,7 +93,7 @@ async function loadPreview(): Promise<void> {
 
   isLoading.value = true
   try {
-    const localInput = await assetStore.resolveLocalFile(assetId)
+    const localInput = await assetStore.resolveLocalFile(assetId, { allowCloudFallbackOnCorruption: true })
     if (!previewRequests.isCurrent(requestId)) {
       localInput?.cleanup()
       return
@@ -198,11 +199,19 @@ function handleRendererLoadStart(): void {
   emit('control-ready', false)
 }
 
-async function handleRendererLoadComplete(): Promise<void> {
+async function handleRendererLoadComplete(file: File): Promise<void> {
+  if (previewFile.value !== file) return
   isRendererLoading.value = false
   isRendererReady.value = true
   emit('control-ready', true)
   await flushRendererActions()
+}
+
+function handleRendererLoadError(file: File, message: string): void {
+  if (previewFile.value !== file) return
+  handleRendererUnloadComplete()
+  errorMessage.value = message
+  emit('preview-error', message)
 }
 
 function handleRendererUnloadComplete(): void {
@@ -280,6 +289,7 @@ watch(
           :capability="capability"
           @load-start="handleRendererLoadStart"
           @load-complete="handleRendererLoadComplete"
+          @load-error="handleRendererLoadError"
           @unload-complete="handleRendererUnloadComplete"
           @zoom-change="handleZoomChange"
           @rotation-change="handleRotationChange"

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { FileViewer as BaseFileViewer } from '@file-viewer/vue3'
-import { withFullViewerOptions } from '@file-viewer/vue3-full'
+import { fileViewerFullPreset, withFullViewerOptions } from '@file-viewer/vue3-full'
 import '@file-viewer/vue3/dist/file-viewer3.css'
+import { t, type Message } from '@/i18n'
 import type { FileCapability } from '@/utils/filePreview'
 import { isOfficeFile } from '@/services/documentParser/fileViewerBridge'
 import type { FileViewerExpose, FileViewerViewStateChange, FileViewerZoomState } from '@file-viewer/vue3'
@@ -16,7 +17,8 @@ const isOfficeParserCapable = computed(() => props.capability.kind === 'office' 
 
 const emit = defineEmits<{
   (event: 'load-start'): void
-  (event: 'load-complete'): void
+  (event: 'load-complete', file: File): void
+  (event: 'load-error', file: File, message: string): void
   (event: 'unload-complete'): void
   (event: 'ready-change', ready: boolean): void
   (event: 'page-change', page: number, total: number): void
@@ -27,6 +29,19 @@ const emit = defineEmits<{
 const viewerRef = ref<FileViewerExpose | null>(null)
 const isReady = ref(false)
 const pendingActions: Array<() => Promise<unknown> | unknown> = []
+const PDF_PREVIEW_READY_TIMEOUT_MS = 60_000
+const pdfLoadError: Message = {
+  'zh-CN': '无法打开 PDF 预览',
+  en: 'Could not open the PDF preview',
+  ja: 'PDF プレビューを開けませんでした',
+}
+const pdfHandler = fileViewerFullPreset.renderers
+  .flatMap(renderer => renderer.handlers ?? [])
+  .find(registration => registration.rendererId === 'pdf')
+let awaitPdfReady: ((signal: AbortSignal) => void | Promise<void>) | undefined
+let rendererLoad = new AbortController()
+
+onBeforeUnmount(() => rendererLoad.abort())
 
 const viewerOptions = withFullViewerOptions({
   styleIsolation: 'none' as const,
@@ -39,6 +54,35 @@ const viewerOptions = withFullViewerOptions({
   pdf: {
     toolbar: false,
     navigation: false,
+  },
+  renderers: pdfHandler && {
+    id: 'auralis-pdf-preview',
+    handlers: [{
+      rendererId: pdfHandler.rendererId,
+      handler(buffer, target, type, context) {
+        if (!(target instanceof HTMLDivElement)) throw new Error('PDF preview requires a div render surface')
+        const signal = rendererLoad.signal
+        return pdfHandler.handler(buffer, target, type, {
+          ...context,
+          registerThumbnailAdapter(adapter) {
+            context?.registerThumbnailAdapter?.(adapter)
+            const beforeCapture = adapter?.beforeCapture
+            if (!beforeCapture || signal.aborted || context?.signal?.aborted) return
+            // PDF.js finishes decoding after File Viewer's load-complete. This hook
+            // waits for that same decode and reports its failure without capturing a thumbnail.
+            awaitPdfReady = signal => beforeCapture({
+              width: 1,
+              height: 1,
+              format: 'png',
+              quality: 1,
+              fit: 'contain',
+              background: 'transparent',
+              signal,
+            })
+          },
+        })
+      },
+    }],
   },
 })
 
@@ -118,6 +162,9 @@ async function flushPendingActions(): Promise<void> {
 }
 
 function handleLoadStart(): void {
+  rendererLoad.abort()
+  rendererLoad = new AbortController()
+  awaitPdfReady = undefined
   isReady.value = false
   currentState.value.rotation = 0
   rotationHandledByViewer.value = true
@@ -127,12 +174,39 @@ function handleLoadStart(): void {
 }
 
 async function handleLoadComplete(): Promise<void> {
+  const file = props.file
+  const load = rendererLoad
+  if (load.signal.aborted) return
+  if (props.capability.kind === 'pdf') {
+    const timeout = window.setTimeout(() => {
+      load.abort()
+      reportPdfLoadError(file)
+    }, PDF_PREVIEW_READY_TIMEOUT_MS)
+    const clearDeadline = () => window.clearTimeout(timeout)
+    load.signal.addEventListener('abort', clearDeadline, { once: true })
+    try {
+      if (!awaitPdfReady) throw new Error('PDF renderer readiness hook is unavailable')
+      await awaitPdfReady(load.signal)
+    } catch {
+      if (!load.signal.aborted) reportPdfLoadError(file)
+      return
+    } finally {
+      clearDeadline()
+      load.signal.removeEventListener('abort', clearDeadline)
+    }
+  }
+  if (load.signal.aborted) return
   isReady.value = true
   const zoomState = viewerRef.value?.getZoomState()
   if (zoomState) onZoomChange(zoomState)
   emit('ready-change', true)
-  emit('load-complete')
+  emit('load-complete', file)
   await flushPendingActions()
+}
+
+function reportPdfLoadError(file: File): void {
+  pendingActions.splice(0)
+  emit('load-error', file, t(pdfLoadError))
 }
 
 function handleUnloadComplete(): void {

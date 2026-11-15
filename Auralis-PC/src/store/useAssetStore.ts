@@ -173,7 +173,10 @@ export const useAssetStore = defineStore('asset', () => {
     return { url: response.url, originalName: response.originalName, mimeType: response.mimeType }
   }
 
-  async function resolveLocalFile(assetId: string): Promise<AssetInput | null> {
+  async function resolveLocalFile(
+    assetId: string,
+    options?: { allowCloudFallbackOnCorruption?: boolean },
+  ): Promise<AssetInput | null> {
     const authStore = useAuthStore()
     const userId = authStore.user?.id
     const serverDeviceId = authStore.serverDeviceId
@@ -181,8 +184,8 @@ export const useAssetStore = defineStore('asset', () => {
 
     const localAssetRepo = await getLocalAssetRepository(userId, serverDeviceId)
     const assetService = getOrCreateLocalAssetService(localAssetRepo)
-    const local = await assetService.readAssetFile({ localAssetId: assetId })
-      ?? await assetService.readAssetFile({ serverAssetId: assetId })
+    const local = await assetService.readAssetFile({ localAssetId: assetId }, options)
+      ?? await assetService.readAssetFile({ serverAssetId: assetId }, options)
     if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) {
       local?.cleanup()
       throw new Error('ASSET_IDENTITY_CHANGED')

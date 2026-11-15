@@ -166,7 +166,7 @@ test('FilePreview resolves owner-scoped local bytes before signed-url fallback a
   const filePreviewPath = path.resolve('src/components/FilePreview.vue')
   const source = fs.readFileSync(filePreviewPath, 'utf8')
 
-  assert.match(source, /assetStore\.resolveLocalFile\(assetId\)/)
+  assert.match(source, /assetStore\.resolveLocalFile\(assetId[,)]/)
   assert.match(source, /URL\.createObjectURL\(localFile\)/)
   assert.match(source, /URL\.revokeObjectURL\(/)
   assert.match(source, /activeLocalCleanup/)
