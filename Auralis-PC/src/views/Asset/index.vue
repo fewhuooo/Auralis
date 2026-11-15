@@ -542,6 +542,7 @@ import {
   IconNote
 } from '@tabler/icons-vue'
 import { getSubjectIconComponent } from '@/utils/subjectIcon'
+import { sourcePhaseLabel } from '@/utils/documentProcessingStatus'
 import FilePreview from '@/components/FilePreview.vue'
 import type { SourceFileModel } from '@/services/domainMappers'
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
@@ -615,9 +616,11 @@ const docProcessingStore = useDocumentProcessingStore()
 const route = useRoute()
 
 function getFileStatus(file: SourceFileModel): { status: 'success' | 'processing' | 'failed'; statusText: string } {
-  const job = docProcessingStore.jobs.find(j => j.sourceId === file.id)
+  const job = file.ingestionStatus === 'AWAITING_CLIENT' && file.ingestionRevision?.trim()
+    ? docProcessingStore.jobs.find(job => job.sourceId === file.id && job.ingestionRevision === file.ingestionRevision)
+    : undefined
   if (job) {
-    if (job.phase === 'READY') return { status: 'success', statusText: t({ 'zh-CN': '已就绪', en: 'Ready', ja: '準備完了' }) }
+    if (job.phase === 'READY') return { status: 'processing', statusText: t({ 'zh-CN': '已提交，等待索引', en: 'Submitted, waiting for indexing', ja: '送信済み、索引作成待ち' }) }
     if (job.phase === 'FAILED_LOCAL' || job.phase === 'FAILED_SERVER') return { status: 'failed', statusText: t({ 'zh-CN': '解析失败', en: 'Parsing failed', ja: '解析に失敗しました' }) }
     if (job.phase === 'OCR_RUNNING') return { status: 'processing', statusText: t({ 'zh-CN': 'OCR 识别中', en: 'Running OCR', ja: 'OCR 処理中' }) }
     if (job.phase === 'EXTRACTING') return { status: 'processing', statusText: t({ 'zh-CN': '提取文本中', en: 'Extracting text', ja: 'テキストを抽出中' }) }
@@ -646,7 +649,7 @@ function getFileStatus(file: SourceFileModel): { status: 'success' | 'processing
     case 'PENDING':
       return { status: 'processing', statusText: t({ 'zh-CN': '排队中', en: 'Queued', ja: '待機中' }) }
     default:
-      return { status: 'success', statusText: t({ 'zh-CN': '已就绪', en: 'Ready', ja: '準備完了' }) }
+      return { status: 'processing', statusText: sourcePhaseLabel(file.ingestionStatus) }
   }
 }
 

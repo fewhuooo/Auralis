@@ -4,6 +4,7 @@ import test from 'node:test'
 import ts from 'typescript'
 import { computed, effectScope, nextTick, reactive, ref, watch } from 'vue'
 import { locale, t } from '../src/i18n.ts'
+import { sourcePhaseLabel } from '../src/utils/documentProcessingStatus.ts'
 
 test('Asset view removes demo tasks and uses real tasks', async () => {
   const assetSource = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
@@ -94,13 +95,74 @@ test('Asset clears a removed file preview and can open another node from the rem
   assert.equal(view.selected.value.content, block.content)
 })
 
+test('Asset updates the open file badge as the server indexes the submitted document', async (t) => {
+  const { view, sourceStore, docProcessingStore, file, otherFile } = await createAssetFixture(t)
+  const currentFile = { ...file, ingestionStatus: 'AWAITING_CLIENT', ingestionRevision: 'current' }
+  sourceStore.sources = [currentFile, otherFile]
+  await nextTick()
+  view.selectFile(file.id, file.subjectId)
+
+  docProcessingStore.jobs = [{ sourceId: file.id, ingestionRevision: 'current', phase: 'READY' }]
+  await nextTick()
+  assert.equal(view.selected.value.status, 'processing')
+  assert.equal(view.selected.value.statusText, '已提交，等待索引')
+
+  for (const [ingestionStatus, status, statusText] of [
+    ['VALIDATING', 'processing', '校验中'],
+    ['INDEXING', 'processing', '构建索引'],
+    ['FAILED', 'failed', '解析失败'],
+    ['READY', 'success', '已就绪'],
+  ]) {
+    sourceStore.sources = [{ ...currentFile, ingestionStatus }, otherFile]
+    await nextTick()
+    assert.equal(view.selected.value.status, status)
+    assert.equal(view.selected.value.statusText, statusText)
+    assert.equal(view.selectedPreviewFile.value.id, file.id)
+  }
+})
+
+test('Asset shows processing only for the current revision and keeps a local draft previewable', async (t) => {
+  const { view, sourceStore, docProcessingStore, file, otherFile } = await createAssetFixture(t)
+  view.selectFile(file.id, 'all')
+  assert.equal(view.selected.value.status, 'processing')
+  assert.equal(view.selected.value.statusText, '等待状态同步')
+
+  docProcessingStore.jobs = [
+    { sourceId: file.id, ingestionRevision: 'old', phase: 'FAILED_LOCAL' },
+    { sourceId: otherFile.id, ingestionRevision: 'current', phase: 'READY' },
+  ]
+  sourceStore.sources = [{ ...file, ingestionStatus: 'AWAITING_CLIENT' }, otherFile]
+  await nextTick()
+  assert.equal(view.selected.value.statusText, '待本机处理')
+  assert.equal(view.selectedPreviewFile.value.assetId, file.assetId)
+
+  sourceStore.sources[0].ingestionRevision = 'current'
+  await nextTick()
+  assert.equal(view.selected.value.statusText, '待本机处理')
+
+  const currentJob = reactive({ sourceId: file.id, ingestionRevision: 'current', phase: 'OCR_RUNNING' })
+  docProcessingStore.jobs.push(currentJob)
+  await nextTick()
+  assert.equal(view.selected.value.statusText, 'OCR 识别中')
+
+  currentJob.phase = 'PAUSED_NETWORK'
+  await nextTick()
+  assert.equal(view.selected.value.statusText, '等待网络')
+
+  sourceStore.sources[0].ingestionStatus = 'READY'
+  await nextTick()
+  assert.equal(view.selected.value.status, 'success')
+  assert.equal(view.selected.value.statusText, '已就绪')
+})
+
 async function createAssetFixture(testContext) {
   const assetSource = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
   const setup = assetSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
   const script = ts.createSourceFile('Asset.ts', setup, ts.ScriptTarget.Latest, true)
   const names = new Set([
     'showRegisterModal', 'isLoadingAssets', 'rootNodes', 'focusUnassigned', 'selected',
-    'rebuildAssetTree', 'findTreeNode', 'selectItem', 'selectedPreviewFile', 'selectedGroupForGraph',
+    'getFileStatus', 'rebuildAssetTree', 'findTreeNode', 'selectItem', 'selectedPreviewFile',
+    'selectedGroupForGraph',
     'selectedGraphAsset', 'graphSources', 'graphBlocks', 'selectGraphNode',
   ])
   const statements = script.statements.filter(statement => {
@@ -120,7 +182,6 @@ async function createAssetFixture(testContext) {
     const taskGroupFolders = () => []
     const getSubjectIconComponent = () => 'subject'
     const getIconForSource = () => 'file'
-    const getFileStatus = () => ({ status: 'success', statusText: 'Ready' })
     ${statements}
     rebuildAssetTree()
     return {
@@ -140,12 +201,13 @@ async function createAssetFixture(testContext) {
   const otherFile = { ...file, id: 'geometry', name: 'Geometry notes', assetId: 'asset-geometry' }
   const block = { id: 'excerpt', subjectId: subject.id, sourceFileId: file.id, title: 'Excerpt', content: 'Example' }
   const sourceStore = reactive({ sources: [file, otherFile] })
+  const docProcessingStore = reactive({ jobs: [] })
   const bindings = {
-    computed, ref, watch, locale, t, sourceStore, subjectStore: { subjects: [subject] },
-    blockStore: { recentBlocks: [block] }, taskStore: { allTasks: [] }, docProcessingStore: { jobs: [] },
+    computed, ref, watch, locale, t, sourcePhaseLabel, sourceStore, docProcessingStore,
+    subjectStore: { subjects: [subject] }, blockStore: { recentBlocks: [block] }, taskStore: { allTasks: [] },
   }
   const scope = effectScope()
   testContext.after(() => scope.stop())
   const view = scope.run(() => new Function(...Object.keys(bindings), outputText)(...Object.values(bindings)))
-  return { view, sourceStore, file, otherFile, block }
+  return { view, sourceStore, docProcessingStore, file, otherFile, block }
 }
