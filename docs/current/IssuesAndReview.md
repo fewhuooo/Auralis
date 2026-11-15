@@ -63,7 +63,7 @@
 
 - **资料导入与处理（11-15）**。后台索引队列在隔离 H2 双账号回归中可处理已删除学科遗留的任务。早先已收到拒绝回执的资料登记需要手动重新登记。前三项修复后的 PC 全量回归 871/873，统计固定日期与 SearchPalette 断言两项失败均已在基线复现。资料库状态已按当前版本核对，定向测试覆盖提交、索引、失败与就绪回包的徽标变化。真实 Tauri、MinIO 与跨设备导入走查待进行。
 - **处理链（P1）**：真实 DOC/DOCX/PPT/PPTX/PDF、OCR 页级进度/空页、断网续传、revision 替换、跨设备接手、OCR 中删除、complete/indexing 与最终 UI 收敛需要端到端验收。11-13 删除切换的定向通过没有关闭这些场景。
-- **密钥和隐私（P1）**：Windows Credential Manager 跨 Entry 持久化、首次建 key、拒绝访问和历史加密缓存的密钥恢复必须在目标会话验证；不得生成新 key 冒充旧缓存恢复。检查临时文件、日志、剪贴板/accessibility 不泄漏正文、凭据或签名 URL。
+- **密钥和隐私（P1）**：11-15 源码核对确认，文档 runtime 仍以 cache id/receipt 阻止缺失密钥时的初始化，`e2ee.isEnabled()` 仍将 keyring 查询异常转为 `false`；[10-10 批准的恢复方案](../design/2026-09-04-pc-document-encryption-recovery-design.md)尚未实现。失败任务重试会复用旧 receipt，`READY` 清理失败也会保留 receipt，旧阶段白名单不能作为修复。关闭需验证明确缺失与访问错误的区分、旧缓存和续传状态安全失效化、原文件重新处理，以及 Windows Credential Manager 跨 Entry 持久化；不得生成新 key 冒充旧缓存恢复。检查临时文件、日志、剪贴板/accessibility 不泄漏正文、凭据或签名 URL。
 - **预览（P1/P2）**。异常缓存回退和 PDF 错误后的当前文件重试已有定向覆盖。真实 Tauri 仍需结合对象存储验收，并复查多格式、大文件、分页、缩放、旋转、快速切换、窄栏表现及资源内存占用。
 - **资料管理预览与星图**。定向回归覆盖学科分组与汇总分组的文件选择，以及 Source 同步删除后关闭预览。真实 Tauri 双设备同步待验收。
 - **上传与 MinIO（P1/P2）**：真实直传、签名 URL、CORS、大小/hash 不符、对象不存在、超时/重复 complete、生产 bucket policy 和凭据仍需专项证据。

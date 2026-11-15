@@ -61,6 +61,10 @@ docker compose logs --tail 100 minio-init
 
 FILE 处理还应核对 Source revision、当前 job/lease、客户端解析与上传 receipt、已接受 ParsedDocument 和索引阶段。区分上传完成、服务端接受、索引 READY 与 GUI 收敛；旧 revision/旧 worker 不得覆盖新状态。网络暂停按当前界面显式继续，不能删除 receipt 强制重跑 OCR。
 
+当前 `ParsedDocumentService` 与 `IngestionWorker` 未提供解析包上传意图、complete 和索引任务的专用生命周期事件。排查时关联 `sourceId`、`parsedDocumentId`、`ingestionRevision` 与 `jobId`，结合索引 generation、任务尝试次数及有效 lease、complete 响应和持久化状态核对；`ASSET_UPLOAD_*` 不能证明解析包已被接受或索引完成，也不能仅凭缺少解析包事件判断请求未执行。
+
+共享诊断只保留必要标识、阶段、计数、耗时与稳定错误码/异常类型。正文、OCR 文本、文件名、hash、object key、签名 URL/headers、token、密钥，以及可能含这些信息的异常 message/stack trace，须在共享前移除。
+
 ### 数据库与对象孤儿核对
 
 先按脚本要求安全注入数据库/MinIO凭据，从仓库根运行：
