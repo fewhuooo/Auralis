@@ -1,6 +1,6 @@
 # AI / RAG 计划
 
-更新时间：2026-07-10
+更新时间：2026-11-15
 
 文档状态：现行计划
 
@@ -14,18 +14,18 @@
 
 ## 当前事实
 
-- Chat、SSE、文本/文件 ingest、任务抽取、手写转换和排期建议端点存在。
-- LangChain4j、Milvus、Tika、MinIO 配置存在。
-- 生产 AI 配置键不一致；端点缺测试和质量基准。
+- 当前 Chat 使用原生工具与 run/attempt 协议，Overview 使用 Markdown v2 和分批 Pipeline；摄入/检索与配置见[后端模块](../modules/Backend.md)和[API](../contracts/API.md)。
+- 平台生成与 Embedding 配置已分组，向量检索使用 PostgreSQL/pgvector，资产使用 MinIO。
+- 已有定向和受控网络测试；真实模型质量、跨端恢复与外部异常边界按[问题登记](../current/IssuesAndReview.md)验收，Suggestions 仍需独立质量交付。
 
 ## 有序任务
 
-1. 统一 dev/prod 的 LangChain4j 配置和环境变量。
-2. 明确模型、embedding、collection、dimension 和来源元数据契约。
-3. 为 chat、SSE、ingest、file ingest、JSON 期望、超时和 provider 错误写测试。
+1. 核对现行生成/Embedding/BYOK 配置在目标环境的完整性与安全边界。
+2. 验证当前 embedding 维度、已有向量空间和来源 revision/owner 契约；换模型须评估旧向量。
+3. 核对已有 Chat/Overview/摄入/网络错误测试，补足明确缺口及真实取消、断流、UNKNOWN 恢复和用量结算验收。
 4. 对文件类型、大小、解析失败和恶意输入建立限制与提示。
 5. 为每种 AI 输出定义用户可见来源、置信限制、编辑与重试入口。
-6. 建立小型匿名评测集，覆盖学科问答、任务抽取、手写文本和排期。
+6. 建立经授权脱敏的评测集，覆盖学科问答、Overview 和检索来源；任务抽取、手写文本和排期建议只按已确认产品范围独立评估，不预设当前端点已实现。
 7. 记录成本、延迟、失败率和向量检索质量指标。
 
 ## 验证
@@ -44,3 +44,5 @@
 - 关键 AI 错误有稳定反馈和测试。
 - 输出来源可追溯，用户可编辑。
 - 质量/成本基准达到产品确认门槛。
+
+整理前记录见[历史快照](../archive/maintenance-2026-11-15/planning/AIRag.md)，仅供追溯。

@@ -57,10 +57,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { IconSearch } from '@tabler/icons-vue'
 import { t } from '@/i18n'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import type { KnowledgeBlockModel } from '@/services/domainMappers'
 
@@ -76,7 +77,10 @@ const messages = {
 }
 
 const router = useRouter()
+const authStore = useAuthStore()
 const knowledgeStore = useKnowledgeStore()
+const loginGeneration = authStore.loginGeneration
+const canSearch = computed(() => authStore.isAuthenticated && authStore.loginGeneration === loginGeneration)
 
 const isVisible = ref(false)
 const query = ref('')
@@ -98,7 +102,7 @@ watch([query, isVisible], ([value, visible], _, onCleanup) => {
   let active = true
   const searchTimeout = setTimeout(async () => {
     try {
-      const blocks = await knowledgeStore.loadLocalBlocks()
+      const blocks = await knowledgeStore.readLocalBlocks()
       if (!active) return
       searchResults.value = blocks.filter((block) =>
         block.title.toLowerCase().includes(keyword) ||
@@ -120,6 +124,7 @@ watch([query, isVisible], ([value, visible], _, onCleanup) => {
 }, { flush: 'sync' })
 
 const open = () => {
+  if (!canSearch.value) return
   query.value = ''
   isVisible.value = true
   nextTick(() => {
@@ -130,6 +135,12 @@ const open = () => {
 const close = () => {
   isVisible.value = false
 }
+
+watch(canSearch, (allowed) => {
+  if (allowed) return
+  close()
+  query.value = ''
+}, { flush: 'sync' })
 
 const selectResult = (block: KnowledgeBlockModel) => {
   if (!isVisible.value || isSearching.value || !searchResults.value.includes(block)) return
@@ -155,6 +166,7 @@ const handleKeyNav = (e: KeyboardEvent) => {
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
+  if (!canSearch.value) return
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     if (isVisible.value) {

@@ -1,6 +1,6 @@
 # PC 前端计划
 
-更新时间：2026-08-12
+更新时间：2026-11-15
 
 文档状态：现行计划
 
@@ -14,15 +14,14 @@
 
 ## 当前事实
 
-- 8 条正式路由、页面、Store 和 API 封装存在；近期已完成学科工作区、语义线条图标、统一弹窗、全局导航、Timeline 与 Pomodoro 的基础整理。
-- `beforeEach` 当前直接 `next()`，未登录页面保护关闭。
-- `check:subject-icons`、`check:subject-workspace` 与 `npm.cmd run build` 已通过；构建仍有 Vite 大 chunk 警告，GUI 尚待验收。
-- Tauri 版本统一为 2.11.1，但桌面 GUI 未验收。
+- 正式路由、Store、API、本地仓储和 Tauri 边界见[PC 模块](../modules/FrontendPC.md)。
+- `beforeEach` 已调用 `resolveAuthRedirect`，已有登录守卫与会话保护。
+- 近期构建、定向/全量结果及部分 Tauri 试测见[当前状态](../current/Status.md)，剩余 GUI、外部服务和多设备场景见[问题登记](../current/IssuesAndReview.md)。
 
 ## 有序任务
 
-1. 恢复基于 `useAuthStore` 的守卫，定义 `/login`、requiresAuth、刷新和退出行为。
-2. 为路由守卫、401 刷新失败和退出后回退建立前端测试或人工验收脚本。
+1. 验收现有 `useAuthStore` 与登录守卫在 `/login`、受保护路由、刷新和退出时的行为。
+2. 核对已有路由/401/会话测试，针对明确缺口验证刷新失败、退出回退与跨账号迟到结果。
 3. 核对 Dashboard、SubjectHall、Workspace、Asset、Timeline、Pomodoro、Profile 的 Store 字段与 API 调用。
 4. 验收上传、解析、错误、重试和用户提示。
 5. 验收时间线拖拽、保存、冲突和任务排序。
@@ -40,7 +39,7 @@ npm.cmd run build
 npm run tauri dev
 ```
 
-2026-08-12 的两个静态检查和 Web build 已通过；Vite 输出部分 chunk 超过 500 kB 的警告。Web build 与 Tauri GUI 结果必须分开记录。
+按任务范围选择检查，构建体积以本次产物测量为准。Web build 与 Tauri GUI 结果分别记录，不沿用旧 chunk 大小作为当前优化依据。
 
 ## 阻塞
 
@@ -52,3 +51,5 @@ npm run tauri dev
 - 未登录不可访问受保护 PC 路由。
 - 关键页面无过期 Store/API 引用。
 - PC Web build、主流程人工验收、Tauri 指定设备验收均有证据。
+
+整理前记录见[历史快照](../archive/maintenance-2026-11-15/planning/FrontendPC.md)，仅供追溯。

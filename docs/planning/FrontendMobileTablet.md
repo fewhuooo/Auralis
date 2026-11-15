@@ -1,6 +1,6 @@
 # Mobile / Tablet 前端计划
 
-更新时间：2026-08-29
+更新时间：2026-11-15
 
 文档状态：现行计划
 
@@ -18,17 +18,17 @@
 - 微信条件编译排除 Tablet。
 - 2026-08-12：H5、微信构建和侧栏检查通过；仍有 Sass legacy API 等非阻断警告，开发者工具和真机尚待执行。
 - Tablet 首页热力图已支持按周数自适应布局，当前使用 5 周日历网格；Hero Banner 已统一为 `Primary Gradient`。
-- Mobile 多数页面以本地 Store 为主，真机 base URL 仍有风险。
+- Mobile 多数页面以本地 Store 为主；API/WebSocket 地址已通过环境变量配置，目标设备连通性仍需验证。
 
 ## 有序任务
 
 1. 验证 launch 分流、手机/Tablet 内部导航和 401 登录回退。
-2. 把 Mobile base URL 改为环境化并在模拟器/真机验证。
+2. 验证现有 `VITE_API_BASE_URL`、`VITE_WS_BASE_URL` 配置在模拟器/真机上的连通性；微信环境使用 HTTPS/WSS。
 3. 逐页标注和收口 local-only、Sync、AI、Asset、Stats 数据来源。
 4. 验收 Home 新建日程、Timeline 排期、Pomodoro、Review、Stats。
 5. 验收 Mobile AI 输入、流式/失败状态和上下文。
 6. 验收 TabletLayout 导航、AI modal、Dashboard 多栏和 workspace 总结栏。
-7. 运行并维护侧栏切换脚本；必要时为 feature flags/note core 接入可执行测试。
+7. 运行并维护侧栏切换脚本和现有 `test:tablet` 测试，按实际行为缺口补齐验证。
 8. 在微信开发者工具、手机和横屏平板完成真实交互记录。
 
 ## 验证前置备注（2026-08-29）
@@ -41,6 +41,7 @@
 cd Auralis-Mobile
 npm.cmd run build:h5
 npm.cmd run build:mp-weixin
+npm.cmd run test:tablet
 node scripts\check-tablet-sidebar-transition.mjs
 ```
 

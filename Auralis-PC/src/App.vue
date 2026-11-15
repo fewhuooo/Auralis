@@ -28,7 +28,7 @@
     </Transition>
 
     <!-- Global Command Palette -->
-    <SearchPalette />
+    <SearchPalette v-if="isAuthenticatedRoute" :key="authStore.loginGeneration" />
 
     <!-- Kept mounted across routes for background Office extraction. -->
     <BackgroundParserHost ref="backgroundParserHost" />

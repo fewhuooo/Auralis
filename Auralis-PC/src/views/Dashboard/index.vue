@@ -169,9 +169,9 @@
                       <input
                         type="checkbox"
                         :checked="isCompletedScheduledTask(task)"
-                        :disabled="isScheduledCompletionLocked(task, taskStore.currentNow)"
+                        :disabled="savingTaskCompletions.has(task.id) || isScheduledCompletionLocked(task, taskStore.currentNow)"
                         :title="isScheduledCompletionLocked(task, taskStore.currentNow) ? t({ 'zh-CN': '任务时段已结束，完成状态不可取消', en: 'This task\'s scheduled time has ended and completion is locked', ja: '予定時間が終了しているため完了を取り消せません' }) : t({ 'zh-CN': '切换任务完成状态', en: 'Toggle task completion', ja: 'タスクの完了状態を切り替える' })"
-                        @change="toggleTaskCompletion(task)"
+                        @change="toggleTaskCompletion(task, $event)"
                         class="task-checkbox"
                         @click.stop
                       />
@@ -287,6 +287,7 @@
     <TaskCreateDialog
       v-model="showTaskModal"
       :subjects="availableSubjectsForTask"
+      :saving="isCreatingTask"
       @submit="handleAddTask"
     />
   </div>
@@ -530,6 +531,7 @@ const formatTaskDue = (dueAt?: string): string => {
 
 // ===== Task Creation =====
 const showTaskModal = ref(false)
+const isCreatingTask = ref(false)
 
 const availableSubjectsForTask = computed(() => {
   return subjectStore.subjects
@@ -547,6 +549,8 @@ const handleAddTask = async (taskData: {
   due?: string
   dueAt?: string
 }) => {
+  if (isCreatingTask.value || !showTaskModal.value) return
+  isCreatingTask.value = true
   try {
     await taskStore.addTask({
       name: taskData.name,
@@ -564,8 +568,16 @@ const handleAddTask = async (taskData: {
       type: 'success',
       position: 'top-right'
     })
-  } catch (e) {
-    console.error(e)
+  } catch (error) {
+    console.error('创建任务失败', error)
+    ElNotification({
+      title: t({ 'zh-CN': '创建任务失败', en: 'Could not create task', ja: 'タスクを作成できませんでした' }),
+      message: error instanceof Error ? error.message : t({ 'zh-CN': '任务保存失败，请重试', en: 'Could not save the task. Try again.', ja: 'タスクを保存できませんでした。もう一度お試しください。' }),
+      type: 'error',
+      position: 'top-right',
+    })
+  } finally {
+    isCreatingTask.value = false
   }
 }
 
@@ -620,13 +632,14 @@ watch(
     const blockId = typeof value === 'string' ? value.trim() : ''
     if (!blockId) return
     const generation = ++routeBlockIntentGeneration
+    const loginGeneration = authStore.loginGeneration
     try {
       await knowledgeStore.loadLocalBlocks()
     } catch (error) {
       console.warn('[Dashboard] Could not load the requested knowledge block', error)
       return
     }
-    if (generation !== routeBlockIntentGeneration || route.query.openBlock !== blockId) return
+    if (loginGeneration !== authStore.loginGeneration || generation !== routeBlockIntentGeneration || route.query.openBlock !== blockId) return
     const block = recentBlocks.value.find((candidate) => candidate.id === blockId)
     if (block) openBlockDetail(block)
     const query = { ...route.query }
@@ -640,26 +653,35 @@ onUnmounted(() => {
   window.removeEventListener('open-block-detail', handleOpenBlockDetailEvent)
 })
 
-const toggleTaskCompletion = async (task: Task) => {
-  if (!task.id) return
-  if (isScheduledCompletionLocked(task, taskStore.currentNow)) return
-  const isCurrentlyCompleted = isCompletedScheduledTask(task) || isCompletedTask(task)
-  const newStatus: TaskPresentationStatus = isCurrentlyCompleted
-    ? (task.scheduledAt ? 'scheduled' : 'pending')
+const savingTaskCompletions = ref(new Set<string>())
+
+const toggleTaskCompletion = async (task: Task, event?: Event) => {
+  const checkbox = event?.currentTarget as HTMLInputElement | null | undefined
+  const currentTask = allTasks.value.find((candidate) => candidate.id === task.id) ?? task
+  if (!task.id || savingTaskCompletions.value.has(task.id) || isScheduledCompletionLocked(currentTask, taskStore.currentNow)) {
+    if (checkbox) checkbox.checked = isCompletedScheduledTask(currentTask)
+    return
+  }
+  const newStatus: TaskPresentationStatus = isCompletedTask(currentTask)
+    ? (currentTask.scheduledAt ? 'scheduled' : 'pending')
     : 'completed'
+  savingTaskCompletions.value.add(task.id)
   try {
     await taskStore.updateTaskStatus(task.id, newStatus)
   } catch (error) {
     console.error('更新任务状态失败', error)
-    if (event?.target && 'checked' in event.target) {
-      (event.target as HTMLInputElement).checked = isCurrentlyCompleted
-    }
     ElNotification({
       title: t({ 'zh-CN': '更新任务状态失败', en: 'Could not update task status', ja: 'タスクの状態を更新できませんでした' }),
       message: error instanceof Error ? error.message : t({ 'zh-CN': '更新状态失败，请重试', en: 'Could not update status. Try again.', ja: '状態を更新できませんでした。もう一度お試しください。' }),
       type: 'error',
       position: 'top-right'
     })
+  } finally {
+    if (checkbox) {
+      const latestTask = allTasks.value.find((candidate) => candidate.id === task.id) ?? currentTask
+      checkbox.checked = isCompletedScheduledTask(latestTask)
+    }
+    savingTaskCompletions.value.delete(task.id)
   }
 }
 

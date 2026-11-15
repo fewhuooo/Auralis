@@ -119,7 +119,7 @@ SSE envelope 维持现行 protocol 1 的 `conversationId/requestId/runId/attempt
 - `docs/contracts/chat-runtime-api.md`：本轮唯一字段/SSE/part/tool contract。
 - `docs/plans/2026-10-31-chat-display-tools.md`：本轮边界、顺序语义、验收和验证状态。
 - `docs/plans/2026-10-29-chat-frontend-handoff.md`：PC consumer 实施说明。
-- `docs/plans/2026-10-29-chat-agent-visual-teaching.md`：仅在头部声明被本计划替代，正文仅保留为历史说明。
+- [2026-10-29 旧计划](../archive/superseded-2026-11-15/2026-10-29-chat-agent-visual-teaching.md)：已归档，正文仅保留为历史说明。
 - Backend、Status、Issues、Frontend design、API、Database 等其余权威文档由 runtime 主实现责任人按实现和验证结果同步。
 
 ## 10. 验收与验证状态

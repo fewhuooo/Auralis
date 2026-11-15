@@ -1,48 +1,30 @@
 # Mobile / Tablet 前端模块
 
-### 2026-11-15 Mobile 与 Tablet 登录
+更新时间：2026-11-15
 
-手机和平板共用登录表单逻辑。注册需用户名、邮箱、验证码和密码，可用用户名或已验证邮箱登录。个人资料显示用户名。忘记密码可验证邮箱并重置。登录、注册和邮箱验证请求独立返回输入错误，短暂续期故障保留本地会话。
+文档状态：现行模块说明
 
-更新时间：2026-09-12
-文档状态：现行
-权威范围：`Auralis-Mobile` 的当前依赖、页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
-事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/`、`scripts/` 与 2026-08-20 当前代码
+权威范围：手机/平板页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
 
-### 2026-10-12 聊天资料检索默认开启（代码、协议测试与 H5 构建通过；类型检查受既有问题阻断）
+事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/api/`、`src/store/`、`src/services/` 与页面 API 映射
 
-- Mobile 与 Tablet 共享协议 1 聊天客户端。命令的 `readingContext` 引用 OpenAPI 生成的 `ReadingContext` 类型，`selectionText` 属于命令顶层。AI Search 省略 `readingContext` 创建 owner-wide 绑定，服务端每次 attempt 捕获当前用户 READY 来源，模型的默认搜索仅查该快照。Tablet Profile 已移除本地 `ragEnabled` 关闭控件。
-- `test:r4-mobile` 24/24、`check:r4-mobile` 与 `build:h5` 退出码 0。`type-check` 退出码 2，仅为未迁移的 `src/api/reviewApi.ts` 引用已移除的 `EventRequest` / `EventResponse`；干净 HEAD 同样复现，不属于本轮引入，未修改该模块。
-- 本轮额度、BYOK、模型设置、会话与 SSE 协议保持。真实 Provider、GUI/真机及微信构建未运行，证据见[计划](../plans/2026-10-12-rag-always-on.md)。
-
-### 2026-10-11 手机与平板个人中心 AI 额度（代码、相关自动验证与只读审查通过；真机待验收）
-
-- `mobile/profile` 与 `tablet/profile` 共用 `useAiUsage`，从认证 `GET /api/ai/usage` 展示小时/今日总额、已结算、在途预留、剩余及当地重置时间。账号切换、离开页面及新请求使旧响应失效；首次加载和失败不伪造零额度。
-- `api/protocol.ts` 与 AI SSE 解析保留六种额度/预算码的安全重试元数据，手机/平板 AI Search 的提示共用 `aiUsageGuardHelper`。保留手动重试、会话协议与已有正文，不增加自动补发。
-- 额度 GET 使用现行 `mobileRequest`，access token 过期时沿用一次 refresh/retry，失败调用原 session 失效处理。实际消费者与生产 request executor 回归先 RED 后 GREEN；额度重试策略仍由用户显式触发。
-- 实际 Antigravity 候选经 Luna 按失败证据补修并守卫应用。行为 8/8、Mobile 协议 24/24、Tablet 三脚本和静态扫描通过；H5 build 与最终同 hash SDK 下两端 type-check 退出 0，唯一只读审查通过。微信构建、真实设备/Provider/GUI 本轮未验收，完整证据见 [B 计划](../plans/2026-10-10-ai-usage-guard-b.md)。没有新增路由、依赖、端侧表或额度持久缓存。
-
-2026-10-09 共享生成 SDK 随离线复习补传契约更新：生命周期可选 occurredAt/expectedStateAbsent、history protocolVersion、初选 schedulingBaseline 与 legacy firstLearning。PC/Mobile schema 由同一运行时 OpenAPI 生成且 hash 一致，Mobile 本轮没有新增运行时调用、离线 Review 队列或页面，不把共享类型更新视为手机已实现本地新机制。
-
-2026-10-01 必要知识块契约适配：`useSyncStore` 不再向 Server 发送已删除的 summary/tags；本地完整 preview 继续映射为 content，接收端仅将 content 映射回 preview，避免旧 summary 截断正文。端侧 preview/tag 存储与现有页面保留，未新增专注历史 API 或 Overview results 展示。生成 SDK 随共享 OpenAPI 更新；因此暴露的现行上传契约 `clientImportId` 必填调用缺口已在 `assetUpload.ts` 最小补齐，每次操作使用一个 UUID，并可由调用方传入稳定 ID 重试，未新增页面或持久状态。Mobile type-check 退出 0，协议检查 23/23；真实设备未验收。
-
-2026-09-24 API 类型同步：从当前 OpenAPI artifact 重新生成 PC/Mobile `schema.ts`，`ScheduleInsertionRequest` 新增可选 `targetTaskId`。Mobile 运行时未调用该主体放置模式，现有请求仍使用无目标 ID 的普通插入语义。
-
-2026-09-23 OpenAPI Task schedule insertion types 同步：`api/generated/schema.ts` 增加 `/api/tasks/schedule-insertions` 请求与响应 DTO；Mobile/Tablet 未接入该端点，运行时行为不变。
-
-2026-09-12 Build/OpenAPI Task 3 最终回归：Mobile `npm.cmd run type-check` 退出 0，`node scripts/r4-mobile-protocol.test.mjs` 实际 23/23 通过；`check-openapi.ps1` 退出 0，生成 `schema.ts` 与 PC 及 OpenAPI artifact 一致，`subjectOverview`/`sourceOverview` 的 header 暴露可选 `X-Overview-Request-Id`。`useSyncStore` 的一行 `payload as SyncMutation['payload']` 只解决生成 `JsonNode` 结构窄类型的编译期边界，运行时序列化未改变；未来 contract-cleanup 风险仍开放，不代表已完成真实 API/设备验收。真实 Server、Provider、微信/H5、Tablet、GUI、设备和业务验收仍待完成。
-
-
-
-
+本文维护模块边界；逐轮验证与变更原文保存在[整理前记录](../archive/maintenance-2026-11-13/FrontendMobileTablet.md)，仅供追溯。新增实现更新对应章节，当前风险进入 current，不在顶部追加日期流水。
 
 ## 模块定位
 
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
 
-截至 2026-08-21，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；Tablet Dashboard/Review/Stats 也已移除随机统计和本地复习结果伪写，改用服务端 Stats/Review。H5 与微信命令行构建通过；微信开发者工具、浏览器及真机主流程尚未人工验收。
+共享的鉴权、请求、Sync/Realtime、AI、Asset 和 Stats 使用生成契约。Review 调用仍未迁移到服务端现行生命周期接口，不能由共享 SDK 已更新推断页面可用。当前验收与测试状态见[当前状态](../current/Status.md)和[问题登记](../current/IssuesAndReview.md)。
 
-2026-09-07 起 Task 契约不再包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Store、同步映射、本地存储、新建任务入口和页面展示不再读写 `cognitiveLoad`、`load` 或 `loadText`。
+Task 契约不包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Store、同步映射、本地存储、新建任务入口和页面展示不再读写 `cognitiveLoad`、`load` 或 `loadText`。
+
+## 共享业务接入边界
+
+- Mobile/Tablet 共用协议 1 Chat 客户端。`ReadingContext` 来自生成类型，`selectionText` 位于命令顶层；首轮省略范围建立 owner-wide 绑定，默认检索只使用该 attempt 的 owner/READY 来源快照。Tablet Profile 不再提供本地关闭 RAG 的控件。
+- 两端 Profile 共用 `useAiUsage`，展示认证额度接口的已结算、预留、剩余及当地重置时间。切换账号/离页/新请求使旧响应失效，加载和失败不伪造零额度；预算错误只提示显式重试，不自动补发。
+- KnowledgeBlock 同步使用 `content`，本地完整 `preview` 与之映射，不向 Server 发送旧 `summary/tags`。端侧标签存储仍保留，未据此新增专注历史或 Overview 展示。
+- Asset upload-intent 使用 `clientImportId`，每次操作生成 ID，调用方可提供稳定 ID 重试；未新增持久队列。
+- 共享 SDK 包含任务 schedule insertion、复习生命周期与 Overview 类型，但 Mobile 没有因此获得对应运行入口或 PC 的离线复习补传机制。实际页面调用以[页面 API 映射](../contracts/MobilePagesAPIMap.md)为准。
 
 ## 当前技术栈
 
@@ -106,7 +88,8 @@ Auralis-Mobile/src/
 
 - `pages/launch/index` 负责首次选择手机或平板入口。
 - 进入某一端后，应用不根据窗口变化自动在两套路由间 reLaunch。
-- 401 刷新失败返回当前端登录页。
+- 手机和平板共用登录、注册和找回密码表单。注册需用户名、邮箱、验证码和密码。登录可使用用户名或已验证邮箱，找回密码需验证邮箱。个人资料直接显示用户名。
+- 登录、注册和邮箱验证接口独立反馈输入错误。受保护请求明确续期失效时返回当前端登录页，暂时性网络或服务故障保留本机会话。
 - 物理分包当前未作为完成条件，微信依赖条件编译控制页面集合。
 
 ## Store 清单
@@ -173,13 +156,13 @@ Auralis-Mobile/src/
 - workspace 默认文件面板，总结栏通过 CSS 折叠联动。
 - AI 浮窗通过 modal 插槽脱离 transform 堆叠上下文。
 - `HeatmapChart.vue` 支持 `weeks` 配置；Tablet Dashboard 当前传入 `weeks=5`，使用 7 列 × 5 行的正方形日历网格，并在 Hero Banner 使用统一的 `Primary Gradient`。统计格只渲染服务端 weekly 返回的实际日期，不再生成随机补位数据。
-- Tablet Review 从服务端 due 队列组卡，先成功提交不可变 ReviewEvent 再推进卡片；右滑只取消当前手势，不伪装撤销已提交事件。
+- Tablet Review 的旧 due/event 调用仍存在，尚未迁移到生命周期契约，当前不能作为可用业务入口；右滑手势不应被解释为撤销服务端事件。
 
 设计目标和页面布局见 [前端设计](../design/Frontend.md)。
 
-## 移动端测试契约变更（2026-08-29）
+## 设备与测试契约
 
-本轮设备标识是破坏性字段重命名：不保留旧 `deviceId` 字段，也不执行兼容测试。Mobile/Tablet 的登录与注册请求必须使用 `clientDeviceKey`；服务端返回、Sync push、本地数据 scope 和 Realtime 关联必须使用 `serverDeviceId`。Realtime ticket 不带请求体，测试请求必须携带有效 Bearer access token，让服务端从 JWT 解析设备身份。
+设备标识使用现行字段，不保留旧 `deviceId` 字段。Mobile/Tablet 的登录与注册请求必须使用 `clientDeviceKey`；服务端返回、Sync push、本地数据 scope 和 Realtime 关联必须使用 `serverDeviceId`。Realtime ticket 不带请求体，测试请求必须携带有效 Bearer access token，让服务端从 JWT 解析设备身份。
 
 ## 构建与检查命令
 
@@ -206,9 +189,9 @@ node scripts\check-tablet-sidebar-transition.mjs
 ## 当前限制
 
 - H5/微信命令行构建不能替代微信开发者工具和真机。
-- 2026-08-20：H5 与微信构建通过；H5 仍有 Sync Store 动态/静态 import 和 Sass legacy API 非阻断警告。
+- 过往 H5/微信构建记录保存在整理前原文；本次整理未重跑，不能据旧记录声明当前构建通过。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
-- Mobile 当前将 TypeScript 固定为 5.3.3 以匹配 `vue-tsc@1.8.27`；`npm run type-check` 已通过。后续升级 Node、TypeScript 或 `vue-tsc` 时必须重新执行并记录结果。
+- Mobile 将 TypeScript 固定为 5.3.3 以匹配 `vue-tsc@1.8.27`。`reviewApi.ts` 仍引用生成契约中已移除的 `EventRequest/EventResponse` 和旧路由；后续迁移需同时核对页面与接口，不能只修类型断言。
 - Tablet 复杂交互需要真实触控屏。
 - 图片上传已实现客户端 intent/PUT/complete，但请求/upload/download 合法域名、MinIO、AI、双设备 reset 和弱网恢复仍需真实环境联调。
 

@@ -1,6 +1,6 @@
 # Auralis 设计文档索引
 
-更新时间：2026-10-29
+更新时间：2026-11-15
 
 文档状态：现行分类索引
 
@@ -8,7 +8,7 @@
 
 事实来源：`docs/README.md`、`docs/design/` 目录与各文档标题
 
-本页只负责导航；文件保留在原目录，具体状态和验证证据以各文档正文为准。
+本页按领域导航设计依据与设计记录。当前实现和验收边界见[当前状态](../current/Status.md)与[问题和审查](../current/IssuesAndReview.md)；各设计正文保留对应时期的决策依据。
 
 ## 现行权威文档
 
@@ -28,8 +28,8 @@
 
 ### AI 与模型治理
 
-- [Chat Agent 与流式可视化教学现行方案（2026-10-29；需求已确认，实施计划）](../plans/2026-10-29-chat-agent-visual-teaching.md)
-- [学习 Agent 原产品与交互设计（2026-10-16；Chat 范围已由 2026-10-29 方案接替）](2026-10-16-learning-agent-design.md)
+- [Chat Agent Display Tool 重写方案（2026-10-31）](../plans/2026-10-31-chat-display-tools.md)
+- [学习 Agent 原产品与交互记录（2026-10-16；Chat 范围已由 Display Tool 方案接替）](2026-10-16-learning-agent-design.md)
 - [AI 用量预算、并发保护与 Provider 资源隔离设计（2026-09-14）](2026-09-14-ai-usage-guard-design.md)
 - [AI env 默认 Provider 与 BYOK 覆盖设计（2026-08-21）](2026-08-21-ai-env-provider-fallback-design.md)
 
@@ -69,6 +69,10 @@
 - [Task 颜色能力全栈移除设计（2026-09-07）](2026-09-07-remove-task-color-design.md)
 - [Task 认知负荷全栈移除设计（2026-09-07）](2026-09-07-remove-task-cognitive-load-design.md)
 - [Subject 专属颜色移除设计（2026-09-02）](2026-09-02-remove-subject-color-design.md)
+
+## 已替代方案
+
+- [2026-11-15 归档索引](../archive/superseded-2026-11-15/README.md)：旧 Chat 可视化教学与 Overview 动态窗口方案，仅供历史追溯。
 
 ## 相关入口
 

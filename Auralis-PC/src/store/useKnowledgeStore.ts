@@ -41,6 +41,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   let syncStatusRead = 0
 
   watch(() => authStore.loginGeneration, () => {
+    visibleSubjectId = undefined
+    recentBlocks.value = []
+    isLoading.value = false
+    lastError.value = null
     knowledgeBlockConflicts.value = {}
     pendingKnowledgeBlockUpdates.value = {}
   }, { flush: 'sync' })
@@ -50,7 +54,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
-  async function localBlocks(subjectId?: string): Promise<KnowledgeBlockModel[]> {
+  async function readLocalBlocks(subjectId?: string): Promise<KnowledgeBlockModel[]> {
     const repo = await repository()
     const [rows, sourceRows, subjectRows] = await Promise.all([
       repo.list<KnowledgeBlockView>('KNOWLEDGE_BLOCK', { includeDeleted: false }),
@@ -81,32 +85,36 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   async function fetchBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {
+    const generation = authStore.loginGeneration
     isLoading.value = true
     lastError.value = null
     try {
-      visibleSubjectId = subjectId
-      const local = await localBlocks(visibleSubjectId)
-      recentBlocks.value = local
-      void refreshKnowledgeBlockSyncStatus()
+      const local = await loadLocalBlocks(_subject, subjectId)
+      if (authStore.loginGeneration !== generation) return []
       useSyncStore().requestBackgroundSync('read')
       return local
     } finally {
-      isLoading.value = false
+      if (authStore.loginGeneration === generation) isLoading.value = false
     }
   }
 
   async function loadLocalBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {
+    const generation = authStore.loginGeneration
     visibleSubjectId = subjectId
-    const local = await localBlocks(visibleSubjectId)
+    const local = await readLocalBlocks(subjectId)
+    if (authStore.loginGeneration !== generation) return []
     recentBlocks.value = local
     void refreshKnowledgeBlockSyncStatus()
     return local
   }
 
   subscribeProjectionChange((change) => {
-    if (change.resourceTypes.has('KNOWLEDGE_BLOCK')) void refreshKnowledgeBlockSyncStatus()
+    if (!authStore.isAuthenticated) return
     if (change.resourceTypes.has('KNOWLEDGE_BLOCK') || change.resourceTypes.has('SOURCE') || change.resourceTypes.has('SUBJECT')) {
-      void localBlocks(visibleSubjectId).then((blocks) => { recentBlocks.value = blocks })
+      const generation = authStore.loginGeneration
+      void loadLocalBlocks(undefined, visibleSubjectId).catch((error) => {
+        if (authStore.loginGeneration === generation) console.warn('[Knowledge] Local projection refresh failed', error)
+      })
     }
   })
 
@@ -288,6 +296,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     pendingKnowledgeBlockUpdates,
     fetchBlocks,
     loadLocalBlocks,
+    readLocalBlocks,
     addBlock,
     updateBlock,
     removeBlock,

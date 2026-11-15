@@ -1,6 +1,6 @@
 # 学习 Agent 产品与交互设计
 
-> 2026-10-29 范围更新：Chat 的现行需求和实施入口为[Chat Agent 与流式可视化教学计划](../plans/2026-10-29-chat-agent-visual-teaching.md)。本文保留原设计记录，后续 Chat 实施不再执行本文目标/进度/知识块完成状态设计；已实现的 Overview 身份与来源能力保持现有事实。新功能尚未实施。
+> Chat 的后续实施入口为 [Display Tool 计划](../plans/2026-10-31-chat-display-tools.md)，当前字段以 [Chat Runtime API](../contracts/chat-runtime-api.md) 为准。本文保留 2026-10-16 的原设计记录，Chat 不再执行本文目标、进度与知识块完成状态方案；下文 Overview 前置与实施状态也仅记录当时判断，当前能力见模块与契约。
 
 更新时间：2026-10-16
 

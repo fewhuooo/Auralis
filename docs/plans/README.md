@@ -1,14 +1,14 @@
 # Auralis 实施方案索引
 
-更新时间：2026-11-04
+更新时间：2026-11-15
 
 文档状态：现行分类索引
 
-权威范围：`plans/` 下已批准实施方案的按领域导航；具体状态和证据以各计划正文为准
+权威范围：`plans/` 下实施方案与计划记录的按领域导航
 
 事实来源：`docs/README.md`、`docs/plans/` 目录与各文档标题
 
-本页只负责导航；文件保留在原目录，具体状态和验证证据以各计划正文为准。
+本页按领域导航实施方案与计划记录。当前实现和验收边界见[当前状态](../current/Status.md)与[问题和审查](../current/IssuesAndReview.md)；各计划正文保留对应时期的实施步骤和验证证据。
 
 ## 总体计划
 
@@ -16,7 +16,7 @@
 
 - [学科总览批量状态查询与 PC 接入（2026-11-04）](2026-11-04-overview-batch-status-handoff.md)
 
-- [PC 复习同步与取消排期修复交接（2026-11-03；待 PC 实施）](2026-11-03-pc-review-unschedule-handoff.md)
+- [PC 复习同步与取消排期修复交接（2026-11-03）](2026-11-03-pc-review-unschedule-handoff.md)
 
 - [后端绿地重写完整实施计划](backend-greenfield-rewrite-plan.md)
 
@@ -24,9 +24,7 @@
 
 ### Overview
 
-- [Overview 清理、大纲与 Markdown 总结替换（2026-11-12；源码、定向与构建完成，未部署）](2026-11-12-overview-markdown-replacement.md)
-- [Overview 动态窗口重构方向（2026-11-10；已由 Markdown 替换方案取代）](2026-11-10-overview-dynamic-window-refactor.md)
-- [Overview 动态窗口重构分批实施文档（2026-11-10）](2026-11-10-overview-dynamic-window-implementation.md)
+- [Overview 清理、大纲与 Markdown 总结替换（2026-11-12）](2026-11-12-overview-markdown-replacement.md)
 
 - [Overview 独立执行重试实施计划（2026-10-27）](2026-10-27-overview-explicit-retry.md)
 
@@ -36,17 +34,17 @@
 
 - [Overview 独立分段与边界编辑实施计划（2026-10-25）](2026-10-25-overview-boundary-edit-quality.md)
 - [Overview 阶段 3–7 修复实施计划](2026-10-24-overview-routing-writing-completion.md)
-- [Overview 全流程测试追踪实施计划（2026-10-23；采集工具、定向/全量后端验证、Compose 合成配置与唯一审查完成；人工实测待进行）](2026-10-23-overview-test-tracing.md)
+- [Overview 全流程测试追踪实施计划（2026-10-23）](2026-10-23-overview-test-tracing.md)
 - [Overview M3.4 正式发布与分节预览计划（2026-10-22）](2026-10-22-overview-m34-publication.md)
-- [Overview M3.3 持久后台作业、控制与安全接管计划（2026-10-22；源码、相关自动验证与唯一审查完成；未部署）](2026-10-19-overview-m33-background-jobs.md)
-- [Overview M3.1 有限层级目录规划计划（2026-10-19；源码、相关验证与唯一审查完成；未部署）](2026-10-19-overview-m3-hierarchical-planning.md)
-- [Overview M3.2 持久正文执行计划与节点状态（2026-10-19；源码、相关验证与唯一审查完成；未部署）](2026-10-19-overview-m3-execution-journal.md)
-- [Overview M2 稳定大纲身份与可信原文关联计划（2026-10-19；实现、相关验证与复审完成，未部署）](2026-10-19-overview-m2-identity-provenance.md)
+- [Overview M3.3 持久后台作业、控制与安全接管计划（2026-10-22）](2026-10-19-overview-m33-background-jobs.md)
+- [Overview M3.1 有限层级目录规划计划（2026-10-19）](2026-10-19-overview-m3-hierarchical-planning.md)
+- [Overview M3.2 持久正文执行计划与节点状态（2026-10-19）](2026-10-19-overview-m3-execution-journal.md)
+- [Overview M2 稳定大纲身份与可信原文关联计划（2026-10-19）](2026-10-19-overview-m2-identity-provenance.md)
 - [内容规模自适应总览实施计划（2026-10-18）](2026-10-18-overview-adaptive-generation.md)
-- [学科总览合法输入分批（2026-10-12，代码、定向回归、审查及本机更新完成；业务待实测）](2026-10-12-subject-overview-prompt-batching.md)
-- [Overview 动态预算与超限恢复（2026-10-13；代码/自动门禁/指定P4完成，业务库V32运行态只读观察）](2026-10-12-overview-dynamic-budget-recovery.md)
-- [学科总览用量误拒绝诊断与最小修复（2026-10-11，代码、相关验证和审查通过；未部署）](2026-10-11-overview-usage-limit-diagnosis.md)
-- [Overview 硬超时与取消实施计划（2026-10-11，代码/相关验证/审查通过，真实环境待验收）](2026-10-11-overview-hard-timeout-cancellation.md)
+- [学科总览合法输入分批（2026-10-12）](2026-10-12-subject-overview-prompt-batching.md)
+- [Overview 动态预算与超限恢复（2026-10-13）](2026-10-12-overview-dynamic-budget-recovery.md)
+- [学科总览用量误拒绝诊断与最小修复（2026-10-11）](2026-10-11-overview-usage-limit-diagnosis.md)
+- [Overview 硬超时与取消实施计划（2026-10-11）](2026-10-11-overview-hard-timeout-cancellation.md)
 - [Overview Reduce Prompt 均衡压缩实施计划（2026-09-20）](2026-09-20-overview-reduce-prompt-compression.md)
 - [Overview 手动重试、收敛预算与错误码实施计划（2026-09-14）](2026-09-14-overview-retry-and-convergence.md)
 - [Overview Source 删除屏障实施计划（2026-09-11）](2026-09-11-overview-source-deletion-fence.md)
@@ -55,17 +53,16 @@
 
 ### AI 与模型治理
 
-- [Chat Agent Display Tool 重写实施计划（2026-10-31；实现与自动验证进行中）](2026-10-31-chat-display-tools.md)
-- [Chat Display Tool 前端接手说明（2026-10-31；PC 源码和 GUI 验收待进行）](2026-10-29-chat-frontend-handoff.md)
-- [Chat Agent 与流式可视化教学重写计划（2026-10-29；历史计划，已由 2026-10-31 Display Tool 计划替代）](2026-10-29-chat-agent-visual-teaching.md)
-- [学习 Agent 原实施计划（2026-10-16；Chat 执行入口已由 2026-10-29 计划接替）](2026-10-16-learning-agent-implementation.md)
-- [AI 统一限额与用量治理独立方案（2026-10-16；待实施）](2026-10-16-ai-unified-limits.md)
+- [Chat Agent Display Tool 重写实施计划（2026-10-31）](2026-10-31-chat-display-tools.md)
+- [Chat Display Tool 前端接手说明（2026-10-31）](2026-10-29-chat-frontend-handoff.md)
+- [学习 Agent 原实施记录（2026-10-16；Chat 执行入口已由 Display Tool 计划接替）](2026-10-16-learning-agent-implementation.md)
+- [AI 统一限额与用量治理独立方案（2026-10-16）](2026-10-16-ai-unified-limits.md)
 - [AI 执行预算治理近期阶段 0–3 计划（2026-10-13；模型/预算诊断、token 影子估算、Overview 有界恢复与 Chat 流式故障回放）](2026-10-13-ai-execution-budget-governance.md)
-- [RAG 默认开启实施计划与证据（2026-10-12；跨端代码、定向测试与构建完成，业务待实测）](2026-10-12-rag-always-on.md)
-- [大 PDF 摄入额度与同步等待诊断、最小修复（2026-10-12，代码与定向验证通过；新补丁未部署）](2026-10-12-pdf-ingestion-quota-and-sync.md)
-- [Embedding 额度排除与单人测试额度（2026-10-12，代码、相关验证与本机部署通过；业务待实测）](2026-10-12-embedding-quota-exemption-and-test-limits.md)
-- [AI 完整持久配额与个人中心额度实施计划（2026-10-10，代码、相关自动验证及只读审查通过）](2026-10-10-ai-usage-guard-b.md)
-- [AI IMPORTANT 修复实施计划与证据（2026-10-10，相关自动验证及只读审查通过；真实环境待验收）](2026-10-10-ai-important-fixes.md)
+- [RAG 默认开启实施计划与证据（2026-10-12）](2026-10-12-rag-always-on.md)
+- [大 PDF 摄入额度与同步等待诊断、最小修复（2026-10-12）](2026-10-12-pdf-ingestion-quota-and-sync.md)
+- [Embedding 额度排除与单人测试额度（2026-10-12）](2026-10-12-embedding-quota-exemption-and-test-limits.md)
+- [AI 完整持久配额与个人中心额度实施计划（2026-10-10）](2026-10-10-ai-usage-guard-b.md)
+- [AI IMPORTANT 修复实施计划与证据（2026-10-10）](2026-10-10-ai-important-fixes.md)
 - [提问选中文本传递与后端处理（2026-10-01）](2026-10-01-chat-selected-text.md)
 - [AI env 默认 Provider 与 BYOK 覆盖实施计划（2026-08-21）](2026-08-21-ai-env-provider-fallback.md)
 
@@ -119,12 +116,12 @@
 
 ### 学习、任务与产品能力
 
-- [PC 任务截止日期与排期一致性修复（2026-10-10，代码与自动验证通过；真实环境待验收）](2026-10-09-task-deadline-date-consistency.md)
-- [学科复习与统计完整本地使用（2026-10-09，代码与自动验证通过；真实环境待验收）](2026-10-09-review-stats-local-first.md)
+- [PC 任务截止日期与排期一致性修复（2026-10-10）](2026-10-09-task-deadline-date-consistency.md)
+- [学科复习与统计完整本地使用（2026-10-09）](2026-10-09-review-stats-local-first.md)
 - [学科复习与统计实施计划（2026-10-08）](2026-10-08-subject-review-stats-implementation.md)
-- [学科复习、学习与掌握退出实施记录（2026-10-08，相关自动验证及只读审查通过）](2026-10-08-review-learning-mastery-implementation.md)
-- [学科复习、学习与掌握退出整体设计（2026-10-08，代码与相关自动验证通过；真实环境待验收）](2026-10-08-review-learning-mastery-design.md)
-- [学科内复习与统计页面方案（2026-10-07 建立，2026-10-08 实施；真实环境待验收）](2026-10-07-subject-review-redesign.md)
+- [学科复习、学习与掌握退出实施记录（2026-10-08）](2026-10-08-review-learning-mastery-implementation.md)
+- [学科复习、学习与掌握退出整体设计（2026-10-08）](2026-10-08-review-learning-mastery-design.md)
+- [学科内复习与统计页面方案（2026-10-07 建立，2026-10-08 实施）](2026-10-07-subject-review-redesign.md)
 - [PC / Service 三项优先问题修复（2026-10-07）](2026-10-07-priority-function-fixes.md)
 - [PC 未排期任务截止后自动完成（2026-10-06）](2026-10-06-unscheduled-task-deadline.md)
 - [任务完整排期截止时间校验（2026-10-06）](2026-10-06-task-schedule-deadline-guard.md)
@@ -132,6 +129,10 @@
 - [Task 认知负荷全栈移除实施计划（2026-09-07）](2026-09-07-remove-task-cognitive-load.md)
 - [Subject 专属颜色移除前端实施计划（2026-09-03）](2026-09-03-remove-subject-color-frontend.md)
 - [Subject 专属颜色移除后端实施计划（2026-09-03）](2026-09-03-remove-subject-color-backend.md)
+
+## 已替代方案
+
+- [2026-11-15 归档索引](../archive/superseded-2026-11-15/README.md)：旧 Chat 可视化教学计划、Overview 动态窗口设计与分批实施记录，仅供历史追溯。
 
 ## 相关入口
 

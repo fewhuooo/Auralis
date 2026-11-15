@@ -1,2 +1,7 @@
 # Ensure OCR dictionary preserves LF line endings across platforms
 Auralis-PC/ocr-sidecar/resources/ppocr_keys_v1.txt text eol=lf
+
+# Preserve archived working-tree bytes and their recorded SHA-256 values
+docs/archive/maintenance-2026-11-13/** -text -whitespace
+docs/archive/maintenance-2026-11-15/** -text -whitespace
+docs/archive/superseded-2026-11-15/** -text -whitespace

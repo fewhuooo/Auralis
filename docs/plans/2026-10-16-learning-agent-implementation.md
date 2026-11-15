@@ -1,6 +1,6 @@
 # 学习 Agent 实施计划
 
-> 2026-10-29：本文的 Chat 实施入口已由[Chat Agent 与流式可视化教学计划](2026-10-29-chat-agent-visual-teaching.md)接替。下文保留原计划与当时前置证据，不再执行学习专属任务；当前任务以新计划的范围、协议、LangChain4j 接线及验收为准。新功能尚未实施。
+> 本文的 Chat 实施入口已由 [Display Tool 计划](2026-10-31-chat-display-tools.md) 接替，当前字段以 [Chat Runtime API](../contracts/chat-runtime-api.md) 为准。下文保留原计划与当时前置证据，不再执行学习专属任务；其中 Overview 前置与实施状态只记录当时判断，不作为当前实现依据。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 

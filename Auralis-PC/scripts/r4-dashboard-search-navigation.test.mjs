@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { compileScript, parse } from 'vue/compiler-sfc'
 import ts from 'typescript'
 import { t } from '../src/i18n.ts'
@@ -38,8 +40,9 @@ test('the search palette accepts only current results after debounce and local r
   const reads = []
   const scope = effectScope()
   const search = scope.run(() => setupComponent(searchPalette, {}, {
+    '@/store/useAuthStore': { useAuthStore: () => ({ isAuthenticated: true, loginGeneration: Symbol() }) },
     '@/store/useKnowledgeStore': {
-      useKnowledgeStore: () => ({ loadLocalBlocks: () => new Promise(resolve => reads.push(resolve)) }),
+      useKnowledgeStore: () => ({ readLocalBlocks: () => new Promise(resolve => reads.push(resolve)) }),
     },
     'vue-router': { useRouter: () => ({ push: location => navigations.push(location.query.openBlock) }) },
   }, {
@@ -113,6 +116,101 @@ test('the search palette accepts only current results after debounce and local r
   } finally {
     scope.stop()
   }
+})
+
+test('the palette and shared knowledge projection discard reads from a replaced login', async (t) => {
+  const root = new URL('../src/', import.meta.url)
+  const loader = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const withExtension = /\.[cm]?[jt]s$/.test(specifier) ? specifier : specifier + '.ts'
+      if (specifier.startsWith('@/')) return nextResolve(new URL(withExtension.slice(2), root).href, context)
+      if (specifier.startsWith('.') && context.parentURL?.startsWith(root.href)) {
+        return nextResolve(new URL(withExtension, context.parentURL).href, context)
+      }
+      return nextResolve(specifier, context)
+    },
+  })
+  const pinia = createPinia()
+  const scope = effectScope()
+  t.after(() => {
+    scope.stop()
+    disposePinia(pinia)
+    loader.deregister()
+  })
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts')
+  const { useKnowledgeStore } = await import('../src/store/useKnowledgeStore.ts')
+  const { getLocalRepository } = await import('../src/services/localDb.ts')
+  setActivePinia(pinia)
+  const auth = useAuthStore()
+  const knowledge = useKnowledgeStore()
+  const logIn = (id) => auth.setSession({
+    user: { id, hasAvatar: false },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: `${id}-session`,
+    serverDeviceId: 'search-device',
+  })
+  let timer
+  const createPalette = () => scope.run(() => setupComponent(searchPalette, {}, {
+    '@/store/useAuthStore': { useAuthStore },
+    '@/store/useKnowledgeStore': { useKnowledgeStore },
+    'vue-router': { useRouter: () => ({ push: assert.fail }) },
+  }, {
+    setTimeout: callback => { timer = callback; return 1 },
+    clearTimeout: () => { timer = undefined },
+  }))
+  const anonymous = createPalette()
+  anonymous.handleKeydown({ ctrlKey: true, key: 'k', preventDefault: assert.fail })
+  anonymous.openEvent()
+  assert.equal(anonymous.isVisible.value, false)
+
+  logIn('search-user-a')
+  const repoA = await getLocalRepository(auth.user.id, auth.serverDeviceId)
+  for (const id of ['a', 'b']) {
+    await repoA.upsert('KNOWLEDGE_BLOCK', id, { id, title: id, subjectId: id, content: 'fixture body' }, { version: 1 })
+  }
+  await knowledge.loadLocalBlocks(undefined, 'a')
+  const palette = createPalette()
+  palette.openEvent()
+  palette.query.value = 'fixture'
+  await timer()
+  assert.deepEqual(Array.from(palette.searchResults.value, (block) => block.id).sort(), ['a', 'b'])
+  assert.deepEqual(knowledge.recentBlocks.map(block => block.id), ['a'])
+
+  auth.applyRefresh({ accessToken: 'rotated', refreshToken: 'rotated-refresh' }, 'rotated-session-id')
+  assert.equal(palette.isVisible.value, true)
+  assert.equal(palette.searchResults.value.length, 2)
+
+  const started = Promise.withResolvers()
+  const pending = Promise.withResolvers()
+  const list = repoA.list.bind(repoA)
+  t.mock.method(repoA, 'list', async (resource, options) => {
+    if (resource === 'KNOWLEDGE_BLOCK') {
+      started.resolve()
+      await pending.promise
+    }
+    return list(resource, options)
+  })
+  palette.query.value = 'body'
+  const search = timer()
+  const projection = knowledge.fetchBlocks()
+  await started.promise
+  logIn('search-user-b')
+  assert.equal(auth.isAuthenticated, true)
+  assert.equal(palette.isVisible.value, false)
+  assert.equal(palette.query.value, '')
+  assert.equal(palette.searchResults.value.length, 0)
+  assert.deepEqual(knowledge.recentBlocks, [])
+
+  const repoB = await getLocalRepository(auth.user.id, auth.serverDeviceId)
+  const blockB = { id: 'c', title: 'c', subjectId: 'c', content: 'fixture body' }
+  await repoB.upsert('KNOWLEDGE_BLOCK', blockB.id, blockB, { version: 1 })
+  await knowledge.loadLocalBlocks()
+  pending.resolve()
+  await search
+  assert.deepEqual(await projection, [])
+  assert.equal(palette.searchResults.value.length, 0)
+  assert.equal(palette.isSearching.value, false)
+  assert.deepEqual(knowledge.recentBlocks.map(block => block.id), ['c'])
 })
 
 test('the Dashboard detail copies raw text or reports an unsuccessful write', async () => {

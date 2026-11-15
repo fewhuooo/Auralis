@@ -1,15 +1,6 @@
 # Auralis 产品需求
 
-### 2026-11-12 Overview 产品输出调整（实现中）
-
-文件总览包含重点大纲和连贯总结，目标为正确组织实际内容主线并适度取舍，不要求完整复刻原书章节或覆盖每段知识。两部分采用 Markdown，可分别生成、编辑与保存；生成失败或取消不得删除上次有效结果。清理优先排除明确辅助内容，不以去重或 OCR 噪声判断删除业务规则。旧章/节内容不自动转换，原始资料保留。
-
-
-### Overview 直接生成的主动重试（2026-10-27）
-
-Source/Subject现有生成入口允许在失败或重启中断后建立新执行，复用已验证进度；相同请求的网络重送不得重复创建执行。主动重试不清旧费用、不绕过额度/并发限制，也不覆盖已有成功结果或用户编辑。该规则限定direct JSON/SSE，与下文durable job resume保持原generation/预算的规则分开；PC只保留会话内旧请求引用，刷新后普通请求仍可重新执行FAILED/过期任务。[实施与验收计划](../plans/2026-10-27-overview-explicit-retry.md)。
-
-更新时间：2026-10-12
+更新时间：2026-11-15
 
 文档状态：现行需求
 
@@ -49,18 +40,15 @@ Auralis 旨在把学习资料、知识理解、任务执行、复习反馈和多
 - **AI 可追溯**：AI 结果应保留来源上下文，用户能判断、修改和继续使用。
 - **安全隔离**：用户数据、资产、同步记录和长连接必须按用户隔离。
 
-### Overview M4：后台生成与正式采纳（源码、相关验证、唯一审查与隔离浏览器后端接口流程完成；未部署）
-
-PC 对 Source/Subject ALL、OUTLINE 使用显式来源选择和 durable job；候选完成后由用户查看 VERIFIED 预览并主动发布或采纳。正式结果按现行身份/来源校验、版本 CAS 与 receipt 写入，部分 OUTLINE 更新保留已有 summary。离开视图停止观察不等于取消 job；暂停、继续、取消和重连遵循服务端持久状态。FILE/TEXT/URL 的本地编辑沿现有 outbox 同步，并在源 revision 与 owner/device/scope fences 仍成立时提交。隔离浏览器合成 Provider 流程已完成后端接口验证；真实 Provider、native Tauri/SQLite、FILE/OCR、部署与内容质量仍属后续验收。M4 范围关闭不等于 M5/M6 或整体 M1–M6 路线完成。
 
 ## 核心场景
 
-### Chat 可视化教学（2026-10-29，计划中）
+### Chat 可视化教学
 
 - 用户围绕资料、选区、大纲节点或自由问题对话；单 Agent Loop 按需检索和读取资料，文字逐字展示，步骤、对比、路线、图表和题卡逐项穿插展示。
 - 单/多选和开放问答卡收集答案并自动组装关联原题的消息，由 LLM 反馈和继续；程序不判分。开放问题也可直接在聊天中回答。
 - 产品保持轻量：保存对话、组件与作答用于恢复和上下文衔接，不建设学习进度/完成率/掌握度或知识块完成流程，不提供填空题。Overview 与正式学习/复习流程保持现有边界。
-- 同会话生成互斥，保留用户草稿；历史题卡可稍后提交。资料权限、幂等、流式异常、取消、恢复与费用分别验收。会话保留和新 Provider 适配是实施前置，尚未交付。完整范围与分阶段验收见[实施计划](../plans/2026-10-29-chat-agent-visual-teaching.md)。
+- 同会话生成互斥，保留用户草稿；历史题卡可稍后提交。资料权限、幂等、流式异常、取消、恢复与费用分别验收。现行展示工具范围与验收记录见[实施计划](../plans/2026-10-31-chat-display-tools.md)，当前交付边界以[当前状态](../current/Status.md)为准。
 - 新对话默认使用当前学科资料范围；首条消息前可选择文件。首条成功准入后，对话固定 SUBJECT/SELECTED/AUTO 的选择策略与来源/学科 ID，之后重试与活动提交继承此范围；要切换范围应新建对话。每次执行仍按当前权限、READY 和资料版本重新校验。选区引用通过请求顶层 `selectionText` 传递，每轮可单独选择。旧的混合范围对话保留历史查看；若系统不能证明一致范围，不按任意一轮改写绑定，用户需新建对话。
 
 ### PC 个人中心
@@ -87,7 +75,7 @@ PC 对 Source/Subject ALL、OUTLINE 使用显式来源选择和 durable job；�
 
 ### 场景 2：从知识生成行动
 
-用户从资料、AI 输出或手工输入中形成任务，设置学科、时长、负荷、状态和排期，再进入专注流程。
+用户从资料、AI 输出或手工输入中形成任务，设置学科、时长、状态和排期，再进入专注流程。
 
 验收要点：
 
@@ -120,7 +108,7 @@ PC 对 Source/Subject ALL、OUTLINE 使用显式来源选择和 durable job；�
 ### 账号与权限
 
 - 注册、登录、access token、refresh token 刷新。
-- 旧明文密码登录后迁移为 BCrypt。
+- 密码使用 BCrypt 哈希保存和校验，不接受旧明文密码登录迁移。
 - 普通 API 拒绝 refresh token。
 - PC、Mobile 和 WebSocket 使用一致的用户身份语义。
 
@@ -166,7 +154,7 @@ PC 对 Source/Subject ALL、OUTLINE 使用显式来源选择和 durable job；�
 ### 任务块
 
 - 创建、查询、更新、删除和同步。
-- 保存名称、描述、学科、时长、负荷、状态、排期、版本和软删除。
+- 保存名称、描述、学科、时长、状态、排期、版本和软删除。
 - 支持时间线、专注和统计使用。
 - 设置截止时间的任务，其新排期必须整个结束于截止时刻或之前；调整时长、截止日期、恢复任务、交换或插入顺延也遵守该约束，任一任务超限时整组拒绝。无截止不限制，历史排期不批量改写，非时间编辑和自动完成保持可用。
 - PC 无排期的待办/进行中任务在截止时间到达后自动完成，并保留截止时间；有排期的任务按排期结束时刻完成。已完成或已取消任务不重复写入。应用启动、任务同步刷新及运行中每分钟补处理；应用关闭期间的到期任务在下次启动处理。
@@ -196,40 +184,22 @@ PC 对 Source/Subject ALL、OUTLINE 使用显式来源选择和 durable job；�
 - PC 学科工作区新会话默认使用当前学科。用户可在首条消息前选择当前文件或指定文件。首条消息成功准入后，需要开启新会话才能更换资料范围。
 - 原生文本选区可用于解释、提问或创建知识块；图片和扫描 PDF 不生成 OCR 文本覆盖层。
 - AI 回答只向用户展示来源文件名；保存为知识块前必须允许用户确认并编辑内容。
-- PC 文件完成解析并成为 READY 后，自动生成结构化文件大纲与总结；完整成功产物可持久化到服务端供同一用户其他设备读取。生成中间态、失败诊断和未完成分项留在本机；文件大纲在“总览”中直接展开，文件总结复用中间预览区。
+- PC 文件完成解析并成为 READY 后，自动生成 Markdown 文件大纲与总结；完整成功产物可持久化到服务端供同一用户其他设备读取。生成中间态、失败诊断和未完成分项留在本机；文件大纲在“总览”中直接展开，文件总结复用中间预览区。
 - 学科总览只在用户主动点击现有“AI 梳理”入口时生成，输入来自当前学科的本地文件大纲/总结；支持全部、大纲或总结分项重新生成，失败不得删除上一次成功内容。
 - 文件 Overview 必须对应当前资料修订；学科 Overview 必须对应当前来源集合及文件结果版本。资料删除或修订变化后，过期结果不得覆盖新结果。
 - 手动 Overview 生成须可停止；离开工作区只停止该页面发起的请求，后台自动生成继续。共享生成保留其他消费者的需求；取消保留上次成功内容，不显示为生成失败。服务端总期限须主动终止当前本地 Provider 传输，账号/runtime 或资料修订失效须拒绝旧结果。
 - 任务抽取、手写转换和排期建议。
 - 使用向量库检索学科或来源上下文。
 
-#### 内容规模自适应总览（M1 工程边界，2026-10-19）
+#### Overview 输出与生成
 
-- 默认关闭。启用后文件与当前学科 Source 的 ALL、OUTLINE 从当前 READY 原文出发，经过轻量索引、单次有界目录规划、按节生成和应用侧装配；SUMMARY 维持短摘要。所选来源缺少可用原文或输入超过容量时明确失败，不回退旧摘要冒充详细正文。
-- adaptive inventory 的全局上限为 500 条 active raw chunk rows，空白 row 也计数；remaining+1 sentinel 在完整 identity/hash/provider 前拒绝超限。M1 只有单次有界目录请求，不保证任意规模或语义无损。M3 前置交付与验收必须包含分层组织 metadata、保留原文来源绑定及已验证正文。
-- 源码、focused/full/package/Compose 自动门禁及唯一复审通过；未部署，未完成真实 Provider、生产/业务数据库、GUI 或内容质量验收。M2 实现、数据库/PC/API artifact 验证与唯一复审已完成；backend/PC full 首轮失败及 Mobile 两个既有类型错误仍按 Status 单列。M3–M6 尚未交付。M1 本轮没有公开 API/DB/SDK 或 PC 学习能力变化。
+文件总览包含重点大纲和连贯总结，目标为正确组织实际内容主线并适度取舍，不要求完整复刻原书章节或覆盖每段知识。两部分采用 Markdown，可分别生成、编辑与保存；生成失败或取消不得删除上次有效结果。清理优先排除明确辅助内容，不以去重或 OCR 噪声判断删除业务规则。旧章/节内容不自动转换，原始资料保留。
 
-#### 总览大纲身份与原文关联（M2 工程边界，2026-10-19）
+PC 文件与学科总览使用直接生成入口。生成期间的本机编辑沿现行冲突与同步流程保护，正式保存遵守身份、来源版本和并发版本校验。实现与验收边界见[PC 模块](../modules/FrontendPC.md)和[当前状态](../current/Status.md)。
 
-- 源码候选在持久 Overview 结果中保存稳定节点 UUID 与服务端计算的内容版本/hash，并将按节写作实际使用的来源 chunk 与解析位置作为可验证 lineage 保存。旧结果不自动初始化；只在明确保存后具备身份。summary-only 更新保留大纲身份。
-- 来源位置表示生成时实际关联的原文范围，不构成逐句语义支持或答案正确性保证。PG clean/upgrade/receipt、PC 数据回归、最终 OpenAPI/SDK artifact 验证与唯一复审均完成（B0/I0/O0）。全量 backend/PC 首轮统计及 Mobile 两个既有 SDK 类型错误保留在 Status；未部署或完成真实 Provider、生产业务数据库和 PC GUI 验收；学习 Agent 与 M3–M6 均未交付。
+直接生成允许在失败或重启中断后主动重试；相同请求的网络重送不得重复创建执行。主动重试不清旧费用、不绕过额度或并发限制，也不覆盖已有成功结果或用户编辑。实施与验收记录见[主动重试计划](../plans/2026-10-27-overview-explicit-retry.md)。
 
-#### 2026-10-22 Overview M3.3 持久后台生成与控制（源码、相关自动验证与唯一审查完成；未部署）
-
-- 用户可启动 Source 或 Subject 的 ALL/OUTLINE 后台生成，在断线后按 owner 查询有界 job 列表、真实阶段/已验证节点进度和最终完整候选；队列、暂停、继续、取消和安全对账使用版本围栏。SUMMARY 继续使用现行短摘要路径。
-- 排队不占 Provider 调用期限；首次执行 claim 后固定当前 Overview 绝对期限。暂停、重启和 worker 接管不延长期限、不创建新 generation/task 或重置预算。raw coordinator/job budget_task_id 仍是原预算 UUID；invocation task_id 使用 Guard 稳定派生的真实 ledger UUID，不改变原额度、结算或同预算安全重试身份。恢复核验原输入/profile/source identity 和所有精确 Provider reservation；未知派发 usage 保持 hold，不能因用户声明或断线自动重发。
-- 本阶段 job 完成只提供重新校验的 private candidate，不自动写正式 OverviewResult/KB/Review。相关源码、自动验证与唯一审查已完成，但没有修复后第二次 full；未部署、未验收真实 Provider、生产业务数据库、GUI/用户流程或内容质量。M3.4 正式发布和分节预览已实现；PC consumer 曾在后续阶段接入，现按用户决定撤回，不作为待补产品范围；详见 [M3.3 计划](../plans/2026-10-19-overview-m33-background-jobs.md)。
-
-#### 2026-10-22 Overview PC 当前交互范围（M4 新 UI 已撤回）
-
-PC 当前继续使用原 Overview 入口、SSE 自动生成与既有冲突/同步流程。用户已撤回 M4 新增的 job selector、candidate preview/publish/adopt 与 section reader 交互，这些不属于当前或后续自动补齐的产品范围。只保留生成期间本机编辑保护：检测到编辑时不以 AI 输出覆盖本机值，保留本机 cache/frozen mutation，并在原冲突位置提供显式选择；浏览器 fallback 使用跨 tab Web Lock，SQLite 原路径不变。Server durable job、candidateInput、publication receipt、VERIFIED preview 与 formal section API 继续可用，但当前 PC 不消费。
-
-M4 新交互的隔离浏览器和自动验证记录均发生在撤回前，仅为历史事实；回退后的定向检查与残余失败见 [当前状态](../current/Status.md) 和总计划。该回退没有部署、数据库迁移、真实 Provider 或回退后 GUI 验收。
-
-#### 2026-10-22 Overview M3.4 正式发布与分节预览（源码、相关自动验证与唯一审查完成；未部署）
-
-- 已编码候选将选定原文 job candidate 以 explicit per-part input binding 正式 CAS 保存，并保留原有 Overview GET/PUT/write receipt 语义；提供 durable publish status、已验证节点预览与按稳定 section ID/version 读取。Job 列表可按配对 scope 过滤用于断线重连。
-- M3.4 相关 PostgreSQL/backend/API artifact/package 门禁及唯一 reviewer 已完成；full run04 的失败保留，定向复验闭合相关失败组，不称 full suite 全绿。未部署，无业务 DB/真实 Provider/GUI/内容质量验收。PC UI、M4–M6 与最终 compatibility cleanup 仍待交付；验证边界见 [M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。
+旧自适应章节 Writer、节点身份与 lineage、后台 candidate、preview/publication 和分节阅读的阶段说明已被 Markdown 输出重写替代，不作为当前或待补功能要求。原阶段需求、实现流水和验证记录保存在[整理前原文快照](../archive/maintenance-2026-11-15/final-pass/project/ProductRequirements.md)。
 
 AI 输出属于辅助结果，用户必须能识别失败、超时和非结构化结果；不把模型回答当作不可修改的业务事实。
 

@@ -34,6 +34,10 @@
 
 日视图和周视图的排期区域禁用文字选取，避免拖动时误带起页面文字。
 
+### 2026-11-13 PC 首页搜索与任务反馈
+
+退出或切换账号会清空全局搜索。日程勾选保存失败时恢复实际状态。快速创建会阻止重复提交，失败时保留表单并提示重试。
+
 ### 2026-11-13 PC 资料管理文件选择
 
 资料管理在后台刷新后保留当前文件的星图范围。当前文件同步删除后关闭预览。
@@ -172,16 +176,16 @@ Overview Markdown 替换及旧残留清理已随当前工作树部署到本机 b
 
 ### 2026-11-11 Overview INDEX 统一分段（源码候选，未部署）
 
-- 单来源文件详细生成的 INDEX 使用统一的段首摘录和画像。64K 起读，普通续窗重读待定末段，硬上限续窗按提要前沿累计画像。私有算法身份更新为 `overview-dynamic-window-v9`，已发布正式结果沿用公开契约。[分批实施文档](../plans/2026-11-10-overview-dynamic-window-implementation.md)
+- 单来源文件详细生成的 INDEX 使用统一的段首摘录和画像。64K 起读，普通续窗重读待定末段，硬上限续窗按提要前沿累计画像。私有算法身份更新为 `overview-dynamic-window-v9`，已发布正式结果沿用公开契约。[分批实施文档](../archive/superseded-2026-11-15/2026-11-10-overview-dynamic-window-implementation.md)
 
 ### 2026-11-11 Overview 正文路由与总导读（源码候选，未部署）
 
-- ROUTE 将每个完整段分配到正文章节或附带理由的排除清单。ALL 按实际正文覆盖和排除段原文生成独立总导读，OUTLINE 交付正文。私有算法身份更新为 `overview-dynamic-window-v4`，公开结果按现行契约读取。[分批实施文档](../plans/2026-11-10-overview-dynamic-window-implementation.md)
+- ROUTE 将每个完整段分配到正文章节或附带理由的排除清单。ALL 按实际正文覆盖和排除段原文生成独立总导读，OUTLINE 交付正文。私有算法身份更新为 `overview-dynamic-window-v4`，公开结果按现行契约读取。[分批实施文档](../archive/superseded-2026-11-15/2026-11-10-overview-dynamic-window-implementation.md)
 - 正文路由先依据资料的实质内容判定归属，再组织章节。单成员正文直接返回 Markdown 字段，多成员按实际成员 ID 交付，提示区分资料截断、独立例题与界面示例。私有算法身份更新为 `overview-dynamic-window-v6`。
 
 ### 2026-11-11 Overview 详细生成 INDEX 输入简化（源码候选，未部署）
 
-- 单来源文件详细生成的 INDEX 读取连续原文，后端按段首摘录的首个顺序命中确定范围，失配段并入前段。私有算法身份更新为 `overview-dynamic-window-v2`，正式结果沿用公开契约。[分批实施文档](../plans/2026-11-10-overview-dynamic-window-implementation.md)
+- 单来源文件详细生成的 INDEX 读取连续原文，后端按段首摘录的首个顺序命中确定范围，失配段并入前段。私有算法身份更新为 `overview-dynamic-window-v2`，正式结果沿用公开契约。[分批实施文档](../archive/superseded-2026-11-15/2026-11-10-overview-dynamic-window-implementation.md)
 
 ### 2026-11-11 账号请求隔离与 Sync CREATE 防覆盖（源码候选，未部署）
 

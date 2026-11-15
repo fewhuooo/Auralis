@@ -1,6 +1,6 @@
 # Tablet 手写笔记计划
 
-更新时间：2026-07-10
+更新时间：2026-11-15
 
 文档状态：计划，入口已隐藏保留
 
@@ -27,7 +27,7 @@
 
 ## 有序任务
 
-1. 为 note model 与 repository core 运行/补齐单元测试。
+1. 运行现有 `test:tablet` 中的 feature flags、note model 与 repository core 测试，按实际行为缺口补齐验证。
 2. 定义笔记版本、序列化、迁移、损坏恢复和容量策略。
 3. 实现导出/导入和加密/备份方案。
 4. 在真实平板验证文件切换恢复、画布平移缩放、笔刷、橡皮、撤销、清屏。
@@ -39,12 +39,10 @@
 
 ```powershell
 cd Auralis-Mobile
-node scripts\tablet-feature-flags.test.ts
-node scripts\tablet-note-model.test.ts
-node scripts\tablet-note-repository-core.test.ts
+npm.cmd run test:tablet
 ```
 
-以上命令是否可直接由 Node 执行需在实际环境确认；若需要 TypeScript runner，先建立明确脚本，不得伪报通过。
+现有 `test:tablet` 脚本通过 Node 的 `--experimental-strip-types` 执行三组测试。运行结果需单独记录，不替代下述真机与备份验收。
 
 ## 阻塞
 

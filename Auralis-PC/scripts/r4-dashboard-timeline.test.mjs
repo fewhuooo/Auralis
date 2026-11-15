@@ -125,15 +125,90 @@ test('dashboard removes tasks from schedule by exact task ID and notifies on fai
   assert.match(dashboard, /title:\s*t\(\{\s*'zh-CN': '移出日程失败'/)
 })
 
-test('dashboard binds task checkboxes and toggles completion safely', () => {
+test('dashboard restores the scheduled checkbox from the task projection after a failed write', async (t) => {
   assert.match(dashboard, /:checked="isCompletedScheduledTask\(task\)"/)
-  assert.match(dashboard, /:disabled="isScheduledCompletionLocked\(task, taskStore\.currentNow\)"/)
+  assert.match(dashboard, /@change="toggleTaskCompletion\(task, \$event\)"/)
   assert.match(dashboard, /任务时段已结束，完成状态不可取消/)
   assert.match(dashboard, /\.scheduled-task-content\.is-completion-locked\s*\{\s*cursor:\s*not-allowed/)
   assert.doesNotMatch(dashboard, /class="todo-item"[\s\S]*?<input[^>]*type="checkbox"/)
-  assert.match(dashboard, /const toggleTaskCompletion = async \(task: Task\) =>/)
-  assert.match(dashboard, /await taskStore\.updateTaskStatus\(task\.id, newStatus\)/)
-  assert.match(dashboard, /title:\s*t\(\{\s*'zh-CN': '更新任务状态失败'/)
+
+  const task = { id: 'scheduled', status: 'scheduled', scheduledAt: '2026-11-13T11:00:00Z', durationMinutes: 30 }
+  const writes = []
+  const { page, store, notifications } = await setupDashboard(t, {
+    allTasks: ref([task]),
+    updateTaskStatus: (id, status) => new Promise((resolve, reject) => writes.push({ id, status, resolve, reject })),
+  })
+  const checkbox = { checked: true }
+  const change = { currentTarget: checkbox }
+  const write = page.toggleTaskCompletion(task, change)
+  change.currentTarget = null
+  await page.toggleTaskCompletion(task)
+  assert.deepEqual(writes.map(({ id, status }) => [id, status]), [[task.id, 'completed']])
+  writes[0].reject(new Error('local write failed'))
+  await write
+  assert.equal(checkbox.checked, false)
+  assert.equal(notifications.at(-1).message, 'local write failed')
+
+  checkbox.checked = true
+  const retry = page.toggleTaskCompletion(task, { currentTarget: checkbox })
+  assert.equal(writes.length, 2)
+  store.allTasks = [{ ...task, status: 'completed' }]
+  writes[1].reject(new Error('projection changed during the write'))
+  await retry
+  assert.equal(checkbox.checked, true)
+
+  store.currentNow = new Date('2026-11-13T12:00:00Z')
+  checkbox.checked = false
+  await page.toggleTaskCompletion(task, { currentTarget: checkbox })
+  assert.equal(checkbox.checked, true)
+  assert.equal(writes.length, 2)
+})
+
+test('dashboard quick creation saves once per attempt and keeps a failed draft open for retry', async (t) => {
+  const writes = []
+  const { page, notifications, setup } = await setupDashboard(t, {
+    addTask: (payload) => new Promise((resolve, reject) => writes.push({ payload, resolve, reject })),
+  })
+  const dialogSource = await readFile(new URL('../src/components/task/TaskCreateDialog.vue', import.meta.url), 'utf8')
+  assert.match(dashboard, /:saving="isCreatingTask"\s+@submit="handleAddTask"/)
+  assert.match(dialogSource, /@keyup\.enter="handleSubmit"/)
+  assert.match(dialogSource, /:disabled="!isSubmitEnabled"\s+@click="handleSubmit"/)
+
+  page.openCreateTaskDialog()
+  const submissions = []
+  const dialog = setup(dialogSource, {
+    get modelValue() { return page.showTaskModal.value },
+    get saving() { return page.isCreatingTask.value },
+    defaultDuration: 60,
+    fixedSubjectId: 'study',
+    fixedSubjectName: 'Study',
+  }, (event, data) => {
+    assert.equal(event, 'submit')
+    submissions.push(page.handleAddTask(data))
+  })
+  dialog.form.name = 'Review the notes'
+  dialog.handleSubmit()
+  void page.handleAddTask({ name: 'Duplicate' })
+  dialog.handleSubmit()
+  assert.equal(submissions.length, 1)
+  assert.equal(writes.length, 1)
+  assert.equal(dialog.isSubmitEnabled.value, false)
+
+  writes[0].reject(new Error('local create failed'))
+  await submissions[0]
+  assert.equal(page.showTaskModal.value, true)
+  assert.equal(dialog.form.name, 'Review the notes')
+  assert.equal(dialog.isSubmitEnabled.value, true)
+  assert.equal(notifications.at(-1).type, 'error')
+  assert.equal(notifications.at(-1).message, 'local create failed')
+
+  dialog.handleSubmit()
+  assert.equal(writes.length, 2)
+  assert.equal(writes[1].payload.name, 'Review the notes')
+  writes[1].resolve('created')
+  await submissions[1]
+  assert.equal(page.showTaskModal.value, false)
+  assert.equal(notifications.at(-1).type, 'success')
 })
 
 test('isCompletedTask and isCompletedScheduledTask recognize both presentation and canonical completed statuses', async () => {
@@ -350,4 +425,40 @@ async function setupTimeline(testContext, storeOverrides, confirm = assert.fail)
     return load(content).default.setup(props, { expose() {}, emit })
   })
   return { page: setup(timeline), notifications, setup }
+}
+
+async function setupDashboard(testContext, storeOverrides) {
+  const taskViewRules = await import('../src/services/taskViewRules.ts')
+  const scope = effectScope()
+  testContext.after(() => scope.stop())
+  const notifications = []
+  const store = reactive({
+    allTasks: ref([]),
+    currentNow: new Date('2026-11-13T10:00:00Z'),
+    pendingTasks: ref([]),
+    selectedDay: ref('Fri'),
+    ...storeOverrides,
+  })
+  const modules = {
+    vue: { computed, defineComponent, nextTick, reactive, ref, watch, onActivated() {}, onMounted() {}, onUnmounted() {} },
+    'vue-router': { useRouter: () => ({}), useRoute: () => ({ path: '/', query: {} }) },
+    pinia: { storeToRefs },
+    '@/i18n': { locale, t },
+    'element-plus': { ElNotification: (notification) => notifications.push(notification) },
+    '@/store/useKnowledgeStore': { useKnowledgeStore: () => reactive({ recentBlocks: ref([]) }) },
+    '@/store/useAuthStore': { useAuthStore: () => ({ username: 'Student' }) },
+    '@/store/useSubjectStore': { useSubjectStore: () => ({ subjects: [] }) },
+    '@/store/useTaskStore': { useTaskStore: () => store },
+    '@/services/taskViewRules': taskViewRules,
+  }
+  const setup = (source, props = {}, emit = assert.fail) => scope.run(() => {
+    const { content } = compileScript(parse(source).descriptor, { id: 'dashboard-task-test' })
+    const { outputText } = ts.transpileModule(content, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    })
+    const exports = {}
+    runInNewContext(outputText, { exports, Error, console: { error() {} }, require: (name) => modules[name] ?? {} })
+    return exports.default.setup(props, { expose() {}, emit })
+  })
+  return { page: setup(dashboard), store, notifications, setup }
 }

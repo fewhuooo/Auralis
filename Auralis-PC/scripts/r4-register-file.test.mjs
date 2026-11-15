@@ -78,6 +78,8 @@ test('PC list loaders return local data before refreshing from the network', asy
   const subjectLoad = subjectStore.slice(subjectStore.indexOf('async function loadSubjects'), subjectStore.indexOf('function setActiveSubject'))
   const sourceLoad = sourceStore.slice(sourceStore.indexOf('async function loadSources'), sourceStore.indexOf('async function loadSourceFiles'))
   const knowledgeLoad = knowledgeStore.slice(knowledgeStore.indexOf('async function fetchBlocks'), knowledgeStore.indexOf('async function loadLocalBlocks'))
+  const knowledgeHydration = knowledgeStore.slice(knowledgeStore.indexOf('async function loadLocalBlocks'), knowledgeStore.indexOf('subscribeProjectionChange((change)'))
+  const knowledgeRead = knowledgeStore.slice(knowledgeStore.indexOf('async function readLocalBlocks'), knowledgeStore.indexOf('async function fetchBlocks'))
   const taskLoad = taskStore.slice(taskStore.indexOf('async function fetchTasks'), taskStore.indexOf('function replaceInMemory'))
 
   assert.doesNotMatch(subjectStore, /async function refreshSubjects/)
@@ -91,8 +93,9 @@ test('PC list loaders return local data before refreshing from the network', asy
   assert.doesNotMatch(sourceLoad, /await useSourceApi\.list/)
 
   assert.doesNotMatch(knowledgeStore, /async function refreshBlocks/)
-  assert.match(knowledgeLoad, /const local = await localBlocks\(visibleSubjectId\)/)
-  assert.match(knowledgeLoad, /requestBackgroundSync\('read'\)/)
+  assert.match(knowledgeLoad, /const local = await loadLocalBlocks\(_subject, subjectId\)[\s\S]*requestBackgroundSync\('read'\)[\s\S]*return local/)
+  assert.match(knowledgeHydration, /const local = await readLocalBlocks\(subjectId\)[\s\S]*recentBlocks\.value = local[\s\S]*return local/)
+  assert.match(knowledgeRead, /const repo = await repository\(\)[\s\S]*repo\.list<KnowledgeBlockView>\('KNOWLEDGE_BLOCK'/)
   assert.doesNotMatch(knowledgeLoad, /await useKnowledgeApi\.list/)
 
   assert.doesNotMatch(taskStore, /async function refreshTasks/)

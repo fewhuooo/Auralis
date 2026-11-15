@@ -33,9 +33,9 @@ FILE 恢复时按当前 owner/revision 的 ACCEPTED ParsedDocument 确保索引�
 
 复查补充：恢复时已领取的 PARSING/INDEXING 任务撤销 lease 后回到 PENDING，保留 job ID、revision、generation、accepted document、失败计数和已有 READY chunks。旧 claim 的 INDEXING/checkpoint/终态写入均受同一 ownership 校验，重新领取由现有 attempt 递增区分。预期的原 Asset 读取领域错误不把 complete 所在事务标成 rollback-only，REJECTED 记录可以提交；未知异常仍回滚。无新增字段或数据迁移。
 
-### 2026-11-11 Overview 详细生成身份与跨窗状态
+### Overview 现行生成身份与历史执行记录
 
-直接 Source 详细生成与私有后台任务的算法标识为 `overview-dynamic-window-v9`。直接详细输入指纹包含来源修订、有序 chunk 身份、generation、文本及 provenance，独立 SUMMARY 沿用自身身份。INDEX 已闭合段、打开段和提要前沿在本次执行内累积。旧私有载荷按现有期限保留，新生成只使用 v9 身份，旧详细任务在当前快照版本校验处终止。现有任务、账本和已发布快照保留，公开来源描述符按内容指纹和来源修订校验。此变更无需数据库迁移。[分批实施文档](../plans/2026-11-10-overview-dynamic-window-implementation.md)
+当前详细生成使用 `overview-markdown-v2`，公开内容与 PC 存储以本文上方 schemaVersion 2 / SQLite schema 14 说明和 [API](API.md) 为准。旧 dynamic-window v9 的 INDEX / ROUTE / WRITER 私有载荷只作为历史执行记录保留，不参与当前生成恢复；不自动转换或删除旧数据。旧算法变更经过见[历史实施记录](../archive/superseded-2026-11-15/2026-11-10-overview-dynamic-window-implementation.md)，现行生成与保存边界见 [Markdown 方案](../plans/2026-11-12-overview-markdown-replacement.md)。
 
 ### 2026-10-31 PC 排期命令本地串行队列（无 schema 迁移）
 
@@ -48,6 +48,8 @@ FILE 恢复时按当前 owner/revision 的 ACCEPTED ParsedDocument 确保索引�
 2026-11-14 补充：周列跨天排期复用 `SCHEDULE_INSERTION` 的 JSON payload，使用 `placementMode: "STRICT"` 表示只放置源任务。后继排期未派发时，成功回执保留其本地排期投影，并以服务端回执更新版本和非排期字段。后继取消排期的 `TASK/UPDATE` 载荷同时采用这些最新字段。已派发命令仍以原 ID 和载荷重试。队列、Task 表和同步历史无需迁移。
 
 换位提交时如果带版本的基线变化，仓储在同一写入事务内复核排期计算所用字段。字段一致时保留最新 Task 资料，只应用两个新排期，并用当前版本生成尚未入队的命令。排期计算字段实际变化时拒绝旧计算。
+
+> **历史执行与迁移记录边界**：下方按日期记载的 INDEX / ROUTE / WRITER、旧章/节身份、preview / publication 和旧算法 checkpoint，是已退役生成阶段的实施记录，保留用于解释历史数据和迁移；其中的私有字段、恢复要求和旧 PC schema 版本不适用于当前 Markdown 生成。历史表、列和记录的保留不代表对应运行入口仍存在。现行内容契约与存储以顶部说明、API 和实际迁移为准；下方 schema 细表不因本说明被删除或改写。
 
 ### 2026-10-28 Writer 多小节私有执行载荷（无数据库迁移）
 
@@ -108,7 +110,7 @@ Overview v9 writer 在现有 `overview_generation_checkpoints` 保存带独立 k
 更新时间：2026-10-24
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
-事实来源：docs/plans/backend-greenfield-rewrite-plan.md、docs/contracts/ObjectModelMatrix.md、替换前旧 Server 的 DDL/Entity/Mapper 与 PC/Mobile localDb。
+现行事实来源：[API 契约](API.md)、Server Entity / Flyway 实际迁移及 PC / Mobile 本地存储实现。历史迁移设计见 [对象模型矩阵归档](../archive/superseded-2026-11-15/ObjectModelMatrix.md)和[后端重写计划](../plans/backend-greenfield-rewrite-plan.md)，不作为现行字段依据。下方按日期记录的旧算法、测试与部署状态属于迁移历史，不能覆盖顶部现行契约。
 
 ### 2026-10-23 M5.4 正文 checkpoint 复用（无 schema/API/migration 变化；源码与唯一审查完成）
 
