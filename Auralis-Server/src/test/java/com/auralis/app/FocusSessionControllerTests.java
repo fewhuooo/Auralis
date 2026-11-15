@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
@@ -38,7 +39,7 @@ class FocusSessionControllerTests {
 
     @Test
     void focusSessionsAreIdempotentOwnerScopedAndCountOnlyCompletedSessions() throws Exception {
-        var registered = identityService.register("focus-" + UUID.randomUUID(), "phase-three-password", "Focus",
+        var registered = AuthTestAccounts.register(identityService, "focus-" + UUID.randomUUID(), "phase-three-password",
                 new DeviceCommand("focus-device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
         String token = "Bearer " + registered.tokens().accessToken();
         UUID userId = registered.user().id();
@@ -85,7 +86,7 @@ class FocusSessionControllerTests {
 
     @Test
     void offlineFocusUploadsRemainValidAfterTaskCompletionOrDeletionButStayOwnerScoped() throws Exception {
-        var owner = identityService.register("focus-history-" + UUID.randomUUID(), "phase-three-password", "Focus",
+        var owner = AuthTestAccounts.register(identityService, "focus-history-" + UUID.randomUUID(), "phase-three-password",
                 new DeviceCommand("focus-history-device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
         String token = "Bearer " + owner.tokens().accessToken();
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand("Focus history", null, null, "001")).id();
@@ -109,7 +110,7 @@ class FocusSessionControllerTests {
                         .content(sessionBody(UUID.randomUUID(), deletedTaskId, startedAt, endedAt, 300, false)))
                 .andExpect(status().isOk());
 
-        var other = identityService.register("focus-other-" + UUID.randomUUID(), "phase-three-password", "Other",
+        var other = AuthTestAccounts.register(identityService, "focus-other-" + UUID.randomUUID(), "phase-three-password",
                 new DeviceCommand("focus-other-device-" + UUID.randomUUID(), "Other Device", DevicePlatform.WEB));
         UUID otherSubjectId = subjectService.create(other.user().id(),
                 new SubjectCommand("Other subject", null, null, "001")).id();

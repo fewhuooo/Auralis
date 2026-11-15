@@ -12,3 +12,12 @@ export function resolveAuthRedirect(
   }
   return null
 }
+
+export function resolveLoginReturnPath(
+  redirect: unknown,
+  isProtectedRoute: (path: string) => boolean,
+): string {
+  if (typeof redirect !== 'string' || !redirect.startsWith('/') || redirect.startsWith('//')
+    || /[\\\u0000-\u001f\u007f]/.test(redirect)) return '/'
+  return isProtectedRoute(redirect) ? redirect : '/'
+}

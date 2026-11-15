@@ -27,6 +27,12 @@ public class UserEntity {
     @Column(name = "normalized_username", nullable = false, length = 64)
     private String normalizedUsername;
 
+    @Column(length = 254)
+    private String email;
+
+    @Column(name = "credential_generation", nullable = false)
+    private long credentialGeneration;
+
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
@@ -98,6 +104,18 @@ public class UserEntity {
 
     public String getNormalizedUsername() {
         return normalizedUsername;
+    }
+
+    public void setVerifiedEmail(String email) {
+        this.email = email;
+    }
+
+    public long getCredentialGeneration() {
+        return credentialGeneration;
+    }
+
+    public void incrementCredentialGeneration() {
+        credentialGeneration++;
     }
 
     public String getPasswordHash() {

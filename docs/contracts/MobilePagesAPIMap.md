@@ -26,7 +26,7 @@
 
 | 页面 | 远程 API / 数据入口 | 当前边界 |
 | --- | --- | --- |
-| Login | `POST /api/auth/register`、`login`、`refresh`，`GET /api/auth/me` | 注册密码前置校验至少 12 字符；服务端 fieldErrors 仍只显示通用 toast，尚未逐输入框映射 |
+| Login | `POST /api/auth/login`、`/api/auth/register/email-code`、`/api/auth/register`、`/api/auth/password/reset/email-code`、`/api/auth/password/reset`、`/api/auth/refresh`，`GET /api/auth/me` | 用户名和已验证邮箱均可登录。注册和密码重置验证邮箱验证码，表单展示操作反馈 |
 | Home | Task/Subject/Block Store → Sync push/pull/snapshot | 离线副本优先；只展示真实排期，无任务时保持空态；服务端统计不由首页本地派生值冒充 |
 | Pomodoro | Task Store → Sync；任务选择器只展示真实 pendingTasks，完成专注写入今日 Store 计数 | 后台、锁屏、跨日时间语义仍需真机 |
 | AI Search | `POST /api/ai/conversations`、`POST /api/ai/messages/stream` | 首轮省略 `readingContext`，绑定 owner-wide 范围。SSE 支持 chunk 边界、401 单次重试和稳定 requestId。真实 Provider 和断流待验收 |

@@ -80,7 +80,8 @@ import ModalShell from '@/components/modal/ModalShell.vue'
 
 const messages = {
   title: { 'zh-CN': '修改登录密码', en: 'Change password', ja: 'パスワードを変更' },
-  lengthRule: { 'zh-CN': '新密码至少 12 位，按 UTF-8 编码最多 72 字节', en: 'Use at least 12 characters and at most 72 UTF-8 bytes', ja: '12 文字以上、UTF-8 で 72 バイト以内にしてください' },
+  lengthRule: { 'zh-CN': '新密码至少 12 位', en: 'Use at least 12 characters', ja: '新しいパスワードは12文字以上' },
+  passwordTooLong: { 'zh-CN': '密码太长，请缩短后重试。', en: 'Your password is too long. Shorten it and try again.', ja: 'パスワードが長すぎます。短くしてもう一度お試しください。' },
   currentPassword: { 'zh-CN': '原密码', en: 'Current password', ja: '現在のパスワード' },
   currentPlaceholder: { 'zh-CN': '请输入当前正在使用的密码', en: 'Enter your current password', ja: '現在のパスワードを入力' },
   newPassword: { 'zh-CN': '新密码', en: 'New password', ja: '新しいパスワード' },
@@ -156,8 +157,12 @@ const handleSubmit = () => {
     localError.value = messages.currentRequired
     return
   }
-  if (form.newPassword.length < 12 || new TextEncoder().encode(form.newPassword).byteLength > 72) {
+  if (form.newPassword.length < 12) {
     localError.value = messages.lengthRule
+    return
+  }
+  if (new TextEncoder().encode(form.newPassword).byteLength > 72) {
+    localError.value = messages.passwordTooLong
     return
   }
   if (form.newPassword !== form.confirmPassword) {

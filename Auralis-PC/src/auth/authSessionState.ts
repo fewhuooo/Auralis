@@ -54,6 +54,9 @@ export function isPublicAuthPath(url: string): boolean {
   const path = authPath(url)
   return path === '/api/auth/login'
     || path === '/api/auth/register'
+    || path === '/api/auth/register/email-code'
+    || path === '/api/auth/password/reset/email-code'
+    || path === '/api/auth/password/reset'
     || path === '/api/auth/refresh'
     || path === '/actuator/health'
 }

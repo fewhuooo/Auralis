@@ -169,6 +169,8 @@ Service / Mapper / Storage / AI Provider
 
 ### 登录与刷新
 
+客户端通过邮件验证码完成注册或找回密码，登录可使用用户名或已验证邮箱。验证码按用途存储摘要。密码重置更新凭据代次并撤销续期会话，后续 Bearer 请求重新校验凭据代次。
+
 ```mermaid
 sequenceDiagram
   participant C as Client

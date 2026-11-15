@@ -47,6 +47,14 @@ auralis:
       access-key: ${AURALIS_MINIO_ACCESS_KEY:}
       secret-key: ${AURALIS_MINIO_SECRET_KEY:}
       presign-ttl-seconds: ${AURALIS_MINIO_PRESIGN_TTL_SECONDS:300}
+  mail:
+    host: ${AURALIS_MAIL_HOST:}
+    port: ${AURALIS_MAIL_PORT:587}
+    username: ${AURALIS_MAIL_USERNAME:}
+    password: ${AURALIS_MAIL_PASSWORD:}
+    from: ${AURALIS_MAIL_FROM:}
+    starttls: ${AURALIS_MAIL_STARTTLS:true}
+    max-sends-per-minute: ${AURALIS_MAIL_MAX_SENDS_PER_MINUTE:60}
   identity:
     jwt-secret: ${AURALIS_JWT_SECRET:}
     access-token-ttl-seconds: ${AURALIS_ACCESS_TOKEN_TTL_SECONDS:900}

@@ -1,5 +1,9 @@
 # 基础设施与数据服务模块
 
+### 账号验证码邮件
+
+后端通过 SMTP 发送注册和密码找回邮件。发件配置见[部署指南](../operations/Deployment.md#2026-11-15-验证码邮件配置)。
+
 ### 2026-11-12 平台 AI 环境配置
 
 根目录 `.env` 与 `.env.example` 将平台生成与 Embedding 分组。Compose 显式向 backend 传递下方两组变量，应用缺省值均为空。每组以完整的 Base URL、模型和 Key 指定一个 OpenAI 兼容端点。部署时填写方式见[部署指南](../operations/Deployment.md)。本机已用基础 Compose 单独重建 backend。六项配置已注入，旧平台变量已移除。frontend、PostgreSQL 和 MinIO 容器身份与重启次数保持。

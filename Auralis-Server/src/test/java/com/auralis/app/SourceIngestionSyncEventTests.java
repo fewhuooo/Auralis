@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
@@ -56,9 +57,8 @@ class SourceIngestionSyncEventTests {
 
     @Test
     void failedTransactionalEnqueueRollsBackSourceAndChangeLog() {
-        var owner = identityService.register(
-                "sx-" + UUID.randomUUID() + "@e.test",
-                "correct horse battery staple", "Source enqueue failure",
+        var owner = AuthTestAccounts.register(identityService, "sx-" + UUID.randomUUID() + "@e.test",
+                "correct horse battery staple",
                 new DeviceCommand("source-enqueue-failure-device", "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Enqueue rollback", null, null, "001"));
@@ -90,8 +90,7 @@ class SourceIngestionSyncEventTests {
 
     @Test
     void textAndUrlSourcesPersistOneJobForTheirCurrentRevision() {
-        var owner = identityService.register(
-                "source-jobs-" + UUID.randomUUID() + "@e.test", "correct horse battery staple", "Source jobs",
+        var owner = AuthTestAccounts.register(identityService, "source-jobs-" + UUID.randomUUID() + "@e.test", "correct horse battery staple",
                 new DeviceCommand("source-jobs-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Source jobs", null, null, "001"));
@@ -127,9 +126,8 @@ class SourceIngestionSyncEventTests {
 
     @Test
     void syncRestoreRequeuesTerminalJobsForServerOwnedInProgressSourcesOnly() {
-        var owner = identityService.register(
-                "source-restore-sync-" + UUID.randomUUID() + "@e.test",
-                "correct horse battery staple", "Source restore sync",
+        var owner = AuthTestAccounts.register(identityService, "source-restore-sync-" + UUID.randomUUID() + "@e.test",
+                "correct horse battery staple",
                 new DeviceCommand("source-restore-sync-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Restore in progress", null, null, "001"));
@@ -216,8 +214,7 @@ class SourceIngestionSyncEventTests {
 
     @Test
     void publishesEveryActualIngestionChangeAndSkipsRepeatedIdenticalState() {
-        var owner = identityService.register(
-                "source-sync-events@example.com", "correct horse battery staple", "Source sync events",
+        var owner = AuthTestAccounts.register(identityService, "source-sync-events@example.com", "correct horse battery staple",
                 new DeviceCommand("source-sync-events-device", "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Ingestion sync", null, null, "001"));

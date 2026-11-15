@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -261,8 +262,7 @@ class SubjectStatsTests {
     }
 
     private Owner owner(String prefix) {
-        AuthResult result = identityService.register(
-                "stats-" + UUID.randomUUID() + "@example.test", PASSWORD, "Stats Test",
+        AuthResult result = AuthTestAccounts.register(identityService, "stats-" + UUID.randomUUID() + "@example.test", PASSWORD,
                 new DeviceCommand("device-" + UUID.randomUUID(), "Stats Test", DevicePlatform.WEB));
         return new Owner(result.user().id(), "Bearer " + result.tokens().accessToken());
     }

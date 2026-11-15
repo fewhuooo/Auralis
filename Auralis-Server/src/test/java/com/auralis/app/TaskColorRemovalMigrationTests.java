@@ -59,7 +59,7 @@ class TaskColorRemovalMigrationTests {
         flyway.migrate();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'TASKS' AND COLUMN_NAME = 'COLOR_OVERRIDE'", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KNOWLEDGE_BLOCKS' AND COLUMN_NAME = 'COLOR_OVERRIDE'", Integer.class)).isEqualTo(1);
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("42");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("46");
     }
 
     @Test

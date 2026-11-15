@@ -65,6 +65,16 @@ class OpenApiArtifactTests {
                 .isEqualTo("http");
         assertThat(document.at("/paths/~1api~1auth~1login/post/security").isMissingNode()).isTrue();
         assertThat(document.at("/paths/~1api~1auth~1me/get/security").isArray()).isTrue();
+        for (String path : new String[]{
+                "~1api~1auth~1register~1email-code", "~1api~1auth~1password~1reset~1email-code",
+                "~1api~1auth~1password~1reset"}) {
+            JsonNode operation = document.at("/paths/" + path + "/post");
+            assertThat(operation.path("security").isMissingNode()).isTrue();
+            assertThat(operation.at("/responses/204").isObject()).isTrue();
+        }
+        assertThat(document.at("/components/schemas/RegisterRequest/required").toString())
+                .contains("email", "emailCode");
+        assertThat(document.at("/components/schemas/RegisterRequest/properties/displayName").isMissingNode()).isTrue();
         assertThat(document.at("/paths/~1api~1subjects/post/responses/201").isObject()).isTrue();
         assertThat(document.at("/paths/~1api~1tasks~1{id}/delete/responses/204").isObject()).isTrue();
     }

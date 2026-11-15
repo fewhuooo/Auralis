@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.OverviewCancellation;
 import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewGenerationService;
@@ -172,8 +173,8 @@ class OverviewSseDeadlineSocketIntegrationTests {
     }
 
     private AuthResult register(String label) {
-        return identityService.register("os-" + UUID.randomUUID() + "@e.co",
-                "correct horse battery staple", label,
+        return AuthTestAccounts.register(identityService, "os-" + UUID.randomUUID() + "@e.co",
+                "correct horse battery staple",
                 new DeviceCommand("os-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
     }
 

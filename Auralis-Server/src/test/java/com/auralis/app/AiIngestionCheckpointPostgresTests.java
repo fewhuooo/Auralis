@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionClaim;
 import com.auralis.app.ai.ingestion.IngestionCompletionService;
@@ -58,8 +59,8 @@ class AiIngestionCheckpointPostgresTests {
     @Test
     void postgresCanLoadAnInactiveCheckpointUnderSourceThenJobFences() {
         String suffix = UUID.randomUUID().toString();
-        var owner = identityService.register("usage-pg-" + suffix + "@example.com",
-                "correct horse battery staple", "usage-pg-" + suffix,
+        var owner = AuthTestAccounts.register(identityService, "usage-pg-" + suffix + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("usage-pg-device-" + suffix, "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Usage checkpoint", null, null, "001"));

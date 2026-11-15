@@ -115,8 +115,12 @@ async function streamMessage(
   body: Protocol1MessageCommand,
   onMessage: (content: string) => void,
   retried = false,
+  expectedGeneration?: symbol,
 ): Promise<string> {
   const auth = useAuthStore()
+  const generation = expectedGeneration ?? auth.getLoginGeneration()
+  const isCurrent = () => auth.getLoginGeneration() === generation
+  if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
   const runtime = getRuntimeConfig()
   return new Promise((resolve, reject) => {
     let content = ''
@@ -126,6 +130,7 @@ async function streamMessage(
     let settled = false
     const textDecoder = new TextDecoder('utf-8')
     const sse = createSseDecoder((event) => {
+      if (!isCurrent()) return
       if (event.data && typeof event.data === 'object') {
         const envelope = event.data as ChatStreamEnvelope
         if (envelope.protocolVersion !== 1 || envelope.event !== event.event || envelope.conversationId !== body.conversationId) return
@@ -164,14 +169,26 @@ async function streamMessage(
       data: body,
       async success(response: any) {
         if (settled) return
-        if (response.statusCode === 401 && !retried && await auth.refreshAccessToken()) {
+        if (!isCurrent()) {
           settled = true
-          try {
-            resolve(await streamMessage(body, onMessage, true))
-          } catch (error) {
-            reject(error)
-          }
+          reject(new Error('登录状态已变化，请重试。'))
           return
+        }
+        if (response.statusCode === 401 && !retried) {
+          try {
+            const refreshed = await auth.refreshAccessToken()
+            if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+            if (refreshed) {
+              settled = true
+              resolve(await streamMessage(body, onMessage, true, generation))
+              return
+            }
+            auth.expireSession(generation)
+          } catch (error) {
+            settled = true
+            reject(error)
+            return
+          }
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
           settled = true

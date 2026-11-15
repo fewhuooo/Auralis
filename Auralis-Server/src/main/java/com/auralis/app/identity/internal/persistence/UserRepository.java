@@ -13,6 +13,12 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByNormalizedUsername(String normalizedUsername);
 
+    Optional<UserEntity> findByEmail(String email);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select user from UserEntity user where user.email = :email")
+    Optional<UserEntity> findForUpdateByEmail(@Param("email") String email);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select user from UserEntity user where user.normalizedUsername = :normalizedUsername")
     Optional<UserEntity> findForUpdateByNormalizedUsername(@Param("normalizedUsername") String normalizedUsername);

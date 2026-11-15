@@ -1,5 +1,6 @@
 package com.auralis.app.ai;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.ai.OverviewDtos.OverviewResponse;
 import com.auralis.app.ai.internal.persistence.SourceChunkEntity;
@@ -31,17 +32,21 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 
+import com.auralis.app.support.AuthTestAccounts;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.auralis.app.support.AuthTestAccounts;
 import javax.sql.DataSource;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
 
+import com.auralis.app.support.AuthTestAccounts;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -121,8 +126,7 @@ class OverviewResultReadPathPostgresIntegrationTests {
     }
 
     private UUID user() {
-        return identity.register("overview-read-" + UUID.randomUUID() + "@example.test", "Test-only-password-2026!",
-                "Overview read test", new DeviceCommand("overview-read-device-" + UUID.randomUUID(),
+        return AuthTestAccounts.register(identity, "overview-read-" + UUID.randomUUID() + "@example.test", "Test-only-password-2026!", new DeviceCommand("overview-read-device-" + UUID.randomUUID(),
                         "Overview read test", DevicePlatform.WEB)).user().id();
     }
 

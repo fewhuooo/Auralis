@@ -18,7 +18,7 @@
         <div class="bg-glow bg-glow--1"></div>
         <div class="bg-glow bg-glow--2"></div>
       </div>
-      <div v-else key="public-shell" class="public-shell">
+      <div v-else-if="!route.meta.requiresAuth" key="public-shell" class="public-shell">
         <router-view v-slot="{ Component }">
           <transition name="page-fade" mode="out-in">
             <component :is="Component" :key="route.path" />

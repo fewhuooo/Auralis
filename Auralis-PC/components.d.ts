@@ -23,6 +23,7 @@ declare module 'vue' {
     DocumentNotReadyDialog: typeof import('./src/components/documentProcessing/DocumentNotReadyDialog.vue')['default']
     DocumentProcessingCenter: typeof import('./src/components/documentProcessing/DocumentProcessingCenter.vue')['default']
     DocumentProcessingDot: typeof import('./src/components/documentProcessing/DocumentProcessingDot.vue')['default']
+    ElButton: typeof import('element-plus/es')['ElButton']
     ElDatePicker: typeof import('element-plus/es')['ElDatePicker']
     ElForm: typeof import('element-plus/es')['ElForm']
     ElFormItem: typeof import('element-plus/es')['ElFormItem']

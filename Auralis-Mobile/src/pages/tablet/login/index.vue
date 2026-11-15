@@ -6,59 +6,42 @@
     </view>
 
     <view class="form-area">
-      <input class="input-box" v-model="form.username" placeholder="请输入用户名" />
-      <input class="input-box" v-model="form.password" type="password" placeholder="请输入密码" />
-      
-      <button class="submit-btn" :loading="loading" @click="handleAction">
-        {{ isLogin ? '登录' : '注册' }}
-      </button>
+      <text class="form-heading">{{ actionLabel }}</text>
+      <input
+        v-if="mode !== 'reset'"
+        class="input-box"
+        v-model="form.username"
+        :maxlength="mode === 'login' ? 254 : 64"
+        :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
+        :disabled="pending"
+      />
+      <template v-if="mode !== 'login'">
+        <input class="input-box" v-model="form.email" :maxlength="254" placeholder="邮箱" :disabled="pending" />
+        <view class="code-row">
+          <input class="input-box code-input" v-model="form.emailCode" type="number" :maxlength="6" placeholder="邮箱验证码" :disabled="pending" />
+          <button class="code-button" :loading="sending" :disabled="sendDisabled" @click="sendCode">{{ sendLabel }}</button>
+        </view>
+      </template>
+      <input class="input-box" v-model="form.password" password :placeholder="mode === 'reset' ? '新密码' : '密码'" :disabled="pending" />
+      <input v-if="mode !== 'login'" class="input-box" v-model="form.confirmPassword" password placeholder="确认密码" :disabled="pending" />
+      <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-      <view class="switch-mode" @click="isLogin = !isLogin">
-        <text>{{ isLogin ? '没有账号？去注册' : '已有账号？去登录' }}</text>
+      <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">{{ actionLabel }}</button>
+
+      <view class="auth-actions">
+        <button v-if="mode === 'login'" class="switch-mode" :disabled="pending" @click="show('register')">创建账号</button>
+        <button v-if="mode === 'login'" class="switch-mode" :disabled="pending" @click="show('reset')">忘记密码？</button>
+        <button v-else class="switch-mode" :disabled="pending" @click="show('login')">返回登录</button>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useAuthStore } from '@/store/useAuthStore'
+import { useAuthForm } from '@/composables/useAuthForm'
 
-const authStore = useAuthStore()
-const isLogin = ref(true)
-const loading = ref(false)
-const form = ref({
-  username: '',
-  password: ''
-})
-
-const handleAction = async () => {
-  if (!form.value.username || !form.value.password) {
-    uni.showToast({ title: '请输入用户名和密码', icon: 'none' })
-    return
-  }
-  if (form.value.username.length > 64 || (!isLogin.value && form.value.password.length < 12)) {
-    uni.showToast({ title: isLogin.value ? '用户名不能超过 64 个字符' : '注册密码至少需要 12 个字符', icon: 'none' })
-    return
-  }
-
-  loading.value = true
-  try {
-    if (isLogin.value) {
-      await authStore.login(form.value)
-      uni.showToast({ title: '登录成功' })
-      uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
-    } else {
-      await authStore.register(form.value)
-      uni.showToast({ title: '注册成功' })
-      uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
-    }
-  } catch (error: any) {
-    uni.showToast({ title: error.message || '操作失败', icon: 'none' })
-  } finally {
-    loading.value = false
-  }
-}
+const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
+  = useAuthForm('/pages/tablet/dashboard/index')
 </script>
 
 <style scoped>
@@ -122,6 +105,55 @@ const handleAction = async () => {
   border-color: var(--color-zen-graphite, #1C1C1A);
   background: var(--color-zen-white, #FFFFFF);
   box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.form-heading,
+.auth-feedback {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.form-heading {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.auth-feedback {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.code-row,
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.code-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-button {
+  margin: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.auth-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.auth-actions .switch-mode {
+  border: none;
+  background: transparent;
+}
+
+.auth-actions .switch-mode::after {
+  border: none;
 }
 
 .submit-btn {

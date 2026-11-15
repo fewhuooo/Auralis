@@ -34,7 +34,9 @@ public class IdentityExceptionHandler {
                 request.getRequestURI(),
                 code.name(),
                 traceId == null ? "missing-trace-id" : traceId,
-                List.of(),
+                exception instanceof InvalidEmailCodeException
+                        ? List.of(new ApiProblemDetails.FieldError("emailCode", exception.getMessage()))
+                        : List.of(),
                 null);
         return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
@@ -56,6 +58,7 @@ public class IdentityExceptionHandler {
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
             case RESOURCE_NOT_FOUND, RESOURCE_DELETED -> HttpStatus.NOT_FOUND;
             case MUTATION_REJECTED, RESOURCE_VERSION_CONFLICT -> HttpStatus.CONFLICT;
+            case SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

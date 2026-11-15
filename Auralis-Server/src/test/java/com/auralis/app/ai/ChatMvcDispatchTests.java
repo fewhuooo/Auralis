@@ -1,5 +1,6 @@
 package com.auralis.app.ai;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.ai.internal.chat.ChatAgentOrchestrator;
 import com.auralis.app.ai.internal.chat.ChatRuntimePersistenceService;
@@ -26,9 +27,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.web.context.request.async.WebAsyncUtils;
 import tools.jackson.databind.ObjectMapper;
 
+import com.auralis.app.support.AuthTestAccounts;
 import java.util.Map;
 import java.util.UUID;
 
+import com.auralis.app.support.AuthTestAccounts;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -67,8 +70,7 @@ class ChatMvcDispatchTests {
     @BeforeEach
     void createConversation() {
         String id = UUID.randomUUID().toString();
-        auth = identity.register("chat-dispatch-" + id + "@example.com", "correct horse battery staple",
-                "Chat dispatch tests", new DeviceCommand(id, "Test", DevicePlatform.WEB));
+        auth = AuthTestAccounts.register(identity, "chat-dispatch-" + id + "@example.com", "correct horse battery staple", new DeviceCommand(id, "Test", DevicePlatform.WEB));
         conversationId = conversations.create(auth.user().id(), new ConversationCommand("Chat", 0L)).id();
     }
 

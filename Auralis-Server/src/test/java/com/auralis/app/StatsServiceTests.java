@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.stats.StatsService;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
@@ -55,8 +56,7 @@ class StatsServiceTests {
 
     @Test
     void weeklyCountsTaskCompletionTimeInsteadOfLaterEdits() {
-        AuthResult owner = identityService.register(
-                "stats-task-" + UUID.randomUUID(), "phase-three-password", "Stats Test",
+        AuthResult owner = AuthTestAccounts.register(identityService, "stats-task-" + UUID.randomUUID(), "phase-three-password",
                 new DeviceCommand("stats-device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
                 "Stats Subject", null, null, "001")).id();

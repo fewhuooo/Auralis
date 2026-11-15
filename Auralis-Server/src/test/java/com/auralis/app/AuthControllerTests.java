@@ -12,6 +12,7 @@ import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityException;
 import com.auralis.app.identity.IdentityService;
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.source.AssetService;
 import com.auralis.app.source.AssetUploadIntentCommand;
 import com.auralis.app.source.ParsedDocumentService;
@@ -38,6 +39,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.time.Instant;
 import java.util.concurrent.ExecutorService;
@@ -138,33 +141,119 @@ class AuthControllerTests {
 
     @Test
     void registersLogsInAndReturnsTheCurrentUser() throws Exception {
-        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
-        assertThat(registered.path("user").path("username").asText()).isEqualTo("alice@example.com");
+        String email = AuthTestAccounts.newEmail();
+        JsonNode registered = registerWithEmail("alice", "browser-1", email);
+        assertThat(registered.path("user").path("username").asText()).isEqualTo("alice");
         assertThat(registered.path("tokens").path("accessToken").asText()).isNotBlank();
 
         MvcResult login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("alice@example.com", "correct horse battery staple", "browser-1")))
+                        .content(loginJson(email.toUpperCase(Locale.ROOT), "correct horse battery staple", "browser-1")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.user.username").value("alice@example.com"))
+                .andExpect(jsonPath("$.user.username").value("alice"))
                 .andReturn();
         String accessToken = json(login).path("tokens").path("accessToken").asText();
 
         mockMvc.perform(get("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value("alice@example.com"))
-                .andExpect(jsonPath("$.displayName").value("Alice"));
+                .andExpect(jsonPath("$.username").value("alice"))
+                .andExpect(jsonPath("$.displayName").value("alice"));
+    }
+
+    @Test
+    void registrationRequiresVerificationAndLocksCodeAfterFiveWrongAttempts() throws Exception {
+        String email = AuthTestAccounts.newEmail();
+        String verification = AuthTestAccounts.registrationFields(mockMvc, email);
+        String valid = registerJson("alice", "correct horse battery staple", "browser-1", verification);
+        String wrong = valid.replaceFirst(
+                "\"emailCode\":\"[0-9]", "\"emailCode\":\"" + (verification.contains("\"emailCode\":\"0") ? "1" : "0"));
+        for (int attempt = 0; attempt < 5; attempt++) {
+            mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(wrong))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fieldErrors[?(@.field == 'emailCode')]").exists());
+        }
+
+        mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(valid))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'emailCode')]").exists());
+        assertThat(userRepository.findByEmail(email)).isEmpty();
+    }
+
+    @Test
+    void passwordResetUsesItsOwnSingleUseCodeAndRevokesEveryDevice() throws Exception {
+        String email = AuthTestAccounts.newEmail();
+        JsonNode original = registerWithEmail("alice", "browser-1", email);
+        JsonNode another = login("alice", "browser-2");
+        String newPassword = "replacement password";
+        mockMvc.perform(post("/api/auth/password/reset/email-code").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + AuthTestAccounts.newEmail() + "\"}"))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+        mockMvc.perform(post("/api/auth/password/reset/email-code").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\"}"))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+        String code = AuthTestAccounts.awaitCode(email);
+
+        mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                        .content(registerJson("a-different-user", "correct horse battery staple", "browser-3",
+                                "\"email\":\"" + email + "\",\"emailCode\":\"" + code + "\",")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'emailCode')]").exists());
+
+        String request = "{\"email\":\"" + email + "\",\"emailCode\":\"" + code
+                + "\",\"newPassword\":\"" + newPassword + "\"}";
+        mockMvc.perform(post("/api/auth/password/reset").contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/password/reset").contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'emailCode')]").exists());
+        for (JsonNode preceding : List.of(original, another)) {
+            var tokens = preceding.path("tokens");
+            mockMvc.perform(get("/api/auth/me")
+                            .header(HttpHeaders.AUTHORIZATION, bearer(tokens.path("accessToken").asText())))
+                    .andExpect(status().isUnauthorized());
+            mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"refreshToken\":\"" + tokens.path("refreshToken").asText() + "\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(email, "correct horse battery staple", "browser-1")))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(email, newPassword, "browser-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.id").value(original.path("user").path("id").asText()));
+    }
+
+    @Test
+    void logoutWithEarlierAccessRevokesOnlyItsRotatedFamily() throws Exception {
+        JsonNode original = register("alice", "browser-1", "Alice's browser");
+        JsonNode anotherDevice = login("alice", "browser-2");
+        JsonNode rotated = json(mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + original.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk()).andReturn());
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(original.path("tokens").path("accessToken").asText())))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + rotated.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + anotherDevice.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk());
     }
 
     @Test
     void duplicateAndInvalidCredentialsUseStableProblemDetails() throws Exception {
-        register("alice@example.com", "browser-1", "Alice's browser");
+        register("alice", "browser-1", "Alice's browser");
 
         mockMvc.perform(post("/api/auth/register")
                         .header("X-Trace-Id", "duplicate-check")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson("alice@example.com", "another password", "browser-2", "Alice")))
+                        .content(registerJson("alice", "another password", "browser-2", invalidVerificationFields())))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("MUTATION_REJECTED"))
@@ -178,7 +267,7 @@ class AuthControllerTests {
                 .andReturn();
         MvcResult wrong = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("alice@example.com", "wrong", "browser-2")))
+                        .content(loginJson("alice", "wrong", "browser-2")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
                 .andReturn();
@@ -188,7 +277,7 @@ class AuthControllerTests {
 
     @Test
     void refreshReplayAndLogoutInvalidateRefreshSessions() throws Exception {
-        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
+        JsonNode registered = register("alice", "browser-1", "Alice's browser");
         String refreshToken = registered.path("tokens").path("refreshToken").asText();
 
         MvcResult rotated = mockMvc.perform(post("/api/auth/refresh")
@@ -209,7 +298,7 @@ class AuthControllerTests {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 
-        JsonNode loggedIn = login("alice@example.com", "browser-1");
+        JsonNode loggedIn = login("alice", "browser-1");
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.AUTHORIZATION,
                                 bearer(loggedIn.path("tokens").path("accessToken").asText())))
@@ -222,8 +311,8 @@ class AuthControllerTests {
 
     @Test
     void listsOnlyOwnedSessionsAndRejectsCrossUserRevocation() throws Exception {
-        JsonNode alice = register("alice@example.com", "browser-1", "Alice's browser");
-        JsonNode bob = register("bob@example.com", "browser-2", "Bob's browser");
+        JsonNode alice = register("alice", "browser-1", "Alice's browser");
+        JsonNode bob = register("bob", "browser-2", "Bob's browser");
 
         MvcResult sessions = mockMvc.perform(get("/api/auth/sessions")
                         .header(HttpHeaders.AUTHORIZATION,
@@ -248,8 +337,8 @@ class AuthControllerTests {
 
     @Test
     void keepsOneCurrentSessionForRepeatedLoginsOnTheSameDevice() throws Exception {
-        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
-        JsonNode current = login("alice@example.com", "browser-1");
+        JsonNode registered = register("alice", "browser-1", "Alice's browser");
+        JsonNode current = login("alice", "browser-1");
 
         JsonNode listed = json(mockMvc.perform(get("/api/auth/sessions")
                         .header(HttpHeaders.AUTHORIZATION,
@@ -277,8 +366,8 @@ class AuthControllerTests {
 
     @Test
     void deviceRevocationFollowsRotationsAndKeepsTheCallingDeviceActive() throws Exception {
-        JsonNode caller = register("alice@example.com", "browser-1", "Alice's browser");
-        JsonNode remote = login("alice@example.com", "browser-2");
+        JsonNode caller = register("alice", "browser-1", "Alice's browser");
+        JsonNode remote = login("alice", "browser-2");
         String callerAccess = bearer(caller.path("tokens").path("accessToken").asText());
         JsonNode listed = json(mockMvc.perform(get("/api/auth/sessions")
                         .header(HttpHeaders.AUTHORIZATION, callerAccess))
@@ -308,7 +397,7 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.items[0].id").value(callerRotated.path("sessionId").asText()))
                 .andExpect(jsonPath("$.items[0].current").value(true));
 
-        JsonNode remoteNewLogin = login("alice@example.com", "browser-2");
+        JsonNode remoteNewLogin = login("alice", "browser-2");
         mockMvc.perform(delete("/api/auth/sessions/others").header(HttpHeaders.AUTHORIZATION, callerAccess))
                 .andExpect(status().isNoContent());
         mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
@@ -321,7 +410,7 @@ class AuthControllerTests {
 
     @Test
     void deviceRevocationWaitsForInFlightRotationAndRevokesTheCommittedReplacement() throws Exception {
-        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
+        JsonNode registered = register("alice", "browser-1", "Alice's browser");
         UUID userId = UUID.fromString(registered.path("user").path("id").asText());
         UUID listedSessionId = UUID.fromString(registered.path("sessionId").asText());
         String originalRefreshToken = registered.path("tokens").path("refreshToken").asText();
@@ -352,7 +441,7 @@ class AuthControllerTests {
 
     @Test
     void protectsPrivateRoutesAndDoesNotAcceptRefreshTokensAsAccessTokens() throws Exception {
-        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
+        JsonNode registered = register("alice", "browser-1", "Alice's browser");
         String refreshToken = registered.path("tokens").path("refreshToken").asText();
 
         mockMvc.perform(get("/api/auth/me").header("X-Trace-Id", "auth-required"))
@@ -382,8 +471,8 @@ class AuthControllerTests {
 
     @Test
     void updatesOnlyAuthenticatedUsersDisplayName() throws Exception {
-        JsonNode alice = register("alice@example.com", "profile-alice", "Alice's browser");
-        JsonNode bob = register("bob@example.com", "profile-bob", "Bob's browser");
+        JsonNode alice = register("alice", "profile-alice", "Alice's browser");
+        JsonNode bob = register("bob", "profile-bob", "Bob's browser");
         String aliceToken = alice.path("tokens").path("accessToken").asText();
         String bobToken = bob.path("tokens").path("accessToken").asText();
 
@@ -415,7 +504,7 @@ class AuthControllerTests {
 
     @Test
     void changesPasswordOnlyAfterVerifyingCurrentPasswordAndRevokesRefreshSessions() throws Exception {
-        JsonNode alice = register("alice@example.com", "password-alice", "Alice's browser");
+        JsonNode alice = register("alice", "password-alice", "Alice's browser");
         String token = alice.path("tokens").path("accessToken").asText();
 
         mockMvc.perform(put("/api/auth/password")
@@ -436,27 +525,28 @@ class AuthControllerTests {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("alice@example.com", "password-alice", "password-alice-next")))
+                        .content(loginJson("alice", "password-alice", "password-alice-next")))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"alice@example.com\",\"password\":\"a longer new password\","
+                        .content("{\"username\":\"alice\",\"password\":\"a longer new password\","
                                 + "\"clientDeviceKey\":\"password-alice-next\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void registerAndPasswordChangeEnforceTheEncoderByteLimit() throws Exception {
-        String username = "password-limit@example.com";
+        String username = "password-limit";
         String maxLength = "界".repeat(24);
         for (String tooLong : new String[] {"a".repeat(73), maxLength + "界"}) {
             mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
-                            .content(registerJson(username, tooLong, "browser-1", "Alice")))
+                            .content(registerJson(username, tooLong, "browser-1", invalidVerificationFields())))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
         }
         JsonNode registered = json(mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson(username, maxLength, "browser-1", "Alice")))
+                        .content(registerJson(username, maxLength, "browser-1",
+                                AuthTestAccounts.registrationFields(mockMvc, AuthTestAccounts.newEmail()))))
                 .andExpect(status().isCreated()).andReturn());
         String accessToken = bearer(registered.path("tokens").path("accessToken").asText());
         mockMvc.perform(put("/api/auth/password").header(HttpHeaders.AUTHORIZATION, accessToken)
@@ -482,8 +572,8 @@ class AuthControllerTests {
 
     @Test
     void avatarUploadValidatesImageAndSupportsPrivateReadAndReset() throws Exception {
-        JsonNode alice = register("alice@example.com", "avatar-alice", "Alice's browser");
-        JsonNode bob = register("bob@example.com", "avatar-bob", "Bob's browser");
+        JsonNode alice = register("alice", "avatar-alice", "Alice's browser");
+        JsonNode bob = register("bob", "avatar-bob", "Bob's browser");
         String token = alice.path("tokens").path("accessToken").asText();
         String bobToken = bob.path("tokens").path("accessToken").asText();
         assertThat(alice.path("user").path("hasAvatar").asBoolean()).isFalse();
@@ -504,7 +594,7 @@ class AuthControllerTests {
         mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.IMAGE_PNG));
-        JsonNode loggedIn = login("alice@example.com", "avatar-alice");
+        JsonNode loggedIn = login("alice", "avatar-alice");
         assertThat(loggedIn.path("user").path("hasAvatar").asBoolean()).isTrue();
         MvcResult refreshed = mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -536,7 +626,7 @@ class AuthControllerTests {
 
     @Test
     void deletesAssetlessAccountAndRevokesItsSessions() throws Exception {
-        JsonNode alice = register("alice@example.com", "delete-alice", "Alice's browser");
+        JsonNode alice = register("alice", "delete-alice", "Alice's browser");
         String token = alice.path("tokens").path("accessToken").asText();
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
         UUID subjectId = UUID.randomUUID();
@@ -582,7 +672,7 @@ class AuthControllerTests {
                 .andReturn();
 
         String jobId = json(requested).path("id").asText();
-        assertThat(userRepository.findByNormalizedUsername("alice@example.com")).isPresent();
+        assertThat(userRepository.findByNormalizedUsername("alice")).isPresent();
         jdbcTemplate.update("update account_deletion_jobs set not_before = ? where id = ?",
                 Instant.EPOCH, UUID.fromString(jobId));
         assertThat(accountDeletionCleanupService.processPending()).isEqualTo(1);
@@ -604,12 +694,12 @@ class AuthControllerTests {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isUnauthorized());
-        assertThat(userRepository.findByNormalizedUsername("alice@example.com")).isEmpty();
+        assertThat(userRepository.findByNormalizedUsername("alice")).isEmpty();
     }
 
     @Test
     void accountDeletionWaitsForUploadUrlExpiryAndClaimsCleanupJobOnce() throws Exception {
-        JsonNode alice = register("alice@example.com", "delete-race", "Alice's browser");
+        JsonNode alice = register("alice", "delete-race", "Alice's browser");
         String token = alice.path("tokens").path("accessToken").asText();
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
         String objectKey = "users/" + userId + "/assets/race.bin";
@@ -652,7 +742,7 @@ class AuthControllerTests {
 
     @Test
     void completedAccountDeletionReconcilesLateWritesToPreviouslyAuthorizedObjectKeys() throws Exception {
-        JsonNode alice = register("alice@example.com", "delete-late-write", "Alice's browser");
+        JsonNode alice = register("alice", "delete-late-write", "Alice's browser");
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
         AssetUploadIntentCommand command = new AssetUploadIntentCommand(
                 0, UUID.randomUUID(), "late-write.bin", 4, "application/octet-stream", null);
@@ -695,7 +785,7 @@ class AuthControllerTests {
 
     @Test
     void loginWaitsForUserLockBeforeCheckingPasswordAndIssuingSession() throws Exception {
-        JsonNode alice = register("alice@example.com", "login-lock", "Alice's browser");
+        JsonNode alice = register("alice", "login-lock", "Alice's browser");
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
         CountDownLatch started = new CountDownLatch(1);
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
@@ -705,7 +795,7 @@ class AuthControllerTests {
                 assertThat(userRepository.findForUpdateById(userId)).isPresent();
                 Future<AuthResult> login = executor.submit(() -> {
                     started.countDown();
-                    return identityService.login("alice@example.com", "correct horse battery staple",
+                    return identityService.login("alice", "correct horse battery staple",
                             new DeviceCommand("stale-login", "Stale login", DevicePlatform.WEB));
                 });
                 loginRef.set(login);
@@ -732,7 +822,7 @@ class AuthControllerTests {
 
     @Test
     void refreshWaitsForUserLockBeforeLockingOrRotatingSession() throws Exception {
-        JsonNode alice = register("alice@example.com", "refresh-lock", "Alice's browser");
+        JsonNode alice = register("alice", "refresh-lock", "Alice's browser");
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
         String rawRefreshToken = alice.path("tokens").path("refreshToken").asText();
         CountDownLatch started = new CountDownLatch(1);
@@ -773,7 +863,7 @@ class AuthControllerTests {
 
     @Test
     void disabledAccountCannotCreateAnAssetUploadIntent() throws Exception {
-        JsonNode alice = register("alice@example.com", "disabled-upload", "Alice's browser");
+        JsonNode alice = register("alice", "disabled-upload", "Alice's browser");
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
         identityService.requestAccountDeletion(userId, "correct horse battery staple");
 
@@ -790,9 +880,14 @@ class AuthControllerTests {
     }
 
     private JsonNode register(String username, String clientDeviceKey, String deviceName) throws Exception {
+        return registerWithEmail(username, clientDeviceKey, AuthTestAccounts.newEmail());
+    }
+
+    private JsonNode registerWithEmail(String username, String clientDeviceKey, String email) throws Exception {
         return json(mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson(username, "correct horse battery staple", clientDeviceKey, "Alice")))
+                        .content(registerJson(username, "correct horse battery staple", clientDeviceKey,
+                                AuthTestAccounts.registrationFields(mockMvc, email))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION, org.hamcrest.Matchers.startsWith("/api/auth/sessions/")))
                 .andReturn());
@@ -810,9 +905,14 @@ class AuthControllerTests {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private String registerJson(String username, String password, String clientDeviceKey, String displayName) {
-        return "{\"username\":\"" + username + "\",\"password\":\"" + password
-                + "\",\"displayName\":\"" + displayName + "\",\"clientDeviceKey\":\"" + clientDeviceKey
+    private String invalidVerificationFields() {
+        return "\"email\":\"" + AuthTestAccounts.newEmail() + "\",\"emailCode\":\"123456\",";
+    }
+
+    private String registerJson(String username, String password, String clientDeviceKey,
+            String verificationFields) {
+        return "{" + verificationFields + "\"username\":\"" + username + "\",\"password\":\"" + password
+                + "\",\"clientDeviceKey\":\"" + clientDeviceKey
                 + "\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}";
     }
 

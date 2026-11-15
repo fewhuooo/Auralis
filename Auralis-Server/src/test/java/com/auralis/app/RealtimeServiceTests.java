@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.realtime.RealtimeEventPublisher;
 import com.auralis.app.realtime.RealtimeEventType;
 import com.auralis.app.realtime.RealtimeService;
@@ -40,8 +41,7 @@ class RealtimeServiceTests {
 
     @Test
     void ticketIsUserBoundSingleUseAndEventsDoNotCrossUsers() {
-        AuthResult owner = identityService.register("realtime-owner@example.com", "correct horse battery staple",
-                "Realtime owner", new DeviceCommand("realtime-device", "Test", DevicePlatform.WEB));
+        AuthResult owner = AuthTestAccounts.register(identityService, "realtime-owner@example.com", "correct horse battery staple", new DeviceCommand("realtime-device", "Test", DevicePlatform.WEB));
         UUID userId = owner.user().id();
         UUID otherUserId = UUID.randomUUID();
         String rawTicket = realtimeService.issue(userId, owner.serverDeviceId()).ticket();
@@ -76,8 +76,7 @@ class RealtimeServiceTests {
 
     @Test
     void committedDomainWritePublishesRealtimeEvent() {
-        AuthResult owner = identityService.register("realtime-domain@example.com", "correct horse battery staple",
-                "Realtime domain", new DeviceCommand("realtime-domain-device", "Test", DevicePlatform.WEB));
+        AuthResult owner = AuthTestAccounts.register(identityService, "realtime-domain@example.com", "correct horse battery staple", new DeviceCommand("realtime-domain-device", "Test", DevicePlatform.WEB));
         var events = new CopyOnWriteArrayList<RealtimeEventView>();
         AutoCloseable subscription = eventPublisher.subscribe(owner.user().id(), events::add);
 

@@ -1,5 +1,11 @@
 # Auralis 部署指南
 
+### 2026-11-15 验证码邮件配置
+
+在后端运行环境配置 `AURALIS_MAIL_HOST`、`AURALIS_MAIL_PORT`（默认 587）、`AURALIS_MAIL_USERNAME`、`AURALIS_MAIL_PASSWORD` 和 `AURALIS_MAIL_FROM`。默认要求 STARTTLS，`AURALIS_MAIL_MAX_SENDS_PER_MINUTE` 限制每种用途的每分钟全局发送量，默认 60。Docker Compose 会将根 `.env` 传入 backend。发件地址须允许当前 SMTP 账号代发。
+
+实际启用前，用测试邮箱分别走一次注册和找回密码。发送接口 204 表示请求已受理，收件箱收到验证码后再验证完整流程。缺少 SMTP 主机或发件地址时，发码接口返回 503。
+
 ### 2026-11-13 Overview 单次输入上限
 
 本机根 `.env` 设置 `AURALIS_AI_OVERVIEW_MAX_INPUT_TOKENS=32768`。正数限制每次 Overview 模型请求的估算输入 Token，超过时尝试分批。设为 `0` 可取消这项额外限制。以后修改此值，使用当前镜像重新创建 backend 容器即可生效。

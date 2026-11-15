@@ -29,7 +29,11 @@ public class JwtAuthenticationFilter implements Converter<Jwt, AbstractAuthentic
         }
         try {
             UUID userId = UUID.fromString(jwt.getSubject());
-            if (userRepository.findById(userId).filter(user -> user.getStatus() == UserStatus.ACTIVE).isEmpty()) {
+            Object generation = jwt.getClaims().get("credentialGeneration");
+            if (!(generation instanceof Number value)
+                    || userRepository.findById(userId)
+                    .filter(user -> user.getStatus() == UserStatus.ACTIVE && user.getCredentialGeneration() == value.longValue())
+                    .isEmpty()) {
                 throw new BadCredentialsException("Account is unavailable");
             }
             AuthenticatedUser principal = new AuthenticatedUser(

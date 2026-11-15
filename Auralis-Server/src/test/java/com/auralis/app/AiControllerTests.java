@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -53,9 +54,8 @@ class AiControllerTests {
 
     @Test
     void exposesOnlyTheAuthenticatedUsersUsageSnapshot() throws Exception {
-        var auth = identityService.register(
-                "usage-" + UUID.randomUUID() + "@example.com",
-                "correct horse battery staple", "usage-controller",
+        var auth = AuthTestAccounts.register(identityService, "usage-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("usage-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
 
         mockMvc.perform(get("/api/ai/usage")

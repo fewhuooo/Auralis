@@ -20,10 +20,14 @@ class IdentitySchemaTests {
         assertThat(jdbcTemplate.queryForObject(
                 "select version from flyway_schema_history where version = '1'", String.class))
                 .isEqualTo("1");
+        assertThat(jdbcTemplate.queryForObject(
+                "select version from flyway_schema_history where version = '46'", String.class))
+                .isEqualTo("46");
 
         assertThat(tableExists("users")).isTrue();
         assertThat(tableExists("devices")).isTrue();
         assertThat(tableExists("refresh_sessions")).isTrue();
+        assertThat(tableExists("auth_email_codes")).isTrue();
     }
 
     private boolean tableExists(String tableName) {

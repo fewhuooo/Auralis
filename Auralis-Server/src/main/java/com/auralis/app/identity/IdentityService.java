@@ -10,7 +10,13 @@ import com.auralis.app.identity.internal.security.RefreshTokenHasher;
 import com.auralis.app.identity.internal.security.TokenService;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.dao.DataIntegrityViolationException;
+import java.util.concurrent.RejectedExecutionException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +44,7 @@ import java.awt.image.BufferedImage;
 @Service
 public class IdentityService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(IdentityService.class);
     private static final String INVALID_CREDENTIALS_CODE = "UNAUTHENTICATED";
     private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid credentials";
 
@@ -50,6 +57,9 @@ public class IdentityService {
     private final Clock clock;
     private final JdbcTemplate jdbcTemplate;
     private final long uploadIntentTtlSeconds;
+    private final AuthEmailCodes emailCodes;
+    private final AuthEmailDelivery emailDelivery;
+    private final TaskExecutor authEmailExecutor;
     public IdentityService(
             UserRepository userRepository,
             DeviceRepository deviceRepository,
@@ -59,6 +69,9 @@ public class IdentityService {
             RefreshTokenHasher refreshTokenHasher,
             Clock clock,
             JdbcTemplate jdbcTemplate,
+            AuthEmailCodes emailCodes,
+            AuthEmailDelivery emailDelivery,
+            @Qualifier("authEmailExecutor") TaskExecutor authEmailExecutor,
             @Value("${auralis.upload.storage.presign-ttl-seconds:300}") long uploadIntentTtlSeconds) {
         this.userRepository = userRepository;
         this.deviceRepository = deviceRepository;
@@ -68,6 +81,9 @@ public class IdentityService {
         this.refreshTokenHasher = refreshTokenHasher;
         this.clock = clock;
         this.jdbcTemplate = jdbcTemplate;
+        this.emailCodes = emailCodes;
+        this.emailDelivery = emailDelivery;
+        this.authEmailExecutor = authEmailExecutor;
         this.uploadIntentTtlSeconds = Math.max(0, uploadIntentTtlSeconds);
     }
 
@@ -89,27 +105,65 @@ public class IdentityService {
                 .orElseThrow(this::unauthenticated);
     }
 
-    @Transactional
-    public AuthResult register(String username, String password, String displayName, DeviceCommand device) {
+    public void sendRegistrationCode(String email) {
+        queueEmailCode(normalizeEmail(email), AuthEmailCodes.Purpose.REGISTRATION);
+    }
+
+    public void sendPasswordResetCode(String email) {
+        queueEmailCode(normalizeEmail(email), AuthEmailCodes.Purpose.PASSWORD_RESET);
+    }
+
+    @Transactional(noRollbackFor = InvalidEmailCodeException.class)
+    public AuthResult register(
+            String username, String email, String emailCode, String password, DeviceCommand device) {
         String normalizedUsername = normalizeUsername(username);
+        String trimmedUsername = username.trim();
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedUsername.contains("@")) {
+            throw new IdentityException("VALIDATION_FAILED", "Username must not contain @");
+        }
         requirePasswordFitsEncoder(password);
         if (userRepository.findByNormalizedUsername(normalizedUsername).isPresent()) {
             throw new IdentityException("MUTATION_REJECTED", "Username is already registered");
         }
-        UserEntity user = userRepository.save(new UserEntity(
+        emailCodes.consume(normalizedEmail, AuthEmailCodes.Purpose.REGISTRATION, emailCode);
+        UserEntity user = new UserEntity(
                 UUID.randomUUID(),
-                username.trim(),
+                trimmedUsername,
                 normalizedUsername,
                 passwordEncoder.encode(password),
-                displayName,
+                trimmedUsername,
                 null,
-                UserStatus.ACTIVE));
-        return issueForUser(user, device);
+                UserStatus.ACTIVE);
+        user.setVerifiedEmail(normalizedEmail);
+        UserEntity saved;
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException exception) {
+            throw new IdentityException("MUTATION_REJECTED", "Username or email is already registered");
+        }
+        return issueForUser(saved, device);
+    }
+
+    @Transactional(noRollbackFor = InvalidEmailCodeException.class)
+    public void resetPassword(String email, String emailCode, String newPassword) {
+        requirePasswordFitsEncoder(newPassword);
+        String normalizedEmail = normalizeEmail(email);
+        UserEntity user = userRepository.findForUpdateByEmail(normalizedEmail)
+                .filter(found -> found.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(InvalidEmailCodeException::new);
+        emailCodes.consume(normalizedEmail + ":" + user.getId(), AuthEmailCodes.Purpose.PASSWORD_RESET, emailCode);
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.incrementCredentialGeneration();
+        refreshSessionRepository.revokeAllForUser(user.getId(), clock.instant());
     }
 
     @Transactional
     public AuthResult login(String username, String password, DeviceCommand device) {
-        UserEntity user = userRepository.findForUpdateByNormalizedUsername(normalizeUsername(username)).orElse(null);
+        String identifier = normalizeUsername(username);
+        UserEntity user = (identifier.contains("@")
+                ? userRepository.findForUpdateByEmail(identifier)
+                : userRepository.findForUpdateByNormalizedUsername(identifier)).orElse(null);
         if (user == null || user.getStatus() != UserStatus.ACTIVE
                 || !passwordEncoder.matches(password, user.getPasswordHash())) {
             throw invalidCredentials();
@@ -158,15 +212,16 @@ public class IdentityService {
         refreshSessionRepository.save(replacement);
         return new AuthResult(
                 toUserView(user),
-                tokenService.issueTokenPair(user.getId(), nextSessionId, device.getId(), now, nextRefreshToken),
+                tokenService.issueTokenPair(user.getId(), nextSessionId, device.getId(), user.getCredentialGeneration(), now, nextRefreshToken),
                 nextSessionId,
                 device.getId());
     }
 
     @Transactional
     public void logout(UUID userId, UUID sessionId) {
+        userRepository.findForUpdateById(userId);
         refreshSessionRepository.findByIdAndUserId(sessionId, userId)
-                .ifPresent(session -> session.revoke(clock.instant()));
+                .ifPresent(session -> refreshSessionRepository.revokeFamily(session.getRotationFamilyId(), clock.instant()));
     }
 
     @Transactional(readOnly = true)
@@ -369,7 +424,7 @@ public class IdentityService {
                 now.plusSeconds(tokenService.requireIdentityProperties().refreshSessionTtlSeconds())));
         return new AuthResult(
                 toUserView(user),
-                tokenService.issueTokenPair(user.getId(), session.getId(), device.getId(), now, refreshToken),
+                tokenService.issueTokenPair(user.getId(), session.getId(), device.getId(), user.getCredentialGeneration(), now, refreshToken),
                 session.getId(),
                 device.getId());
     }
@@ -447,6 +502,48 @@ public class IdentityService {
 
     private IdentityException invalidAvatar() {
         return new IdentityException("UPLOAD_VALIDATION_FAILED", "Avatar must be a valid PNG or JPEG image");
+    }
+
+    private void queueEmailCode(String email, AuthEmailCodes.Purpose purpose) {
+        emailDelivery.requireConfigured();
+        try {
+            authEmailExecutor.execute(() -> issueAndDeliverEmailCode(email, purpose));
+        } catch (RejectedExecutionException exception) {
+            throw new IdentityException("SERVICE_UNAVAILABLE", "Account email delivery is unavailable");
+        }
+    }
+
+    private void issueAndDeliverEmailCode(String email, AuthEmailCodes.Purpose purpose) {
+        try {
+            var existing = userRepository.findByEmail(email);
+            String addressKey = email;
+            if (purpose == AuthEmailCodes.Purpose.REGISTRATION) {
+                if (existing.isPresent()) {
+                    return;
+                }
+            } else {
+                var active = existing.filter(user -> user.getStatus() == UserStatus.ACTIVE);
+                if (active.isEmpty()) {
+                    return;
+                }
+                addressKey = email + ":" + active.get().getId();
+            }
+            String code = emailCodes.issue(addressKey, purpose);
+            if (code == null) {
+                return;
+            }
+            String action = purpose == AuthEmailCodes.Purpose.REGISTRATION
+                    ? "verify your email address"
+                    : "reset your password";
+            emailDelivery.send(email, "Your Auralis verification code",
+                    "Use this code to " + action + ": " + code + "\n\nThis code expires in 10 minutes.");
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Account email delivery failed for {}", purpose);
+        }
+    }
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeUsername(String username) {

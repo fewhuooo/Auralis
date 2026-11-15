@@ -1,4 +1,4 @@
-import request, { captureAuthSession, refreshChatAccessToken, SyncScopeChangedError } from './request.ts'
+import request, { captureAuthSession, refreshInSession, SyncScopeChangedError } from './request.ts'
 import { streamWithAccessTokenRefresh } from './authenticatedSse.ts'
 import { getClientRuntimeConfig } from '../config/runtime.ts'
 import { useAuthStore } from '../store/useAuthStore.ts'
@@ -201,7 +201,7 @@ function streamChatRequest(
   }
 
   return (async function* () {
-    const stream = streamWithAccessTokenRefresh(token, open, () => refreshChatAccessToken(session), signal, assertSessionCurrent)
+    const stream = streamWithAccessTokenRefresh(token, open, () => refreshInSession(session), signal, assertSessionCurrent)
     for await (const event of stream) {
       assertSessionCurrent()
       if (event.event && event.data && typeof event.data === 'object') {

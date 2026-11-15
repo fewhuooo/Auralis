@@ -1,5 +1,9 @@
 # PC 前端模块
 
+### 2026-11-15 PC 登录注册与会话恢复
+
+登录支持用户名或已验证邮箱，注册需要邮箱验证码，忘记密码可通过验证邮箱重置。个人中心直接展示用户名。续期网络错误保留本机会话，明确失效时导航至登录页并保留原受保护入口。桌面登录页提供透明拖动区和窗口控制。
+
 ### 2026-11-14 时间线拖放与同步
 
 Timeline 将空槽插入、卡片主体放置、标题换位、周列跨天和拖回待办统一交给 Task Store。预览和提交共用排期计算，以任务 ID、原排期时间和落点的完整日期核对操作。取消拖动立即清除高亮。任务到时自动完成会保留原排期时间；新建提交期间防止重复保存，失败保留草稿；删除结果使用现有消息反馈。
@@ -878,7 +882,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 
 - **搜索**：SearchPalette 搜索本地知识块标题、学科和正文内容，最多展示 6 项；点击结果通过 `openBlock` 路由参数交给 Dashboard 打开详情。AI 快捷项当前没有入口。
 - **资产中心**：全局与学科文件树暂时都把 Source 状态固定显示为“正常”，未反映实际解析状态；该项按 IMPORTANT 登记在 [问题和审查](../current/IssuesAndReview.md)。
-- **登录与账户**：忘记密码、隐私与条款入口目前是占位提示。Profile 提交异步注销请求后退出登录，页面没有注销作业进度查询。文档处理主密钥只用于本机加密 cache/package，产品已决定不增加通用密钥备份/恢复入口；密钥确认丢失后的自动新建、废弃旧续传状态并从原文件重处理尚未实现，当前仍报告 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`，详见[密钥恢复设计](../design/2026-09-04-pc-document-encryption-recovery-design.md)。
+- **登录与账户**：登录页支持使用邮箱验证码找回密码。Profile 提交异步注销请求后退出登录，页面没有注销作业进度查询。文档处理主密钥只用于本机加密 cache/package，产品已决定不增加通用密钥备份/恢复入口；密钥确认丢失后的自动新建、废弃旧续传状态并从原文件重处理尚未实现，当前仍报告 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`，详见[密钥恢复设计](../design/2026-09-04-pc-document-encryption-recovery-design.md)。
 - **时间轴与通知**：时间轴能展示任务完成状态及从任务描述解析出的知识块关联，但没有手动完成操作或独立知识块选择器。应用只有临时操作通知，没有持久收件箱。
 - **数据边界**：Local Asset 尚无备份、导出和恢复闭环。一般偏好保存在端侧，尚无通用服务端偏好同步。
 - **范围与验收**：上述登录恢复、注销进度、时间轴补充操作和通知收件箱仍为 OPTIONAL/待产品范围确认；文档处理密钥丢失后的自动重新处理策略已确认，待代码实现与验收。状态、证据与关闭条件见 [当前问题](../current/IssuesAndReview.md)。本节静态盘点不代表 GUI 或真实服务已验收。
@@ -1041,8 +1045,7 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 
 ### 2026-09-25 PC 个人空间与设置页 10 类前端真实链路打通与闭环
 
-- **账户资料（3 类）真实服务端流转**：
-  - **昵称**：`saveNickname()` 接入 `useAuthApi.updateProfile`（`PUT /api/auth/me`），携带当前 `baseVersion` 与 `displayName`，处理 409 `RESOURCE_VERSION_CONFLICT` 并同步更新 store 与本地视图；
+- 账户区展示当前账号的用户名，头像和密码使用服务端接口。
   - **头像**：接入 `useAuthApi.getAvatarBlob`（`GET /api/auth/me/avatar`）在挂载时动态读取真实图片 Blob 并转为安全的 ObjectURL；上传接入 `useAuthApi.uploadAvatar`（`POST /api/auth/me/avatar`），客户端校验 PNG/JPEG 且 ≤5MB；重置接入 `useAuthApi.resetAvatar`（`DELETE /api/auth/me/avatar`）；彻底废弃本地 localStorage 存储头像数据；
   - **改密**：新密码至少 12 个 UTF-16 代码单元、最多 72 个 UTF-8 字节。`useAuthApi.changePassword`（`PUT /api/auth/password`）传递 `baseVersion`、`currentPassword` 与 `newPassword`；原密码不匹配在表单内提示，Bearer 失效仍走刷新。密码更新后提示会话撤销边界并刷新版本。
 - **AI 设置（3 类）服务端规范化与真实探测测试**：
@@ -1495,7 +1498,7 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 - Asset：上传、处理状态和资料组织；首屏并行读取 Subject、Source、KnowledgeBlock 与 Task 的本地 Store 投影，任一项读取失败仍构建其余本地树并关闭 loading。各 Store 随后独立刷新云端结果、通过其 repository cache 写回本地；资产页监听四类投影及文档处理任务并重建树，不重新显示 loading。文件树节点（全部文件与各学科文件）由 Source 的实际 `ingestionStatus` 与 `useDocumentProcessingStore` 本地任务真实驱动，按已就绪（READY）、解析失败（FAILED）、待本机处理（AWAITING_CLIENT）及处理中（PARSING/INDEXING/VALIDATING/PENDING 等）渲染对应的状态圆点、详情徽标及悬浮说明，不再硬编码固定为“正常”。资产树的“全部任务”和各学科任务目录均来自 `useTaskStore` 的当前用户任务，不注入静态演示任务。任务按 `未排期`、`未完成`、`已完成` 三个并列分组，截止时间存在时按截止时间排序；任务完成切换回写 Task API/repository。任务编辑器不再提供认知负荷按钮，改为 30 分钟步进的预计用时，并可保存标题、备注、截止日期和时长。`/asset?focus=unassigned-tasks` 会展开并聚焦“未排期”。真实 Source 文件以 `FilePreview` 为唯一预览实现，TreeNode 透传 Source 的 `id`、`assetId`、`name` 和 `fileType`；旧 `PdfViewer`、首页 PDF 伴读入口和 Asset 的 `filePath`/Markdown 预览分支均不保留。
 - Asset 关系星图使用真实 Subject、Source 和 KnowledgeBlock 投影。Source 连接所属 Subject；KnowledgeBlock 的 `sourceFileId` 指向同学科现存 Source 时连接该 Source，否则连接所属 Subject，不补造关系。力导向计算包含对称节点互斥、按关系类型设目标长度的弹簧吸引、弱重力与速度阻尼；节点初始位置由稳定 ID 决定，初始 RAF 在收敛或 180 帧上限后停止。同范围数据刷新保留存活节点坐标与相机，切换全局/学科范围时重新适配视图。画布使用 ResizeObserver 与设备像素比绘制，提供适配视图、指针中心滚轮缩放、平移及任意节点拖动。鼠标、触控和触控笔共用 Pointer Events 与指针捕获；超过移动阈值后暂停初始模拟，被拖节点保持在指针坐标，关联邻居实时通过弹簧力响应并重画连线，每段响应最多 36 帧并在收敛时提前停止，释放后最多运行 30 帧低强度松弛。用户摆放在同范围更新中保留。点击文件节点选择树中 Source 并在中栏显示 `FilePreview`；点击知识块节点在中栏显示对应编辑器，通过 Dashboard 的 `open-block-detail` 事件打开详情。拖动或 pointercancel 不触发预览。
 - Dashboard/Timeline：排期和任务时间管理，排期队列展示无 `scheduledAt` 且未完成/未取消的所有活跃任务，截止时间（`dueAt`）用于提醒、排序及新排期完整结束上限；拖放、按天排期、换位与顺延必须保证每个新安排完整结束于各自截止时刻或之前，无截止不限制。Task Store 以认证态的 `serverDeviceId` 访问用户隔离的本地 repository；首次加载先渲染本地任务，后台 Sync read 更新 Store，读取失败时保留当前投影。Dashboard 切日调用 `setSelectedDay` 重建内存槽位；Timeline 切日保留现有 `await taskStore.loadLocalTasks()` 本地重读，不能清空已有任务。按槽排期和同日改期在进入写队列前捕获具体本地日期，提交窗口与来源校验使用该日期，等待期间切日不会改变已发起落点。周视图日期列传入完整 `dateKey`，按天入口支持活动的已有排期任务改日，沿用完整冲突、过去时间与截止校验。Timeline 重挂载从 Store 的完整选中日期初始化标题与日期栏，和任务槽位保持一致。Timeline 页面支持单任务与换位拖拽、半小时网格槽位渲染；Dashboard 首页看盘采用轻量线性卡片列表，无网格槽位，不作为可拖拽调时，按开始时间升序排列。启动 fetch 和运行中分钟级检查会执行到期转换：有 `scheduledAt` 的任务在 `scheduledAt + durationMinutes` 结束时刻到达后更新为完成并保留排期；无 `scheduledAt` 的 TODO/IN_PROGRESS 活动任务在有效 `dueAt <= now` 时自动完成并保留真实截止时间，DONE/CANCELLED、空或无效截止时间不产生完成写入；卡片继续通过 due-badge 展示截止日期。自动检查在 TASK 投影刷新时也会执行，应用关闭期间到期的任务在下次启动补处理。转换失败保留原数据并记录错误。首页和独立时间轴统一展示当前/所选日期所在的完整自然周（周日至周六），避免只保存 `dayCode` 时跨周解析到下一周。首页日期格在日数字上方显示 `Sun` 至 `Sat` 英文星期缩写，选中日期使用固定约 `36px × 36px` 圆形绿色背景，顶栏以“时间轴 · X月”显示月份。日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记；已排期任务拖动到新槽位时以目标槽位覆盖旧 `scheduledAt`。时间轴“导入任务”进入资产库未排期分组。普通任务更新、按天排期和取消排期通过 `useTaskStore` 写入本地 repository/outbox 并在后台同步；按槽插入与标题交换由 `useTaskStore` 在本地计算后一次保存所有受影响 Task 和单条稳定 ID 排期命令，在线与离线使用同一条 Sync 路径；断网时保留本地投影等待重放，服务端拒绝或版本冲突时按返回的 Task 数组恢复投影并提示用户。2026-10-07 放置与交换修复：按天择槽覆盖 22:30；交换发 API 前校验双方实际新起点位于 08:00–22:30，紧邻 compact 以原共同窗口的本地日期为边界；越界保留整组数据。在线响应原子合并保护较新版本与墓碑，投影重读当前 Repository；专项 127/127、PC 542/542，类型/静态/构建和唯一只读审查通过；真实环境验收及完整证据见现行实施记录。
-- 个人资料卡展示昵称与当前设备，登录账号在「账号与安全凭证」查看。设置面板保留会话和同步状态、配置要求与操作反馈，分组标题和设置项标签采用 Tabler 图标。「立即同步」位于「同步状态」行。
+- 个人资料卡展示用户名与当前设备，登录账号在「账号与安全凭证」查看。设置面板保留会话和同步状态、配置要求与操作反馈，分组标题和设置项标签采用 Tabler 图标。「立即同步」位于「同步状态」行。
 - Profile。左栏「账号与安全凭证」分为账号资料、登录设备管理、数据与账户重置，退出登录位于设备区。右栏「AI 设置」顶部为自动生成概览偏好，其下分为模型与服务、使用额度两区，分区内容向内缩进。模型配置依次为服务商、Base URL、API Key 和对话模型，服务商通过输入框填写。统计通过 `useStatsStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
 - Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和本机今日专注数据；实际秒数排除暂停与休息，中断保存耗时但不增加完成轮次，自然结束才增加一次。使用时间戳与持久状态恢复，路由切换不重置。新会话使用稳定 UUID，普通局域网 HTTP 下使用现有 UUIDv7 工具。任务选择器与时间轴联动，提供已排期任务和「自由学习」；运行与暂停时显示本轮已绑定的任务或自由学习。
 - 专注记录完成时尝试上传，后台核心同步结束后补传待发事件。进入 Profile 时若有待发事件则请求后台同步；「立即同步」等待核心同步后补传专注，再刷新服务端全设备聚合。单条业务拒绝保留原事件并继续处理其他记录；服务暂不可用或连接中断时停止本次尝试，等待现有同步触发重试。未 ACK 的本机事件只计入本机历史，Profile 显示待上传状态。

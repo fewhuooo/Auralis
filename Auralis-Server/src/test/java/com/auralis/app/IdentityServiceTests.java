@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -96,16 +97,15 @@ class IdentityServiceTests {
 
     @Test
     void registrationNormalizesUsernameAndStoresDelegatedPasswordHash() {
-        AuthResult result = identityService.register(
-                "  Alice@example.com ",
+        AuthResult result = AuthTestAccounts.register(identityService, "  Alice ",
                 "correct horse battery staple",
-                "Alice",
                 new DeviceCommand("browser-1", "Browser", DevicePlatform.WEB));
 
-        assertThat(result.user().username()).isEqualTo("Alice@example.com");
+        assertThat(result.user().username()).isEqualTo("Alice");
+        assertThat(result.user().displayName()).isEqualTo("Alice");
         assertThat(result.user().displayName()).isEqualTo("Alice");
         assertThat(result.tokens().refreshToken()).isNotBlank();
-        assertThat(userRepository.findByNormalizedUsername("alice@example.com"))
+        assertThat(userRepository.findByNormalizedUsername("alice"))
                 .get()
                 .extracting(user -> user.getPasswordHash())
                 .asString()
@@ -115,16 +115,14 @@ class IdentityServiceTests {
 
     @Test
     void unknownAndWrongPasswordUseTheSameExternalError() {
-        identityService.register(
-                "alice@example.com",
+        AuthTestAccounts.register(identityService, "alice",
                 "correct horse battery staple",
-                "Alice",
                 new DeviceCommand("browser-1", "Browser", DevicePlatform.WEB));
 
         IdentityException unknown = catchIdentityException(() -> identityService.login(
                 "missing@example.com", "wrong", new DeviceCommand("browser-2", "Browser", DevicePlatform.WEB)));
         IdentityException wrong = catchIdentityException(() -> identityService.login(
-                "alice@example.com", "wrong", new DeviceCommand("browser-2", "Browser", DevicePlatform.WEB)));
+                "alice", "wrong", new DeviceCommand("browser-2", "Browser", DevicePlatform.WEB)));
 
         assertThat(unknown.code()).isEqualTo("UNAUTHENTICATED");
         assertThat(wrong.code()).isEqualTo(unknown.code());
@@ -182,14 +180,12 @@ class IdentityServiceTests {
     }
 
     private AuthResult registerAlice() {
-        return identityService.register(
-                "alice@example.com", "correct horse battery staple", "Alice",
+        return AuthTestAccounts.register(identityService, "alice", "correct horse battery staple",
                 new DeviceCommand("browser-1", "Browser", DevicePlatform.WEB));
     }
 
     private AuthResult registerBob() {
-        return identityService.register(
-                "bob@example.com", "correct horse battery staple", "Bob",
+        return AuthTestAccounts.register(identityService, "bob", "correct horse battery staple",
                 new DeviceCommand("browser-2", "Browser", DevicePlatform.WEB));
     }
 

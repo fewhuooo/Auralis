@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.sync.ChangeLogPage;
 import com.auralis.app.sync.ChangeLogService;
 import com.auralis.app.sync.MutationDecision;
@@ -745,7 +746,7 @@ class SyncServiceTests {
     }
 
     private AuthResult register(String prefix) {
-        return identityService.register(prefix + "-" + UUID.randomUUID(), "phase-three-password", "Sync Test",
+        return AuthTestAccounts.register(identityService, prefix + "-" + UUID.randomUUID(), "phase-three-password",
                 new DeviceCommand("device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
     }
 

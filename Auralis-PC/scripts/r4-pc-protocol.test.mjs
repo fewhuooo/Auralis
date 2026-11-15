@@ -18,7 +18,7 @@ import {
   isValidUuid,
   resolveDevicePlatform,
 } from '../src/auth/deviceIdentity.ts';
-import { resolveAuthRedirect } from '../src/auth/authGuard.ts';
+import { resolveAuthRedirect, resolveLoginReturnPath } from '../src/auth/authGuard.ts';
 import { isValidSession } from '../src/auth/sessionValidation.ts';
 import { RealtimeController } from '../src/services/realtimeController.ts';
 import { register } from 'node:module';
@@ -324,6 +324,15 @@ test('resolves route redirects for public, protected, and login routes', () => {
   // Unprotected routes allow navigation regardless of session
   assert.equal(resolveAuthRedirect('/about', false, false), null);
   assert.equal(resolveAuthRedirect('/about', false, true), null);
+});
+
+test('returns from login only to a local protected route', () => {
+  const isProtected = (path) => path.split(/[?#]/, 1)[0] === '/subject/one';
+  assert.equal(resolveLoginReturnPath('/subject/one?tab=overview#outline', isProtected), '/subject/one?tab=overview#outline');
+  assert.equal(resolveLoginReturnPath('/login', isProtected), '/');
+  for (const path of [['/subject/one'], 'https://example.com', '//example.com', '/\\example.com', '/\u0009/example.com']) {
+    assert.equal(resolveLoginReturnPath(path, () => assert.fail('must not resolve an invalid path')), '/');
+  }
 });
 
 test('validates session hydration data and discards corrupted state', () => {

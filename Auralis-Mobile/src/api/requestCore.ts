@@ -24,7 +24,8 @@ export interface RequestExecutorDependencies {
   request(options: RequestAdapterOptions): void
   getAccessToken(): string | null
   refreshAccessToken(): Promise<boolean>
-  onUnauthenticated?(): void
+  getLoginGeneration?(): symbol
+  onUnauthenticated?(generation?: symbol): void
 }
 
 function queryString(params?: Record<string, unknown>): string {
@@ -35,9 +36,24 @@ function queryString(params?: Record<string, unknown>): string {
   return entries.length > 0 ? `?${entries.join('&')}` : ''
 }
 
+const publicAuthRoutes = new Set([
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/register/email-code',
+  '/api/auth/password/reset/email-code',
+  '/api/auth/password/reset',
+  '/api/auth/refresh',
+])
+
 export function createRequestExecutor(dependencies: RequestExecutorDependencies) {
-  const execute = <T>(options: CoreRequestOptions, retried = false): Promise<T> => new Promise((resolve, reject) => {
-    const token = dependencies.getAccessToken()
+  const execute = <T>(
+    options: CoreRequestOptions,
+    retried = false,
+    generation = dependencies.getLoginGeneration?.(),
+  ): Promise<T> => new Promise((resolve, reject) => {
+    const publicAuth = publicAuthRoutes.has(options.url)
+    const isCurrent = () => publicAuth || generation === dependencies.getLoginGeneration?.()
+    const token = publicAuth ? null : dependencies.getAccessToken()
     const header: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) header.Authorization = `Bearer ${token}`
 
@@ -48,17 +64,23 @@ export function createRequestExecutor(dependencies: RequestExecutorDependencies)
       header,
       timeout: options.timeout || 15_000,
       async success(response) {
-        const isRefreshRequest = options.url === '/api/auth/refresh'
-        if (response.statusCode === 401 && !retried && !options.skipAuthRefresh && !isRefreshRequest) {
+        if (!isCurrent()) {
+          reject(new Error('登录状态已变化，请重试。'))
+          return
+        }
+        if (response.statusCode === 401 && !retried && !options.skipAuthRefresh && !publicAuth) {
           try {
-            if (await dependencies.refreshAccessToken()) {
-              resolve(await execute<T>(options, true))
+            const refreshed = await dependencies.refreshAccessToken()
+            if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+            if (refreshed) {
+              resolve(await execute<T>(options, true, generation))
               return
             }
-          } catch {
-            // The normalized unauthenticated error below remains the public result.
+          } catch (error) {
+            reject(error)
+            return
           }
-          dependencies.onUnauthenticated?.()
+          dependencies.onUnauthenticated?.(generation)
         }
         if (response.statusCode >= 200 && response.statusCode < 300) {
           resolve(assertDirectDto(response.statusCode === 204 ? undefined : response.data) as T)

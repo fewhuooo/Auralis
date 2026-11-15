@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -181,8 +182,7 @@ class SyncCreatePostgresIntegrationTests {
     }
 
     private Owner register() {
-        AuthResult auth = identityService.register("sync-create-" + UUID.randomUUID(), "sync-create-password",
-                "Sync Create", new DeviceCommand("sync-create", "Test Device", DevicePlatform.WEB));
+        AuthResult auth = AuthTestAccounts.register(identityService, "sync-create-" + UUID.randomUUID(), "sync-create-password", new DeviceCommand("sync-create", "Test Device", DevicePlatform.WEB));
         UUID userId = auth.user().id();
         return new Owner(auth,
                 subjectService.create(userId, new SubjectCommand("First subject", null, null, "1")).id(),

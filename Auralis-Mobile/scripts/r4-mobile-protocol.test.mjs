@@ -147,11 +147,27 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
     deviceName: 'iPad',
     platform: 'IOS',
   })
+  const email = 'alice@example.test'
+  const emailCode = '123456'
+  await auth.sendRegistrationEmailCode({ email })
+  await auth.register({
+    username: 'alice', email, emailCode, password: 'very-long-password',
+    clientDeviceKey: 'device-key-1', deviceName: 'iPad', platform: 'IOS',
+  })
+  await auth.sendPasswordResetEmailCode({ email })
+  await auth.resetPassword({ email, emailCode, newPassword: 'a-new-long-password' })
+  assert.deepEqual(calls[1].options.body, { email })
+  assert.equal(calls[2].options.body.emailCode, emailCode)
+  assert.deepEqual(calls[4].options.body, { email, emailCode, newPassword: 'a-new-long-password' })
   await auth.logout()
   await realtime.issueTicket()
 
   assert.deepEqual(calls.map(({ path, method }) => `${method} ${path}`), [
     'post /api/auth/login',
+    'post /api/auth/register/email-code',
+    'post /api/auth/register',
+    'post /api/auth/password/reset/email-code',
+    'post /api/auth/password/reset',
     'post /api/auth/logout',
     'post /api/realtime/ticket',
   ])
@@ -261,6 +277,53 @@ test('SSE decoder preserves event boundaries across transport chunks', () => {
     { event: 'message.delta', data: 'hello' },
     { event: 'message.completed', data: { content: 'hello' } },
   ])
+})
+
+test('HTTP returns login errors without re-launching the page or refreshing a saved session', async () => {
+  const execute = createRequestExecutor({
+    apiBaseUrl: 'https://api.auralis.test',
+    request(options) {
+      assert.equal(options.header.Authorization, undefined)
+      options.success({ statusCode: 401, data: { status: 401, detail: 'Invalid credentials' } })
+    },
+    getAccessToken: () => 'saved-token',
+    refreshAccessToken: async () => assert.fail('public authentication must not refresh'),
+    onUnauthenticated: () => assert.fail('the original login form should receive the error'),
+  })
+  await assert.rejects(execute({ url: '/api/auth/login', method: 'POST' }),
+    (error) => error instanceof ApiProblemError && error.status === 401)
+})
+
+test('a temporary refresh failure on a protected route keeps the current local session', async () => {
+  const temporary = new Error('connection timed out')
+  const execute = createRequestExecutor({
+    apiBaseUrl: 'https://api.auralis.test',
+    request(options) { options.success({ statusCode: 401 }) },
+    getAccessToken: () => 'saved-token',
+    refreshAccessToken: async () => { throw temporary },
+    onUnauthenticated: () => assert.fail('a network failure must not clear the local session'),
+  })
+  await assert.rejects(execute({ url: '/api/subjects' }), (error) => error === temporary)
+})
+
+test('a response from an earlier login cannot refresh or re-launch the current session', async () => {
+  let generation = Symbol('first login')
+  let reply
+  const execute = createRequestExecutor({
+    apiBaseUrl: 'https://api.auralis.test',
+    request(options) {
+      assert.equal(options.header.Authorization, 'Bearer first-account')
+      reply = options.success
+    },
+    getAccessToken: () => 'first-account',
+    getLoginGeneration: () => generation,
+    refreshAccessToken: async () => assert.fail('an old request must not refresh a new login'),
+    onUnauthenticated: () => assert.fail('an old response must not clear a new login'),
+  })
+  const request = execute({ url: '/api/subjects', method: 'POST', data: { name: 'First account draft' } })
+  generation = Symbol('another login')
+  reply({ statusCode: 401 })
+  await assert.rejects(request, /登录状态已变化/)
 })
 
 test('HTTP transport retries one 401 with refreshed auth and returns a direct DTO', async () => {

@@ -1865,6 +1865,27 @@
         }
       }
     },
+    "/api/auth/register/email-code" : {
+      "post" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "sendRegistrationCode",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/EmailCodeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        }
+      }
+    },
     "/api/auth/refresh" : {
       "post" : {
         "tags" : [ "auth-controller" ],
@@ -1889,6 +1910,48 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/auth/password/reset" : {
+      "post" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "resetPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        }
+      }
+    },
+    "/api/auth/password/reset/email-code" : {
+      "post" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "sendPasswordResetCode",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/EmailCodeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
           }
         }
       }
@@ -4776,18 +4839,25 @@
           "username" : {
             "type" : "string",
             "maxLength" : 64,
+            "minLength" : 0,
+            "pattern" : "[^@]+"
+          },
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "maxLength" : 254,
             "minLength" : 0
+          },
+          "emailCode" : {
+            "type" : "string",
+            "minLength" : 1,
+            "pattern" : "[0-9]{6}"
           },
           "password" : {
             "type" : "string",
             "description" : "At most 72 UTF-8 bytes",
             "maxLength" : 72,
             "minLength" : 12
-          },
-          "displayName" : {
-            "type" : "string",
-            "maxLength" : 120,
-            "minLength" : 0
           },
           "clientDeviceKey" : {
             "type" : "string",
@@ -4804,7 +4874,7 @@
             "enum" : [ "WEB", "WINDOWS", "MACOS", "IOS", "ANDROID", "HARMONY", "UNKNOWN" ]
           }
         },
-        "required" : [ "clientDeviceKey", "deviceName", "displayName", "password", "platform", "username" ]
+        "required" : [ "clientDeviceKey", "deviceName", "email", "emailCode", "password", "platform", "username" ]
       },
       "AuthResult" : {
         "type" : "object",
@@ -4844,6 +4914,18 @@
           }
         }
       },
+      "EmailCodeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "maxLength" : 254,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "email" ]
+      },
       "RefreshRequest" : {
         "type" : "object",
         "properties" : {
@@ -4854,12 +4936,36 @@
         },
         "required" : [ "refreshToken" ]
       },
+      "PasswordResetRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "maxLength" : 254,
+            "minLength" : 0
+          },
+          "emailCode" : {
+            "type" : "string",
+            "minLength" : 1,
+            "pattern" : "[0-9]{6}"
+          },
+          "newPassword" : {
+            "type" : "string",
+            "description" : "At most 72 UTF-8 bytes",
+            "maxLength" : 72,
+            "minLength" : 12
+          }
+        },
+        "required" : [ "email", "emailCode", "newPassword" ]
+      },
       "LoginRequest" : {
         "type" : "object",
         "properties" : {
           "username" : {
             "type" : "string",
-            "maxLength" : 64,
+            "description" : "Username or verified email",
+            "maxLength" : 254,
             "minLength" : 0
           },
           "password" : {
@@ -5386,9 +5492,6 @@
       "JsonNode" : {
         "type" : "object",
         "properties" : {
-          "container" : {
-            "type" : "boolean"
-          },
           "array" : {
             "type" : "boolean"
           },
@@ -5401,10 +5504,32 @@
           "float" : {
             "type" : "boolean"
           },
-          "object" : {
+          "container" : {
             "type" : "boolean"
           },
+          "floatingPointNumber" : {
+            "type" : "boolean"
+          },
+          "bigDecimal" : {
+            "type" : "boolean"
+          },
+          "valueNode" : {
+            "type" : "boolean"
+          },
+          "nodeType" : {
+            "type" : "string",
+            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
+          },
           "missingNode" : {
+            "type" : "boolean"
+          },
+          "integralNumber" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
+            "type" : "boolean"
+          },
+          "boolean" : {
             "type" : "boolean"
           },
           "string" : {
@@ -5416,45 +5541,26 @@
           "binary" : {
             "type" : "boolean"
           },
-          "long" : {
+          "object" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "int" : {
             "type" : "boolean"
           },
           "textual" : {
             "type" : "boolean",
             "deprecated" : true
           },
-          "pojo" : {
+          "number" : {
             "type" : "boolean"
           },
           "short" : {
             "type" : "boolean"
           },
-          "int" : {
-            "type" : "boolean"
-          },
-          "number" : {
-            "type" : "boolean"
-          },
-          "boolean" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
-            "type" : "boolean"
-          },
-          "bigInteger" : {
-            "type" : "boolean"
-          },
-          "nodeType" : {
-            "type" : "string",
-            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
-          },
-          "valueNode" : {
-            "type" : "boolean"
-          },
-          "integralNumber" : {
-            "type" : "boolean"
-          },
-          "floatingPointNumber" : {
+          "long" : {
             "type" : "boolean"
           },
           "embeddedValue" : {

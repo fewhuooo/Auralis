@@ -1,4 +1,4 @@
-import type { components } from './generated/schema'
+import type { components, paths } from './generated/schema'
 import { defaultApiCallClient, type ApiCallClient } from './apiCallClient.ts'
 
 type RegisterRequest = components['schemas']['RegisterRequest']
@@ -8,8 +8,21 @@ type AuthResult = components['schemas']['AuthResult']
 type UserView = components['schemas']['UserView']
 type SessionListResponse = components['schemas']['SessionListResponse']
 
+type AuthPostBody<Path extends keyof paths> = paths[Path] extends {
+  post: { requestBody: { content: { 'application/json': infer Body } } }
+} ? Body : never
+
 export function createAuthApi(client: ApiCallClient = defaultApiCallClient) {
   return {
+    sendRegistrationEmailCode: (body: AuthPostBody<'/api/auth/register/email-code'>) => client.request(
+      '/api/auth/register/email-code', 'post', { body },
+    ) as Promise<void>,
+    sendPasswordResetEmailCode: (body: AuthPostBody<'/api/auth/password/reset/email-code'>) => client.request(
+      '/api/auth/password/reset/email-code', 'post', { body },
+    ) as Promise<void>,
+    resetPassword: (body: AuthPostBody<'/api/auth/password/reset'>) => client.request(
+      '/api/auth/password/reset', 'post', { body },
+    ) as Promise<void>,
     register: (body: RegisterRequest) => client.request(
       '/api/auth/register', 'post', { body },
     ) as Promise<AuthResult>,

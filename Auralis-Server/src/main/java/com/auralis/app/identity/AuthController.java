@@ -40,12 +40,31 @@ public class AuthController {
     public ResponseEntity<AuthResult> register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
         AuthResult result = identityService.register(
                 request.username(),
+                request.email(),
+                request.emailCode(),
                 request.password(),
-                request.displayName(),
                 request.device());
         return ResponseEntity.status(CREATED)
                 .location(URI.create("/api/auth/sessions/" + result.sessionId()))
                 .body(result);
+    }
+
+    @PostMapping("/register/email-code")
+    @ResponseStatus(NO_CONTENT)
+    public void sendRegistrationCode(@Valid @RequestBody AuthDtos.EmailCodeRequest request) {
+        identityService.sendRegistrationCode(request.email());
+    }
+
+    @PostMapping("/password/reset/email-code")
+    @ResponseStatus(NO_CONTENT)
+    public void sendPasswordResetCode(@Valid @RequestBody AuthDtos.EmailCodeRequest request) {
+        identityService.sendPasswordResetCode(request.email());
+    }
+
+    @PostMapping("/password/reset")
+    @ResponseStatus(NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody AuthDtos.PasswordResetRequest request) {
+        identityService.resetPassword(request.email(), request.emailCode(), request.newPassword());
     }
 
     @PostMapping("/login")

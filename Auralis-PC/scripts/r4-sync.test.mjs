@@ -28,10 +28,9 @@ function axiosResponse(config, data = {}) {
 }
 
 function axiosUnauthorized(config, data = {}) {
-  const error = new Error('adapter returned 401');
-  error.config = config;
-  error.response = { status: 401, data, headers: {}, config };
-  return error;
+  return new axios.AxiosError('adapter returned 401', axios.AxiosError.ERR_BAD_REQUEST, config, undefined, {
+    status: 401, data, headers: {}, config,
+  });
 }
 
 function requestAuthorization(config) {
@@ -1384,11 +1383,11 @@ test('an ordinary A refresh cannot join or overwrite a core sync B refresh', asy
   }
 });
 
-function installLoginNavigationRecorder(navigations) {
+function installLoginNavigationRecorder(navigations, location = { pathname: '/' }) {
   const previousWindow = globalThis.window;
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
-    value: { location: { pathname: '/', assign: (path) => navigations.push(path) } },
+    value: { location: { ...location, assign: (path) => navigations.push(path) } },
   });
   return () => {
     if (previousWindow === undefined) delete globalThis.window;
@@ -1553,6 +1552,91 @@ test('a failed native Chat refresh clears only its current login and navigates o
   }
 });
 
+test('transient refresh errors preserve login across Axios, Chat and Overview requests', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  const { streamAiMessage } = await import('../src/api/aiClient.ts');
+  const { postOverviewSse } = await import('../src/api/overviewSse.ts');
+  setActivePinia(createPinia());
+  const auth = useAuthStore();
+  auth.setSession({
+    user: { id: 'transient-refresh-owner', hasAvatar: false },
+    tokens: { accessToken: 'existing-access', refreshToken: 'existing-refresh' },
+    sessionId: 'existing-session', serverDeviceId: 'existing-device',
+  });
+  const startingGeneration = auth.loginGeneration;
+  const navigations = [];
+  const restoreWindow = installLoginNavigationRecorder(navigations);
+  const originalFetch = globalThis.fetch;
+  const originalAdapter = activeRequestAdapter;
+  const unauthorized = async () => Response.json({ code: 'UNAUTHENTICATED', status: 401 }, { status: 401 });
+  globalThis.fetch = unauthorized;
+  const command = { protocolVersion: 1, action: 'turn', conversationId: 'conv', requestId: 'request', content: 'question' };
+  const cases = [
+    { run: () => request.get('/api/auth/me'), code: axios.AxiosError.ERR_NETWORK },
+    { run: () => streamAiMessage(command)[Symbol.asyncIterator]().next(), code: axios.AxiosError.ECONNABORTED },
+    { run: () => postOverviewSse('/api/ai/overview', { mode: 'ALL' }, undefined, { fetch: unauthorized }), status: 503 },
+  ];
+  try {
+    for (const { run, code, status } of cases) {
+      activeRequestAdapter = async (config) => {
+        if (config.url !== '/api/auth/refresh') throw axiosUnauthorized(config);
+        assert.equal(requestPayload(config).refreshToken, 'existing-refresh');
+        throw new axios.AxiosError('unavailable', code, config, {}, status === undefined
+          ? undefined : { status, data: {}, headers: {}, config });
+      };
+      await assert.rejects(run(), {
+        name: 'ApiProblemError',
+        status: status ?? 0,
+        message: '暂时无法续期登录，请检查网络或稍后重试。',
+      });
+      assert.equal(auth.isAuthenticated, true);
+      assert.equal(auth.loginGeneration, startingGeneration);
+      assert.equal(auth.token, 'existing-access');
+      assert.equal(auth.refreshToken, 'existing-refresh');
+      assert.equal(auth.serverSessionId, 'existing-session');
+    }
+    assert.deepEqual(navigations, []);
+  } finally {
+    activeRequestAdapter = originalAdapter;
+    globalThis.fetch = originalFetch;
+    restoreWindow();
+  }
+});
+
+test('Overview refresh rejection returns to login with the original protected route', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  const { postOverviewSse } = await import('../src/api/overviewSse.ts');
+  setActivePinia(createPinia());
+  const auth = useAuthStore();
+  auth.setSession({
+    user: { id: 'overview-owner', hasAvatar: false },
+    tokens: { accessToken: 'overview-access', refreshToken: 'overview-refresh' },
+    sessionId: 'overview-session', serverDeviceId: 'overview-device',
+  });
+  const navigations = [];
+  const restoreWindow = installLoginNavigationRecorder(navigations, {
+    pathname: '/subject/overview', search: '?tab=overview', hash: '#outline',
+  });
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    assert.equal(config.url, '/api/auth/refresh');
+    throw axiosUnauthorized(config);
+  };
+  try {
+    await assert.rejects(postOverviewSse('/api/ai/overview', { mode: 'ALL' }, undefined, {
+      fetch: async () => Response.json({ code: 'UNAUTHENTICATED', status: 401 }, { status: 401 }),
+    }), { code: 'AUTHENTICATION_REQUIRED' });
+    assert.equal(auth.requiresReauthentication, true);
+    assert.equal(auth.serverSessionId, null);
+    assert.deepEqual(navigations, ['/login?redirect=%2Fsubject%2Foverview%3Ftab%3Doverview%23outline']);
+  } finally {
+    activeRequestAdapter = originalAdapter;
+    restoreWindow();
+  }
+});
+
 test('a late ordinary refresh failure cannot clear or navigate away from the new login', async () => {
   const { setActivePinia, createPinia } = await import('pinia');
   const { useAuthStore } = await import('../src/store/useAuthStore.ts');
@@ -1598,6 +1682,144 @@ test('a late ordinary refresh failure cannot clear or navigate away from the new
     lateRefresh.resolve(axiosResponse(undefined));
     activeRequestAdapter = originalAdapter;
     restoreWindow();
+  }
+});
+
+test('email verification and recovery requests keep their own 401 results without sending the active bearer', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const auth = useAuthStore();
+  auth.setSession({
+    user: { id: 'active-owner', hasAvatar: false },
+    tokens: { accessToken: 'active-access', refreshToken: 'active-refresh' },
+    sessionId: 'active-session', serverDeviceId: 'active-device',
+  });
+  const paths = [
+    '/api/auth/register/email-code',
+    '/api/auth/password/reset/email-code',
+    '/api/auth/password/reset',
+  ];
+  const dispatches = [];
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    dispatches.push([config.url, requestAuthorization(config)]);
+    throw axiosUnauthorized(config, { title: 'Unauthorized', status: 401, detail: 'Invalid verification code' });
+  };
+  try {
+    for (const path of paths) {
+      await assert.rejects(request.post(path, {}), { status: 401, message: 'Invalid verification code' });
+    }
+    assert.deepEqual(dispatches, paths.map((path) => [path, undefined]));
+    assert.equal(auth.isAuthenticated, true);
+    assert.equal(auth.token, 'active-access');
+  } finally {
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+test('explicit logout refreshes an expired bearer once and always clears only the originating login', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  const navigations = [];
+  const restoreWindow = installLoginNavigationRecorder(navigations);
+  const originalAdapter = activeRequestAdapter;
+  const login = {
+    user: { id: 'logout-owner', hasAvatar: false },
+    tokens: { accessToken: 'expired-access', refreshToken: 'existing-refresh' },
+    sessionId: 'logout-session', serverDeviceId: 'logout-device',
+  };
+  const logoutPath = '/api/auth/logout';
+  const refreshPath = '/api/auth/refresh';
+  const cases = [
+    { label: 'expired bearer', firstStatus: 401, expectedPaths: [logoutPath, refreshPath, logoutPath] },
+    { label: 'invalid refresh', firstStatus: 401, refreshStatus: 401, expectedPaths: [logoutPath, refreshPath] },
+    { label: 'unavailable refresh', firstStatus: 401, refreshStatus: 503, errorStatus: 503, expectedPaths: [logoutPath, refreshPath] },
+    { label: 'unavailable logout', firstStatus: 503, errorStatus: 503, expectedPaths: [logoutPath] },
+    { label: 'rejected rotated bearer', firstStatus: 401, retryStatus: 401, errorStatus: 401, expectedPaths: [logoutPath, refreshPath, logoutPath] },
+  ];
+  try {
+    for (const { label, firstStatus, refreshStatus, retryStatus, errorStatus, expectedPaths } of cases) {
+      setActivePinia(createPinia());
+      const auth = useAuthStore();
+      auth.setSession(login);
+      const dispatches = [];
+      activeRequestAdapter = async (config) => {
+        dispatches.push(config.url);
+        if (config.url === refreshPath) {
+          assert.equal(requestPayload(config).refreshToken, 'existing-refresh');
+          if (!refreshStatus) return axiosResponse(config, {
+            tokens: { accessToken: 'rotated-access', refreshToken: 'rotated-refresh' },
+            sessionId: 'rotated-session',
+          });
+        }
+        const isFirst = dispatches.length === 1;
+        if (config.url === logoutPath) {
+          assert.equal(requestAuthorization(config), isFirst ? 'Bearer expired-access' : 'Bearer rotated-access');
+        }
+        const status = config.url === refreshPath ? refreshStatus : (isFirst ? firstStatus : retryStatus);
+        if (status) throw new axios.AxiosError('request rejected', undefined, config, {}, { status, data: {}, headers: {}, config });
+        return axiosResponse(config);
+      };
+      if (errorStatus) {
+        await assert.rejects(auth.logout(), { status: errorStatus });
+      } else {
+        await auth.logout();
+      }
+      assert.deepEqual(dispatches, expectedPaths, label);
+      assert.equal(auth.authStatus, 'anonymous', label);
+      assert.equal(auth.token, null, label);
+    }
+    assert.deepEqual(navigations, [], 'the explicit logout UI owns navigation');
+  } finally {
+    restoreWindow();
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+test('logout refresh from an older login cannot retry using the new login', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const auth = useAuthStore();
+  const ownerA = {
+    user: { id: 'logout-owner-a', hasAvatar: false },
+    tokens: { accessToken: 'logout-a', refreshToken: 'refresh-a' },
+    sessionId: 'session-a', serverDeviceId: 'device-a',
+  };
+  const ownerB = {
+    user: { id: 'logout-owner-b', hasAvatar: false },
+    tokens: { accessToken: 'logout-b', refreshToken: 'refresh-b' },
+    sessionId: 'session-b', serverDeviceId: 'device-b',
+  };
+  const refreshStarted = createDeferred();
+  const releaseRefresh = createDeferred();
+  const originalAdapter = activeRequestAdapter;
+  const dispatches = [];
+  activeRequestAdapter = (config) => {
+    dispatches.push([config.url, requestAuthorization(config)]);
+    if (config.url === '/api/auth/logout') return Promise.reject(axiosUnauthorized(config));
+    assert.equal(config.url, '/api/auth/refresh');
+    refreshStarted.resolve(config);
+    return releaseRefresh.promise;
+  };
+  try {
+    auth.setSession(ownerA);
+    const oldLogout = assert.rejects(auth.logout(), { code: 'SYNC_SCOPE_CHANGED' });
+    await waitForSignal(refreshStarted.promise, 'logout refresh dispatch');
+    const config = await refreshStarted.promise;
+    auth.setSession(ownerB);
+    releaseRefresh.resolve(axiosResponse(config, {
+      tokens: { accessToken: 'rotated-logout-a', refreshToken: 'rotated-refresh-a' },
+      sessionId: 'rotated-session-a',
+    }));
+    await oldLogout;
+    assert.deepEqual(dispatches, [['/api/auth/logout', 'Bearer logout-a'], ['/api/auth/refresh', undefined]]);
+    assert.equal(auth.isAuthenticated, true);
+    assert.equal(auth.token, 'logout-b');
+  } finally {
+    releaseRefresh.resolve(axiosResponse(undefined));
+    activeRequestAdapter = originalAdapter;
   }
 });
 

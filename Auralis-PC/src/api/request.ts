@@ -14,7 +14,6 @@ import {
 
 interface RetriableRequestConfig extends SyncScopedAxiosRequestConfig {
   _r4Retried?: boolean;
-  _skipAuthRefresh?: boolean;
   serviceAvailabilityRequestId?: number;
   __auralisAuthSession?: AuthRequestSession;
 }
@@ -48,6 +47,7 @@ export class SyncScopeChangedError extends Error {
 interface RefreshFlight {
   promise: Promise<string>
   scopes: Set<SyncRequestScopeTicket>
+  forLogout: boolean
 }
 
 class RefreshAuthenticationRequiredError extends AuthenticationRequiredError {
@@ -111,15 +111,17 @@ export function captureAuthSession(authStore: AuthStore): AuthRequestSession {
 
 const refreshFlights = new Map<symbol, RefreshFlight>()
 
-function requireReauthenticationForRefreshFailure(
+function invalidRefreshSession(
   authStore: AuthStore,
-  activeScopes: Set<SyncRequestScopeTicket>,
-  message: string,
-): RefreshAuthenticationRequiredError {
-  const scopeKeys = new Set(Array.from(activeScopes)
+  flight: RefreshFlight,
+): AuthenticationRequiredError {
+  const message = '登录会话已失效，请重新登录。'
+  // The explicit logout caller clears the captured session and owns navigation.
+  if (flight.forLogout) return new AuthenticationRequiredError(message)
+  const scopeKeys = new Set(Array.from(flight.scopes)
     .filter((scope) => scope.isCurrent())
     .map((scope) => scope.key))
-  authStore.requireReauthentication('登录会话已失效，请重新登录。')
+  authStore.requireReauthentication(message)
 
   const failedGeneration = authStore.loginGeneration
   return new RefreshAuthenticationRequiredError(scopeKeys, () => authStore.loginGeneration === failedGeneration
@@ -128,6 +130,8 @@ function requireReauthenticationForRefreshFailure(
 
 refreshClient.interceptors.request.use((config) => {
   assertRequestCurrent(config)
+  const requestConfig: RetriableRequestConfig = config
+  requestConfig.serviceAvailabilityRequestId = beginServiceRequest()
   return guardDispatch(config)
 });
 
@@ -139,7 +143,7 @@ function attachToken(config: InternalAxiosRequestConfig): InternalAxiosRequestCo
   if (shouldBlockProtectedRequest(url, authStore.requiresReauthentication)) {
     throw new AuthenticationRequiredError()
   }
-  if (authStore.token) config.headers.Authorization = `Bearer ${authStore.token}`
+  if (!isPublicAuthPath(url) && authStore.token) config.headers.Authorization = `Bearer ${authStore.token}`
   requestConfig.serviceAvailabilityRequestId = beginServiceRequest()
   return requestConfig.__auralisAuthSession || requestConfig.__auralisSyncScope ? guardDispatch(config) : config
 }
@@ -158,20 +162,20 @@ function assertDispatchCurrent(this: InternalAxiosRequestConfig, data: unknown):
 
 async function performRefresh(
   session: AuthRequestSession,
-  activeScopes: Set<SyncRequestScopeTicket>,
+  flight: RefreshFlight,
 ): Promise<string> {
   const authStore = session.getStore()
   const config: RetriableRequestConfig = {
     __auralisAuthSession: session,
     __auralisSyncScope: {
       key: Symbol('refresh-sync-scopes'),
-      isCurrent: () => Array.from(activeScopes).every((scope) => scope.isCurrent()),
+      isCurrent: () => Array.from(flight.scopes).every((scope) => scope.isCurrent()),
     },
   }
   assertRequestCurrent(config)
   const refreshToken = authStore.refreshToken
   if (!refreshToken) {
-    throw requireReauthenticationForRefreshFailure(authStore, activeScopes, '登录会话已失效，请重新登录。')
+    throw invalidRefreshSession(authStore, flight)
   }
 
   try {
@@ -179,6 +183,8 @@ async function performRefresh(
       refreshToken,
     }, config)
     assertRequestCurrent(config)
+    const responseConfig: RetriableRequestConfig = response.config
+    observeServiceAvailable(responseConfig.serviceAvailabilityRequestId)
     const result = assertDirectDto(response.data)
     if (typeof result?.tokens?.accessToken !== 'string' || typeof result.tokens.refreshToken !== 'string'
       || typeof result.sessionId !== 'string' || !result.sessionId) {
@@ -189,9 +195,19 @@ async function performRefresh(
   } catch (error) {
     assertRequestCurrent(config)
     if (error instanceof SyncScopeChangedError) throw error
-    const message =
-      error instanceof Error ? `登录会话已失效：${error.message}` : '登录会话已失效，请重新登录。'
-    throw requireReauthenticationForRefreshFailure(authStore, activeScopes, message)
+    const axiosError = axios.isAxiosError(error) ? error : undefined
+    const responseConfig: RetriableRequestConfig | undefined = axiosError?.config
+    const status = axiosError?.response?.status
+    observeServiceFailure(responseConfig?.serviceAvailabilityRequestId, status, axiosError?.code)
+    if (status === 401) {
+      throw invalidRefreshSession(authStore, flight)
+    }
+    throw new ApiProblemError({
+      title: 'Session refresh failed',
+      status: status ?? (axiosError && !axiosError.response ? 0 : 500),
+      code: 'AUTH_REFRESH_UNAVAILABLE',
+      detail: '暂时无法续期登录，请检查网络或稍后重试。',
+    })
   }
 }
 
@@ -201,16 +217,11 @@ export function refreshAccessToken(scope?: SyncRequestScopeTicket): Promise<stri
   return refreshInSession(captureAuthSession(useAuthStore()), scope)
 }
 
-export async function refreshChatAccessToken(session: AuthRequestSession): Promise<string> {
-  try {
-    return await refreshInSession(session)
-  } catch (error) {
-    if (error instanceof RefreshAuthenticationRequiredError && error.claimLoginNavigation()) navigateToLogin()
-    throw error
-  }
-}
-
-function refreshInSession(session: AuthRequestSession, scope?: SyncRequestScopeTicket): Promise<string> {
+export function refreshInSession(
+  session: AuthRequestSession,
+  scope?: SyncRequestScopeTicket,
+  forLogout = false,
+): Promise<string> {
   const authStore = session.getStore()
   const isSessionCurrent = () => session.isCurrent()
     && authStore.authStatus === 'authenticated'
@@ -219,28 +230,38 @@ function refreshInSession(session: AuthRequestSession, scope?: SyncRequestScopeT
 
   if (!isSessionCurrent()) return Promise.reject(new SyncScopeChangedError())
 
-  const existing = refreshFlights.get(session.generation)
-  const activeScopes = existing?.scopes ?? new Set<SyncRequestScopeTicket>()
-  if (scope) activeScopes.add(scope)
-  const promise = existing?.promise ?? Promise.resolve()
-    .then(() => performRefresh(session, activeScopes))
-    .finally(() => refreshFlights.delete(session.generation))
-  if (!existing) refreshFlights.set(session.generation, { promise, scopes: activeScopes })
+  const flight: RefreshFlight = refreshFlights.get(session.generation) ?? {
+    scopes: new Set(),
+    forLogout,
+    promise: Promise.resolve()
+      .then(() => performRefresh(session, flight))
+      .finally(() => refreshFlights.delete(session.generation)),
+  }
+  if (scope) flight.scopes.add(scope)
+  if (forLogout) flight.forLogout = true
+  refreshFlights.set(session.generation, flight)
 
-  return promise.then((token) => {
-    if (!isSessionCurrent()) throw new SyncScopeChangedError()
-    return token
-  })
-}
-
-function redirectToLogin(authStore: AuthStore): void {
-  authStore.requireReauthentication('登录会话已失效，请重新登录。')
-  navigateToLogin()
+  return flight.promise.then(
+    (token) => {
+      if (!isSessionCurrent()) throw new SyncScopeChangedError()
+      return token
+    },
+    (error: unknown) => {
+      if (error instanceof RefreshAuthenticationRequiredError
+        && (!scope || error.scopeKeys.has(scope.key))
+        && error.claimLoginNavigation()) {
+        navigateToLogin()
+      }
+      throw error
+    },
+  )
 }
 
 function navigateToLogin(): void {
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-    window.location.assign('/login')
+    const location = window.location
+    const returnPath = location.pathname + (location.search ?? '') + (location.hash ?? '')
+    window.location.assign(returnPath === '/' ? '/login' : `/login?redirect=${encodeURIComponent(returnPath)}`)
   }
 }
 
@@ -272,31 +293,20 @@ function createResponseInterceptor(instance: AxiosInstance): void {
         : false
       const session = originalRequest?.__auralisAuthSession
       if (error.response?.status === 401 && originalRequest && session
-        && !isConfirmationFailure && !isLogoutPath(originalRequest.url ?? '')) {
-        if (originalRequest._r4Retried || originalRequest._skipAuthRefresh) {
-          assertRequestCurrent(originalRequest)
-          redirectToLogin(session.getStore())
-          throw createApiProblemError(error)
-        }
+        && !isConfirmationFailure) {
+        if (originalRequest._r4Retried) throw createApiProblemError(error)
 
         originalRequest._r4Retried = true
-        const syncScope = originalRequest.__auralisSyncScope
+        const isLogout = isLogoutPath(originalRequest.url ?? '')
         try {
-          await refreshInSession(session, syncScope)
-          assertRequestCurrent(originalRequest)
-          return instance.request(originalRequest)
+          await refreshInSession(session, originalRequest.__auralisSyncScope, isLogout)
         } catch (refreshError) {
-          if (refreshError instanceof RefreshAuthenticationRequiredError) {
-            const matchesFailedRequest = syncScope
-              ? refreshError.scopeKeys.has(syncScope.key)
-              : refreshError.scopeKeys.size === 0
-            if (matchesFailedRequest && refreshError.claimLoginNavigation()) navigateToLogin()
-          } else if (!(refreshError instanceof SyncScopeChangedError)) {
-            assertRequestCurrent(originalRequest)
-            redirectToLogin(session.getStore())
-          }
-          throw refreshError
+          if (!isLogout || !(refreshError instanceof AuthenticationRequiredError)) throw refreshError
+          assertRequestCurrent(originalRequest)
+          return undefined
         }
+        assertRequestCurrent(originalRequest)
+        return instance.request(originalRequest)
       }
 
       throw createApiProblemError(error)

@@ -26,24 +26,26 @@ public class TokenService {
         this.properties = properties;
     }
 
-    public TokenPair issueTokenPair(UUID userId, UUID sessionId, UUID serverDeviceId, Instant now, String refreshToken) {
+    public TokenPair issueTokenPair(
+            UUID userId, UUID sessionId, UUID serverDeviceId, long credentialGeneration, Instant now, String refreshToken) {
         AuralisProperties.Identity identity = requireIdentityProperties();
         Instant accessExpiresAt = now.plusSeconds(identity.accessTokenTtlSeconds());
         return new TokenPair(
-                issueAccessToken(userId, sessionId, serverDeviceId, now, accessExpiresAt),
+                issueAccessToken(userId, sessionId, serverDeviceId, credentialGeneration, now, accessExpiresAt),
                 refreshToken,
                 identity.accessTokenTtlSeconds(),
                 identity.refreshSessionTtlSeconds());
     }
 
-    public String issueAccessToken(
-            UUID userId, UUID sessionId, UUID serverDeviceId, Instant issuedAt, Instant expiresAt) {
+    private String issueAccessToken(
+            UUID userId, UUID sessionId, UUID serverDeviceId, long credentialGeneration, Instant issuedAt, Instant expiresAt) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .subject(userId.toString())
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
                 .claim("sid", sessionId.toString())
                 .claim("serverDeviceId", serverDeviceId.toString())
+                .claim("credentialGeneration", credentialGeneration)
                 .claim("typ", "access")
                 .build();
         return jwtEncoder.encode(JwtEncoderParameters.from(

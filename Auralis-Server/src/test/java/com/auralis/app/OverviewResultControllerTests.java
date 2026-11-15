@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewResultCommand;
@@ -537,7 +538,7 @@ class OverviewResultControllerTests {
     }
 
     private com.auralis.app.identity.AuthResult owner() {
-        return identityService.register("overview-" + UUID.randomUUID(), "phase-three-password", "Overview",
+        return AuthTestAccounts.register(identityService, "overview-" + UUID.randomUUID(), "phase-three-password",
                 new DeviceCommand("overview-device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
     }
 

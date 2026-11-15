@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.EmbeddingProviderPort;
@@ -102,8 +103,8 @@ class AiIngestionResumePostgresTests {
     void embeddingWindowQuotaExemptionCompletesAllBatchesOnFirstAttempt() {
         embeddingProvider.calls.clear();
         String suffix = UUID.randomUUID().toString();
-        var owner = identityService.register("usage-resume-" + suffix + "@example.com",
-                "correct horse battery staple", "usage-resume-" + suffix,
+        var owner = AuthTestAccounts.register(identityService, "usage-resume-" + suffix + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("usage-resume-device-" + suffix, "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Usage resume", null, null, "001"));
@@ -139,8 +140,8 @@ class AiIngestionResumePostgresTests {
     void nonExemptConcurrencyDeferralReusesCheckpointAndActivatesOnlyCompleteGeneration() {
         embeddingProvider.calls.clear();
         String suffix = UUID.randomUUID().toString();
-        var owner = identityService.register("usage-resume-" + suffix + "@example.com",
-                "correct horse battery staple", "usage-resume-" + suffix,
+        var owner = AuthTestAccounts.register(identityService, "usage-resume-" + suffix + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("usage-resume-device-" + suffix, "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Usage resume", null, null, "001"));

@@ -12,7 +12,7 @@
             </div>
           </div>
           <div class="user-profile-meta">
-            <h2 class="user-name">{{ displayName }}</h2>
+            <h2 class="user-name">{{ accountName }}</h2>
             <div class="user-badges">
               <span class="user-streak-pill">
                 <IconFlame :size="13" :stroke-width="2.2" class="streak-icon" />
@@ -80,29 +80,6 @@
               <div class="account-detail">
                 <span class="cell-label">{{ t(profileMessages.account) }}</span>
                 <span class="cell-val">{{ accountName }}</span>
-              </div>
-
-              <div class="account-detail">
-                <span class="cell-label">{{ t(profileMessages.nickname) }}</span>
-                <span v-if="!isEditingNickname" class="cell-val">{{ displayName }}</span>
-                <input
-                  v-else
-                  ref="nicknameInputRef"
-                  v-model="newNickname"
-                  class="cell-edit-input"
-                  :aria-label="t(profileMessages.nickname)"
-                  :placeholder="t(profileMessages.nicknamePlaceholder)"
-                  maxlength="20"
-                  @keydown.enter="saveNickname"
-                  @keydown.esc="cancelEditNickname"
-                />
-                <button v-if="!isEditingNickname" class="cell-btn" :aria-label="t(profileMessages.editNickname)" @click="startEditNickname">
-                  {{ t(profileMessages.edit) }}
-                </button>
-                <div v-else class="cell-actions">
-                  <button class="cell-btn primary" @click="saveNickname">{{ t(profileMessages.save) }}</button>
-                  <button class="cell-btn" @click="cancelEditNickname">{{ t(profileMessages.cancel) }}</button>
-                </div>
               </div>
 
               <div class="account-detail">
@@ -561,7 +538,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, shallowRef, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IconActivity,
@@ -650,14 +627,10 @@ const sessionsLoading = ref(false)
 const sessionsError = ref<string | null>(null)
 const revokingSessionId = ref<string | null>(null)
 
-const displayName = computed(() => authStore.user?.displayName || authStore.user?.username || t(profileMessages.defaultDisplayName))
-const accountName = computed(() => authStore.user?.username || t(profileMessages.notSignedIn))
+const accountName = computed(() => authStore.username || t(profileMessages.notSignedIn))
 const deviceName = computed(() => authStore.serverDeviceId ? t(profileMessages.deviceId, { id: authStore.serverDeviceId.slice(0, 8) }) : t(profileMessages.noDevice))
 
-const userInitial = computed(() => {
-  const name = displayName.value
-  return name ? name.charAt(0).toUpperCase() : 'A'
-})
+const userInitial = computed(() => authStore.username?.charAt(0).toUpperCase() || 'A')
 
 const continuousStudyDays = ref(1)
 
@@ -751,82 +724,6 @@ const resetAvatar = async () => {
       type: 'error',
       duration: 3000,
     })
-  }
-}
-
-// === Account Adjustment State & Methods ===
-const isEditingNickname = ref(false)
-const newNickname = ref('')
-const nicknameInputRef = ref<HTMLInputElement | null>(null)
-const nicknameSaving = ref(false)
-
-const startEditNickname = () => {
-  newNickname.value = authStore.user?.displayName || displayName.value
-  isEditingNickname.value = true
-  nextTick(() => {
-    nicknameInputRef.value?.focus()
-  })
-}
-
-const cancelEditNickname = () => {
-  isEditingNickname.value = false
-  newNickname.value = ''
-}
-
-const saveNickname = async () => {
-  const trimmed = newNickname.value.trim()
-  if (!trimmed) {
-    ElNotification({
-      title: t(profileMessages.notice),
-      message: t(profileMessages.nicknameRequired),
-      type: 'warning',
-    })
-    return
-  }
-  if (trimmed.length > 120) {
-    ElNotification({
-      title: t(profileMessages.notice),
-      message: t(profileMessages.nicknameTooLong),
-      type: 'warning',
-    })
-    return
-  }
-
-  nicknameSaving.value = true
-  try {
-    const baseVersion = authStore.user?.version ?? 0
-    const updated = await useAuthApi.updateProfile({
-      baseVersion,
-      displayName: trimmed,
-    })
-    if (authStore.user) {
-      authStore.user.displayName = updated.displayName
-      authStore.user.version = updated.version
-      authStore.user.hasAvatar = updated.hasAvatar
-    }
-    isEditingNickname.value = false
-    ElNotification({
-      title: t(profileMessages.updateSucceeded),
-      message: t(profileMessages.nicknameSaved),
-      type: 'success',
-    })
-  } catch (err: any) {
-    if (err?.status === 409 || err?.problem?.code === 'RESOURCE_VERSION_CONFLICT') {
-      await authStore.fetchMe().catch(() => {})
-      ElNotification({
-        title: t(profileMessages.versionConflict),
-        message: t(profileMessages.profileWasUpdated),
-        type: 'warning',
-      })
-    } else {
-      ElNotification({
-        title: t(profileMessages.updateFailed),
-        message: err?.problem?.detail || err?.message || t(profileMessages.nicknameSaveFailed),
-        type: 'error',
-      })
-    }
-  } finally {
-    nicknameSaving.value = false
   }
 }
 
@@ -1949,33 +1846,6 @@ onMounted(() => {
   opacity: 0.65;
   cursor: not-allowed;
 }
-.cell-btn.primary {
-  background: linear-gradient(135deg, #8B9A6E 0%, #768759 100%);
-  color: #FAF7F2;
-  border-color: transparent;
-  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.25);
-}
-.cell-btn.primary:hover {
-  background: linear-gradient(135deg, #768759 0%, #637748 100%);
-  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.35);
-}
-
-.cell-edit-input {
-  width: 100%;
-  min-width: 0;
-  font-size: var(--font-size-caption);
-  padding: 5px 10px;
-  border-radius: 8px;
-  border: 0.5px solid #8B9A6E;
-  background: #FFFFFF;
-  color: var(--text-primary, #1C1C1A);
-  outline: none;
-  font-family: inherit;
-  box-sizing: border-box;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
-  transition: all 0.2s;
-}
-
 
 /* ===== 3. RIGHT PANEL: 分项设置控制台 (62%) ===== */
 .studio-right {
@@ -2692,15 +2562,13 @@ html.dark .subject-bar-bg {
 }
 
 html.dark .settings-select,
-html.dark .settings-input,
-html.dark .cell-edit-input {
+html.dark .settings-input {
   background-color: #181D18;
   border-color: rgba(163, 177, 155, 0.22);
   color: #FAF7F2;
 }
 html.dark .settings-select:focus,
-html.dark .settings-input:focus,
-html.dark .cell-edit-input:focus {
+html.dark .settings-input:focus {
   border-color: #9AB08F;
   box-shadow: 0 0 0 3px rgba(154, 176, 143, 0.22);
 }

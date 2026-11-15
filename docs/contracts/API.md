@@ -182,8 +182,11 @@ New internal Provider invocations carry a server-resolved credential source with
 | GET | /actuator/health/readiness | 阶段 0 就绪探针 |
 | GET | /v3/api-docs | OpenAPI 文档，骨架完成后可访问 |
 | GET | /swagger-ui/index.html | OpenAPI UI，骨架完成后可访问 |
-| POST | /api/auth/register | 注册用户、设备和 refresh session，不自动创建 Subject，HTTP 201，并返回 Location |
-| POST | /api/auth/login | 校验凭据并签发 token pair，HTTP 200 |
+| POST | /api/auth/register/email-code | 申请注册邮箱验证码，HTTP 204 |
+| POST | /api/auth/register | 以验证邮箱注册用户、设备和 refresh session，HTTP 201，并返回 Location |
+| POST | /api/auth/login | 以用户名或已验证邮箱校验密码并签发 token pair，HTTP 200 |
+| POST | /api/auth/password/reset/email-code | 申请已验证邮箱的密码重置验证码，HTTP 204 |
+| POST | /api/auth/password/reset | 使用邮箱验证码重置密码并撤销旧凭证，HTTP 204 |
 | POST | /api/auth/refresh | rotation refresh session 并签发新 token pair，HTTP 200 |
 | POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
 | GET | /api/auth/me | 返回当前用户公开资料，需 Bearer access token |
@@ -269,13 +272,15 @@ New internal Provider invocations carry a server-resolved credential source with
 
 ### 请求与成功响应
 
-- `POST /api/auth/register` 请求字段为 `username`、`password`、`displayName`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 201、`Location: /api/auth/sessions/{sessionId}` 和 AuthResult。注册密码与改密的新密码至少 12 个 UTF-16 代码单元，最多 72 个 UTF-8 字节，超限返回 HTTP 400 `VALIDATION_FAILED`。
-- `POST /api/auth/login` 请求字段为 `username`、`password`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 200 和 AuthResult。
+- `POST /api/auth/register/email-code` 接收 `email`。注册用 `POST /api/auth/register`，请求字段为 `username`、`email`、`emailCode`、`password`、`clientDeviceKey`、`deviceName`、`platform`。新用户名为 1–64 个字符，不能包含 `@`。初始 `displayName` 由服务端设为用户名。邮箱最长 254 个字符，验证后作为唯一登录标识之一。注册成功返回 HTTP 201、`Location: /api/auth/sessions/{sessionId}` 和 AuthResult。
+- `POST /api/auth/login` 的 `username` 可传用户名或已验证邮箱，其他字段为 `password`、`clientDeviceKey`、`deviceName`、`platform`。成功返回 HTTP 200 和 AuthResult。
+- `POST /api/auth/password/reset/email-code` 接收 `email`，已受理统一返回 HTTP 204，未知邮箱不发送。客户端不得根据 204 宣称该邮箱已存在或邮件已送达。用 `POST /api/auth/password/reset` 提交 `email`、`emailCode`、`newPassword`，成功 HTTP 204，旧访问与续期凭证失效，用户重新登录。
+- 验证码为 6 位数字，10 分钟内有效，注册和重置用途分别校验，成功后单次使用。注册、改密和重置密码均要求至少 12 个 UTF-16 代码单元、最多 72 个 UTF-8 字节。
 - `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult，其中 `tokens` 和 `sessionId` 一起轮换，`serverDeviceId` 继续标识该设备。旧 refresh token 立即失效。
 - AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName, version, hasAvatar }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`serverDeviceId`。
 - `GET /api/auth/me` 返回 `UserView { id, username, displayName, version, hasAvatar }`。`PUT /api/auth/me` 接受 `{baseVersion,displayName}`，服务端修剪昵称并限制为 1–120 字符，版本不一致返回 `409 RESOURCE_VERSION_CONFLICT`；`hasAvatar` 按读取时 `user_avatars` 行存在性计算，不递增用户版本。头像图片单独读写，不进入 UserView。
 - `PUT /api/auth/password` 接受 `{baseVersion,currentPassword,newPassword}`，新密码与注册密码采用相同长度要求，且不得与原密码相同。服务端校验原密码和用户版本，更新密码哈希并撤销该用户全部 refresh sessions。已签发的 access JWT 仍遵循原 15 分钟有效期边界。原密码错误返回 HTTP 401 `UNAUTHENTICATED`，detail 为 `Invalid credentials`。无效 Bearer 的 detail 为 `Authentication is required`。
-- 当前 Auth API 没有忘记密码/密码找回流程；`PUT /api/auth/password` 是已登录且持有当前密码的改密接口。API 也没有通用用户偏好同步或完整数据备份/导出端点。
+- `PUT /api/auth/password` 是已登录且持有当前密码的改密接口。API 目前没有通用用户偏好同步或完整数据备份/导出端点。
 - `POST /api/auth/me/avatar` 使用 `multipart/form-data` 的 `file` 字段，只接受实际 PNG/JPEG、原文件最大 5 MiB、边长不超过 4096 像素且总像素不超过 1600 万；Spring multipart 单文件接收上限为 5 MiB，完整请求上限为 6 MiB，以容纳表单封装开销。服务端解码并统一重编码为 PNG，私有存储于当前用户头像表。`GET /api/auth/me/avatar` 只返回当前用户头像且设置 no-store/nosniff；客户端须接受 `image/png`，并可同时接受 `application/problem+json` 用于错误响应，不能仅发送 `Accept: application/json`。`DELETE /api/auth/me/avatar` 删除当前用户头像。头像不复用资料 Asset 上传协议。
 - `DELETE /api/auth/me` 接受 `{password}` 并返回 HTTP 202 `{id,status,requestedAt}`，表示注销清理已受理而非永久删除已完成。服务端在事务中停用用户、撤销 refresh sessions、持久化 Asset 与 ParsedDocument 对象键；上传意图签发与停用用户通过用户锁串行化。后台任务等待既有上传签名有效期及缓冲后，按键幂等清理对象并在用户归属锁下重扫，最后按 owner 显式删除关联数据和用户，保留不含用户外键的完成记录。已完成作业继续分批复扫已记录对象键，处理预签名 PUT 晚到造成的对象重现；对象清理失败保留作业并重试。没有公开的跨账户作业状态查询路由。
 - `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`serverDeviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。列表只展示未轮换、未撤销、未过期的活动会话，并按 `serverDeviceId` 归并为一条。`current` 比较 access JWT 的 `serverDeviceId`。同一用户在同一设备再次登录会先撤销该设备的旧活动 refresh session，再签发新的会话。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。

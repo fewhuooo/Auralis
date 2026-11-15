@@ -26,7 +26,7 @@ test('aiClient defines and exports normalizeProvider, listAiModels, and testAiCo
   assert.doesNotMatch(aiClientSource, /modelCount/, 'Connection test type must not depend on model discovery')
 })
 
-test('Profile connects real identity endpoints for avatar, nickname, and password change', async () => {
+test('Profile connects real identity endpoints for avatar and password change', async () => {
   const [profileSource, passwordDialog] = await Promise.all([
     readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/profile/ChangePasswordDialog.vue', import.meta.url), 'utf8'),
@@ -38,9 +38,8 @@ test('Profile connects real identity endpoints for avatar, nickname, and passwor
   assert.match(profileSource, /useAuthApi\.resetAvatar\(\)/, 'Must reset avatar on server')
   assert.doesNotMatch(profileSource, /localStorage\.(getItem|setItem)\(['"]auralis_user_avatar['"]/, 'Must not store avatar in localStorage')
 
-  // Nickname: calls updateProfile and updates store
-  assert.match(profileSource, /useAuthApi\.updateProfile\(\{/, 'Must call updateProfile')
-  assert.match(profileSource, /baseVersion/, 'Must pass baseVersion to updateProfile')
+  assert.match(profileSource, /const accountName = computed\(\(\) => authStore\.username/, 'Profile displays the login username')
+  assert.doesNotMatch(profileSource, /useAuthApi\.updateProfile\(/, 'Profile has no display-name editing action')
 
   assert.match(passwordDialog, /newPassword\.length\s*<\s*12/, 'The password dialog enforces the minimum length')
   assert.match(passwordDialog, /new TextEncoder\(\)\.encode\(form\.newPassword\)\.byteLength\s*>\s*72/, 'The password dialog checks the UTF-8 byte limit')
@@ -399,7 +398,7 @@ test('hasAvatar contract skips avatar fetch when false, queries when true, and s
     'fetchMe must clear avatar when me.hasAvatar is false and trigger loadAvatar when true',
   )
 
-  // Profile/index.vue syncs hasAvatar on upload, reset, and profile update
+  // Profile/index.vue syncs hasAvatar on upload and reset
   assert.match(
     profileSource,
     /useAuthApi\.uploadAvatar\(file\)[\s\S]*?authStore\.user\.hasAvatar\s*=\s*true/,
@@ -409,10 +408,5 @@ test('hasAvatar contract skips avatar fetch when false, queries when true, and s
     profileSource,
     /useAuthApi\.resetAvatar\(\)[\s\S]*?authStore\.user\.hasAvatar\s*=\s*false/,
     'Profile must set authStore.user.hasAvatar = false upon avatar reset',
-  )
-  assert.match(
-    profileSource,
-    /useAuthApi\.updateProfile[\s\S]*?authStore\.user\.hasAvatar\s*=\s*updated\.hasAvatar/,
-    'Profile must synchronize authStore.user.hasAvatar = updated.hasAvatar upon profile update',
   )
 })

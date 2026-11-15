@@ -1,5 +1,6 @@
 package com.auralis.app.ai;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.ai.usage.AiProviderUsage;
 import com.auralis.app.identity.DeviceCommand;
@@ -283,7 +284,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
 
     private UUID createUser(String suffix) {
         String unique = suffix + "-" + UUID.randomUUID().toString().replace("-", "");
-        return identityService.register("m5-cache-" + unique, "correct horse battery staple", "M5 cache test",
+        return AuthTestAccounts.register(identityService, "m5-cache-" + unique, "correct horse battery staple",
                 new DeviceCommand("m5-cache-device-" + unique, "Test", DevicePlatform.WEB)).user().id();
     }
 

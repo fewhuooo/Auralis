@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
@@ -209,11 +210,12 @@ class SourceAssetRelationControllerTests {
     }
 
     private JsonNode register(String username, String clientDeviceKey) throws Exception {
+        String verification = AuthTestAccounts.registrationFields(mockMvc, AuthTestAccounts.newEmail());
         return json(mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"" + username
+                        .content("{" + verification + "\"username\":\"" + username.split("@", 2)[0]
                                 + "\",\"password\":\"correct horse battery staple\","
-                                + "\"displayName\":\"Owner\",\"clientDeviceKey\":\"" + clientDeviceKey
+                                + "\"clientDeviceKey\":\"" + clientDeviceKey
                                 + "\",\"deviceName\":\"Browser\",\"platform\":\"WEB\"}"))
                 .andExpect(status().isCreated())
                 .andReturn());

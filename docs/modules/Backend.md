@@ -1,5 +1,9 @@
 # Spring Boot 后端模块
 
+### 2026-11-15 账号邮箱验证
+
+Server 提供邮箱验证码注册、用户名或验证邮箱登录和密码找回。验证码按用途隔离、限频并失效，密码重置时撤销旧刷新会话和访问凭证。通过环境变量配置 SMTP 发件。
+
 ### 2026-11-14 时间线周列放置
 
 REST 与 Sync 共同复用 Task 排期事务。周列跨天命令通过 `placementMode: "STRICT"` 指定半小时起点，只检查和写入源任务。原有的空槽顺延、卡片主体放置和换位继续各按原规则运行。普通插入将窗口外和零分钟任务排除出顺延集合，最后按完整区间校验碰撞。API 与两端生成类型已同步，PC 试测需要本分支后端。
@@ -745,7 +749,7 @@ Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task 
 
 ### 2026-10-10 PC + Service 功能边界补充（静态代码核对）
 
-- Auth 提供已登录用户改密，不提供忘记密码/密码找回流程；注销通过 `DELETE /api/auth/me` 异步受理并返回 HTTP 202，当前没有可供用户查询作业进度的路由。
+- Auth 提供已登录改密和已验证邮箱找回；注销通过 `DELETE /api/auth/me` 异步受理并返回 HTTP 202，当前没有可供用户查询作业进度的路由。
 - 当前没有通用用户偏好同步 API 或完整数据备份/导出 API；PC 偏好保存在端侧，JSON 导出由 PC 汇总有限资源。
 - Suggestions 保持确定性模板基线，真实 LLM、RAG 引用与质量评估仍按 `P1-Phase5-Suggestion-Quality` 开放登记。
 

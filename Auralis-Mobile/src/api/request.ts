@@ -3,12 +3,15 @@ import { createRequestExecutor, type CoreRequestOptions } from './requestCore'
 
 export interface AuthSessionBridge {
   getAccessToken(): string | null
+  getLoginGeneration(): symbol
   refreshAccessToken(): Promise<boolean>
-  onUnauthenticated(): void
+  onUnauthenticated(generation: symbol): void
 }
 
+const anonymousGeneration = Symbol('anonymous')
 let authSessionBridge: AuthSessionBridge = {
   getAccessToken: () => null,
+  getLoginGeneration: () => anonymousGeneration,
   refreshAccessToken: async () => false,
   onUnauthenticated: () => undefined,
 }
@@ -27,8 +30,9 @@ export function request<T = unknown>(options: RequestOptions): Promise<T> {
       uni.request(requestOptions as UniApp.RequestOptions)
     },
     getAccessToken: () => authSessionBridge.getAccessToken(),
+    getLoginGeneration: () => authSessionBridge.getLoginGeneration(),
     refreshAccessToken: () => authSessionBridge.refreshAccessToken(),
-    onUnauthenticated: () => authSessionBridge.onUnauthenticated(),
+    onUnauthenticated: (generation) => authSessionBridge.onUnauthenticated(generation ?? anonymousGeneration),
   })
   return execute<T>(options)
 }

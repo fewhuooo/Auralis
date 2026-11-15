@@ -63,7 +63,9 @@ router.beforeEach((to, _from, next) => {
   const requiresAuth = Boolean(to.meta?.requiresAuth)
   const redirect = resolveAuthRedirect(to.path, requiresAuth, hasSession)
 
-  if (redirect) {
+  if (redirect === '/login' && to.fullPath !== '/') {
+    next({ path: '/login', query: { redirect: to.fullPath }, replace: true })
+  } else if (redirect) {
     next(redirect)
   } else {
     next()

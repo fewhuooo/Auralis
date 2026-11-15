@@ -564,6 +564,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/register/email-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sendRegistrationCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/refresh": {
         parameters: {
             query?: never;
@@ -574,6 +590,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/password/reset/email-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sendPasswordResetCode"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1793,9 +1841,11 @@ export interface components {
         };
         RegisterRequest: {
             username: string;
+            /** Format: email */
+            email: string;
+            emailCode: string;
             /** @description At most 72 UTF-8 bytes */
             password: string;
-            displayName: string;
             clientDeviceKey: string;
             deviceName: string;
             /** @enum {string} */
@@ -1817,10 +1867,22 @@ export interface components {
             /** Format: int64 */
             refreshTokenExpiresInSeconds?: number;
         };
+        EmailCodeRequest: {
+            /** Format: email */
+            email: string;
+        };
         RefreshRequest: {
             refreshToken: string;
         };
+        PasswordResetRequest: {
+            /** Format: email */
+            email: string;
+            emailCode: string;
+            /** @description At most 72 UTF-8 bytes */
+            newPassword: string;
+        };
         LoginRequest: {
+            /** @description Username or verified email */
             username: string;
             password: string;
             clientDeviceKey: string;
@@ -2036,31 +2098,31 @@ export interface components {
             answer?: components["schemas"]["JsonNode"];
         };
         JsonNode: {
-            container?: boolean;
             array?: boolean;
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            object?: boolean;
+            container?: boolean;
+            floatingPointNumber?: boolean;
+            bigDecimal?: boolean;
+            valueNode?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             missingNode?: boolean;
+            integralNumber?: boolean;
+            bigInteger?: boolean;
+            boolean?: boolean;
             string?: boolean;
             double?: boolean;
             binary?: boolean;
-            long?: boolean;
+            object?: boolean;
+            pojo?: boolean;
+            int?: boolean;
             /** @deprecated */
             textual?: boolean;
-            pojo?: boolean;
-            short?: boolean;
-            int?: boolean;
             number?: boolean;
-            boolean?: boolean;
-            bigDecimal?: boolean;
-            bigInteger?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            valueNode?: boolean;
-            integralNumber?: boolean;
-            floatingPointNumber?: boolean;
+            short?: boolean;
+            long?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {
@@ -3830,6 +3892,28 @@ export interface operations {
             };
         };
     };
+    sendRegistrationCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     refresh: {
         parameters: {
             query?: never;
@@ -3851,6 +3935,50 @@ export interface operations {
                 content: {
                     "*/*": components["schemas"]["AuthResult"];
                 };
+            };
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sendPasswordResetCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

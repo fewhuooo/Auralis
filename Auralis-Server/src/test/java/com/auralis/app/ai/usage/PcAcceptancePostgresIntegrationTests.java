@@ -1,5 +1,6 @@
 package com.auralis.app.ai.usage;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.identity.DeviceCommand;
@@ -27,6 +28,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import com.auralis.app.support.AuthTestAccounts;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.util.Map;
@@ -36,6 +38,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import com.auralis.app.support.AuthTestAccounts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Disposable real PostgreSQL evidence; no business database or Provider use. */
@@ -178,8 +181,8 @@ class PcAcceptancePostgresIntegrationTests {
     }
 
     private UUID user() {
-        return identity.register("pc-acceptance-" + UUID.randomUUID() + "@example.test",
-                "Test-only-password-2026!", "PC acceptance",
+        return AuthTestAccounts.register(identity, "pc-acceptance-" + UUID.randomUUID() + "@example.test",
+                "Test-only-password-2026!",
                 new DeviceCommand("pc-acceptance-" + UUID.randomUUID(), "PC acceptance", DevicePlatform.WEB))
                 .user().id();
     }

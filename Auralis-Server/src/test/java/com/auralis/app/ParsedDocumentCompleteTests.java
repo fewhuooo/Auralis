@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionClaim;
 import com.auralis.app.ai.ingestion.IngestionCompletionService;
@@ -403,7 +404,7 @@ class ParsedDocumentCompleteTests {
     }
 
     private Fixture fixture(String suffix, String assetSha256) {
-        AuthResult owner = identityService.register(suffix + "@example.com", "correct horse battery staple", suffix,
+        AuthResult owner = AuthTestAccounts.register(identityService, suffix + "@example.com", "correct horse battery staple",
                 new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(), new SubjectCommand("Parsed", null, null, "001"));
         var assetIntent = assetService.createUploadIntent(owner.user().id(),

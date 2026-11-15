@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -47,10 +48,8 @@ class SyncControllerJsonCompatibilityTests {
 
     @Test
     void acceptsAnObjectPayloadAtTheSyncHttpBoundary() throws Exception {
-        AuthResult auth = identityService.register(
-                "sync-json-" + UUID.randomUUID(),
+        AuthResult auth = AuthTestAccounts.register(identityService, "sync-json-" + UUID.randomUUID(),
                 "sync-json-password",
-                "Sync JSON",
                 new DeviceCommand("sync-json-device-" + UUID.randomUUID(), "Sync JSON", DevicePlatform.WEB));
         UUID subjectId = UUID.randomUUID();
 
@@ -70,8 +69,7 @@ class SyncControllerJsonCompatibilityTests {
 
     @Test
     void duplicateCreateReturnsAnItemRejectionWithoutInterruptingTheHttpBatch() throws Exception {
-        AuthResult auth = identityService.register("sync-duplicate-" + UUID.randomUUID(), "sync-json-password",
-                "Sync JSON", new DeviceCommand("sync-duplicate", "Sync JSON", DevicePlatform.WEB));
+        AuthResult auth = AuthTestAccounts.register(identityService, "sync-duplicate-" + UUID.randomUUID(), "sync-json-password", new DeviceCommand("sync-duplicate", "Sync JSON", DevicePlatform.WEB));
         UUID userId = auth.user().id();
         var existing = subjectService.create(userId, new SubjectCommand("Original", null, null, "001"));
         UUID followingId = UUID.randomUUID();
@@ -105,8 +103,7 @@ class SyncControllerJsonCompatibilityTests {
 
     @Test
     void rollbackOnlyDomainFailuresBecomeReplayableItemReceiptsAndTheBatchContinues() throws Exception {
-        AuthResult auth = identityService.register("sync-rejections-" + UUID.randomUUID(), "sync-json-password",
-                "Sync JSON", new DeviceCommand("sync-rejections", "Sync JSON", DevicePlatform.WEB));
+        AuthResult auth = AuthTestAccounts.register(identityService, "sync-rejections-" + UUID.randomUUID(), "sync-json-password", new DeviceCommand("sync-rejections", "Sync JSON", DevicePlatform.WEB));
         UUID userId = auth.user().id();
         var initial = subjectService.create(userId, new SubjectCommand("Original", null, null, "001"));
         var latest = subjectService.update(userId, initial.id(), initial.version(),
@@ -154,10 +151,8 @@ class SyncControllerJsonCompatibilityTests {
 
     @Test
     void appliesAndReplaysLegacyKnowledgeBlockPayloadWithRemovedFields() throws Exception {
-        AuthResult auth = identityService.register(
-                "sync-legacy-kb-" + UUID.randomUUID(),
+        AuthResult auth = AuthTestAccounts.register(identityService, "sync-legacy-kb-" + UUID.randomUUID(),
                 "sync-json-password",
-                "Sync JSON",
                 new DeviceCommand("sync-legacy-kb-device-" + UUID.randomUUID(), "Sync JSON", DevicePlatform.WEB));
         UUID subjectId = subjectService.create(auth.user().id(),
                 new SubjectCommand("Sync legacy subject", null, null, "001")).id();
@@ -193,10 +188,8 @@ class SyncControllerJsonCompatibilityTests {
 
     @Test
     void rejectsTaskDeadlineOverrunFromSyncWithoutCreatingOrUpdatingRows() throws Exception {
-        AuthResult auth = identityService.register(
-                "sync-task-deadline-" + UUID.randomUUID(),
+        AuthResult auth = AuthTestAccounts.register(identityService, "sync-task-deadline-" + UUID.randomUUID(),
                 "sync-json-password",
-                "Sync deadline",
                 new DeviceCommand("sync-task-deadline-device-" + UUID.randomUUID(), "Sync deadline", DevicePlatform.WEB));
         UUID subjectId = subjectService.create(auth.user().id(),
                 new SubjectCommand("Sync deadline subject", null, null, "001")).id();

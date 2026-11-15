@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -981,9 +982,8 @@ class ReviewLifecycleServiceTests {
     }
 
     private Owner owner(String prefix) {
-        AuthResult result = identityService.register(
-                "lifecycle-" + UUID.randomUUID().toString().replace("-", "") + "@example.test",
-                PASSWORD, "Lifecycle Test",
+        AuthResult result = AuthTestAccounts.register(identityService, "lifecycle-" + UUID.randomUUID().toString().replace("-", "") + "@example.test",
+                PASSWORD,
                 new DeviceCommand("device-" + UUID.randomUUID(), "Lifecycle Test", DevicePlatform.WEB));
         return new Owner(result.user().id(), "Bearer " + result.tokens().accessToken());
     }

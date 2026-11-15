@@ -1,5 +1,6 @@
 package com.auralis.app.ai;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.AuralisApplication;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -320,7 +321,7 @@ class OverviewJobPostgresIntegrationTests {
 
     private Fixture fixture() {
         String suffix = UUID.randomUUID().toString().replace("-", "");
-        var registered = identityService.register("job-" + suffix, "correct horse battery staple", "Overview job test",
+        var registered = AuthTestAccounts.register(identityService, "job-" + suffix, "correct horse battery staple",
                 new DeviceCommand("overview-job-" + suffix, "Test", DevicePlatform.WEB));
         return new Fixture(registered.user().id(), UUID.randomUUID());
     }

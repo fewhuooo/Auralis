@@ -20,6 +20,8 @@ server:
 
 auralis:
   environment: test
+  mail:
+    max-sends-per-minute: 1000
   api:
     public-base-url: http://localhost
   upload:

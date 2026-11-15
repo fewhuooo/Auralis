@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
@@ -60,9 +61,8 @@ class AiOverviewControllerTests {
 
     @Test
     void rejectsOverlongSourceOverviewInstructionsBeforeGeneration() throws Exception {
-        var auth = identityService.register(
-                "oc-" + UUID.randomUUID() + "@example.com",
-                "correct horse battery staple", "overview-controller",
+        var auth = AuthTestAccounts.register(identityService, "oc-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("overview-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
 
         mockMvc.perform(post("/api/ai/source-overviews")
@@ -77,9 +77,8 @@ class AiOverviewControllerTests {
 
     @Test
     void rejectsSubjectRequestsWithNoSourceInputs() throws Exception {
-        var auth = identityService.register(
-                "osc-" + UUID.randomUUID() + "@example.com",
-                "correct horse battery staple", "overview-subject-controller",
+        var auth = AuthTestAccounts.register(identityService, "osc-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("overview-subject-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
         mockMvc.perform(post("/api/ai/subject-overviews")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
@@ -92,9 +91,8 @@ class AiOverviewControllerTests {
 
     @Test
     void returnsValidSubjectOverviewAsJsonOverHttp() throws Exception {
-        var auth = identityService.register(
-                "osj-" + UUID.randomUUID() + "@example.com",
-                "correct horse battery staple", "overview-subject-json-controller",
+        var auth = AuthTestAccounts.register(identityService, "osj-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("overview-subject-json-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
         UUID subjectId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
@@ -125,9 +123,8 @@ class AiOverviewControllerTests {
 
     @Test
     void unsupportedSubjectOverviewAcceptReturns406ProblemDetails() throws Exception {
-        var auth = identityService.register(
-                "osj-accept-" + UUID.randomUUID() + "@example.com",
-                "correct horse battery staple", "overview-subject-accept-device",
+        var auth = AuthTestAccounts.register(identityService, "osj-accept-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple",
                 new DeviceCommand("overview-subject-accept-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
 
         mockMvc.perform(post("/api/ai/subject-overviews")

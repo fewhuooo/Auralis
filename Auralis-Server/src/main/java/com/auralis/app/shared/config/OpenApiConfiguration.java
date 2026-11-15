@@ -16,7 +16,8 @@ import java.util.Set;
 @Configuration
 public class OpenApiConfiguration {
     private static final String AUTH_CONTROLLER = "com.auralis.app.identity.AuthController";
-    private static final Set<String> PUBLIC_AUTH_METHODS = Set.of("register", "login", "refresh");
+    private static final Set<String> PUBLIC_AUTH_METHODS = Set.of(
+            "register", "login", "refresh", "sendRegistrationCode", "sendPasswordResetCode", "resetPassword");
 
     @Bean
     OpenAPI auralisOpenApi() {

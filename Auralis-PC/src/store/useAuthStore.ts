@@ -25,8 +25,9 @@ export interface LoginPayload {
 
 export interface RegisterPayload {
   username: string
+  email: string
+  emailCode: string
   password: string
-  displayName?: string
   clientDeviceKey?: string
   deviceName?: string
   platform?: 'WEB' | 'WINDOWS' | 'MACOS' | 'IOS' | 'ANDROID' | 'HARMONY' | 'UNKNOWN'
@@ -102,7 +103,7 @@ export const useAuthStore = defineStore(
       },
     })
 
-    const username = computed(() => user.value?.displayName || user.value?.username || null)
+    const username = computed(() => user.value?.username || null)
     const isAuthenticated = computed(() => Boolean(
       authStatus.value === 'authenticated'
       && tokens.value?.accessToken
@@ -186,8 +187,9 @@ export const useAuthStore = defineStore(
       const identity = getDeviceIdentity()
       const req: RegisterRequest = {
         username: payload.username.trim(),
+        email: payload.email.trim(),
+        emailCode: payload.emailCode.trim(),
         password: payload.password,
-        displayName: payload.displayName?.trim() || payload.username.trim(),
         clientDeviceKey: payload.clientDeviceKey || identity.clientDeviceKey,
         deviceName: payload.deviceName?.trim() || identity.deviceName,
         platform: payload.platform || identity.platform,

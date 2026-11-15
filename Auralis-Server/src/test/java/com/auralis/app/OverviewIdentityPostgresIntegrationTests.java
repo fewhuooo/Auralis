@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewResultCommand;
@@ -127,7 +128,7 @@ class OverviewIdentityPostgresIntegrationTests {
 
             assertThat(legacy.queryForObject("select version from " + schema
                     + ".flyway_schema_history where success order by installed_rank desc limit 1",
-                    String.class)).isEqualTo("41");
+                    String.class)).isEqualTo("46");
             assertThat(legacy.queryForObject("select id from overview_results where id=?", UUID.class, resultId))
                     .isEqualTo(resultId);
             assertThat(legacy.queryForObject("select outline from overview_results where id=?", String.class, resultId))
@@ -210,8 +211,8 @@ class OverviewIdentityPostgresIntegrationTests {
 
     private Fixture fixture(String label) {
         String suffix = UUID.randomUUID().toString();
-        var owner = identityService.register("m2-" + label + "-" + suffix,
-                "correct horse battery staple", "overview-m2-" + label,
+        var owner = AuthTestAccounts.register(identityService, "m2-" + label + "-" + suffix,
+                "correct horse battery staple",
                 new DeviceCommand("overview-m2-device-" + suffix, "Test", DevicePlatform.WEB));
         UUID userId = owner.user().id();
         UUID subjectId = subjectService.create(userId,

@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
@@ -34,10 +35,8 @@ class RealtimeWebSocketIntegrationTests {
 
     @Test
     void issuedTicketCompletesWebSocketHandshakeWithoutBearerHeader() throws Exception {
-        var owner = identityService.register(
-                "realtime-websocket@example.com",
+        var owner = AuthTestAccounts.register(identityService, "realtime-websocket@example.com",
                 "correct horse battery staple",
-                "Realtime WebSocket",
                 new DeviceCommand("realtime-websocket-device", "Test", DevicePlatform.WEB));
         String ticket = realtimeService.issue(owner.user().id(), owner.serverDeviceId()).ticket();
         OpenListener listener = new OpenListener();

@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { components } from '@/api/generated/schema'
 import { getOrCreateDeviceIdentity } from '@/api/deviceIdentity'
-import { createRefreshCoordinator } from '@/api/protocol'
+import { ApiProblemError, createRefreshCoordinator } from '@/api/protocol'
 import { configureAuthSessionBridge } from '@/api/request'
 import { useAuthApi } from '@/api/useAuthApi'
 import { localDataScope } from '@/services/localDataScope'
@@ -63,6 +63,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserView | null>(persisted?.user || null)
   const tokens = ref<TokenPair | null>(persisted?.tokens || null)
   const sessionId = ref(persisted?.sessionId || '')
+  let loginGeneration = Symbol('login')
+  const getLoginGeneration = () => loginGeneration
   const avatar = ref<string | null>(uni.getStorageSync('avatar') || null)
 
   const identity = getOrCreateDeviceIdentity({
@@ -75,7 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const token = computed(() => tokens.value?.accessToken || null)
   const refreshToken = computed(() => tokens.value?.refreshToken || null)
-  const username = computed(() => user.value?.displayName || user.value?.username || null)
+  const username = computed(() => user.value?.username || null)
   const isAuthenticated = computed(() => Boolean(token.value && user.value?.id && serverDeviceId.value))
 
   function persistSession(session: PersistedAuthSession): void {
@@ -90,6 +92,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearSession(): void {
+    loginGeneration = Symbol('login')
     user.value = null
     tokens.value = null
     sessionId.value = ''
@@ -98,47 +101,77 @@ export const useAuthStore = defineStore('auth', () => {
     for (const legacyKey of ['token', 'refreshToken', 'username']) uni.removeStorageSync(legacyKey)
   }
 
-  const refreshCoordinator = createRefreshCoordinator(async () => {
-    const currentRefreshToken = refreshToken.value
-    if (!currentRefreshToken) return false
-    try {
-      persistSession(normalizeAuthResult(await useAuthApi.refresh({ refreshToken: currentRefreshToken })))
-      return true
-    } catch {
-      clearSession()
-      return false
-    }
-  })
+  function requireCurrentLogin(expected: symbol): void {
+    if (loginGeneration !== expected) throw new Error('登录状态已变化，请重试。')
+  }
 
-  const refreshAccessToken = () => refreshCoordinator.refresh()
+  function expireSession(expected: symbol): void {
+    if (loginGeneration !== expected) return
+    clearSession()
+    uni.reLaunch({ url: currentLoginRoute() })
+  }
+
+  let refreshFlight: { generation: symbol; refresh: () => Promise<boolean> } | null = null
+
+  function refreshAccessToken(): Promise<boolean> {
+    const generation = loginGeneration
+    if (refreshFlight?.generation !== generation) {
+      const coordinator = createRefreshCoordinator(async () => {
+        requireCurrentLogin(generation)
+        const currentRefreshToken = refreshToken.value
+        if (!currentRefreshToken) return false
+        try {
+          const session = normalizeAuthResult(await useAuthApi.refresh({ refreshToken: currentRefreshToken }))
+          requireCurrentLogin(generation)
+          persistSession(session)
+          return true
+        } catch (error) {
+          requireCurrentLogin(generation)
+          if (!(error instanceof ApiProblemError) || error.status !== 401) throw error
+          return false
+        }
+      })
+      refreshFlight = { generation, refresh: coordinator.refresh }
+    }
+    return refreshFlight.refresh()
+  }
 
   configureAuthSessionBridge({
     getAccessToken: () => token.value,
+    getLoginGeneration,
     refreshAccessToken,
-    onUnauthenticated: () => {
-      clearSession()
-      uni.reLaunch({ url: currentLoginRoute() })
-    },
+    onUnauthenticated: (generation) => expireSession(generation),
   })
 
   async function login(data: { username: string; password: string }): Promise<void> {
-    persistSession(normalizeAuthResult(await useAuthApi.login({
+    const generation = loginGeneration
+    const session = normalizeAuthResult(await useAuthApi.login({
       ...data,
       clientDeviceKey: identity.clientDeviceKey,
       deviceName: identity.deviceName,
       platform: identity.platform,
-    })))
+    }))
+    requireCurrentLogin(generation)
+    loginGeneration = Symbol('login')
+    persistSession(session)
   }
 
-  async function register(data: { username: string; password: string; displayName?: string }): Promise<void> {
-    persistSession(normalizeAuthResult(await useAuthApi.register({
+  async function register(
+    data: Pick<components['schemas']['RegisterRequest'], 'username' | 'email' | 'emailCode' | 'password'>,
+  ): Promise<void> {
+    const generation = loginGeneration
+    const session = normalizeAuthResult(await useAuthApi.register({
       username: data.username,
+      email: data.email,
+      emailCode: data.emailCode,
       password: data.password,
-      displayName: data.displayName?.trim() || data.username,
       clientDeviceKey: identity.clientDeviceKey,
       deviceName: identity.deviceName,
       platform: identity.platform,
-    })))
+    }))
+    requireCurrentLogin(generation)
+    loginGeneration = Symbol('login')
+    persistSession(session)
   }
 
   async function restoreSession(): Promise<boolean> {
@@ -152,16 +185,18 @@ export const useAuthStore = defineStore('auth', () => {
         persistSession({ user: currentUser, tokens: tokens.value, sessionId: sessionId.value, serverDeviceId: serverDeviceId.value })
       }
       return true
-    } catch {
-      return false
+    } catch (error) {
+      if (error instanceof ApiProblemError && error.status === 401) return false
+      return isAuthenticated.value
     }
   }
 
   async function logout(): Promise<void> {
+    const generation = loginGeneration
     try {
       if (token.value) await useAuthApi.logout()
     } finally {
-      clearSession()
+      if (generation === loginGeneration) clearSession()
     }
   }
 
@@ -179,6 +214,8 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     restoreSession,
     refreshAccessToken,
+    getLoginGeneration,
+    expireSession,
     logout,
   }
 })

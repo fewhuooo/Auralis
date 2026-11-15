@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.support.AuthTestAccounts;
 import com.auralis.app.identity.AuthResult;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -193,8 +194,7 @@ class ParsedDocumentControllerTests {
     }
 
     private AuthResult register(String suffix) {
-        return identityService.register(
-                suffix + "@example.com", "correct horse battery staple", suffix,
+        return AuthTestAccounts.register(identityService, suffix + "@example.com", "correct horse battery staple",
                 new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
     }
 

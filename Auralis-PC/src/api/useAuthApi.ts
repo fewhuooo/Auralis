@@ -10,6 +10,9 @@ export type RefreshRequest = components['schemas']['RefreshRequest']
 export type SessionListResponse = components['schemas']['SessionListResponse']
 export type SessionResponse = components['schemas']['SessionResponse']
 
+type EmailCodeRequest = components['schemas']['EmailCodeRequest']
+type PasswordResetRequest = components['schemas']['PasswordResetRequest']
+
 export interface ProfileUpdateRequest {
   baseVersion: number
   displayName: string
@@ -37,6 +40,15 @@ export const useAuthApi = {
   },
   register(data: RegisterRequest): Promise<AuthResult> {
     return request.post('/api/auth/register', data) as unknown as Promise<AuthResult>
+  },
+  sendRegistrationEmailCode(data: EmailCodeRequest): Promise<void> {
+    return request.post('/api/auth/register/email-code', data) as unknown as Promise<void>
+  },
+  sendPasswordResetEmailCode(data: EmailCodeRequest): Promise<void> {
+    return request.post('/api/auth/password/reset/email-code', data) as unknown as Promise<void>
+  },
+  resetPassword(data: PasswordResetRequest): Promise<void> {
+    return request.post('/api/auth/password/reset', data) as unknown as Promise<void>
   },
   refresh(data: RefreshRequest): Promise<AuthResult> {
     return request.post('/api/auth/refresh', data) as unknown as Promise<AuthResult>
