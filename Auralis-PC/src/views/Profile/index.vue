@@ -565,8 +565,6 @@ import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IconActivity,
-  IconAlarm,
-  IconBell,
   IconCamera,
   IconChecklist,
   IconClock,
@@ -1227,15 +1225,6 @@ const settingGroups = reactive<{ id: string; title: Message; icon: Icon; items: 
       { id: 'compact', label: profileMessages.compactLayout, icon: IconLayoutRows, type: 'toggle', get value() { return settingsStore.compactLayout } },
       { id: 'lang', label: profileMessages.interfaceLanguage, icon: IconLanguage, type: 'select' },
       { id: 'font_size', label: profileMessages.baseFontSize, icon: IconTextSize, type: 'select' },
-    ],
-  },
-  {
-    id: 'reminders',
-    title: profileMessages.reminders,
-    icon: IconBell,
-    items: [
-      { id: 'task_remind', label: profileMessages.taskReminder, icon: IconChecklist, type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
-      { id: 'focus_end', label: profileMessages.focusReminder, icon: IconAlarm, type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
     ],
   },
   {
