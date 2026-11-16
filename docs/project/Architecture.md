@@ -86,7 +86,7 @@ Focus 以稳定 session ID 独立幂等上传，不生成 ReviewEvent。Stats �
 
 1. PC 为原始文件计算 SHA-256，通过 Asset upload intent 上传并 complete，创建关联 FILE Source。
 2. PC 的离屏解析宿主提取内容，Rust 任务与 OCR Sidecar 处理所需页面；ParsedDocument 在本地加密暂存并上传至私有对象存储。
-3. Server complete 核对 owner、Source revision、Asset SHA、gzip / JSON 大小及结构，接受合法解析结果。
+3. Server complete 在事务外读取及验证对象，在短事务内复核活动账号、owner、Source revision 与接收状态，再原子接受解析结果、更新资料状态并创建索引任务。
 4. 摄入 worker 在 lease、attempt 与 revision 围栏内分块、Embedding，完成后原子切换有效 generation；检索只读成功激活的代。
 
 FILE 的文本提取与 OCR 在客户端，TEXT / URL 沿服务端路径。私有 ParsedDocument 不进入普通 Sync。恢复优先复用当前修订已接受的解析文档，否则轮换 revision 返回 AWAITING_CLIENT；旧 claim 不能提交迟到结果。网络暂停由用户明确继续，不能把本地上传完成等同于服务端 INDEXING / READY。

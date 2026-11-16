@@ -78,7 +78,7 @@ Focus 通过稳定 session ID 在用户范围内幂等记录实际秒数及自�
 
 Asset upload intent 使用用户范围 `clientImportId` 幂等键，并校验不可变元信息；complete 通过存储 HEAD、大小/MIME/hash 等边界验证。download-url 返回原始文件名和 MIME，Source 标题不作为文件格式依据。
 
-FILE 等待客户端 Tauri 解析。ParsedDocument upload intent 绑定 owner、Source revision 和源 Asset SHA；complete 在 Source 锁内校验有界 gzip/JSON、顺序及 hash，首个有效 payload 胜出，同 payload 可幂等重放。源 SHA 不一致记录 REJECTED，不创建索引任务；历史 ACCEPTED 数据不在运行路径自动迁移。
+FILE 等待客户端 Tauri 解析。ParsedDocument upload intent 绑定 owner、Source revision 和源 Asset SHA；complete 在事务外校验有界 gzip/JSON、顺序及 hash，最终在锁下复核并让首个有效 payload 胜出，同 payload 可幂等重放。源 SHA 不一致记录 REJECTED，不创建索引任务；历史 ACCEPTED 数据不在运行路径自动迁移。
 
 worker 消费已接受的解析块并以 revision、job/generation、attempt 和有效 lease 校验写入。恢复处理中 FILE 时优先复用当前 revision 的 ACCEPTED 结果；恢复已领取任务时撤销旧租约并置回 PENDING，旧执行不得覆盖新状态。无可复用结果时轮换 revision 并返回 AWAITING_CLIENT。TEXT/URL 使用服务端解析摄入路径。
 
@@ -148,3 +148,5 @@ Realtime 使用 `POST /api/realtime/ticket` 获取一次性 ticket，再连接 `
 Asset 上传重放省略 SHA 时保留已存 SHA；明确提供 SHA 时仍要求一致。该规则修复手机无 SHA 上传经 PC 接手补算后原请求重放被拒，文件名、大小、MIME、用户隔离及对象完成校验保持。其余客户端接入缺口见 Mobile/Tablet 模块，不能以本轮后端验证代替页面可用性。
 
 用户级 `GET /api/stats/weekly` 接受可选 IANA `timeZone`，省略按 UTC；显式时区使用当地日界线，保持连续七天与原返回格式。
+
+Asset 完成的 HEAD、SHA 补算的对象流、ParsedDocument 完成及读取的对象验证均在事务外执行。短事务读取快照并在最终落盘或返回前复核，以 User → Subject → Source 或 User → Asset 协调竞态；接受解析、推进 INDEXING 与索引入队保持原子。清理过期解析上传先在 Source 锁下作废，再在事务外删除载荷，确认成功后记录对象删除时间。失败 Asset 保留同键重传，避免删除覆盖中的对象。

@@ -32,6 +32,13 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,6 +59,9 @@ class AssetShaBackfillTests {
 
     @Autowired
     private TestAssetStorage storage;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void cleanData() {
@@ -157,6 +167,88 @@ class AssetShaBackfillTests {
                 .isEqualTo(sha256("server-bytes"));
     }
 
+    @Test
+    void lateInvalidHeadCannotFailOrDeleteAnAlreadyCompletedUpload() throws Exception {
+        AuthResult owner = register("asset-late-head");
+        var intent = assetService.createUploadIntent(owner.user().id(),
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "notes.pdf", 11, "application/pdf", null));
+        String key = assetRepository.findById(intent.assetId()).orElseThrow().getObjectKey();
+        storage.put(key, new AssetStoragePort.ObjectMetadata(10, "application/pdf", null), "bad-bytes");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        storage.beforeHead.set(() -> awaitRelease(entered, release));
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<com.auralis.app.source.AssetView> first = executor.submit(() -> assetService.complete(owner.user().id(), intent.assetId()));
+            try {
+                assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                storage.put(key, new AssetStoragePort.ObjectMetadata(11, "application/pdf", null), "server-bytes");
+                Future<com.auralis.app.source.AssetView> second = executor.submit(() -> assetService.complete(owner.user().id(), intent.assetId()));
+                assertThat(second.get(10, TimeUnit.SECONDS).uploadStatus()).isEqualTo(AssetUploadStatus.READY);
+            } finally {
+                release.countDown();
+            }
+            assertThat(first.get(10, TimeUnit.SECONDS).uploadStatus()).isEqualTo(AssetUploadStatus.READY);
+            assertThat(storage.contents.get(key)).isEqualTo("server-bytes");
+        }
+    }
+
+    @Test
+    void completionDoesNotReviveAnAssetOrphanedDuringHead() throws Exception {
+        AuthResult owner = register("asset-orphan-head");
+        var intent = assetService.createUploadIntent(owner.user().id(),
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "notes.pdf", 11, "application/pdf", null));
+        String key = assetRepository.findById(intent.assetId()).orElseThrow().getObjectKey();
+        storage.put(key, new AssetStoragePort.ObjectMetadata(11, "application/pdf", null), "server-bytes");
+        assertOrphanedDuringIo(owner.user().id(), intent.assetId(), storage.beforeHead,
+                () -> assetService.complete(owner.user().id(), intent.assetId()));
+    }
+
+    @Test
+    void checksumDoesNotWriteAfterAssetIsOrphanedDuringStreamRead() throws Exception {
+        AuthResult owner = register("asset-orphan-hash");
+        var intent = assetService.createUploadIntent(owner.user().id(),
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "notes.pdf", 11, "application/pdf", null));
+        String key = assetRepository.findById(intent.assetId()).orElseThrow().getObjectKey();
+        storage.put(key, new AssetStoragePort.ObjectMetadata(11, "application/pdf", null), "server-bytes");
+        assetService.complete(owner.user().id(), intent.assetId());
+        assertOrphanedDuringIo(owner.user().id(), intent.assetId(), storage.beforeOpen,
+                () -> assetService.ensureSha256(owner.user().id(), intent.assetId()));
+        assertThat(assetRepository.findById(intent.assetId()).orElseThrow().getSha256()).isNull();
+    }
+
+    private void assertOrphanedDuringIo(UUID userId, UUID assetId, AtomicReference<Runnable> hook,
+                                       Runnable operation) throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        hook.set(() -> awaitRelease(entered, release));
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> pending = executor.submit(operation);
+            try {
+                assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    AssetEntity asset = assetRepository.findForUpdateByIdAndUserId(assetId, userId).orElseThrow();
+                    asset.markOrphaned();
+                    assetRepository.saveAndFlush(asset);
+                })).get(10, TimeUnit.SECONDS);
+            } finally {
+                release.countDown();
+            }
+            assertThatThrownBy(() -> pending.get(10, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(DomainException.class);
+            assertThat(assetRepository.findById(assetId).orElseThrow().getUploadStatus()).isEqualTo(AssetUploadStatus.ORPHANED);
+        }
+    }
+
+    private static void awaitRelease(CountDownLatch entered, CountDownLatch release) {
+        entered.countDown();
+        try {
+            assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
     private AuthResult register(String suffix) {
         return AuthTestAccounts.register(identityService, suffix + "@example.com", "correct horse battery staple",
                 new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
@@ -177,8 +269,10 @@ class AssetShaBackfillTests {
     }
 
     static class TestAssetStorage implements AssetStoragePort {
-        private final Map<String, ObjectMetadata> objects = new HashMap<>();
-        private final Map<String, String> contents = new HashMap<>();
+        private final Map<String, ObjectMetadata> objects = new ConcurrentHashMap<>();
+        private final Map<String, String> contents = new ConcurrentHashMap<>();
+        private final AtomicReference<Runnable> beforeHead = new AtomicReference<>();
+        private final AtomicReference<Runnable> beforeOpen = new AtomicReference<>();
 
         @Override
         public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes, String sha256) {
@@ -193,7 +287,11 @@ class AssetShaBackfillTests {
 
         @Override
         public Optional<ObjectMetadata> headObject(String objectKey) {
-            return Optional.ofNullable(objects.get(objectKey));
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            ObjectMetadata result = objects.get(objectKey);
+            Runnable hook = beforeHead.getAndSet(null);
+            if (hook != null) hook.run();
+            return Optional.ofNullable(result);
         }
 
         @Override
@@ -203,7 +301,16 @@ class AssetShaBackfillTests {
 
         @Override
         public InputStream openObject(String objectKey) {
-            return new ByteArrayInputStream(contents.getOrDefault(objectKey, "").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            Runnable hook = beforeOpen.getAndSet(null);
+            if (hook != null) hook.run();
+            return new ByteArrayInputStream(contents.getOrDefault(objectKey, "").getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+                @Override
+                public synchronized int read(byte[] bytes, int offset, int length) {
+                    assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                    return super.read(bytes, offset, length);
+                }
+            };
         }
 
         @Override
@@ -220,6 +327,8 @@ class AssetShaBackfillTests {
         void clear() {
             objects.clear();
             contents.clear();
+            beforeHead.set(null);
+            beforeOpen.set(null);
         }
     }
 }

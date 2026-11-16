@@ -150,10 +150,6 @@ public class ParsedDocumentEntity {
     public Instant getReceivedAt() { return receivedAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
-    public void markValidating() {
-        status = ParsedDocumentStatus.VALIDATING;
-    }
-
     public void accept(String plainTextSha256, UUID generation) {
         this.plainTextSha256 = plainTextSha256;
         this.generation = generation;

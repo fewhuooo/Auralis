@@ -115,3 +115,11 @@
 最终 `mvnw.cmd -B -ntp -DskipTests compile` 通过；`-Dtest=AssetShaBackfillTests,SourceAssetRelationServiceTests,ParsedDocumentCompleteTests,FocusSessionControllerTests,ReviewLifecycleServiceTests,StatsControllerTests,CoreDomainControllerTests test` 60/60，通过；`scripts/check-openapi.ps1` 运行时契约及双端 SDK 比对通过。唯一只读 reviewer：BLOCKER 0、IMPORTANT 0、OPTIONAL 0。证据：`D:/Temp/auralis-mobile-backend/`。
 
 本轮无 DTO/数据库/客户端改动，未运行前端类型检查、全量 Server、真实 MinIO/Provider 或 GUI/真机验收，未部署或重启服务。用户级 weekly 仍按现行 UTC 七天；本地自然日趋势与对象存储事务边界见问题登记，未在本轮关闭。
+
+## 手机优先：后端时区与资料事务（2026-11-16）
+
+用户级 weekly 按显式 IANA 时区划分连续七个自然日，省略仍用 UTC。对象存储 HEAD、流式 SHA 校验、解析载荷读取与过期清理脱离数据库事务；短事务重新验证活动账号、资料修订及状态，解析接收、更新资料与索引入队原子提交。失败 Asset 保留供同键重传。无数据库迁移。
+
+后端编译、68 项定向测试、OpenAPI 19 项与双端生成类型一致性检查通过；PC 类型检查及相关消费者 23 项通过，Mobile 协议 28 项通过，类型检查仍是生成前复现的 4 项既有错误。`scripts/test-server.ps1` 在任务专用 PostgreSQL 和 TLS 测试环境通过全量 902 项（0 失败、错误、跳过），`mvnw.cmd -B -ntp -DskipTests package` 通过；唯一只读审查无未解决问题。日志位于 `D:/Temp/auralis-backend-followup/`。
+
+本轮未部署或重启应用，未修改手机/平板页面。真实移动端接入与慢网、设备交接验收分别进行。

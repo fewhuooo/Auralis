@@ -162,4 +162,4 @@
 
 - **已修复：上传补算哈希后的幂等重放**。`AssetService.verifyImmutableMetadata` 不再把缺省 SHA 与补算后的持久值冲突；显式 SHA 和其他元信息仍严格比较。`AssetShaBackfillTests` 覆盖同一 READY 返回及失败重试不降低校验，自动验证见 Status；真实手机上传/PC 接手待联调。
 - **已修复：用户级本地自然日趋势**。`GET /api/stats/weekly` 支持可选 IANA `timeZone`，省略仍按 UTC。后端回归覆盖香港午夜、夏令时、非法参数及用户隔离；手机页面接入与真机验收另行进行。
-- **P1：对象存储 I/O 占用数据库事务**。`AssetService.complete` 在事务内 HEAD；`ParsedDocumentService.complete` 在锁 Subject/Source 后执行 HEAD、`ensureSha256` 和解析载荷读取。慢对象存储会延长事务和锁等待。关闭需按完整调用链分离外部 I/O，并在写入事务重新验证 owner、活动状态、revision/状态及并发结果；不能只移除内层注解。该问题来自源码核对，未进行慢网或锁竞争现场复现，本轮未改动此链。
+- **已修复：资料接收与读取占用数据库事务**。Asset HEAD、流式 SHA 补算、解析接收及读取已移出事务；短事务复核账号、状态与修订。解析清理先作废过期上传，再在锁外删除载荷。自动测试覆盖锁外读取、迟到失败、注销、资料删除/修订变化和清理竞争。真实慢网及手机上传后由 PC 接手的业务验收仍待进行。
