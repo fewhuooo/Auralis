@@ -181,7 +181,7 @@ class OverviewBudgetIntegrationTests {
                             AiProviderType.OPENAI_COMPATIBLE.name(), "https://provider.test/v1", "test-model", 100_000, 16_384)),
                     maxPromptChars > 0
                             ? new AuralisProperties.OverviewLimits(maxPromptChars, 0, 0, 0, 0,
-                                    0, 0, 0, 0, 0, 0)
+                                    0, 0, 0, 0, 0)
                             : AuralisProperties.OverviewLimits.withoutAdditionalCaps());
             AuralisProperties properties = mock(AuralisProperties.class);
             when(properties.ai()).thenReturn(ai);

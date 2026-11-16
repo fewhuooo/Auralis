@@ -812,86 +812,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ai/overview-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_5"];
-        put?: never;
-        post: operations["start"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["resume"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/reconcile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["reconcile"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/pause": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["pause"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cancel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/messages/stream": {
         parameters: {
             query?: never;
@@ -933,7 +853,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["cancel_1"];
+        post: operations["cancel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1124,38 +1044,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["models"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_5"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/candidate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["candidate"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2015,56 +1903,6 @@ export interface components {
             reachable?: boolean;
             chatModel?: string;
         };
-        StartRequest: {
-            /** Format: uuid */
-            clientRequestId: string;
-            /** @enum {string} */
-            scope: "SOURCE" | "SUBJECT";
-            /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            subjectId?: string;
-            sourceIds?: string[];
-            /** @enum {string} */
-            mode: "ALL" | "OUTLINE";
-            instruction?: string;
-        };
-        JobView: {
-            /** Format: uuid */
-            jobId: string;
-            /** @enum {string} */
-            status: "QUEUED" | "RUNNING" | "PAUSING" | "PAUSED" | "CANCELLING" | "CANCELLED" | "COMPLETED" | "FAILED" | "RECOVERY_REQUIRED" | "EXPIRED";
-            /** Format: int32 */
-            version: number;
-            /** @enum {string} */
-            scope: "SOURCE" | "SUBJECT";
-            /** Format: uuid */
-            sourceId: string | null;
-            /** Format: uuid */
-            subjectId: string | null;
-            sourceIds: string[] | null;
-            /** @enum {string} */
-            mode: "ALL" | "OUTLINE";
-            /** @enum {string} */
-            stage: "QUEUED" | "VALIDATING" | "INDEXING" | "PLANNING" | "WRITING" | "ASSEMBLING" | "COMPLETE";
-            /** Format: int32 */
-            verifiedNodes: number;
-            /** Format: int32 */
-            totalNodes: number | null;
-            /** Format: date-time */
-            deadlineAt: string | null;
-            safeErrorCode: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            /** Format: date-time */
-            completedAt: string | null;
-        };
-        ControlRequest: {
-            /** Format: int32 */
-            expectedVersion: number;
-        };
         AiMessageCommand: {
             /**
              * Format: int32
@@ -2102,27 +1940,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
+            object?: boolean;
             container?: boolean;
-            floatingPointNumber?: boolean;
-            bigDecimal?: boolean;
+            missingNode?: boolean;
             valueNode?: boolean;
+            bigInteger?: boolean;
+            bigDecimal?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            missingNode?: boolean;
             integralNumber?: boolean;
-            bigInteger?: boolean;
-            boolean?: boolean;
-            string?: boolean;
+            floatingPointNumber?: boolean;
+            short?: boolean;
+            long?: boolean;
             double?: boolean;
-            binary?: boolean;
-            object?: boolean;
+            string?: boolean;
             pojo?: boolean;
+            number?: boolean;
             int?: boolean;
             /** @deprecated */
             textual?: boolean;
-            number?: boolean;
-            short?: boolean;
-            long?: boolean;
+            boolean?: boolean;
+            binary?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {
@@ -2523,17 +2361,6 @@ export interface components {
             /** @enum {string} */
             provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
             models?: string[];
-        };
-        JobList: {
-            jobs: components["schemas"]["JobView"][];
-            nextCursor: string | null;
-        };
-        Candidate: {
-            /** Format: uuid */
-            jobId: string;
-            /** Format: int32 */
-            version: number;
-            result: components["schemas"]["OverviewResponse"];
         };
         AccountDeletionRequest: {
             password: string;
@@ -4281,159 +4108,6 @@ export interface operations {
             };
         };
     };
-    list_5: {
-        parameters: {
-            query?: {
-                limit?: number;
-                cursor?: string;
-                scope?: "SOURCE" | "SUBJECT";
-                scopeId?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobList"];
-                };
-            };
-        };
-    };
-    start: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartRequest"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    resume: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    reconcile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    pause: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    cancel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
     streamMessage: {
         parameters: {
             query?: never;
@@ -4502,7 +4176,7 @@ export interface operations {
             };
         };
     };
-    cancel_1: {
+    cancel: {
         parameters: {
             query?: never;
             header?: never;
@@ -4793,50 +4467,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["AiModelListView"];
-                };
-            };
-        };
-    };
-    get_5: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    candidate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["Candidate"];
                 };
             };
         };

@@ -117,77 +117,8 @@ public class OverviewGenerationCoordinator {
                 ? AuralisProperties.OverviewLimits.withoutAdditionalCaps() : overviewLimits;
     }
 
-    /**
-     * Maps a normalized request id immutably, joins same-profile active work, or takes over the newest
-     * failed generation for the same logical input. A new request id after SUCCESS starts a new generation.
-     */
+    /** Acquires or resumes a generation for the direct JSON/SSE API. */
     public Acquisition acquire(Request request) {
-        validate(request);
-        return transactions.execute(status -> {
-            requireActiveUserLocked(request.userId());
-            lockCurrentSourceScope(request);
-            Instant now = clock.instant();
-            RequestRow mapped = requestMapping(request.userId(), request.requestId());
-            if (mapped != null) {
-                requireSameRequest(mapped, request);
-                GenerationRow generation = generationForUpdate(mapped.generationId());
-                if (!generation.scopeType().equals(request.scopeType())
-                        || !generation.scopeId().equals(request.scopeId())
-                        || !Objects.equals(generation.sourceRevision(), request.sourceRevision())) {
-                    throw requestConflict("The overview request id is already bound to another source revision");
-                }
-                if (!request.profileFingerprint().equals(generation.profileFingerprint())) {
-                    throw requestConflict("The generation was resumed with a different provider profile");
-                }
-                if (!request.algorithmVersion().equals(generation.algorithmVersion())) {
-                    throw requestConflict("The generation was resumed with a different algorithm version");
-                }
-                return mappedGeneration(request, generation, now);
-            }
-
-            GenerationRow active = findActive(request);
-            if (active != null) {
-                if (!request.payloadFingerprint().equals(active.payloadFingerprint())
-                        || !request.profileFingerprint().equals(active.profileFingerprint())
-                        || !request.algorithmVersion().equals(active.algorithmVersion())) {
-                    throw requestConflict("An overview generation with this input is active under another payload or profile");
-                }
-                insertRequestMapping(request, active.id());
-                if (active.leaseUntil().isAfter(now)) return waiter(active);
-                return takeover(request, active, now);
-            }
-
-            GenerationRow failed = findFailed(request);
-            if (failed != null) {
-                if (!request.payloadFingerprint().equals(failed.payloadFingerprint())) {
-                    throw requestConflict("A failed overview generation cannot resume with different input payload");
-                }
-                insertRequestMapping(request, failed.id());
-                return takeover(request, failed, now);
-            }
-
-            UUID generationId = UUID.randomUUID();
-            UUID budgetTaskId = UUID.randomUUID();
-            UUID ownerId = UUID.randomUUID();
-            Instant leaseUntil = now.plusMillis(leaseMillis);
-            jdbc.update("insert into overview_generations (id,user_id,scope_type,scope_id,source_revision,"
-                            + "input_fingerprint,payload_fingerprint,active_fingerprint,profile_fingerprint,algorithm_version,budget_task_id,"
-                            + "status,owner_id,fence,lease_until,created_at,updated_at) "
-                            + "values (?,?,?,?,?,?,?,?,?,?,?,'ACTIVE',?,1,?,?,?)",
-                    generationId, request.userId(), request.scopeType(), request.scopeId(), request.sourceRevision(),
-                    request.inputFingerprint(), request.payloadFingerprint(), activeFingerprint(request), request.profileFingerprint(),
-                    request.algorithmVersion(), budgetTaskId, ownerId, sqlTimestamp(leaseUntil),
-                    sqlTimestamp(now), sqlTimestamp(now));
-            insertRequestMapping(request, generationId);
-            return owner(generationId, request, budgetTaskId, ownerId, 1, leaseUntil);
-        });
-    }
-
-    /**
-     * Acquires an attempt for the current direct JSON/SSE API. Durable jobs keep using {@link #acquire(Request)}
-     * so their existing resume and claim behavior is unchanged.
-     */
-    public Acquisition acquireDirect(Request request) {
         validate(request);
         return transactions.execute(status -> {
             requireActiveUserLocked(request.userId());
@@ -214,9 +145,6 @@ public class OverviewGenerationCoordinator {
                         || !parent.scopeId().equals(request.scopeId())) {
                     throw requestConflict("The retry target belongs to a different Overview scope");
                 }
-                if (hasDurableJob(parent.id())) {
-                    throw requestConflict("A durable Overview job cannot be replaced by a direct request");
-                }
                 GenerationRow successor = retrySuccessor(parent.id());
                 if (successor != null) {
                     if (sameGenerationInput(request, successor)) {
@@ -228,9 +156,6 @@ public class OverviewGenerationCoordinator {
                 }
                 GenerationRow sameIdentityActive = findActiveDirect(request);
                 if (sameIdentityActive != null && !sameIdentityActive.id().equals(parent.id())) {
-                    if (hasDurableJob(sameIdentityActive.id())) {
-                        throw requestConflict("The same Overview content is already running as a durable job");
-                    }
                     if (sameIdentityActive.leaseUntil().isAfter(now)) {
                         throw requestConflict("The same Overview content is already being generated");
                     }
@@ -258,9 +183,6 @@ public class OverviewGenerationCoordinator {
             if (active.leaseUntil().isAfter(now)) {
                 insertRequestMapping(request, active.id());
                 return waiter(active);
-            }
-            if (hasDurableJob(active.id())) {
-                throw requestConflict("The expired Overview generation is owned by a durable job");
             }
             interruptActiveGeneration(active, now);
         }
@@ -295,11 +217,6 @@ public class OverviewGenerationCoordinator {
     private GenerationRow retrySuccessor(UUID parentGenerationId) {
         return firstGeneration("select " + GENERATION_COLUMNS + " from overview_generations "
                 + "where retry_of_generation_id=? for update", parentGenerationId);
-    }
-
-    private boolean hasDurableJob(UUID generationId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject("select count(*)>0 from overview_generation_jobs "
-                + "where generation_id=?", Boolean.class, generationId));
     }
 
     private boolean hasRetrySuccessor(UUID parentGenerationId) {
@@ -390,40 +307,6 @@ public class OverviewGenerationCoordinator {
         }
     }
 
-    private Acquisition mappedGeneration(Request request, GenerationRow generation, Instant now) {
-        return switch (generation.status()) {
-            case "SUCCESS" -> {
-                if (generation.resultJson() == null || generation.resultExpiresAt() == null
-                        || !generation.resultExpiresAt().isAfter(now)) {
-                    throw requestConflict("The stored overview response has expired; this request id cannot be reused");
-                }
-                verifyResult(generation.resultJson(), generation.resultSha256());
-                yield new Acquisition(AcquisitionState.REPLAY, generation.id(), null,
-                        generation.budgetTaskId(), generation.resultJson());
-            }
-            case "ACTIVE" -> {
-                if (generation.leaseUntil().isAfter(now)) yield waiter(generation);
-                if (hasRetrySuccessor(generation.id())) yield failed(generation);
-                yield takeover(request, generation, now);
-            }
-            case "FAILED" -> {
-                if ("OVERVIEW_SOURCE_REVOKED".equals(generation.errorCode())) {
-                    throw requestConflict("The stored overview request was revoked with its source");
-                }
-                if (hasRetrySuccessor(generation.id())) yield failed(generation);
-                yield takeover(request, generation, now);
-            }
-            default -> throw new IllegalStateException("Unknown overview generation status");
-        };
-    }
-
-    private GenerationRow findActive(Request request) {
-        return firstGeneration("select " + GENERATION_COLUMNS + " from overview_generations where user_id=? "
-                        + "and scope_type=? and scope_id=? and source_revision is not distinct from ? "
-                        + "and input_fingerprint=? and status='ACTIVE' for update",
-                request.userId(), request.scopeType(), request.scopeId(), request.sourceRevision(), request.inputFingerprint());
-    }
-
     private GenerationRow findActiveDirect(Request request) {
         return firstGeneration("select " + GENERATION_COLUMNS + " from overview_generations where user_id=? "
                         + "and scope_type=? and scope_id=? and source_revision is not distinct from ? "
@@ -431,14 +314,6 @@ public class OverviewGenerationCoordinator {
                         + "and status='ACTIVE' for update",
                 request.userId(), request.scopeType(), request.scopeId(), request.sourceRevision(),
                 request.inputFingerprint(), request.profileFingerprint(), request.algorithmVersion());
-    }
-
-    private GenerationRow findFailed(Request request) {
-        return firstGeneration("select " + GENERATION_COLUMNS + " from overview_generations where user_id=? "
-                        + "and scope_type=? and scope_id=? and source_revision is not distinct from ? "
-                        + "and input_fingerprint=? and status='FAILED' and error_code is distinct from 'OVERVIEW_SOURCE_REVOKED' "
-                        + "order by updated_at desc,id desc limit 1 for update",
-                request.userId(), request.scopeType(), request.scopeId(), request.sourceRevision(), request.inputFingerprint());
     }
 
     private static final String GENERATION_COLUMNS = "id,user_id,scope_type,scope_id,source_revision,retry_of_generation_id,input_fingerprint,"
@@ -466,30 +341,6 @@ public class OverviewGenerationCoordinator {
                 rs.getObject("owner_id", UUID.class), rs.getLong("fence"), instant(rs, "lease_until"),
                 rs.getString("result_json"), rs.getString("result_sha256"), instant(rs, "result_expires_at"),
                 rs.getString("error_code"));
-    }
-
-    private Acquisition takeover(Request request, GenerationRow generation, Instant now) {
-        UUID ownerId = UUID.randomUUID();
-        Instant leaseUntil = now.plusMillis(leaseMillis);
-        long nextFence = Math.addExact(generation.fence(), 1);
-        int updated;
-        if ("FAILED".equals(generation.status())) {
-            updated = jdbc.update("update overview_generations set status='ACTIVE',active_fingerprint=?,"
-                            + "profile_fingerprint=?,algorithm_version=?,owner_id=?,fence=?,lease_until=?,error_code=null,"
-                            + "error_status=null,error_retry_after_seconds=null,error_reset_at=null,"
-                            + "updated_at=?,completed_at=null where id=? and status='FAILED' and fence=?",
-                    activeFingerprint(request), request.profileFingerprint(), request.algorithmVersion(), ownerId,
-                    nextFence, sqlTimestamp(leaseUntil), sqlTimestamp(now), generation.id(), generation.fence());
-        } else {
-            updated = jdbc.update("update overview_generations set active_fingerprint=?,profile_fingerprint=?,algorithm_version=?,"
-                            + "owner_id=?,fence=?,lease_until=?,error_code=null,error_status=null,error_retry_after_seconds=null,"
-                            + "error_reset_at=null,updated_at=? where id=? and status='ACTIVE' and fence=? "
-                            + "and lease_until<=?",
-                    activeFingerprint(request), request.profileFingerprint(), request.algorithmVersion(), ownerId, nextFence,
-                    sqlTimestamp(leaseUntil), sqlTimestamp(now), generation.id(), generation.fence(), sqlTimestamp(now));
-        }
-        if (updated != 1) throw leaseLost(generation.leaseUntil());
-        return owner(generation.id(), request, generation.budgetTaskId(), ownerId, nextFence, leaseUntil);
     }
 
     private Acquisition owner(UUID generationId, Request request, UUID budgetTaskId,
@@ -772,8 +623,7 @@ public class OverviewGenerationCoordinator {
             if (combinedMetadata == null) return false;
             long resultBytes = utf8Bytes(payload);
             long checkpointBytes = generationCheckpointBytes(lease.generationId());
-            boolean retain = hasPinnedJobPayload(lease.generationId())
-                    || admitReusablePayload(lease.generationId(), resultBytes, checkpointBytes);
+            boolean retain = admitReusablePayload(lease.generationId(), resultBytes, checkpointBytes);
             if (!retain) {
                 jdbc.update("delete from overview_generation_checkpoints where generation_id=?", lease.generationId());
             }
@@ -808,12 +658,6 @@ public class OverviewGenerationCoordinator {
         return bytes == null ? 0 : bytes;
     }
 
-    private boolean hasPinnedJobPayload(UUID generationId) {
-        Integer pinned = jdbc.query("select 1 from overview_generation_jobs j where j.generation_id=? limit 1",
-                rs -> rs.next() ? 1 : 0, generationId);
-        return pinned != null && pinned == 1;
-    }
-
     private boolean admitReusablePayload(UUID generationId, long resultBytes, long checkpointBytes) {
         long currentBytes = Math.addExact(resultBytes, checkpointBytes);
         if (currentBytes > cacheMaxBytes) return false;
@@ -823,8 +667,7 @@ public class OverviewGenerationCoordinator {
         if (totalBytes + currentBytes <= cacheMaxBytes && totalGenerations + 1 <= cacheMaxGenerations) return true;
         List<UUID> candidates = jdbc.query("select g.id from overview_generations g where g.status='SUCCESS' "
                         + "and (g.result_json is not null or exists (select 1 from overview_generation_checkpoints c "
-                        + "where c.generation_id=g.id)) and not exists (select 1 from overview_generation_jobs j "
-                        + "where j.generation_id=g.id) "
+                        + "where c.generation_id=g.id)) "
                         + "order by g.completed_at nulls first,g.id limit ? for update of g skip locked",
                 (rs, rowNum) -> rs.getObject(1, UUID.class), CACHE_EVICTION_BATCH_SIZE);
         List<UUID> victims = new ArrayList<>();
@@ -848,19 +691,16 @@ public class OverviewGenerationCoordinator {
     private long reusableCacheBytes() {
         Long bytes = jdbc.queryForObject("select "
                 + "(select coalesce(sum(octet_length(g.result_json)),0) from overview_generations g "
-                + "where g.status='SUCCESS' and g.result_json is not null and not exists (select 1 from overview_generation_jobs j "
-                + "where j.generation_id=g.id)) + "
+                + "where g.status='SUCCESS' and g.result_json is not null) + "
                 + "(select coalesce(sum(octet_length(c.payload_json)),0) from overview_generation_checkpoints c "
-                + "join overview_generations g on g.id=c.generation_id where g.status='SUCCESS' and not exists "
-                + "(select 1 from overview_generation_jobs j where j.generation_id=g.id))", Long.class);
+                + "join overview_generations g on g.id=c.generation_id where g.status='SUCCESS')", Long.class);
         return bytes == null ? 0 : bytes;
     }
 
     private long reusableCacheGenerations() {
         Long count = jdbc.queryForObject("select count(*) from overview_generations g where g.status='SUCCESS' "
                 + "and (g.result_json is not null or exists (select 1 from overview_generation_checkpoints c "
-                + "where c.generation_id=g.id)) and not exists (select 1 from overview_generation_jobs j "
-                + "where j.generation_id=g.id)", Long.class);
+                + "where c.generation_id=g.id))", Long.class);
         return count == null ? 0 : count;
     }
 
@@ -1108,10 +948,6 @@ public class OverviewGenerationCoordinator {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
-    }
-
-    private String activeFingerprint(Request request) {
-        return sha256(request.inputFingerprint() + ":" + Objects.toString(request.sourceRevision(), ""));
     }
 
     private String directActiveFingerprint(Request request) {

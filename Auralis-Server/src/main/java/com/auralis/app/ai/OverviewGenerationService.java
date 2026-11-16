@@ -119,8 +119,7 @@ public class OverviewGenerationService {
     private final ScheduledExecutorService deadlineScheduler;
     private final Executor generationExecutor;
     private final OverviewGenerationCoordinator generationCoordinator;
-    @Autowired(required = false)
-    private OverviewJobInvocationJournal generationInvocationJournal;
+    private final OverviewGenerationInvocationJournal generationInvocationJournal;
     @Autowired(required = false)
     private OverviewTrace overviewTrace;
     // Coalesces calls handled by this service instance; it does not coordinate across server replicas.
@@ -135,7 +134,7 @@ public class OverviewGenerationService {
                                      @Qualifier("overviewGenerationExecutor") Executor generationExecutor) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
                 documentValidator, objectMapper, System::nanoTime, deadlineScheduler, generationExecutor,
-                null);
+                null, null);
     }
 
     @Autowired
@@ -145,10 +144,11 @@ public class OverviewGenerationService {
                                      OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
                                      @Qualifier("overviewDeadlineScheduler") ScheduledExecutorService deadlineScheduler,
                                      @Qualifier("overviewGenerationExecutor") Executor generationExecutor,
-                                     OverviewGenerationCoordinator generationCoordinator) {
+                                     OverviewGenerationCoordinator generationCoordinator,
+                                     OverviewGenerationInvocationJournal generationInvocationJournal) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
                 documentValidator, objectMapper, System::nanoTime, deadlineScheduler, generationExecutor,
-                generationCoordinator);
+                generationCoordinator, generationInvocationJournal);
     }
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -156,7 +156,7 @@ public class OverviewGenerationService {
                                      AiInvocationGateway invocationGateway, AuralisProperties properties,
                                      OverviewDocumentValidator documentValidator, ObjectMapper objectMapper) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
-                documentValidator, objectMapper, System::nanoTime, null, Runnable::run, null);
+                documentValidator, objectMapper, System::nanoTime, null, Runnable::run, null, null);
     }
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -165,7 +165,7 @@ public class OverviewGenerationService {
                                      OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
                                      LongSupplier monotonicNanos) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
-                documentValidator, objectMapper, monotonicNanos, null, Runnable::run, null);
+                documentValidator, objectMapper, monotonicNanos, null, Runnable::run, null, null);
     }
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -175,7 +175,7 @@ public class OverviewGenerationService {
                                      LongSupplier monotonicNanos, ScheduledExecutorService deadlineScheduler,
                                      Executor generationExecutor) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
-                documentValidator, objectMapper, monotonicNanos, deadlineScheduler, generationExecutor, null);
+                documentValidator, objectMapper, monotonicNanos, deadlineScheduler, generationExecutor, null, null);
     }
 
     OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -184,6 +184,18 @@ public class OverviewGenerationService {
                               OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
                               LongSupplier monotonicNanos, ScheduledExecutorService deadlineScheduler,
                               Executor generationExecutor, OverviewGenerationCoordinator generationCoordinator) {
+        this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
+                documentValidator, objectMapper, monotonicNanos, deadlineScheduler, generationExecutor,
+                generationCoordinator, null);
+    }
+
+    OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
+                              SourceChunkRepository chunkRepository, AiSettingsService settingsService,
+                              AiInvocationGateway invocationGateway, AuralisProperties properties,
+                              OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
+                              LongSupplier monotonicNanos, ScheduledExecutorService deadlineScheduler,
+                              Executor generationExecutor, OverviewGenerationCoordinator generationCoordinator,
+                              OverviewGenerationInvocationJournal generationInvocationJournal) {
         this.sourceService = sourceService;
         this.subjectService = subjectService;
         this.chunkRepository = chunkRepository;
@@ -197,6 +209,7 @@ public class OverviewGenerationService {
         this.deadlineScheduler = deadlineScheduler;
         this.generationExecutor = Objects.requireNonNull(generationExecutor);
         this.generationCoordinator = generationCoordinator;
+        this.generationInvocationJournal = generationInvocationJournal;
     }
 
     public OverviewResponse generateSource(UUID userId, SourceOverviewRequest request) {
@@ -215,26 +228,18 @@ public class OverviewGenerationService {
     public OverviewResponse generateSource(UUID userId, SourceOverviewRequest request, String requestId,
                                            OverviewCancellation requestCancellation,
                                            OverviewTaskDeadline ingressDeadline) {
-        return generateSource(userId, request, requestId, requestCancellation, ingressDeadline, null);
+        return generateSourceInternal(userId, request, requestId, requestCancellation, ingressDeadline);
     }
 
-    public OverviewResponse generateSource(UUID userId, SourceOverviewRequest request, String requestId,
-                                           OverviewCancellation requestCancellation,
-                                           OverviewTaskDeadline ingressDeadline, OverviewJobExecution background) {
-        return generateSource(userId, request, requestId, requestCancellation, ingressDeadline, background, null);
-    }
-
-    private OverviewResponse generateSource(UUID userId, SourceOverviewRequest request, String requestId,
-                                            OverviewCancellation requestCancellation,
-                                            OverviewTaskDeadline ingressDeadline, OverviewJobExecution background,
-                                            AiSettingsService.ResolvedSettings pinnedSettings) {
+    private OverviewResponse generateSourceInternal(UUID userId, SourceOverviewRequest request, String requestId,
+                                                    OverviewCancellation requestCancellation,
+                                                    OverviewTaskDeadline ingressDeadline) {
         OverviewTaskDeadline deadline = ingressDeadline == null
                 ? newTaskDeadline() : ingressDeadline.retain();
         GenerationContext context = new GenerationContext(userId, request == null ? null : request.sourceId(), null,
                 request == null ? null : request.mode(), normalizeRequestId(requestId), UUID.randomUUID().toString(),
-                deadline, null).withBackground(background);
-        OverviewTraceRun traceRun = safeTrace().start(userId, parseUuid(context.requestId()),
-                null, background == null ? null : background.lease().jobId());
+                deadline, null);
+        OverviewTraceRun traceRun = safeTrace().start(userId, parseUuid(context.requestId()), null, null);
         context.recoveryTracker().traceRun(traceRun);
         traceEvent(context, "REQUEST", "OVERVIEW", "STARTED", Map.of("scope", "SOURCE"), null);
         logStart(context);
@@ -251,7 +256,7 @@ public class OverviewGenerationService {
         if (source.ingestionStatus() != SourceIngestionStatus.READY) {
             throw new DomainException("MUTATION_REJECTED", "Source is not ready for overview generation");
         }
-        AiSettingsService.ResolvedSettings settings = pinnedSettings == null ? resolveOverviewSettings(userId) : pinnedSettings;
+        AiSettingsService.ResolvedSettings settings = resolveOverviewSettings(userId);
         context = context.withSettings(settings, resolveModelBudget(settings));
         boolean detailed = source.type() == SourceType.FILE;
         if (!detailed && request.mode() != OverviewMode.SUMMARY) throw new DomainException("MODEL_UNAVAILABLE", "Detailed Overview requires a parsed file source");
@@ -293,8 +298,7 @@ public class OverviewGenerationService {
         java.util.Optional<OverviewGenerationCoordinator.Acquisition> mappedRequest = durableRequest == null
                 ? java.util.Optional.empty() : generationCoordinator.lookupRequest(durableRequest);
         if (mappedRequest.isPresent()) {
-            OverviewGenerationCoordinator.Acquisition mapped = background == null
-                    ? generationCoordinator.acquireDirect(durableRequest) : mappedRequest.orElseThrow();
+            OverviewGenerationCoordinator.Acquisition mapped = generationCoordinator.acquire(durableRequest);
             OverviewCancellation.Registration cancellationRegistration = requestCancellation == null ? () -> { }
                     : requestCancellation.onCancel(() -> generationContext.deadline().cancellation().cancel(
                             requestCancellation.reason() == OverviewCancellation.Reason.DEADLINE
@@ -303,12 +307,12 @@ public class OverviewGenerationService {
                 result = runDurableAcquisition(mapped, generationContext, generationContext.deadline().cancellation(), acquisition ->
                         generateSourceOverview(generationContext.withCancellation(generationContext.deadline().cancellation())
                                 .withAcquisition(acquisition), request, source, chunks, detailedInput),
-                        sourceReplayAliases, background != null);
+                        sourceReplayAliases);
             } finally {
                 cancellationRegistration.close();
             }
-        } else if (background == null && request.retryOfRequestId() != null && durableRequest != null) {
-            OverviewGenerationCoordinator.Acquisition acquisition = generationCoordinator.acquireDirect(durableRequest);
+        } else if (request.retryOfRequestId() != null && durableRequest != null) {
+            OverviewGenerationCoordinator.Acquisition acquisition = generationCoordinator.acquire(durableRequest);
             OverviewCancellation cancellation = generationContext.deadline().cancellation();
             OverviewCancellation.Registration registration = requestCancellation == null ? () -> { }
                     : requestCancellation.onCancel(() -> cancellation.cancel(requestCancellation.reason()));
@@ -316,7 +320,7 @@ public class OverviewGenerationService {
                 result = runDurableAcquisition(acquisition, generationContext, cancellation,
                         selected -> generateSourceOverview(generationContext.withCancellation(cancellation)
                                 .withAcquisition(selected), request, source, chunks, detailedInput),
-                        sourceReplayAliases, false);
+                        sourceReplayAliases);
             } finally {
                 registration.close();
             }
@@ -364,91 +368,11 @@ public class OverviewGenerationService {
         if (chunks.isEmpty()) throw new DomainException("MUTATION_REJECTED", "Source has no active chunks for overview generation");
     }
 
-    @org.springframework.transaction.annotation.Transactional
-    public OverviewJobRepository.Snapshot snapshotForJob(UUID userId, OverviewJobDtos.StartRequest request) {
-        Objects.requireNonNull(request);
-        OverviewMode mode = overviewMode(request.mode());
-        if (mode == null || mode == OverviewMode.SUMMARY) {
-            throw new DomainException("MUTATION_REJECTED", "Background Overview jobs require ALL or OUTLINE mode");
-        }
-        List<SourceView> sources = new ArrayList<>();
-        UUID scopeId;
-        String requestJson = write(request);
-        if (exceeded(requestJson.length(), overviewLimits().maxJobRequestChars())) {
-            throw new DomainException("VALIDATION_FAILED", "Overview job request exceeds its configured storage limit");
-        }
-        String payloadFingerprint;
-        String inventoryFingerprint;
-        RawInputInventory manifestInventory;
-        if (request.scope() == OverviewJobDtos.Scope.SOURCE) {
-            if (request.sourceId() == null || request.subjectId() != null || request.sourceIds() != null) {
-                throw new DomainException("VALIDATION_FAILED", "SOURCE scope requires only sourceId");
-            }
-            SourceOverviewRequest sourceRequest = new SourceOverviewRequest(request.sourceId(), mode, request.instruction());
-            requireRequest(userId, sourceRequest);
-            validateInstruction(request.instruction());
-            SourceView source = sourceService.requireActiveSourceForMutation(userId, request.sourceId());
-            if (source.ingestionStatus() != SourceIngestionStatus.READY) {
-                throw new DomainException("MUTATION_REJECTED", "Source is not ready for overview generation");
-            }
-            scopeId = source.id();
-            sources.add(source);
-            manifestInventory = loadRawInputInventory(userId, List.of(source), Map.of(source.id(), "source-1"));
-            inventoryFingerprint = manifestInventory.identityFingerprint();
-            payloadFingerprint = sourceJobPayloadFingerprint(source, sourceRequest, inventoryFingerprint);
-        } else if (request.scope() == OverviewJobDtos.Scope.SUBJECT) {
-            if (request.subjectId() == null || request.sourceId() != null || request.sourceIds() == null
-                    || request.sourceIds().isEmpty() || exceeded(request.sourceIds().size(), overviewLimits().maxSources())
-                    || new LinkedHashSet<>(request.sourceIds()).size() != request.sourceIds().size()) {
-                throw new DomainException("VALIDATION_FAILED", "SUBJECT scope requires a subjectId and unique sourceIds");
-            }
-            subjectService.requireActiveSubjectForMutation(userId, request.subjectId());
-            for (UUID sourceId : request.sourceIds().stream().sorted().toList()) {
-                sourceService.requireActiveSourceForMutation(userId, sourceId, request.subjectId());
-            }
-            scopeId = request.subjectId();
-            Map<UUID, String> aliases = new LinkedHashMap<>();
-            for (int i = 0; i < request.sourceIds().size(); i++) {
-                SourceView source = sourceService.requireActiveSource(userId, request.sourceIds().get(i));
-                if (!request.subjectId().equals(source.subjectId()) || source.ingestionStatus() != SourceIngestionStatus.READY) {
-                    throw new DomainException("MUTATION_REJECTED", "Subject source is not ready or does not belong to the subject");
-                }
-                sources.add(source);
-                aliases.put(source.id(), "source-" + (i + 1));
-            }
-            List<SubjectOverviewSourceInput> inputs = sources.stream()
-                    .map(source -> new SubjectOverviewSourceInput(source.id(), source.title(), null, null)).toList();
-            SubjectOverviewRequest subjectRequest = new SubjectOverviewRequest(request.subjectId(), mode,
-                    request.instruction(), inputs);
-            manifestInventory = loadRawInputInventory(userId, sources, aliases);
-            inventoryFingerprint = manifestInventory.identityFingerprint();
-            payloadFingerprint = subjectJobPayloadFingerprint(subjectPayloadFingerprint(subjectRequest, sources), inventoryFingerprint);
-        } else {
-            throw new DomainException("VALIDATION_FAILED", "Overview job scope is required");
-        }
-        AiSettingsService.JobProfileMetadata profile = settingsService.jobProfileMetadata(userId, AiProviderType.OPENAI_COMPATIBLE);
-        String input = sha256(write(List.of(DETAILED_ALGORITHM_VERSION, payloadFingerprint,
-                capacityProfileFingerprint(profile.source(),
-                        resolveModelBudget(profile.provider(), profile.endpoint(), profile.chatModel(), profile.source())))));
-        List<JobManifestUnit> manifest = new ArrayList<>();
-        for (RawInputUnit unit : manifestInventory.units()) {
-            manifest.add(new JobManifestUnit(unit.alias(), unit.sourceId(), unit.sourceRevision(), unit.chunkId(),
-                    unit.generation(), unit.ordinal(), unit.contentHash(), unit.charStart(), unit.charEnd()));
-        }
-        String manifestJson = write(manifest);
-        if (exceeded(manifestJson.length(), overviewLimits().maxSourceManifestChars())) {
-            throw new DomainException("VALIDATION_FAILED", "Overview source manifest exceeds its configured storage limit");
-        }
-        String requestHash = sha256(write(java.util.Arrays.asList(request.scope(), scopeId, request.sourceId(), request.subjectId(),
-                request.sourceIds(), request.mode(), request.instruction() == null ? "" : request.instruction())));
-        return new OverviewJobRepository.Snapshot(scopeId, requestHash, requestJson, manifestJson, input, profile.fingerprint(),
-                DETAILED_ALGORITHM_VERSION);
-    }
-
     /** Rebuilds the current raw-source identity without resolving credentials, profile, or Provider state. */
-    public OverviewInputDescriptor currentRawInputDescriptor(UUID userId, OverviewJobDtos.Scope scope,
+    public OverviewInputDescriptor currentRawInputDescriptor(UUID userId, String scope,
                                                              UUID scopeId, List<UUID> orderedSourceIds) {
-        if (scope == null || scopeId == null || orderedSourceIds == null || orderedSourceIds.isEmpty()
+        if (!"SOURCE".equals(scope) && !"SUBJECT".equals(scope)
+                || scopeId == null || orderedSourceIds == null || orderedSourceIds.isEmpty()
                 || exceeded(orderedSourceIds.size(), overviewLimits().maxSources())
                 || orderedSourceIds.stream().anyMatch(Objects::isNull)
                 || orderedSourceIds.stream().distinct().count() != orderedSourceIds.size()) {
@@ -456,7 +380,7 @@ public class OverviewGenerationService {
         }
         List<SourceView> sources = new ArrayList<>(orderedSourceIds.size());
         Map<UUID, String> sourceAliases = new LinkedHashMap<>();
-        if (scope == OverviewJobDtos.Scope.SOURCE) {
+        if ("SOURCE".equals(scope)) {
             if (orderedSourceIds.size() != 1 || !scopeId.equals(orderedSourceIds.getFirst())) {
                 throw new DomainException("RESOURCE_VERSION_CONFLICT", "Stored raw Overview source scope changed");
             }
@@ -485,48 +409,10 @@ public class OverviewGenerationService {
                 .map(unit -> new OverviewInputDescriptor.OverviewPartInputUnit(unit.alias(), unit.sourceId(),
                         unit.sourceRevision(), unit.chunkId(), unit.generation(), unit.ordinal(), unit.contentHash(),
                         unit.charStart(), unit.charEnd())).toList();
-        String fingerprint = sha256(write(List.of("AURALIS-OVERVIEW-SOURCE-CONTENT-V1", scope.name(), scopeId,
+        String fingerprint = sha256(write(List.of("AURALIS-OVERVIEW-SOURCE-CONTENT-V1", scope, scopeId,
                 orderedSourceIds, revisions, units, inventory.identityFingerprint())));
-        return new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_CONTENT, scope.name(), scopeId,
+        return new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_CONTENT, scope, scopeId,
                 orderedSourceIds, revisions, units, List.of(), fingerprint);
-    }
-
-    public OverviewResponse executeBackgroundJob(UUID userId, OverviewJobDtos.StartRequest request, String generationRequestId,
-                                                  long remainingMillis, String expectedJobProfileFingerprint,
-                                                  OverviewJobExecution execution) {
-        requireDetailedGenerationReady(request == null ? null : overviewMode(request.mode()));
-        OverviewTaskDeadline deadline = newTaskDeadline(remainingMillis);
-        try {
-            AiSettingsService.JobResolvedSettings pinned = settingsService.resolveJobSettings(userId,
-                    AiProviderType.OPENAI_COMPATIBLE, expectedJobProfileFingerprint);
-            AiSettingsService.ResolvedSettings resolvedSettings = pinned.settings();
-            if (!settingsService.matchesResolvedSettings(pinned.metadata(), resolvedSettings)) {
-                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview provider profile changed during claim");
-            }
-            OverviewResponse result;
-            OverviewMode mode = overviewMode(request.mode());
-            if (request.scope() == OverviewJobDtos.Scope.SOURCE) {
-                result = generateSource(userId, new SourceOverviewRequest(request.sourceId(), mode, request.instruction()),
-                        generationRequestId, execution.cancellation(), deadline, execution, resolvedSettings);
-            } else {
-                List<SubjectOverviewSourceInput> sources = request.sourceIds().stream()
-                        .map(id -> new SubjectOverviewSourceInput(id, null, null, null)).toList();
-                result = generateSubject(userId, new SubjectOverviewRequest(request.subjectId(), mode,
-                        request.instruction(), sources), generationRequestId, execution.cancellation(), deadline, execution,
-                        resolvedSettings);
-            }
-            execution.stage(OverviewJobDtos.Stage.ASSEMBLING);
-            return result;
-        } finally {
-            deadline.finish();
-        }
-    }
-
-    private record JobManifestUnit(String alias, UUID sourceId, UUID sourceRevision, UUID chunkId, UUID generation,
-                                   int ordinal, String contentHash, int charStart, int charEnd) { }
-
-    private static OverviewMode overviewMode(OverviewJobDtos.Mode mode) {
-        return mode == null ? null : OverviewMode.valueOf(mode.name());
     }
 
     private OverviewResponse generateSourceOverview(GenerationContext context, SourceOverviewRequest request,
@@ -570,7 +456,7 @@ public class OverviewGenerationService {
         AiStage usageStage = stage.mapStage() ? AiStage.OVERVIEW_MAP : AiStage.OVERVIEW_REDUCE;
         AiInvocationBinding journal = context.acquisition() != null && context.acquisition().lease() != null
                 && generationInvocationJournal != null
-                ? generationInvocationJournal.binding(null, context.acquisition().lease(), stage.name(),
+                ? generationInvocationJournal.binding(context.acquisition().lease(), stage.name(),
                         AiOutputRole.INTERMEDIATE.name())
                 : null;
         AiInvocationBinding admission = new AiInvocationBinding() {
@@ -705,9 +591,7 @@ public class OverviewGenerationService {
                         }
                         OverviewGenerationCoordinator.Acquisition binding = null;
                         if (durableRequest != null) {
-                            binding = generationContext.background() == null
-                                    ? generationCoordinator.acquireDirect(durableRequest)
-                                    : generationCoordinator.acquire(durableRequest);
+                            binding = generationCoordinator.acquire(durableRequest);
                             ownedFlight.binding.complete(binding);
                             ownerBinding.join();
                         }
@@ -719,7 +603,7 @@ public class OverviewGenerationService {
                                         ownedFlight.cancellation,
                                         acquisition -> operation.apply(generationContext.withCancellation(ownedFlight.cancellation)
                                                 .withLocalFlight(key, ownedFlight).withAcquisition(acquisition), acquisition),
-                                        replayAliases, false);
+                                        replayAliases);
                         deadline.remainingMillis();
                         ownedFlight.result.complete(value);
                     } catch (RuntimeException | Error failure) {
@@ -800,37 +684,20 @@ public class OverviewGenerationService {
                                                    OverviewCancellation cancellation,
                                                    Function<OverviewGenerationCoordinator.Acquisition,
                                                            OverviewResponse> ownerOperation,
-                                                   Map<String, String> replayAliases,
-                                                   boolean allowMappedFailureTakeover) {
+                                                   Map<String, String> replayAliases) {
         OverviewGenerationCoordinator.Acquisition acquisition = initial;
-        int transitions = 0;
-        while (true) {
             context.recoveryTracker().generationId(acquisition.generationId());
             traceEvent(context, "GENERATION_ACQUISITION", "DURABLE_GENERATION", acquisition.state().name(),
                     traceMetadata(context, Map.of("generationId", Objects.toString(acquisition.generationId(), ""),
-                            "budgetTaskId", acquisition.budgetTaskId() == null ? "" : acquisition.budgetTaskId().toString(),
-                            "transition", String.valueOf(transitions))), null);
+                            "budgetTaskId", acquisition.budgetTaskId() == null ? "" : acquisition.budgetTaskId().toString())), null);
             context.deadline().remainingMillis();
             if (cancellation != null && cancellation.isCancelled()) {
                 throw new DomainException("MODEL_TIMEOUT", "Overview request was cancelled");
             }
-            if (context.background() != null && context.coordinatorRequest() != null
-                    && !context.background().matches(context.coordinatorRequest())) {
-                if (acquisition.lease() != null) {
-                    generationCoordinator.fail(acquisition.lease(), "RESOURCE_VERSION_CONFLICT",
-                            (OverviewTaskUsageSummary) null, context.recoveryTracker().count(), context.recoveryTracker().actions());
-                }
-                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview job snapshot changed before generation started");
-            }
             if (acquisition.state() == OverviewGenerationCoordinator.AcquisitionState.FAILED) {
-                if (allowMappedFailureTakeover && transitions++ == 0) {
-                    acquisition = generationCoordinator.acquire(context.coordinatorRequest());
-                    continue;
-                }
                 throw new DomainException("OVERVIEW_GENERATION_FAILED", "The previous overview generation failed");
             }
             if (acquisition.state() == OverviewGenerationCoordinator.AcquisitionState.REPLAY) {
-                if (context.background() != null) context.background().bindGeneration(acquisition.generationId(), acquisition.budgetTaskId());
                 requireCurrentSource(context);
                 traceEvent(context, "CACHE_REUSE", "DURABLE_GENERATION", "REQUEST_REPLAY",
                         traceMetadata(context, Map.of("generationId", Objects.toString(acquisition.generationId(), ""))), null);
@@ -843,17 +710,12 @@ public class OverviewGenerationService {
                         java.time.Duration.ofMillis(context.deadline().remainingMillis()),
                         () -> cancellation != null && cancellation.isCancelled());
                 if ("SUCCESS".equals(outcome.status())) {
-                    if (context.background() != null) context.background().bindGeneration(acquisition.generationId(), acquisition.budgetTaskId());
                     requireCurrentSource(context);
                     traceEvent(context, "CACHE_REUSE", "DURABLE_GENERATION", "WAITER_RESULT",
                             traceMetadata(context, Map.of("generationId", Objects.toString(acquisition.generationId(), ""))), null);
                     return readDurableResult(outcome.resultJson(), replayAliases, context.mode());
                 }
                 if ("EXPIRED".equals(outcome.status())) {
-                    if (allowMappedFailureTakeover && transitions++ == 0) {
-                        acquisition = generationCoordinator.acquire(context.coordinatorRequest());
-                        continue;
-                    }
                     throw new DomainException("MODEL_TIMEOUT", "Overview generation ownership expired");
                 }
                 if ("FAILED".equals(outcome.status())) {
@@ -880,15 +742,6 @@ public class OverviewGenerationService {
                         context.recoveryTracker().count(), context.recoveryTracker().actions());
                 throw new DomainException("OVERVIEW_RECOVERY_EXHAUSTED",
                         "An earlier Overview provider call has unresolved dispatch usage and requires recovery");
-            }
-            if (context.background() != null) {
-                try {
-                    context.background().bindGeneration(lease);
-                } catch (RuntimeException attachFailure) {
-                    generationCoordinator.fail(lease, "OVERVIEW_GENERATION_FAILED", (OverviewTaskUsageSummary) null,
-                            context.recoveryTracker().count(), context.recoveryTracker().actions());
-                    throw attachFailure;
-                }
             }
             AtomicBoolean lostLease = new AtomicBoolean();
             AutoCloseable heartbeat = generationCoordinator.startHeartbeat(lease, () -> {
@@ -935,7 +788,6 @@ public class OverviewGenerationService {
             } finally {
                 try { heartbeat.close(); } catch (Exception ignored) { }
             }
-        }
     }
 
     private OverviewResponse readDurableResult(String payload, Map<String, String> aliases, OverviewMode mode) {
@@ -990,26 +842,18 @@ public class OverviewGenerationService {
     public OverviewResponse generateSubject(UUID userId, SubjectOverviewRequest request, String requestId,
                                             OverviewCancellation requestCancellation,
                                             OverviewTaskDeadline ingressDeadline) {
-        return generateSubject(userId, request, requestId, requestCancellation, ingressDeadline, null);
+        return generateSubjectInternal(userId, request, requestId, requestCancellation, ingressDeadline);
     }
 
-    public OverviewResponse generateSubject(UUID userId, SubjectOverviewRequest request, String requestId,
-                                            OverviewCancellation requestCancellation,
-                                            OverviewTaskDeadline ingressDeadline, OverviewJobExecution background) {
-        return generateSubject(userId, request, requestId, requestCancellation, ingressDeadline, background, null);
-    }
-
-    private OverviewResponse generateSubject(UUID userId, SubjectOverviewRequest request, String requestId,
+    private OverviewResponse generateSubjectInternal(UUID userId, SubjectOverviewRequest request, String requestId,
                                              OverviewCancellation requestCancellation,
-                                             OverviewTaskDeadline ingressDeadline, OverviewJobExecution background,
-                                             AiSettingsService.ResolvedSettings pinnedSettings) {
+                                             OverviewTaskDeadline ingressDeadline) {
         OverviewTaskDeadline deadline = ingressDeadline == null
                 ? newTaskDeadline() : ingressDeadline.retain();
         GenerationContext baseContext = new GenerationContext(userId, null, null,
                 request == null ? null : request.mode(), normalizeRequestId(requestId), UUID.randomUUID().toString(),
-                deadline, null).withBackground(background);
-        OverviewTraceRun traceRun = safeTrace().start(userId, parseUuid(baseContext.requestId()),
-                null, background == null ? null : background.lease().jobId());
+                deadline, null);
+        OverviewTraceRun traceRun = safeTrace().start(userId, parseUuid(baseContext.requestId()), null, null);
         baseContext.recoveryTracker().traceRun(traceRun);
         traceEvent(baseContext, "REQUEST", "OVERVIEW", "STARTED", Map.of("scope", "SUBJECT"), null);
         OverviewCancellation.Registration requestRegistration = requestCancellation == null ? () -> { }
@@ -1053,7 +897,7 @@ public class OverviewGenerationService {
         if (safeSources.isEmpty()) {
             throw new DomainException("VALIDATION_FAILED", "Subject overview requires at least one usable source");
         }
-        AiSettingsService.ResolvedSettings settings = pinnedSettings == null ? resolveOverviewSettings(userId) : pinnedSettings;
+        AiSettingsService.ResolvedSettings settings = resolveOverviewSettings(userId);
         context = context.withSettings(settings, resolveModelBudget(settings))
                 ;
         traceEvent(context, "INPUT_SNAPSHOT", "PARSED_SOURCE", "READY",
@@ -1076,15 +920,11 @@ public class OverviewGenerationService {
         GenerationContext subjectContext = context;
         OverviewResponse result;
         if (durableRequest != null) {
-            java.util.Optional<OverviewGenerationCoordinator.Acquisition> mapped = background == null
-                    ? java.util.Optional.empty() : generationCoordinator.lookupRequest(durableRequest);
-            OverviewGenerationCoordinator.Acquisition initial = background == null
-                    ? generationCoordinator.acquireDirect(durableRequest)
-                    : mapped.orElseGet(() -> generationCoordinator.acquire(durableRequest));
+            OverviewGenerationCoordinator.Acquisition initial = generationCoordinator.acquire(durableRequest);
             result = runDurableAcquisition(initial, subjectContext, subjectContext.cancellation(),
                     acquisition -> generateSubjectOverview(subjectContext.withAcquisition(acquisition), request,
                             safeSources, aliases),
-                    aliases, background == null ? false : mapped.isPresent());
+                    aliases);
         } else {
             result = generateSubjectOverview(subjectContext, request, safeSources, aliases);
         }
@@ -1611,7 +1451,6 @@ public class OverviewGenerationService {
         if (context.sourceId() != null) result.put("sourceId", context.sourceId().toString());
         if (context.revision() != null) result.put("sourceRevision", context.revision().toString());
         if (context.mode() != null) result.put("mode", context.mode().name());
-        if (context.background() != null) result.put("jobId", context.background().lease().jobId().toString());
         return result;
     }
 
@@ -1763,57 +1602,51 @@ public class OverviewGenerationService {
                                      SubjectOverviewRequest subjectRequest,
                                      RecoveryTracker recoveryTracker,
                                      SourceGenerationKey localFlightKey,
-                                     SourceGenerationFlight localFlight,
-                                     OverviewJobExecution background) {
+                                     SourceGenerationFlight localFlight) {
         private GenerationContext(UUID userId, UUID sourceId, UUID revision, OverviewMode mode,
                                   String requestId, String generationId, OverviewTaskDeadline deadline,
                                   OverviewCancellation cancellation) {
             this(userId, sourceId, revision, mode, requestId, generationId, deadline, cancellation,
-                    null, null, new AtomicInteger(), null, null, null, null, null, new RecoveryTracker(), null, null, null);
+                    null, null, new AtomicInteger(), null, null, null, null, null, new RecoveryTracker(), null, null);
         }
         private GenerationContext withSource(UUID sourceId, UUID revision) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withCancellation(OverviewCancellation cancellation) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withSettings(AiSettingsService.ResolvedSettings settings,
                                                OverviewModelBudget modelBudget) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withSourceRequest(OverviewGenerationCoordinator.Request request,
                                                     String payloadFingerprint, String instruction) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted, request,
-                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withAcquisition(OverviewGenerationCoordinator.Acquisition acquisition) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId,
                     acquisition == null ? generationId : acquisition.generationId().toString(), deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withSubjectRequest(OverviewGenerationCoordinator.Request request,
                                                     String payloadFingerprint, SubjectOverviewRequest subjectRequest) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted, request,
-                    acquisition, payloadFingerprint, subjectRequest.instruction(), subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    acquisition, payloadFingerprint, subjectRequest.instruction(), subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withLocalFlight(SourceGenerationKey key, SourceGenerationFlight flight) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted, coordinatorRequest,
-                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, key, flight, background);
-        }
-        private GenerationContext withBackground(OverviewJobExecution background) {
-            return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
-                    cancellation, settings, modelBudget, callsStarted, coordinatorRequest,
-                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight, background);
+                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, key, flight);
         }
     }
 

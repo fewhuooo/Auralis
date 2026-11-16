@@ -75,7 +75,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         registry.add("auralis.identity.jwt-secret", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.encryption-key", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.ingestion-worker-enabled", () -> "false");
-        registry.add("auralis.ai.overview-jobs-poll-ms", () -> "3600000");
     }
 
     @AfterAll
@@ -123,39 +122,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                         + "and result_json is not null", Integer.class, userId)).isLessThanOrEqualTo(1);
         assertThat(jdbc.queryForObject("select coalesce(sum(octet_length(result_json)),0) from overview_generations "
                         + "where status='SUCCESS'", Long.class)).isLessThanOrEqualTo(32);
-    }
-
-    @Test
-    void linkedRunningJobKeepsCurrentGenerationPayloadOutsideReusableCacheCapacity() {
-        UUID userId = createUser("pinned-working-job");
-        ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor();
-        try {
-            OverviewGenerationCoordinator tiny = new OverviewGenerationCoordinator(jdbc, transactionManager, clock,
-                    30_000, 2_000, heartbeat, 1, 1);
-            UUID subjectId = UUID.randomUUID();
-            var current = tiny.acquire(request(userId, subjectId, UUID.randomUUID()));
-            UUID jobId = UUID.randomUUID();
-            UUID workerId = UUID.randomUUID();
-            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-            jdbc.update("insert into overview_generation_jobs(id,user_id,client_request_id,generation_request_id,scope_type,scope_id,mode,"
-                            + "request_hash,request_json,source_manifest_json,input_fingerprint,profile_fingerprint,algorithm_version,generation_id,"
-                            + "status,stage,worker_owner_id,lease_until,deadline_at) values (?,?,?,?,'SUBJECT',?,'ALL',?,'{}','[]',?,?,?,?,'RUNNING',"
-                            + "'WRITING',?,?,?)",
-                    jobId, userId, UUID.randomUUID(), UUID.randomUUID(), subjectId, HASH_A, HASH_B, HASH_C, "adaptive-v1",
-                    current.generationId(), workerId, now.plusHours(1), now.plusHours(2));
-            OverviewHistoricalFixtures.insertCheckpoint(jdbc, current.lease(), "writer", "{\"raw\":\"checkpoint\"}");
-
-            assertThat(tiny.complete(current.lease(), "{\"raw\":\"result larger than configured cache\"}", usage(), 0, List.of()))
-                    .isTrue();
-            assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
-                    current.generationId())).isNotNull();
-            assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                    Integer.class, current.generationId())).isEqualTo(1);
-            assertThat(jdbc.queryForObject("select status from overview_generation_jobs where id=?", String.class, jobId))
-                    .isEqualTo("RUNNING");
-        } finally {
-            heartbeat.shutdownNow();
-        }
     }
 
     @Test
@@ -218,11 +184,11 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                 .isEqualTo("{}");
         assertThat(jdbc.queryForObject("select descriptor_json from overview_execution_nodes where plan_id=?", String.class,
                 planId)).isEqualTo("{}");
+        assertThat(jdbc.queryForObject("select candidate_json from overview_generation_jobs where id=?", String.class, jobId)).isNull();
         assertThat(jdbc.queryForObject("select request_json from overview_generation_jobs where id=?", String.class, jobId))
                 .isEqualTo("{}");
         assertThat(jdbc.queryForObject("select source_manifest_json from overview_generation_jobs where id=?", String.class, jobId))
                 .isEqualTo("[]");
-        assertThat(jdbc.queryForObject("select candidate_json from overview_generation_jobs where id=?", String.class, jobId)).isNull();
         assertThat(jdbc.queryForObject("select status from overview_publication_intents where job_id=?", String.class, jobId))
                 .isEqualTo("FAILED");
         assertThat(jdbc.queryForObject("select response_snapshot from overview_write_receipts where id=?", String.class,
@@ -242,8 +208,8 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         assertThat(coordinator.complete(generation.lease(), "{\"raw\":\"late write\"}", usage(), 0, List.of())).isFalse();
 
         jdbc.update("update sources set deleted_at=null,version=version+1 where id=?", sourceId);
-        assertThatThrownBy(() -> coordinator.acquire(sourceRequest))
-                .isInstanceOf(RuntimeException.class);
+        assertThat(coordinator.acquire(sourceRequest).state())
+                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
         var fresh = coordinator.acquire(new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SOURCE", sourceId,
                 revision, HASH_A, HASH_B, HASH_C, "adaptive-v1",
                 List.of(new OverviewGenerationCoordinator.SourceDependency(sourceId, revision, "Source " + sourceId))));
@@ -251,7 +217,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
     }
 
     @Test
-    void privatePayloadTtlScrubsCompletedJobAndGenerationCopiesInOneRetentionPass() {
+    void privatePayloadTtlScrubsHistoricalJobAndGenerationCopies() {
         UUID userId = createUser("private-payload-ttl");
         UUID subjectId = createSubject(userId);
         UUID sourceId = createSource(userId, subjectId, "private retention source");
@@ -265,6 +231,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         seedPendingIntent(userId, jobId, generation.generationId(), planId);
         OffsetDateTime oldCompletion = OffsetDateTime.now(ZoneOffset.UTC).minusDays(15);
         jdbc.update("update overview_generation_jobs set completed_at=?,updated_at=? where id=?", oldCompletion, oldCompletion, jobId);
+        jdbc.update("update overview_generations set completed_at=? where id=?", oldCompletion, generation.generationId());
 
         assertThat(privatePayloadRetention.cleanupExpiredPrivatePayloads()).isGreaterThan(0);
         assertThat(jdbc.queryForObject("select status from overview_generation_jobs where id=?", String.class, jobId))

@@ -139,12 +139,8 @@ class OpenApiArtifactTests {
         assertThat(response.at("/summaryMarkdown/maxLength").isMissingNode()).isTrue();
         assertThat(document.at("/components/schemas/OverviewChapter").isMissingNode()).isTrue();
         assertThat(document.at("/components/schemas/OverviewResultCommand/properties/candidateInput").isMissingNode()).isTrue();
-        assertThat(document.at("/components/schemas/JobView/properties/publicationBaseVersion").isMissingNode()).isTrue();
-        JsonNode paths = document.path("paths");
-        assertThat(paths.has("/api/ai/overview-jobs/{id}/candidate")).isTrue();
-        assertThat(paths.has("/api/ai/overview-jobs/{id}/preview")).isFalse();
-        assertThat(paths.has("/api/ai/overview-jobs/{id}/publish")).isFalse();
-        assertThat(paths.has("/api/ai/overview-jobs/{id}/publication")).isFalse();
+        assertThat(document.at("/components/schemas/JobView").isMissingNode()).isTrue();
+        assertThat(document.path("paths").toString()).doesNotContain("overview-jobs");
     }
 
     @Test
@@ -335,35 +331,6 @@ class OpenApiArtifactTests {
         assertThat(view.has("outlineProvenance")).isFalse();
         assertThat(document.at("/components/schemas/OverviewResultCommand/properties/inputDescriptor").isMissingNode()).isFalse();
         assertThat(document.at("/paths/~1api~1overview-results~1sources~1{sourceId}~1sections~1{sectionId}").isMissingNode()).isTrue();
-    }
-
-    @Test
-    void documentsOverviewJobRoutesAndNullableFirstClaimProgress() throws Exception {
-        JsonNode document = openApiDocument();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs/post").isObject()).isTrue();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs/get").isObject()).isTrue();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1pause/post").isObject()).isTrue();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1resume/post").isObject()).isTrue();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1cancel/post").isObject()).isTrue();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1reconcile/post").isObject()).isTrue();
-        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1candidate/get").isObject()).isTrue();
-
-        JsonNode startRequest = document.at("/components/schemas/StartRequest");
-        assertRequired(startRequest, "clientRequestId", "scope", "mode");
-        assertThat(startRequest.at("/properties/mode/enum").toString())
-                .contains("ALL", "OUTLINE")
-                .doesNotContain("SUMMARY");
-        assertRequired(document.at("/components/schemas/ControlRequest"), "expectedVersion");
-
-        JsonNode jobView = document.at("/components/schemas/JobView");
-        assertRequired(jobView, "jobId", "status", "version", "scope", "mode", "stage", "verifiedNodes",
-                "totalNodes", "deadlineAt", "createdAt", "updatedAt");
-        assertNullTypeUnion(jobView.at("/properties/totalNodes"));
-        assertNullTypeUnion(jobView.at("/properties/deadlineAt"));
-        assertNullTypeUnion(jobView.at("/properties/completedAt"));
-        assertNullTypeUnion(jobView.at("/properties/sourceId"));
-        assertNullTypeUnion(jobView.at("/properties/subjectId"));
-        assertNullTypeUnion(jobView.at("/properties/sourceIds"));
     }
 
     @Test

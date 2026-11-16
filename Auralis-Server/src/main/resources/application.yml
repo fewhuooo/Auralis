@@ -90,7 +90,6 @@ auralis:
       max-result-chars: ${AURALIS_AI_OVERVIEW_MAX_RESULT_CHARS:0}
       max-input-snapshot-chars: ${AURALIS_AI_OVERVIEW_MAX_INPUT_SNAPSHOT_CHARS:0}
       max-source-manifest-chars: ${AURALIS_AI_OVERVIEW_MAX_SOURCE_MANIFEST_CHARS:0}
-      max-job-request-chars: ${AURALIS_AI_OVERVIEW_MAX_JOB_REQUEST_CHARS:0}
       max-sources: ${AURALIS_AI_OVERVIEW_MAX_SOURCES:0}
       max-title-chars: ${AURALIS_AI_OVERVIEW_MAX_TITLE_CHARS:0}
     max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}

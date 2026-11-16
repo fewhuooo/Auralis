@@ -150,7 +150,7 @@ class OverviewResultReadPathPostgresIntegrationTests {
     }
 
     private void persistCurrentRawContentBinding(UUID userId, SourceEntity source) throws Exception {
-        var descriptor = generation.currentRawInputDescriptor(userId, OverviewJobDtos.Scope.SOURCE,
+        var descriptor = generation.currentRawInputDescriptor(userId, "SOURCE",
                 source.getId(), List.of(source.getId()));
         assertThat(descriptor.origin()).isEqualTo(OverviewInputDescriptor.Origin.SOURCE_CONTENT);
         String snapshot = objectMapper.writeValueAsString(descriptor);

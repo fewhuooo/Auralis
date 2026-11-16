@@ -122,7 +122,7 @@ public class OverviewResultCleanupListener {
                     (rs, rowNum) -> rs.getObject(1, UUID.class), prepend(userId, orderedJobs)));
         }
         List<UUID> orderedGenerations = generationIds.stream().filter(java.util.Objects::nonNull).distinct()
-                .sorted(Comparator.naturalOrder()).toList();
+                .sorted().toList();
         for (UUID generationId : orderedGenerations) {
             jdbcTemplate.query("select id from overview_generations where id=? and user_id=? for update",
                     (org.springframework.jdbc.core.ResultSetExtractor<Boolean>) rs -> rs.next(), generationId, userId);
@@ -188,4 +188,5 @@ public class OverviewResultCleanupListener {
         for (int i = 0; i < ids.size(); i++) values[i + 1] = ids.get(i);
         return values;
     }
+
 }

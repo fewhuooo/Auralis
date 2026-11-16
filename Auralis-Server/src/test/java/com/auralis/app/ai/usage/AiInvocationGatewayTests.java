@@ -687,8 +687,7 @@ class AiInvocationGatewayTests {
         AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
         AuralisProperties.OverviewLimits overviewLimits = new AuralisProperties.OverviewLimits(
                 12, 100, 100, 1_000, 12_345,
-                0, 0,
-                0, 0, 0, 0);
+                0, 0, 0, 0, 0);
         AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions(),
                 ai(limits, overviewLimits));
         AiCredential credential = new AiCredential("https://provider.test/v1", "synthetic-test-key");

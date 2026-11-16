@@ -128,7 +128,6 @@ class AiConfigurationTests {
         values.put("auralis.ai.overview-limits.max-provenance-locations", "100000");
         values.put("auralis.ai.overview-limits.max-input-snapshot-chars", "5000000");
         values.put("auralis.ai.overview-limits.max-source-manifest-chars", "6000000");
-        values.put("auralis.ai.overview-limits.max-job-request-chars", "7000000");
         values.put("auralis.ai.overview-limits.max-sources", "500");
         values.put("auralis.ai.overview-limits.max-title-chars", "5000");
         values.put("auralis.ai.overview-limits.max-identity-chars", "8000000");
@@ -146,7 +145,7 @@ class AiConfigurationTests {
         assertThat(bound.overviewLimits()).isEqualTo(
                 new AuralisProperties.OverviewLimits(250_000, 1_000_000, 700_000, 60_000, 4_000_000,
                         2_000_000,
-                        5_000_000, 6_000_000, 7_000_000, 500, 5_000));
+                        5_000_000, 6_000_000, 500, 5_000));
     }
 
     @Test
@@ -196,7 +195,6 @@ class AiConfigurationTests {
                 "AURALIS_AI_OVERVIEW_MAX_RESULT_CHARS",
                 "AURALIS_AI_OVERVIEW_MAX_INPUT_SNAPSHOT_CHARS",
                 "AURALIS_AI_OVERVIEW_MAX_SOURCE_MANIFEST_CHARS",
-                "AURALIS_AI_OVERVIEW_MAX_JOB_REQUEST_CHARS",
                 "AURALIS_AI_OVERVIEW_MAX_SOURCES",
                 "AURALIS_AI_OVERVIEW_MAX_TITLE_CHARS");
 

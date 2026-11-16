@@ -2351,249 +2351,6 @@
         } ]
       }
     },
-    "/api/ai/overview-jobs" : {
-      "get" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "list_5",
-        "parameters" : [ {
-          "name" : "limit",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32",
-            "default" : 20
-          }
-        }, {
-          "name" : "cursor",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "name" : "scope",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "string",
-            "enum" : [ "SOURCE", "SUBJECT" ]
-          }
-        }, {
-          "name" : "scopeId",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobList"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      },
-      "post" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "start",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/StartRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "201" : {
-            "description" : "Created",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/ai/overview-jobs/{id}/resume" : {
-      "post" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "resume",
-        "parameters" : [ {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ControlRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/ai/overview-jobs/{id}/reconcile" : {
-      "post" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "reconcile",
-        "parameters" : [ {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ControlRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/ai/overview-jobs/{id}/pause" : {
-      "post" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "pause",
-        "parameters" : [ {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ControlRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/ai/overview-jobs/{id}/cancel" : {
-      "post" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "cancel",
-        "parameters" : [ {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ControlRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
     "/api/ai/messages/stream" : {
       "post" : {
         "tags" : [ "chat-runtime-controller" ],
@@ -2681,7 +2438,7 @@
     "/api/ai/conversations/{conversationId}/runs/{runId}/cancel" : {
       "post" : {
         "tags" : [ "chat-runtime-controller" ],
-        "operationId" : "cancel_1",
+        "operationId" : "cancel",
         "parameters" : [ {
           "name" : "conversationId",
           "in" : "path",
@@ -3125,66 +2882,6 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/AiModelListView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/ai/overview-jobs/{id}" : {
-      "get" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "get_5",
-        "parameters" : [ {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/JobView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/ai/overview-jobs/{id}/candidate" : {
-      "get" : {
-        "tags" : [ "overview-job-controller" ],
-        "operationId" : "candidate",
-        "parameters" : [ {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/Candidate"
                 }
               }
             }
@@ -5302,127 +4999,6 @@
           }
         }
       },
-      "StartRequest" : {
-        "type" : "object",
-        "properties" : {
-          "clientRequestId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "scope" : {
-            "type" : "string",
-            "enum" : [ "SOURCE", "SUBJECT" ]
-          },
-          "sourceId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "subjectId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "sourceIds" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string",
-              "format" : "uuid"
-            }
-          },
-          "mode" : {
-            "type" : "string",
-            "enum" : [ "ALL", "OUTLINE" ]
-          },
-          "instruction" : {
-            "type" : "string",
-            "maxLength" : 2000,
-            "minLength" : 0
-          }
-        },
-        "required" : [ "clientRequestId", "mode", "scope" ]
-      },
-      "JobView" : {
-        "type" : "object",
-        "properties" : {
-          "jobId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "status" : {
-            "type" : "string",
-            "enum" : [ "QUEUED", "RUNNING", "PAUSING", "PAUSED", "CANCELLING", "CANCELLED", "COMPLETED", "FAILED", "RECOVERY_REQUIRED", "EXPIRED" ]
-          },
-          "version" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "scope" : {
-            "type" : "string",
-            "enum" : [ "SOURCE", "SUBJECT" ]
-          },
-          "sourceId" : {
-            "type" : [ "string", "null" ],
-            "format" : "uuid"
-          },
-          "subjectId" : {
-            "type" : [ "string", "null" ],
-            "format" : "uuid"
-          },
-          "sourceIds" : {
-            "type" : [ "array", "null" ],
-            "items" : {
-              "type" : "string",
-              "format" : "uuid"
-            }
-          },
-          "mode" : {
-            "type" : "string",
-            "enum" : [ "ALL", "OUTLINE" ]
-          },
-          "stage" : {
-            "type" : "string",
-            "enum" : [ "QUEUED", "VALIDATING", "INDEXING", "PLANNING", "WRITING", "ASSEMBLING", "COMPLETE" ]
-          },
-          "verifiedNodes" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "totalNodes" : {
-            "type" : [ "integer", "null" ],
-            "format" : "int32"
-          },
-          "deadlineAt" : {
-            "type" : [ "string", "null" ],
-            "format" : "date-time"
-          },
-          "safeErrorCode" : {
-            "type" : [ "string", "null" ]
-          },
-          "createdAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "updatedAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "completedAt" : {
-            "type" : [ "string", "null" ],
-            "format" : "date-time"
-          }
-        },
-        "required" : [ "completedAt", "createdAt", "deadlineAt", "jobId", "mode", "safeErrorCode", "scope", "sourceId", "sourceIds", "stage", "status", "subjectId", "totalNodes", "updatedAt", "verifiedNodes", "version" ]
-      },
-      "ControlRequest" : {
-        "type" : "object",
-        "properties" : {
-          "expectedVersion" : {
-            "type" : "integer",
-            "format" : "int32",
-            "minimum" : 1
-          }
-        },
-        "required" : [ "expectedVersion" ]
-      },
       "AiMessageCommand" : {
         "type" : "object",
         "properties" : {
@@ -5504,47 +5080,50 @@
           "float" : {
             "type" : "boolean"
           },
+          "object" : {
+            "type" : "boolean"
+          },
           "container" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
+          "missingNode" : {
             "type" : "boolean"
           },
           "valueNode" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
+            "type" : "boolean"
+          },
+          "bigDecimal" : {
             "type" : "boolean"
           },
           "nodeType" : {
             "type" : "string",
             "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
           },
-          "missingNode" : {
-            "type" : "boolean"
-          },
           "integralNumber" : {
             "type" : "boolean"
           },
-          "bigInteger" : {
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
-          "boolean" : {
+          "short" : {
             "type" : "boolean"
           },
-          "string" : {
+          "long" : {
             "type" : "boolean"
           },
           "double" : {
             "type" : "boolean"
           },
-          "binary" : {
-            "type" : "boolean"
-          },
-          "object" : {
+          "string" : {
             "type" : "boolean"
           },
           "pojo" : {
+            "type" : "boolean"
+          },
+          "number" : {
             "type" : "boolean"
           },
           "int" : {
@@ -5554,13 +5133,10 @@
             "type" : "boolean",
             "deprecated" : true
           },
-          "number" : {
+          "boolean" : {
             "type" : "boolean"
           },
-          "short" : {
-            "type" : "boolean"
-          },
-          "long" : {
+          "binary" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -6523,38 +6099,6 @@
             }
           }
         }
-      },
-      "JobList" : {
-        "type" : "object",
-        "properties" : {
-          "jobs" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/JobView"
-            }
-          },
-          "nextCursor" : {
-            "type" : [ "string", "null" ]
-          }
-        },
-        "required" : [ "jobs", "nextCursor" ]
-      },
-      "Candidate" : {
-        "type" : "object",
-        "properties" : {
-          "jobId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "version" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "result" : {
-            "$ref" : "#/components/schemas/OverviewResponse"
-          }
-        },
-        "required" : [ "jobId", "result", "version" ]
       },
       "AccountDeletionRequest" : {
         "type" : "object",

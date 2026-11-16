@@ -12,7 +12,6 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,31 +40,14 @@ public class OverviewPrivatePayloadRetentionService {
             OffsetDateTime cutoff = now.minus(Duration.ofDays(RETENTION_DAYS));
             List<UUID> expiredJobs = jdbc.query("select j.id from overview_generation_jobs j join overview_generations g "
                             + "on g.id=j.generation_id where j.status='COMPLETED' and j.completed_at<=? "
-                            + "and g.status='SUCCESS' "
-                            + "order by j.id limit ? for update of j skip locked",
+                            + "and g.status='SUCCESS' order by j.id limit ? for update of j skip locked",
                     (rs, rowNum) -> rs.getObject(1, UUID.class), cutoff, BATCH_SIZE);
-            List<UUID> jobGenerationIds = new ArrayList<>();
-            if (!expiredJobs.isEmpty()) {
-                String jobPlaceholders = String.join(",", java.util.Collections.nCopies(expiredJobs.size(), "?"));
-                jobGenerationIds.addAll(jdbc.query("select distinct j.generation_id from overview_generation_jobs "
-                                + "j where j.id in (" + jobPlaceholders + ") and j.generation_id is not null "
-                                + "and not exists (select 1 from overview_generation_jobs other where other.generation_id=j.generation_id "
-                                + "and other.id not in (" + jobPlaceholders + ") and not "
-                                + "(other.status='EXPIRED' and other.safe_error_code='OVERVIEW_PAYLOAD_EXPIRED' "
-                                + "and other.candidate_json is null)) order by j.generation_id",
-                        (rs, rowNum) -> rs.getObject(1, UUID.class), concat(expiredJobs, expiredJobs)));
-            }
-
-            int standaloneLimit = Math.max(0, BATCH_SIZE - jobGenerationIds.stream().distinct().toList().size());
-            List<UUID> standaloneCandidates = standaloneLimit == 0 ? List.of() : jdbc.query("select g.id from overview_generations g "
+            List<UUID> generations = jdbc.query("select g.id from overview_generations g "
                             + "where g.status='SUCCESS' and g.completed_at<=? and (exists (select 1 from overview_execution_plans p "
                             + "where p.generation_id=g.id and p.state='ASSEMBLED') or exists (select 1 from overview_execution_nodes n "
-                            + "where n.generation_id=g.id and n.state='VERIFIED')) and not exists "
-                            + "(select 1 from overview_generation_jobs j where j.generation_id=g.id) "
+                            + "where n.generation_id=g.id and n.state='VERIFIED')) "
                             + "order by g.completed_at,g.id limit ?",
-                    (rs, rowNum) -> rs.getObject(1, UUID.class), cutoff, standaloneLimit);
-            LinkedHashSet<UUID> generations = new LinkedHashSet<>(jobGenerationIds.stream().sorted().toList());
-            generations.addAll(standaloneCandidates);
+                    (rs, rowNum) -> rs.getObject(1, UUID.class), cutoff, BATCH_SIZE);
             if (generations.isEmpty() && expiredJobs.isEmpty()) return 0;
 
             // Job parents are locked before generations, matching publication and resource-revocation order.
@@ -108,13 +90,6 @@ public class OverviewPrivatePayloadRetentionService {
     @Scheduled(fixedDelay = 3_600_000L)
     public void cleanupExpiredPrivatePayloadsScheduled() {
         cleanupExpiredPrivatePayloads();
-    }
-
-    private static Object[] concat(List<UUID> first, List<UUID> second) {
-        Object[] values = new Object[first.size() + second.size()];
-        for (int i = 0; i < first.size(); i++) values[i] = first.get(i);
-        for (int i = 0; i < second.size(); i++) values[first.size() + i] = second.get(i);
-        return values;
     }
 
 }

@@ -168,12 +168,11 @@ public record AuralisProperties(
             @Min(0) long maxResultChars,
             @Min(0) long maxInputSnapshotChars,
             @Min(0) long maxSourceManifestChars,
-            @Min(0) long maxJobRequestChars,
             @Min(0) int maxSources,
             @Min(0) int maxTitleChars) {
 
         public static OverviewLimits withoutAdditionalCaps() {
-            return new OverviewLimits(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new OverviewLimits(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 

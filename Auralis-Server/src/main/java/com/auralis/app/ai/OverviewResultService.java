@@ -543,8 +543,7 @@ public class OverviewResultService {
                 || !scopeType.equals(stored.scopeType()) || !scopeId.equals(stored.scopeId())
                 || generationService == null) return false;
         try {
-            OverviewJobDtos.Scope scope = OverviewJobDtos.Scope.valueOf(scopeType);
-            OverviewInputDescriptor current = generationService.currentRawInputDescriptor(userId, scope, scopeId,
+            OverviewInputDescriptor current = generationService.currentRawInputDescriptor(userId, scopeType, scopeId,
                     stored.sourceIds());
             return stored.equals(current);
         } catch (RuntimeException stale) {

@@ -59,7 +59,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private OverviewGenerationCoordinator coordinator;
-    @Autowired private OverviewJobInvocationJournal invocationJournal;
+    @Autowired private OverviewGenerationInvocationJournal invocationJournal;
     @Autowired private AiUsageGuard usageGuard;
 
     @Test
@@ -79,7 +79,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.CallReservation unknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
-        var binding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
+        var binding = invocationJournal.binding(owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         binding.onReserved(unknown.id());
         bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 1, unknown.id());
         usageGuard.markDispatched(task, unknown, () -> binding.beforeDispatch(unknown.id()));
@@ -94,7 +94,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.CallReservation replacement = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
-        var replacementBinding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
+        var replacementBinding = invocationJournal.binding(owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         replacementBinding.onReserved(replacement.id());
         bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 2, replacement.id());
         usageGuard.markDispatched(task, replacement, () -> replacementBinding.beforeDispatch(replacement.id()));
@@ -133,7 +133,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.CallReservation firstUnknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
-        var firstBinding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
+        var firstBinding = invocationJournal.binding(owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         firstBinding.onReserved(firstUnknown.id());
         bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 1, firstUnknown.id());
         usageGuard.markDispatched(task, firstUnknown, () -> firstBinding.beforeDispatch(firstUnknown.id()));
@@ -143,7 +143,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.CallReservation secondUnknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
-        var secondBinding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
+        var secondBinding = invocationJournal.binding(owner.lease(), "ADAPTIVE_WRITE", "INTERMEDIATE");
         secondBinding.onReserved(secondUnknown.id());
         bindHistoricalCall(owner.lease(), nodeId, task.taskId(), 2, secondUnknown.id());
         usageGuard.markDispatched(task, secondUnknown, () -> secondBinding.beforeDispatch(secondUnknown.id()));
@@ -174,7 +174,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.CallReservation unknown = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
-        var binding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_INDEX", "INTERMEDIATE");
+        var binding = invocationJournal.binding(owner.lease(), "ADAPTIVE_INDEX", "INTERMEDIATE");
         binding.onReserved(unknown.id());
         usageGuard.markDispatched(task, unknown, () -> binding.beforeDispatch(unknown.id()));
         usageGuard.settle(task, unknown, null, false, "MODEL_UNAVAILABLE");
@@ -216,7 +216,7 @@ class OverviewExecutionJournalPostgresIntegrationTests {
         AiUsageGuard.CallReservation reservation = usageGuard.reserve(task, AiStage.OVERVIEW_MAP,
                 AiProviderType.DEEPSEEK, "deepseek-chat", AiCredentialSource.PLATFORM,
                 AiOutputRole.INTERMEDIATE, 80, 120);
-        var binding = invocationJournal.binding(null, owner.lease(), "ADAPTIVE_INDEX", "INTERMEDIATE");
+        var binding = invocationJournal.binding(owner.lease(), "ADAPTIVE_INDEX", "INTERMEDIATE");
         binding.onReserved(reservation.id());
         assertThat(jdbc.queryForObject("select task_id from overview_generation_invocations where reservation_id=?",
                 UUID.class, reservation.id())).isEqualTo(ledgerTaskId);
