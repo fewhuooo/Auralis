@@ -263,25 +263,6 @@ async function streamMessage(
   })
 }
 
-export async function generateAiText(operation: 'summary' | 'extract' | 'format' | 'transcript', input: string): Promise<string> {
-  const result = await mobileRequest.post<unknown>('/api/ai/text-generations', { operation, input, requestId: uuidv7() }) as { text?: unknown }
-  if (typeof result?.text !== 'string') throw new Error('Text generation response is incomplete')
-  return result.text
-}
-
-export async function completeAiText(text: string): Promise<string> {
-  return generateAiText('extract', text)
-}
-
-export async function transcribeAndExtractTasks(text: string) {
-  const result = await generateAiText('transcript', `从以下备忘录提取待办任务，只返回 JSON：\n${text}`)
-  return JSON.parse(result.replace(/^```json\s*|\s*```$/g, '').trim())
-}
-
-export function convertHandwritingToMarkdown(rawOcrText: string): Promise<string> {
-  return generateAiText('format', `将以下文本整理为结构化 Markdown，只返回正文：\n${rawOcrText}`)
-}
-
 export async function chatWithAI(
   text: string,
   _history: unknown[],

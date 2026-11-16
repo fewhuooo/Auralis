@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
+import { useAuthStore } from './useAuthStore'
 
 export interface KnowledgeBlock {
   id: string
@@ -17,7 +18,6 @@ export interface KnowledgeBlock {
   subjectId?: string
   sourceFileId?: string
   tags?: string[]
-  difficulty?: 'easy' | 'medium' | 'hard'
   mastery?: number
   reviewAt?: string
   relatedBlockIds?: string[]
@@ -41,14 +41,30 @@ export const useBlockStore = defineStore('block', () => {
   }
 
   const loadLocalBlocks = async (subject?: string, subjectId?: string) => {
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
     try {
-      recentBlocks.value = await localDb.getBlocks(subject, subjectId)
+      const blocks = await localDb.getBlocks(subject, subjectId)
+      if (
+        generation !== auth.getLoginGeneration()
+        || userId !== auth.user?.id
+        || serverDeviceId !== auth.serverDeviceId
+      ) {
+        return
+      }
+      recentBlocks.value = blocks
     } catch (e) {
       console.error('[Mobile Store] Failed to load local blocks:', e)
     }
   }
 
   const fetchBlocks = async (subject?: string, subjectId?: string) => {
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
     // 1. Read from local SQLite
     await loadLocalBlocks(subject, subjectId)
 
@@ -56,6 +72,13 @@ export const useBlockStore = defineStore('block', () => {
     try {
       const { useSyncStore } = await import('./useSyncStore')
       await useSyncStore().triggerSync()
+      if (
+        generation !== auth.getLoginGeneration()
+        || userId !== auth.user?.id
+        || serverDeviceId !== auth.serverDeviceId
+      ) {
+        return
+      }
       await loadLocalBlocks(subject, subjectId)
     } catch (e) {
       console.warn('[Mobile Store] Server unreachable, using local database cache:', e)
@@ -95,7 +118,6 @@ export const useBlockStore = defineStore('block', () => {
       subjectId: block.subjectId,
       sourceFileId: block.sourceFileId,
       tags: block.tags || [],
-      difficulty: block.difficulty,
       mastery: block.mastery || 0,
       reviewAt: block.reviewAt,
       relatedBlockIds: block.relatedBlockIds || []
@@ -109,9 +131,10 @@ export const useBlockStore = defineStore('block', () => {
   }
 
   const removeBlock = async (id: string) => {
+    const existing = recentBlocks.value.find(b => b.id === id)
     recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
     await localDb.deleteBlock(id)
-    await recordMutation('block', id, 'delete', { id })
+    await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
     
     syncPendingChanges()
   }

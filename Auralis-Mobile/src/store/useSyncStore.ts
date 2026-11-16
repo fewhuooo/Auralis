@@ -104,6 +104,7 @@ async function applyResource(resourceType: string, resourceId: string, mutationT
           ...payload,
           subject: payload?.subject || '',
           preview: payload?.content || '',
+          time: payload?.updatedAt || payload?.createdAt || payload?.time || '',
           source: payload?.source || '',
           color: payload?.colorOverride || '',
           sourceFileId: payload?.sourceId,

@@ -1,6 +1,5 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { completeAiText } from '@/api/aiClient'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -162,29 +161,6 @@ export const useSubjectStore = defineStore('subject', () => {
     await loadSubjects()
   }
 
-  const saveSourceFileCatalog = async (file: SourceFile) => {
-    await localDb.saveSourceFile(file)
-    const { getClientId } = await import('./useSyncStore')
-    await localDb.addLocalMutation(getClientId(), 'source', file.id, 'update', file)
-    if (activeSubjectId.value) {
-      await loadSourceFiles(activeSubjectId.value)
-    }
-  }
-
-  const analyzeCatalogViaAi = async (sourceFileId: string, catalogText: string) => {
-    const file = activeSourceFiles.value.find(f => f.id === sourceFileId)
-    if (!file) return
-
-    const prompt = `请帮我解析下面这本教材/材料的目录大纲文本。提取其中的章(Chapter)和节(Section)层级结构，请严格返回为以下 JSON 格式（不要有任何 markdown 标记、说明或 \`\`\`json 标记，只需返回纯 JSON 数组文本）：\n[\n  {\n    "title": "第一章 XXXXXX",\n    "sections": ["1.1 YYYYYY", "1.2 ZZZZZZ"]\n  }\n]\n\n以下是目录大纲文本：\n${catalogText}`
-    const rawText = await completeAiText(prompt)
-    let cleaned = rawText.trim()
-    if (cleaned.startsWith('```json')) cleaned = cleaned.substring(7)
-    if (cleaned.endsWith('```')) cleaned = cleaned.substring(0, cleaned.length - 3)
-    const parsed: CatalogItem[] = JSON.parse(cleaned.trim())
-    file.catalog_json = JSON.stringify(parsed)
-    await saveSourceFileCatalog(file)
-  }
-
   return {
     subjects,
     activeSubjectId,
@@ -198,7 +174,5 @@ export const useSubjectStore = defineStore('subject', () => {
     loadSourceFiles,
     addSourceFile,
     deleteSourceFile,
-    saveSourceFileCatalog,
-    analyzeCatalogViaAi,
   }
 })

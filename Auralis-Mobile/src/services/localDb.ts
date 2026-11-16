@@ -604,7 +604,6 @@ export const localDb = {
       subjectId: r.subject_id || undefined,
       sourceFileId: r.source_file_id || undefined,
       tags: r.tags ? JSON.parse(r.tags) : [],
-      difficulty: r.difficulty || undefined,
       mastery: r.mastery || 0,
       reviewAt: r.review_at || undefined,
       relatedBlockIds: r.related_block_ids ? JSON.parse(r.related_block_ids) : []
@@ -620,7 +619,6 @@ export const localDb = {
     const subjectIdVal = block.subjectId || '';
     const sourceFileIdVal = block.sourceFileId || '';
     const tagsVal = block.tags ? JSON.stringify(block.tags) : '[]';
-    const difficultyVal = block.difficulty || '';
     const masteryVal = block.mastery || 0;
     const reviewAtVal = block.reviewAt || '';
     const relatedBlockIdsVal = block.relatedBlockIds ? JSON.stringify(block.relatedBlockIds) : '[]';
@@ -640,7 +638,6 @@ export const localDb = {
           subject_id = '${esc(subjectIdVal)}',
           source_file_id = '${esc(sourceFileIdVal)}',
           tags = '${esc(tagsVal)}',
-          difficulty = '${esc(difficultyVal)}',
           mastery = ${masteryVal},
           review_at = '${esc(reviewAtVal)}',
           related_block_ids = '${esc(relatedBlockIdsVal)}'
@@ -648,7 +645,7 @@ export const localDb = {
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO knowledge_blocks (id, subject, title, preview, time, source, color, sync_status, is_deleted, sync_version, subject_id, source_file_id, tags, difficulty, mastery, review_at, related_block_ids)
+        INSERT INTO knowledge_blocks (id, subject, title, preview, time, source, color, sync_status, is_deleted, sync_version, subject_id, source_file_id, tags, mastery, review_at, related_block_ids)
         VALUES (
           '${esc(block.id)}',
           '${esc(block.subject)}',
@@ -663,7 +660,6 @@ export const localDb = {
           '${esc(subjectIdVal)}',
           '${esc(sourceFileIdVal)}',
           '${esc(tagsVal)}',
-          '${esc(difficultyVal)}',
           ${masteryVal},
           '${esc(reviewAtVal)}',
           '${esc(relatedBlockIdsVal)}'
@@ -740,7 +736,6 @@ export const localDb = {
         subjectId: block.subjectId || block.subject_id || undefined,
         sourceFileId: block.sourceFileId || block.source_file_id || undefined,
         tags: block.tags ? (typeof block.tags === 'string' ? JSON.parse(block.tags) : block.tags) : [],
-        difficulty: block.difficulty || undefined,
         mastery: block.mastery || 0,
         reviewAt: block.reviewAt || block.review_at || undefined,
         relatedBlockIds: block.relatedBlockIds ? (typeof block.relatedBlockIds === 'string' ? JSON.parse(block.relatedBlockIds) : block.relatedBlockIds) : []
@@ -941,7 +936,6 @@ export const localDb = {
           subjectId: payload.subjectId || payload.subject_id || undefined,
           sourceFileId: payload.sourceFileId || payload.source_file_id || undefined,
           tags: payload.tags ? (typeof payload.tags === 'string' ? JSON.parse(payload.tags) : payload.tags) : [],
-          difficulty: payload.difficulty || undefined,
           mastery: payload.mastery || 0,
           reviewAt: payload.reviewAt || payload.review_at || undefined,
           relatedBlockIds: payload.relatedBlockIds ? (typeof payload.relatedBlockIds === 'string' ? JSON.parse(payload.relatedBlockIds) : payload.relatedBlockIds) : []

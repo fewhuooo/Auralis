@@ -16,6 +16,7 @@ import { createAuthApi } from '../src/api/useAuthApi.ts'
 import { createRealtimeApi } from '../src/api/realtimeApi.ts'
 import { createAiApi } from '../src/api/aiApi.ts'
 import { createSyncApi } from '../src/api/useSyncApi.ts'
+import { createOverviewApi } from '../src/api/overviewApi.ts'
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
 import { createSseDecoder } from '../src/api/sse.ts'
@@ -269,10 +270,42 @@ test('retired orphan mobile and tablet routes are removed', async () => {
   }
 })
 
-test('tablet workspace summary uses the AI stream instead of fixed demo text', async () => {
-  const source = await readFile(new URL('../src/pages/tablet/workspace/index.vue', import.meta.url), 'utf8')
-  assert.match(source, /chatWithAI/)
-  assert.doesNotMatch(source, /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/)
+test('tablet workspace uses formal overview API and AI stream without fixed demo text', async () => {
+  const workspaceSource = await readFile(new URL('../src/pages/tablet/workspace/index.vue', import.meta.url), 'utf8')
+  const readerSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceCenterReader.vue', import.meta.url), 'utf8')
+  const aiPanelSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceAiPanel.vue', import.meta.url), 'utf8')
+  assert.match(workspaceSource, /overviewApi/)
+  assert.match(readerSource, /outlineMarkdown/)
+  assert.match(aiPanelSource, /chatWithAI/)
+  assert.doesNotMatch(
+    `${workspaceSource}\n${readerSource}\n${aiPanelSource}`,
+    /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/,
+  )
+})
+
+test('overview API returns null on 404 and preserves source revision query', async () => {
+  const calls = []
+  const api = createOverviewApi({
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      if (options?.pathParams?.subjectId === 'missing') {
+        throw new ApiProblemError({ title: 'Not Found', status: 404, detail: 'Missing', fieldErrors: [] })
+      }
+      if (options?.pathParams?.subjectId === 'err') {
+        throw new ApiProblemError({ title: 'Server Error', status: 500, detail: 'Boom', fieldErrors: [] })
+      }
+      return { outlineMarkdown: '# Outline', summaryMarkdown: 'Summary' }
+    },
+  })
+  assert.equal(await api.getSubject('missing'), null)
+  await assert.rejects(() => api.getSubject('err'), /Boom/)
+  const srcOverview = await api.getSource('src-1', 'rev-9')
+  assert.equal(srcOverview?.outlineMarkdown, '# Outline')
+  assert.deepEqual(calls.at(-1), {
+    path: '/api/overview-results/sources/{sourceId}',
+    method: 'get',
+    options: { pathParams: { sourceId: 'src-1' }, query: { ingestionRevision: 'rev-9' } },
+  })
 })
 
 test('SSE decoder preserves event boundaries across transport chunks', () => {

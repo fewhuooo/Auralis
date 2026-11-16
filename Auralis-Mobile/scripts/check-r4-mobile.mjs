@@ -112,9 +112,15 @@ if (/historySessions\s*=\s*ref<HistorySession\[\]>\(\[\s*\{/.test(tabletAi)) {
 }
 
 const tabletWorkspace = sources.get('src/pages/tablet/workspace/index.vue') || ''
-if (!tabletWorkspace.includes('chatWithAI')
-  || /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/.test(tabletWorkspace)) {
-  violations.push('src/pages/tablet/workspace/index.vue: summary must use the AI stream, not fixed demo text')
+const tabletWorkspaceReader = sources.get('src/components/tablet/workspace/WorkspaceCenterReader.vue') || ''
+const tabletWorkspaceAi = sources.get('src/components/tablet/workspace/WorkspaceAiPanel.vue') || ''
+if (!tabletWorkspace.includes('overviewApi')
+  || !tabletWorkspaceReader.includes('outlineMarkdown')
+  || !tabletWorkspaceAi.includes('chatWithAI')
+  || /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/.test(
+    `${tabletWorkspace}\n${tabletWorkspaceReader}\n${tabletWorkspaceAi}`,
+  )) {
+  violations.push('src/pages/tablet/workspace/index.vue: summary must use overviewApi & AI stream, not fixed demo text')
 }
 
 if (violations.length > 0) {
