@@ -19,14 +19,7 @@ export const subjectIconOptions = [
 
 export type SubjectIconKey = (typeof subjectIconOptions)[number]['key']
 
-const semanticIconPattern = /^[a-z0-9_-]+$/i
-
 export const isSubjectIconKey = (icon?: string | null): boolean => {
   const value = icon?.trim()
   return !!value && subjectIconOptions.some(opt => opt.key === value)
-}
-
-export const getLegacySubjectIcon = (icon?: string | null): string | null => {
-  const value = icon?.trim()
-  return value && !semanticIconPattern.test(value) ? value : null
 }

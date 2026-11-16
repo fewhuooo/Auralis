@@ -38,8 +38,7 @@
             <view class="card-accent-stripe" />
             <view class="card-header">
               <view class="s-icon">
-                <LineIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :name="`subj-${subj.icon || 'book'}`" size="56rpx" />
-                <text v-else>{{ getLegacySubjectIcon(subj.icon) }}</text>
+                <LineIcon :name="`subj-${isSubjectIconKey(subj.icon) ? subj.icon : 'book'}`" size="56rpx" />
               </view>
               <view class="card-actions">
                 <view class="action-btn" @click.stop="openEditModal(subj)">
@@ -146,7 +145,7 @@ import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import { useBlockStore } from '@/store/useBlockStore'
-import { subjectIconOptions, isSubjectIconKey, getLegacySubjectIcon } from '@/utils/subjectIcon'
+import { subjectIconOptions, isSubjectIconKey } from '@/utils/subjectIcon'
 
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()

@@ -23,8 +23,7 @@
           <view class="strip-spacer"></view>
           <view class="strip-subject" v-if="activeSubject">
             <view class="subject-mini-icon">
-              <LineIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :name="`subj-${activeSubject?.icon || 'book'}`" size="32rpx" />
-              <text v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</text>
+              <LineIcon :name="`subj-${isSubjectIconKey(activeSubject?.icon) ? activeSubject?.icon : 'book'}`" size="32rpx" />
             </view>
           </view>
         </view>
@@ -139,8 +138,7 @@
         <!-- Status Bar -->
         <view class="status-bar">
           <view class="status-subject" v-if="activeSubject">
-            <LineIcon v-if="isSubjectIconKey(activeSubject.icon) || !getLegacySubjectIcon(activeSubject.icon)" :name="`subj-${activeSubject.icon || 'book'}`" size="28rpx" />
-            <text v-else>{{ getLegacySubjectIcon(activeSubject.icon) }}</text>
+            <LineIcon :name="`subj-${isSubjectIconKey(activeSubject.icon) ? activeSubject.icon : 'book'}`" size="28rpx" />
             <text class="status-subject-name">{{ activeSubject.name }}</text>
           </view>
           <text class="status-info">{{ subjectBlocks.length }} 知识块 · {{ visibleSourceFiles.length }} 文件</text>
@@ -336,8 +334,7 @@
           <!-- Onboarding / Empty State -->
           <view v-else-if="!activeBlockId && !showCreateBlock" class="onboarding">
             <view class="onboard-icon">
-              <LineIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :name="`subj-${activeSubject?.icon || 'book'}`" size="88rpx" />
-              <text v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</text>
+              <LineIcon :name="`subj-${isSubjectIconKey(activeSubject?.icon) ? activeSubject?.icon : 'book'}`" size="88rpx" />
             </view>
             <text class="onboard-title">{{ activeSubject?.name || '学科工作区' }}</text>
             <text class="onboard-hint">从左侧选择学习材料或知识块查看详情，也可新建内容</text>
@@ -689,7 +686,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import FlashCard from '@/components/FlashCard.vue'
-import { isSubjectIconKey, getLegacySubjectIcon } from '@/utils/subjectIcon'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore, type CatalogItem } from '@/store/useSubjectStore'
 import { useAuthStore } from '@/store/useAuthStore'
