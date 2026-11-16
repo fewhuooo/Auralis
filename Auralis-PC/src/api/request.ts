@@ -77,12 +77,6 @@ const request = axios.create({
   headers: { Accept: 'application/json' },
 })
 
-export const aiRequest = axios.create({
-  baseURL: runtime.apiBaseUrl,
-  timeout: 60000,
-  headers: { Accept: 'application/json' },
-})
-
 const refreshClient = axios.create({
   baseURL: runtime.apiBaseUrl,
   timeout: 10000,
@@ -315,7 +309,6 @@ function createResponseInterceptor(instance: AxiosInstance): void {
 }
 
 createResponseInterceptor(request)
-createResponseInterceptor(aiRequest)
 
 export { ApiProblemError }
 export { request as default }

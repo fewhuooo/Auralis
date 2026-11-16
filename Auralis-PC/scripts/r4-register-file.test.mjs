@@ -18,7 +18,7 @@ test('subject file registration validates prerequisites and exposes upload state
   assert.match(sourceStore, /async function createFileSource\([\s\S]*assetSizeBytes\?: number,?\s*\)/)
   assert.match(sourceStore, /assetSizeBytes: normalizedAssetSizeBytes/)
   assert.match(sourceStore, /function scheduleSync\(\): void/)
-  const createFileSource = sourceStore.slice(sourceStore.indexOf('async function createFileSource'), sourceStore.indexOf('async function addSourceFile'))
+  const createFileSource = sourceStore.slice(sourceStore.indexOf('async function createFileSource'), sourceStore.indexOf('async function deleteSourceFile'))
   assert.doesNotMatch(createFileSource, /await scheduleSync\(\)/)
   assert.doesNotMatch(createFileSource, /await loadSourceFiles\(subjectId\)/)
   assert.match(createFileSource, /scheduleSync\(\)/)

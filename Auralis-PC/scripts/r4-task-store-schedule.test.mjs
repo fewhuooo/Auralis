@@ -34,8 +34,6 @@ const { findScheduleConflict } = taskViewRulesModule
 const source = await readFile(new URL('../src/store/useTaskStore.ts', import.meta.url), 'utf8')
 const taskViewRules = await readFile(new URL('../src/services/taskViewRules.ts', import.meta.url), 'utf8')
 const timeline = await readFile(new URL('../src/views/Timeline/index.vue', import.meta.url), 'utf8')
-const taskApi = await readFile(new URL('../src/api/useTaskApi.ts', import.meta.url), 'utf8')
-const taskApiSchema = await readFile(new URL('../src/api/generated/schema.ts', import.meta.url), 'utf8')
 
 let deadlineFixtureNumber = 0
 
@@ -346,14 +344,6 @@ test('schedule conflict checks can exclude both members of a proposed schedule s
   assert.equal(findScheduleConflict(tasks, {
     id: 'source', status: 'pending', scheduledAt: '2026-09-24T10:00:00.000Z', durationMinutes: 60,
   }, new Set(['source', 'target'])), undefined)
-})
-
-test('task insertion API uses the confirmed endpoint and instant-window DTO', () => {
-  assert.match(taskApi, /export type TaskScheduleInsertionRequest = components\['schemas'\]\['ScheduleInsertionRequest'\]/)
-  assert.match(taskApi, /export type TaskScheduleInsertionResponse = components\['schemas'\]\['ScheduleInsertionResponse'\]/)
-  assert.match(taskApiSchema, /ScheduleInsertionRequest: \{[\s\S]*?taskId: string[\s\S]*?baseVersion: number[\s\S]*?scheduledAt: string[\s\S]*?windowStartAt: string[\s\S]*?windowLastStartAt: string/)
-  assert.match(taskApiSchema, /ScheduleInsertionResponse: \{\s*tasks: components\["schemas"\]\["Response"\]\[\]/)
-  assert.match(taskApi, /scheduleInsertions\(data: TaskScheduleInsertionRequest\)[\s\S]*?request\.post\('\/api\/tasks\/schedule-insertions', data\)/)
 })
 
 test('fetching tasks persists overdue unscheduled TODO and IN_PROGRESS as canonical DONE with their deadline and fields', async () => {
@@ -803,10 +793,10 @@ test('deadline guard: source candidate overrun blocks swap with no local writes'
   const fixture = await createTaskStoreFixture([source, target])
   await fixture.taskStore.fetchTasks()
   const before = await taskStoreSnapshot(fixture)
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalSwap = useTaskApi.swapSchedules
+  const { default: request } = await import('../src/api/request.ts')
+  const originalSwap = request.post
   let apiCalled = false
-  useTaskApi.swapSchedules = async () => {
+  request.post = async () => {
     apiCalled = true
     return { source: { ...source, scheduledAt: d('12:00') }, target: { ...target, scheduledAt: d('11:00') } }
   }
@@ -818,7 +808,7 @@ test('deadline guard: source candidate overrun blocks swap with no local writes'
     assert.equal(apiCalled, false, 'the source candidate must be checked before the API call')
     assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
   } finally {
-    useTaskApi.swapSchedules = originalSwap
+    request.post = originalSwap
   }
 })
 
@@ -833,10 +823,10 @@ test('deadline guard: target candidate overrun blocks swap with no local writes'
   const fixture = await createTaskStoreFixture([source, target])
   await fixture.taskStore.fetchTasks()
   const before = await taskStoreSnapshot(fixture)
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalSwap = useTaskApi.swapSchedules
+  const { default: request } = await import('../src/api/request.ts')
+  const originalSwap = request.post
   let apiCalled = false
-  useTaskApi.swapSchedules = async () => {
+  request.post = async () => {
     apiCalled = true
     return { source: { ...source, scheduledAt: d('11:00') }, target: { ...target, scheduledAt: d('12:00') } }
   }
@@ -848,7 +838,7 @@ test('deadline guard: target candidate overrun blocks swap with no local writes'
     assert.equal(apiCalled, false, 'the target candidate must be checked before the API call')
     assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
   } finally {
-    useTaskApi.swapSchedules = originalSwap
+    request.post = originalSwap
   }
 })
 
@@ -862,10 +852,10 @@ test('deadline guard: insertTaskAtSlot preflights dragged and shifted tasks befo
   await fixture.taskStore.fetchTasks()
   fixture.taskStore.setSelectedDay('2099-10-06')
 
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalInsert = useTaskApi.scheduleInsertions
+  const { default: request } = await import('../src/api/request.ts')
+  const originalInsert = request.post
   let apiCalled = false
-  useTaskApi.scheduleInsertions = async () => {
+  request.post = async () => {
     apiCalled = true
     return { tasks: [] }
   }
@@ -888,7 +878,7 @@ test('deadline guard: insertTaskAtSlot preflights dragged and shifted tasks befo
     assert.deepEqual(await fixture.repository.listPending('TASK'), [], 'the test Sync server confirms the command')
     assert.equal((await fixture.repository.read('TASK', t1.id)).value.scheduledAt, d('15:30'))
   } finally {
-    useTaskApi.scheduleInsertions = originalInsert
+    request.post = originalInsert
   }
 })
 
@@ -901,10 +891,10 @@ test('deadline guard: a body drop checks the dragged source deadline before the 
   fixture.taskStore.setSelectedDay('2099-10-06')
 
   const before = await taskStoreSnapshot(fixture)
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalInsert = useTaskApi.scheduleInsertions
+  const { default: request } = await import('../src/api/request.ts')
+  const originalInsert = request.post
   let apiCalled = false
-  useTaskApi.scheduleInsertions = async () => {
+  request.post = async () => {
     apiCalled = true
     return { tasks: [] }
   }
@@ -916,7 +906,7 @@ test('deadline guard: a body drop checks the dragged source deadline before the 
     assert.equal(apiCalled, false, 'a body drop whose source would end after its deadline must not call the API')
     assert.match(insertionError?.message ?? '', /任务排期结束时间不能晚于截止期限/)
   } finally {
-    useTaskApi.scheduleInsertions = originalInsert
+    request.post = originalInsert
   }
 })
 
@@ -1427,11 +1417,11 @@ test('scheduleTaskToDay scans 22:30 and preserves state when that candidate conf
 
 test('swap rejects compacted starts outside the visible window in either direction and preserves the local batch', async () => {
   const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalSwap = useTaskApi.swapSchedules
+  const { default: request } = await import('../src/api/request.ts')
+  const originalSwap = request.post
   let apiCalls = 0
   let apiResponse
-  useTaskApi.swapSchedules = async () => { apiCalls += 1; return apiResponse }
+  request.post = async () => { apiCalls += 1; return apiResponse }
 
   const assertRejected = async (sourceAt, sourceDuration, targetAt, targetDuration, suffix) => {
     const sourceTask = deadlineTask(`swap-window-source-${suffix}`, { status: 'TODO', scheduledAt: d(sourceAt), durationMinutes: sourceDuration, dueAt: undefined })
@@ -1454,7 +1444,7 @@ test('swap rejects compacted starts outside the visible window in either directi
     await assertRejected('22:45', 15, '22:00', 30, 'quarter-hour')
     await assertRejected('08:00', 30, '08:30', 2250, 'overnight-compact')
   } finally {
-    useTaskApi.swapSchedules = originalSwap
+    request.post = originalSwap
   }
 })
 
@@ -1520,10 +1510,10 @@ test('deadline guard: a stored date-only deadline is rejected without schedule w
   await fixture.repository.upsert('TASK', sameDayTask.id, sameDayTask, { version: sameDayTask.version, syncStatus: 'synced' })
   await fixture.taskStore.loadLocalTasks()
 
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalInsert = useTaskApi.scheduleInsertions
+  const { default: request } = await import('../src/api/request.ts')
+  const originalInsert = request.post
   let apiCalledWith = null
-  useTaskApi.scheduleInsertions = async (params) => {
+  request.post = async (params) => {
     apiCalledWith = params
     return { tasks: [{ ...sameDayTask, scheduledAt: params.scheduledAt, version: 8 }] }
   }
@@ -1557,7 +1547,7 @@ test('deadline guard: a stored date-only deadline is rejected without schedule w
     const unchangedLegacyDeadline = await fixture.repository.read('TASK', sameDayTask.id)
     assert.equal(unchangedLegacyDeadline?.value.dueAt, '2099-10-06', 'non-deadline edits must preserve the original stored value')
   } finally {
-    useTaskApi.scheduleInsertions = originalInsert
+    request.post = originalInsert
   }
 })
 
@@ -1600,11 +1590,11 @@ test('date-only task deadlines become local end of day in Repository records and
 })
 
 test('Store rejects exact timestamp-midnight deadlines before API calls or local writes', async () => {
-  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
-  const originalInsert = useTaskApi.scheduleInsertions
+  const { default: request } = await import('../src/api/request.ts')
+  const originalInsert = request.post
   let apiCalls = 0
   let activeRepository
-  useTaskApi.scheduleInsertions = async (params) => {
+  request.post = async (params) => {
     apiCalls += 1
     const stored = await activeRepository.read('TASK', params.taskId)
     const endAt = Date.parse(params.scheduledAt) + stored.value.durationMinutes * 60_000
@@ -1628,7 +1618,7 @@ test('Store rejects exact timestamp-midnight deadlines before API calls or local
     }
     assert.equal(apiCalls, 0, 'an interval after explicit midnight must not reach schedule-insertions')
   } finally {
-    useTaskApi.scheduleInsertions = originalInsert
+    request.post = originalInsert
   }
 })
 

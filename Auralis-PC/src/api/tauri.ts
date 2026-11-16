@@ -71,10 +71,6 @@ export const ocrRecognizePage = (command: OcrPageCommand): Promise<OcrPageResult
   return invokeRustCmd<OcrPageResult>('ocr_recognize_page', { command })
 }
 
-export const ocrShutdown = (): Promise<void> => {
-  return invokeRustCmd<void>('ocr_shutdown')
-}
-
 export interface DocumentPackageHeader {
   schemaVersion: 1
   payloadFormat: 'parsed-document-v1'
@@ -135,11 +131,6 @@ export const isDocumentCacheReceiptV1 = (receipt: DocumentCacheReceipt): boolean
   && typeof receipt.parserVersion === 'string' && boundedMetadata(receipt.parserVersion)
   && typeof receipt.normalizationVersion === 'string' && boundedMetadata(receipt.normalizationVersion)
   && (receipt.ocrModelVersion === null || receipt.ocrModelVersion === undefined || (typeof receipt.ocrModelVersion === 'string' && boundedMetadata(receipt.ocrModelVersion)))
-
-export interface DocumentCachePayloadInfo {
-  payloadSha256: string
-  payloadBytes: number
-}
 
 export interface DocumentUploadPutRequest {
   uploadUrl: string
@@ -329,21 +320,6 @@ export const documentLocalCacheDelete = (cacheId: string): Promise<boolean> => {
   return invokeRustCmd<boolean>('document_local_cache_delete', { cacheId: cacheId.trim() })
 }
 
-export const documentCachePayloadInfo = (scope: {
-  cacheId: string
-  userId: string
-  serverDeviceId: string
-  sourceId: string
-  jobId: string
-  ingestionRevision: string
-}): Promise<DocumentCachePayloadInfo> => {
-  if (!scope.cacheId.trim() || !scope.userId.trim() || !scope.serverDeviceId.trim()
-    || !scope.sourceId.trim() || !scope.jobId.trim() || !scope.ingestionRevision.trim()) {
-    throw new Error('CACHE_SCOPE_INVALID')
-  }
-  return invokeRustCmd<DocumentCachePayloadInfo>('document_cache_payload_info', scope)
-}
-
 export const documentUploadPut = (request: DocumentUploadPutRequest): Promise<DocumentUploadPutReceipt> => {
   if (!request.uploadUrl.trim() || !request.cacheId.trim() || !request.userId.trim()
     || !request.serverDeviceId.trim() || !request.sourceId.trim() || !request.jobId.trim()
@@ -352,27 +328,6 @@ export const documentUploadPut = (request: DocumentUploadPutRequest): Promise<Do
     throw new Error('DOCUMENT_UPLOAD_REQUEST_INVALID')
   }
   return invokeRustCmd<DocumentUploadPutReceipt>('document_upload_put', { request })
-}
-
-export interface LocalResourceSnapshotItem {
-  resourceType: string
-  resourceId: string
-  version: number
-  deletedAt: string | null
-  value: unknown
-}
-
-export const replaceLocalResourceSnapshot = (
-  userId: string,
-  items: LocalResourceSnapshotItem[],
-): Promise<void> => {
-  if (!userId.trim() || items.some((item) => !item.resourceType.trim() || !item.resourceId.trim()
-    || !Number.isInteger(item.version) || item.version < 0)) {
-    throw new Error('LOCAL_SNAPSHOT_INVALID')
-  }
-  return invokeRustCmd<void>('replace_local_resource_snapshot', {
-    command: { userId, items },
-  })
 }
 
 export interface LocalAssetDescriptor {

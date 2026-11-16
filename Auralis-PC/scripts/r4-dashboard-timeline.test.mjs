@@ -95,8 +95,8 @@ test('pc typography uses the shared font stack and semantic size tokens', () => 
 })
 
 test('production default durations are multiples of 30 minutes', () => {
-  assert.match(taskStore, /durationMinutes:\s*input\.durationMinutes\s*\?\?\s*input\.duration\s*\?\?\s*30/, 'useTaskStore default must be 30')
-  assert.match(timeline, /duration:\s*taskData\.duration\s*\|\|\s*60/, 'Timeline creation fallback must be 60')
+  assert.match(taskStore, /durationMinutes:\s*input\.durationMinutes\s*\?\?\s*30/, 'useTaskStore default must be 30')
+  assert.match(timeline, /durationMinutes:\s*taskData\.duration\s*\|\|\s*60/, 'Timeline creation fallback must be 60')
   // assert.match(timeline, /duration:\\s*30,/)
 })
 
@@ -204,7 +204,7 @@ test('dashboard quick creation saves once per attempt and keeps a failed draft o
 
   dialog.handleSubmit()
   assert.equal(writes.length, 2)
-  assert.equal(writes[1].payload.name, 'Review the notes')
+  assert.equal(writes[1].payload.title, 'Review the notes')
   writes[1].resolve('created')
   await submissions[1]
   assert.equal(page.showTaskModal.value, false)
@@ -332,7 +332,7 @@ test('Timeline new task accepts one write and retains a failed draft for retry',
   assert.equal(dialog.isSubmitEnabled.value, true)
 
   dialog.handleSubmit()
-  assert.equal(writes[1].payload.name, 'Review notes')
+  assert.equal(writes[1].payload.title, 'Review notes')
   writes[1].resolve()
   await submissions[1]
   assert.equal(page.taskDialogVisible.value, false)

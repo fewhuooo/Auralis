@@ -1,11 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export interface KeyBundle {
-  encrypted_key: string
-  salt: string
-  version: number
-}
-
 export const e2ee = {
   async initialize(): Promise<boolean> {
     try {
@@ -26,26 +20,5 @@ export const e2ee = {
     } catch {
       return false
     }
-  },
-
-  async encrypt(data: object): Promise<string> {
-    return invoke<string>('crypto_encrypt', { data: JSON.stringify(data) })
-  },
-
-  async decrypt(encryptedData: string): Promise<object> {
-    const json = await invoke<string>('crypto_decrypt', { encryptedData })
-    return JSON.parse(json)
-  },
-
-  async exportKeyBundle(passphrase: string): Promise<KeyBundle> {
-    return invoke<KeyBundle>('crypto_export_key_bundle', { passphrase })
-  },
-
-  async importKeyBundle(bundle: KeyBundle, passphrase: string): Promise<boolean> {
-    return invoke<boolean>('crypto_import_key_bundle', {
-      encryptedKey: bundle.encrypted_key,
-      salt: bundle.salt,
-      passphrase
-    })
   }
 }

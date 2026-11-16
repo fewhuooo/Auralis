@@ -36,10 +36,6 @@ export type ScheduleInsertionResult = 'saved' | 'queued'
 type TaskWritePreconditions = Pick<LocalCommitInput,
   'expectedLocalVersion' | 'rejectIfNonPendingMutation' | 'requireActiveResource' | 'ordinaryScheduleBaseline'>
 
-/**
- * The old-looking fields in this interface are presentation aliases only.
- * Cloud requests are built from TaskModel and never serialize these aliases.
- */
 export interface Task {
   id: string
   subjectId: string
@@ -54,15 +50,10 @@ export interface Task {
   createdAt?: string
   updatedAt?: string
   deletedAt: string | null
-  name: string
   subject: string
-  desc: string
-  duration: number
   startTime?: string
   position?: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete' | 'conflict'
-  sync_version?: number
-  is_deleted?: boolean
 }
 
 export interface TaskInput {
@@ -76,10 +67,7 @@ export interface TaskInput {
   durationMinutes?: number
   sortKey?: string
   version?: number
-  name?: string
   subject?: string
-  desc?: string
-  duration?: number
   startTime?: string
   position?: string
 }
@@ -178,18 +166,18 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     ? scheduledAtFromLegacy(input.startTime, fallbackDay)
     : input.scheduledAt
   const status = statusFromLegacy(input.status, Boolean(scheduledAt))
-  const rawDueAt = input.dueAt ?? (input as any).due
+  const rawDueAt = input.dueAt
   return {
     id: input.id || uuidv7(),
     subjectId: input.subjectId,
-    title: input.title || input.name || '未命名任务',
-    description: input.description ?? input.desc ?? '',
+    title: input.title || '未命名任务',
+    description: input.description ?? '',
     status,
     scheduledAt,
     // Preserve persisted values exactly. Date-only conversion belongs to
     // explicit user-input paths, never to reading or rescheduling old tasks.
     dueAt: rawDueAt || undefined,
-    durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
+    durationMinutes: input.durationMinutes ?? 30,    sortKey: input.sortKey ?? input.position,
     version: input.version ?? 0,
     deletedAt: null,
   }
@@ -199,14 +187,9 @@ function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 
   const task: Partial<Task> = {
     ...model,
     status: taskStatusToPresentation(model.status, model.scheduledAt),
-    name: model.title,
-    desc: model.description,
-    duration: model.durationMinutes,
     startTime: timeForScheduledAt(model.scheduledAt),
     position: model.sortKey,
     sync_status: syncStatus,
-    sync_version: model.version,
-    is_deleted: Boolean(model.deletedAt),
   }
   Object.defineProperty(task, 'subject', {
     get() {
@@ -229,7 +212,8 @@ function taskDto(model: TaskModel): TaskView {
     status: model.status,
     scheduledAt: model.scheduledAt,
     dueAt: model.dueAt,
-    durationMinutes: model.durationMinutes,    sortKey: model.sortKey,
+    durationMinutes: model.durationMinutes,
+    sortKey: model.sortKey,
     version: model.version,
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
@@ -246,7 +230,8 @@ function createPayload(model: TaskModel): TaskCreateRequest {
     status: model.status,
     scheduledAt: normalizeScheduledAtForApi(model.scheduledAt),
     dueAt: model.dueAt,
-    durationMinutes: model.durationMinutes,    sortKey: model.sortKey,
+    durationMinutes: model.durationMinutes,
+    sortKey: model.sortKey,
   }
 }
 
@@ -546,7 +531,7 @@ export const useTaskStore = defineStore('task', () => {
 
   async function addTask(input: TaskInput): Promise<string> {
     return withScheduleMutation(async () => {
-      const rawDueAt = input.dueAt ?? (input as any).due
+      const rawDueAt = input.dueAt
       const model = toTaskModel({
         ...input,
         dueAt: normalizeDueAtForUserInput(rawDueAt),

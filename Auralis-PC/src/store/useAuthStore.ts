@@ -47,7 +47,6 @@ export const useAuthStore = defineStore(
     const sessionId = ref<string | null>(null)
     const serverDeviceId = ref<string | null>(null)
     const isHydrated = ref<boolean>(true)
-    const showAuthModal = ref(false)
     const authStatus = ref<AuthSessionStatus>('anonymous')
     const loginGeneration = ref(Symbol('auth-session'))
     const reauthenticationReason = ref<string | null>(null)
@@ -135,7 +134,6 @@ export const useAuthStore = defineStore(
       serverDeviceId.value = result.serverDeviceId ?? null
       authStatus.value = 'authenticated'
       reauthenticationReason.value = null
-      showAuthModal.value = false
       void loadAvatar()
     }
 
@@ -152,7 +150,6 @@ export const useAuthStore = defineStore(
       serverDeviceId.value = null
       authStatus.value = 'anonymous'
       reauthenticationReason.value = null
-      showAuthModal.value = false
       clearAvatarDisplay()
       if (currentUserId) void deleteAvatarCache(currentUserId)
     }
@@ -165,7 +162,6 @@ export const useAuthStore = defineStore(
       serverDeviceId.value = null
       authStatus.value = 'reauthentication-required'
       reauthenticationReason.value = reason
-      showAuthModal.value = true
       clearAvatarDisplay()
     }
 
@@ -346,7 +342,6 @@ export const useAuthStore = defineStore(
       refreshToken,
       username,
       isAuthenticated,
-      showAuthModal,
       authStatus,
       loginGeneration,
       requiresReauthentication,

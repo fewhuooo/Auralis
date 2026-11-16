@@ -118,7 +118,7 @@ async function mountAiSettingsForm({
     readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8'),
     readFile(new URL('../src/api/aiClient.ts', import.meta.url), 'utf8'),
   ])
-  const normalizeProvider = client.slice(client.indexOf('export function normalizeProvider'), client.indexOf('export async function checkHealth'))
+  const normalizeProvider = client.slice(client.indexOf('export function normalizeProvider'), client.indexOf('export function getAiSettings'))
   const form = profile.slice(profile.indexOf('// === BYOK AI Settings ==='), profile.indexOf('const syncStore = useSyncStore()'))
   const { outputText } = ts.transpileModule(`
     ${normalizeProvider.replace('export ', '')}

@@ -125,15 +125,6 @@
   --font-size-display: 4.5rem;
   /* 72px */
 
-  /* Backwards-compatible aliases for existing component styles. */
-  --font-size-xs: var(--font-size-caption);
-  --font-size-sm: var(--font-size-label);
-  --font-size-base: var(--font-size-body);
-  --font-size-lg: var(--font-size-body-lg);
-  --font-size-xl: var(--font-size-title-sm);
-  --font-size-2xl: var(--font-size-title);
-  --font-size-3xl: var(--font-size-title-lg);
-
   --line-height-tight: 1.25;
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;

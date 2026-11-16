@@ -111,53 +111,6 @@ export function getDownloadUrl(assetId: string): Promise<DownloadUrlResponse> {
   return request.post(`/api/assets/${encodeURIComponent(assetId)}/download-url`) as unknown as Promise<DownloadUrlResponse>
 }
 
-export interface UploadAssetOptions {
-  baseVersion?: number
-  clientImportId?: string
-  sha256?: string
-  onProgress?: (percent: number, stage: string) => void
-}
-
-/**
- * Full Asset Upload Pipeline: validate -> upload-intent -> object storage PUT -> complete
- */
-export async function uploadAsset(
-  file: File,
-  options: UploadAssetOptions = {},
-): Promise<{ assetId: string; asset: AssetView }> {
-  validateUploadFile(file)
-
-  options.onProgress?.(5, '校验文件...')
-  options.onProgress?.(10, '申请上传凭证...')
-
-  const clientImportId = options.clientImportId ?? (globalThis.crypto?.randomUUID?.() || `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`)
-
-  const intent = await createUploadIntent({
-    baseVersion: options.baseVersion ?? 0,
-    clientImportId,
-    originalName: file.name,
-    mimeType: file.type || 'application/octet-stream',
-    sizeBytes: file.size,
-    sha256: options.sha256,
-  })
-
-  if (!intent.assetId || !intent.uploadUrl) {
-    throw new Error('Upload intent response missing assetId or uploadUrl')
-  }
-
-  options.onProgress?.(20, '上传至对象存储...')
-  await uploadToObjectStorage(intent.uploadUrl, file, intent.headers, (percent) => {
-    const mapped = 20 + Math.round(percent * 0.65)
-    options.onProgress?.(mapped, '上传中...')
-  })
-
-  options.onProgress?.(88, '确认上传完成...')
-  const asset = await completeUpload(intent.assetId)
-  options.onProgress?.(100, '上传处理完成')
-
-  return { assetId: intent.assetId, asset }
-}
-
 export const useAssetApi = {
   validateFileSize,
   validateUploadFile,
@@ -165,5 +118,4 @@ export const useAssetApi = {
   uploadToObjectStorage,
   completeUpload,
   getDownloadUrl,
-  uploadAsset,
 }

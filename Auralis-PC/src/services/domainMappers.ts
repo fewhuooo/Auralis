@@ -24,7 +24,6 @@ export interface SourceFileModel {
   filePath: string
   fileType: string
   fileSize: number
-  catalogJson: string
   blockCount: number
   assetId?: string
   originUrl?: string
@@ -249,7 +248,6 @@ export function mapSourceView(view: SourceDtoLike): SourceFileModel {
     filePath: view.assetId || view.originUrl || '',
     fileType: fileTypeForSource(view),
     fileSize: view.assetSizeBytes ?? 0,
-    catalogJson: view.outline || '[]',
     blockCount: 0,
     assetId: view.assetId,
     originUrl: view.originUrl,

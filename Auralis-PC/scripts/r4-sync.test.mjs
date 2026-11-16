@@ -75,7 +75,7 @@ export async function resolve(specifier, context, nextResolve) {
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url);
 
 const { useSyncApi } = await import('../src/api/useSyncApi.ts');
-const { default: request, aiRequest } = await import('../src/api/request.ts');
+const { default: request } = await import('../src/api/request.ts');
 
 test('pullChanges uses an empty cursor for first pull and normalizes reset response', async () => {
   const originalGet = request.get;
@@ -1266,7 +1266,7 @@ test('ordinary requests retain their login generation across account switches an
   try {
     authStore.setSession(loginA);
     const writeRejected = assert.rejects(useAuthApi.updateProfile({ baseVersion: 1, displayName: 'A only' }), { code: 'SYNC_SCOPE_CHANGED' });
-    const readRejected = assert.rejects(aiRequest.get('/api/ai/settings'), { code: 'SYNC_SCOPE_CHANGED' });
+    const readRejected = assert.rejects(request.get('/api/ai/settings'), { code: 'SYNC_SCOPE_CHANGED' });
     await waitForSignal(bothStarted.promise, 'ordinary A read and write dispatches');
     const beforeDispatchRejected = assert.rejects(request.put('/api/auth/me?queued=true', { baseVersion: 1, displayName: 'A only' }), { code: 'SYNC_SCOPE_CHANGED' });
     queueMicrotask(() => {

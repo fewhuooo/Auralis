@@ -84,7 +84,6 @@ test('maps source DTO fields and preserves deletedAt/version', () => {
     name: source.name,
     filePath: source.filePath,
     fileType: source.fileType,
-    catalogJson: source.catalogJson,
     version: source.version,
     deletedAt: source.deletedAt,
   }, {
@@ -93,7 +92,6 @@ test('maps source DTO fields and preserves deletedAt/version', () => {
     name: 'notes.pdf',
     filePath: 'asset-1',
     fileType: 'application/octet-stream',
-    catalogJson: '[{"title":"Chapter 1","sections":[]}]',
     version: 3,
     deletedAt: '2026-08-20T02:00:00Z',
   })

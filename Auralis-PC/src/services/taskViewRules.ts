@@ -247,8 +247,8 @@ export function getTasksForTimeline(tasks: Task[], now = new Date()): Task[] {
 }
 
 export function comparePendingTasks(
-  a: Pick<Task, 'dueAt' | 'duration' | 'durationMinutes' | 'name' | 'title'>,
-  b: Pick<Task, 'dueAt' | 'duration' | 'durationMinutes' | 'name' | 'title'>
+  a: Pick<Task, 'dueAt' | 'durationMinutes' | 'title'>,
+  b: Pick<Task, 'dueAt' | 'durationMinutes' | 'title'>
 ): number {
   // 1. 有 DDL 时间优先
   const hasDueA = Boolean(a.dueAt)
@@ -267,15 +267,15 @@ export function comparePendingTasks(
   }
 
   // 3. 持续时间短优先（时长升序）
-  const durA = Number(a.duration ?? a.durationMinutes) || 0
-  const durB = Number(b.duration ?? b.durationMinutes) || 0
+  const durA = Number(a.durationMinutes) || 0
+  const durB = Number(b.durationMinutes) || 0
   if (durA !== durB) {
     return durA - durB
   }
 
   // 4. 兜底稳定名称比较
-  const nameA = a.name ?? a.title ?? ''
-  const nameB = b.name ?? b.title ?? ''
+  const nameA = a.title
+  const nameB = b.title
   return nameA.localeCompare(nameB)
 }
 

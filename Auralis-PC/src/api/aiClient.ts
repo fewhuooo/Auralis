@@ -51,12 +51,6 @@ export interface Protocol1MessageCommand {
   answer?: ChatActivityAnswer
 }
 
-export interface TextGenerationCommand {
-  operation: 'summary' | 'extract' | 'format' | 'transcript'
-  input: string
-  requestId?: string
-}
-
 export interface AiQuotaInfo {
   limitTokens: number
   chargedTokens: number
@@ -84,16 +78,6 @@ export function normalizeProvider(provider: string): CanonicalAiProvider {
   if (p.includes('deepseek')) return 'DEEPSEEK'
   if (p.includes('silicon') || p.includes('硅基')) return 'SILICONFLOW'
   return 'OPENAI_COMPATIBLE'
-}
-
-export async function checkHealth(): Promise<boolean> {
-  try {
-    const res = await request.get('/actuator/health')
-    return !!res
-  } catch (e) {
-    console.error('Backend health check failed:', e)
-    return false
-  }
 }
 
 export function getAiSettings(): Promise<AiSettingsView[]> {
@@ -151,12 +135,6 @@ export function recoverChatRunAttempt(
 
 export function retryChatRun(conversationId: string, runId: string, requestId: string, signal?: AbortSignal): AsyncIterable<ChatStreamEnvelope> {
   return streamChatRequest(`/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/attempts`, { requestId }, signal)
-}
-
-export async function generateAiText(command: TextGenerationCommand): Promise<string> {
-  const result = (await request.post('/api/ai/text-generations', command)) as { text?: string }
-  if (typeof result?.text !== 'string') throw new Error('Text generation response is incomplete')
-  return result.text
 }
 
 export function deleteConversation(conversationId: string, baseVersion: number): Promise<void> {
@@ -219,7 +197,6 @@ export function streamAiMessage(data: Protocol1MessageCommand, signal?: AbortSig
 }
 
 export const useAiApi = {
-  checkHealth,
   getAiSettings,
   getAiUsage,
   updateAiSettings,
@@ -235,7 +212,6 @@ export const useAiApi = {
   cancelChatRun,
   recoverChatRunAttempt,
   retryChatRun,
-  generateAiText,
 }
 
 export { parseSseStream, type SseEvent }

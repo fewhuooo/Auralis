@@ -139,9 +139,9 @@ const timelineTasks = computed(() => {
     })
     .map((task) => ({
       id: task.id,
-      name: task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }),
+      name: task.title || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }),
       scheduledAt: task.scheduledAt,
-      durationMinutes: task.durationMinutes ?? task.duration ?? 30,
+      durationMinutes: task.durationMinutes,
       timeStr: formatScheduledTime(task.scheduledAt),
       isFreeStudy: false,
     }))
@@ -166,7 +166,7 @@ const displayedTask = computed(() => {
   const task = taskStore.allTasks.find((item) => item.id === session.taskId)
   return {
     id: session.taskId,
-    name: task ? task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }) : t({ 'zh-CN': '关联任务暂不可见', en: 'Linked task unavailable', ja: '関連タスクを表示できません' }),
+    name: task ? task.title || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }) : t({ 'zh-CN': '关联任务暂不可见', en: 'Linked task unavailable', ja: '関連タスクを表示できません' }),
     timeStr: formatScheduledTime(task?.scheduledAt),
     isFreeStudy: false,
   }

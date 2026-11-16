@@ -57,7 +57,7 @@ test('safe client errors remain stable when classifyClientError is called a seco
   }
 })
 
-function activeChatFixture() {
+function activeChatFixture(t) {
   globalThis.localStorage = new MemoryStorage()
   setActivePinia(createPinia())
   const auth = useAuthStore()
@@ -68,6 +68,7 @@ function activeChatFixture() {
     serverDeviceId: 'chat-retry-device',
   })
   const chat = useChatStore()
+  t.after(() => chat.abortStream())
   const sessionId = 'chat-retry-conversation'
   chat.sessions.push({
     id: sessionId,
@@ -102,7 +103,7 @@ function chatResponse(command, events) {
 }
 
 test('a protocol-1 run failure projects safe error text to the chat UI', async (t) => {
-  const chat = activeChatFixture()
+  const chat = activeChatFixture(t)
   t.mock.method(globalThis, 'fetch', async (_url, init) =>
     chatResponse(JSON.parse(init.body), [
       { event: 'run.started', payload: {} },
@@ -117,7 +118,7 @@ test('a protocol-1 run failure projects safe error text to the chat UI', async (
 })
 
 test('retry before run admission resends the same turn without appending another user message', async (t) => {
-  const chat = activeChatFixture()
+  const chat = activeChatFixture(t)
   const requests = []
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     assert.match(String(url), /\/api\/ai\/messages\/stream$/)

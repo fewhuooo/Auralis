@@ -1106,9 +1106,6 @@ impl OcrSupervisor {
         result
     }
 
-    fn shutdown(&mut self) {
-        self.session = None;
-    }
 }
 
 pub struct OcrSupervisorState {
@@ -1204,17 +1201,6 @@ pub async fn ocr_recognize_page(
         lock_state(&supervisor, &gate)?
             .recognize(command)
             .map_err(|error| error.to_string())
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn ocr_shutdown(state: State<'_, OcrSupervisorState>) -> Result<(), String> {
-    let supervisor = Arc::clone(&state.supervisor);
-    let gate = Arc::clone(&state.gate);
-    spawn_blocking_ocr(move || {
-        lock_state(&supervisor, &gate)?.shutdown();
-        Ok(())
     })
     .await
 }

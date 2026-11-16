@@ -70,7 +70,7 @@
                 :key="task.id" 
                 class="weekly-overview-task-dot"
                 :style="{ backgroundColor: 'var(--color-primary-accent)' }"
-                :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
+                :title="`${getTaskTimeStr(task.startTime)} ${task.title}`"
               ></div>
               <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length > 3" class="weekly-overview-more">+{{ getPendingScheduledTasksForDateKey(day.dateKey).length - 3 }}</span>
               <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">{{ t({ 'zh-CN': '空闲', en: 'Free', ja: '予定なし' }) }}</span>
@@ -97,7 +97,7 @@
                 :key="task.id" 
                 class="weekly-overview-task-dot"
                 :style="{ backgroundColor: 'var(--color-primary-accent)' }"
-                :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
+                :title="`${getTaskTimeStr(task.startTime)} ${task.title}`"
               ></div>
               <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length > 3" class="weekly-overview-more">+{{ getPendingScheduledTasksForDateKey(day.dateKey).length - 3 }}</span>
               <span v-if="getPendingScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">{{ t({ 'zh-CN': '空闲', en: 'Free', ja: '予定なし' }) }}</span>
@@ -128,7 +128,7 @@
                 :class="{ 'is-past': isPastTask(slot.task), 'is-completed': isCompletedScheduledTask(slot.task), 'is-insert-drop-target': dragOverTarget?.type === 'body' && dragOverTarget.targetTaskId === slot.task.id }"
                 :style="{ 
                   borderLeftColor: 'var(--color-primary-accent)',
-                  height: getTaskHeight(slot.task.duration)
+                  height: getTaskHeight(slot.task.durationMinutes)
                 }"
                 :draggable="!isCompletedScheduledTask(slot.task)"
                 @dragstart.stop="handleDragStart($event, slot.task, slot.time)"
@@ -144,13 +144,13 @@
                   @dragleave.stop="handleDragLeave"
                   @drop.stop="handleDrop($event, { type: 'swap', dateKey: selectedTimelineDay.dateKey, targetTaskId: slot.task.id })"
                 >
-                  <span class="task-name">{{ slot.task.name }}</span>
+                  <span class="task-name">{{ slot.task.title }}</span>
                   <span class="task-tag">
                     {{ slot.task.subject }}
                   </span>
                   <button class="task-delete-btn" :disabled="deletingTaskId === slot.task.id" @click.stop="handleDeleteTask(slot.task)" :title="t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' })"><IconX :size="12" :stroke-width="1.8" /></button>
                 </div>
-                <div class="task-detail">{{ getCleanDesc(slot.task.desc) }}</div>
+                <div class="task-detail">{{ getCleanDesc(slot.task.description) }}</div>
                 <span v-if="dragOverTarget?.type === 'swap' && dragOverTarget.targetTaskId === slot.task.id" class="task-body-drop-hint">
                   {{ t({ 'zh-CN': '交换排期', en: 'Swap time slots', ja: '予定枠を入れ替える' }) }}
                 </span>
@@ -160,11 +160,11 @@
                 
                 <!-- Bidirectional knowledge block badge -->
                 <div 
-                  v-if="getTaskIdRelation(slot.task.desc)" 
+                  v-if="getTaskIdRelation(slot.task.description)"
                   class="kb-relation-badge"
-                  @click.stop="openRelatedBlock(getTaskIdRelation(slot.task.desc)!)"
+                  @click.stop="openRelatedBlock(getTaskIdRelation(slot.task.description)!)"
                 >
-                  {{ t({ 'zh-CN': '💡 关联知识：{title}', en: '💡 Linked knowledge: {title}', ja: '💡 関連知識：{title}' }, { title: getBlockTitle(getTaskIdRelation(slot.task.desc)!) }) }}
+                  {{ t({ 'zh-CN': '💡 关联知识：{title}', en: '💡 Linked knowledge: {title}', ja: '💡 関連知識：{title}' }, { title: getBlockTitle(getTaskIdRelation(slot.task.description)!) }) }}
                 </div>
               </div>
               <div v-else-if="!isSlotCovered(slot.time)" class="slot-empty">
@@ -203,20 +203,20 @@
           >
             <div class="pending-color" :style="{ background: 'var(--color-primary-accent)' }"></div>
             <div class="pending-body">
-              <span class="pending-name">{{ task.name }}</span>
+              <span class="pending-name">{{ task.title }}</span>
               <span class="pending-subject">{{ task.subject }}</span>
               
               <!-- Bidirectional badge on pending tasks -->
               <div 
-                v-if="getTaskIdRelation(task.desc)" 
+                v-if="getTaskIdRelation(task.description)"
                 class="kb-relation-badge mini"
-                @click.stop="openRelatedBlock(getTaskIdRelation(task.desc)!)"
+                @click.stop="openRelatedBlock(getTaskIdRelation(task.description)!)"
               >
-                {{ t({ 'zh-CN': '💡 知识：{title}', en: '💡 Knowledge: {title}', ja: '💡 知識：{title}' }, { title: getBlockTitle(getTaskIdRelation(task.desc)!) }) }}
+                {{ t({ 'zh-CN': '💡 知识：{title}', en: '💡 Knowledge: {title}', ja: '💡 知識：{title}' }, { title: getBlockTitle(getTaskIdRelation(task.description)!) }) }}
               </div>
 
               <div class="pending-meta">
-                <span>{{ t({ 'zh-CN': '预计 {count} 分钟', en: 'Est. {count} min', ja: '見積 {count}分' }, { count: task.duration || 0 }) }}</span>
+                <span>{{ t({ 'zh-CN': '预计 {count} 分钟', en: 'Est. {count} min', ja: '見積 {count}分' }, { count: task.durationMinutes || 0 }) }}</span>
                 <span v-if="task.dueAt" class="pending-due-badge" :class="{ 'is-overdue': isTaskOverdue(task.dueAt) }">
                   {{ formatTaskDue(task.dueAt) }}
                 </span>
@@ -261,11 +261,11 @@
               @dragend.stop="clearDragState"
             >
               <div class="weekly-task-header">
-                <span class="weekly-task-name">{{ task.name }}</span>
+                <span class="weekly-task-name">{{ task.title }}</span>
                 <button class="card-delete-btn" :disabled="deletingTaskId === task.id" @click.stop="handleDeleteTask(task)" :title="t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' })"><IconX :size="12" :stroke-width="1.8" /></button>
               </div>
               <div class="weekly-task-meta">
-                <span class="weekly-task-time"><IconClock :size="12" :stroke-width="1.8" style="vertical-align: -1.5px; margin-right: 2px;" />{{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
+                <span class="weekly-task-time"><IconClock :size="12" :stroke-width="1.8" style="vertical-align: -1.5px; margin-right: 2px;" />{{ getTaskTimeStr(task.startTime) }} ({{ task.durationMinutes }}m)</span>
                 <span class="weekly-task-tag">
                   {{ task.subject }}
                 </span>
@@ -296,8 +296,8 @@
             @dragstart.stop="handleDragStart($event, task)"
             @dragend.stop="clearDragState"
           >
-            <span class="pill-name">{{ task.name }}</span>
-            <span class="pill-duration" :style="{ color: 'var(--color-primary-accent)' }">{{ task.duration }}m</span>
+            <span class="pill-name">{{ task.title }}</span>
+            <span class="pill-duration" :style="{ color: 'var(--color-primary-accent)' }">{{ task.durationMinutes }}m</span>
           </div>
         </div>
       </div>
@@ -430,7 +430,7 @@ const isSlotCovered = (slotTime: string) => {
     if (slot.task && slot.time !== slotTime) {
       const [taskHour, taskMinute] = slot.time.split(':').map(Number)
       const taskStartMinutes = taskHour * 60 + taskMinute
-      const taskEndMinutes = taskStartMinutes + slot.task.duration
+      const taskEndMinutes = taskStartMinutes + slot.task.durationMinutes
       if (currentMinutes > taskStartMinutes && currentMinutes < taskEndMinutes) {
         return true
       }
@@ -674,10 +674,10 @@ const handleCreateTask = async (taskData: {
   isCreatingTask.value = true
   try {
     await taskStore.addTask({
-      name: taskData.name,
+      title: taskData.name,
       subject: taskData.subjectName,
-      duration: taskData.duration || 60,
-      desc: taskData.desc?.trim() ?? '',
+      durationMinutes: taskData.duration || 60,
+      description: taskData.desc?.trim() ?? '',
       status: 'pending',
       subjectId: taskData.subjectId,
       dueAt: taskData.dueAt,

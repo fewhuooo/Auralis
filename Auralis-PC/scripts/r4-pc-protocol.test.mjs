@@ -9,7 +9,6 @@ import {
   parseProblemDetails,
 } from '../src/api/protocol.ts';
 import { ApiProblemError, assertDirectDto, toApiProblem } from '../src/api/httpError.ts';
-import { createRefreshCoordinator } from '../src/api/authRefresh.ts';
 import { getRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts';
 import {
   formatDeviceName,
@@ -52,52 +51,6 @@ register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64
 const { parseSseStream } = await import('../src/api/sse.ts');
 const { reconcileProcessingSource } = await import('../src/services/documentProcessing/runtime.ts');
 const {
-  useSubjectApi,
-  listSubjects,
-  getSubject,
-  createSubject,
-  updateSubject,
-  deleteSubject,
-  restoreSubject,
-} = await import('../src/api/useSubjectApi.ts');
-const {
-  useKnowledgeApi,
-  getKnowledgeBlocks,
-  getKnowledgeBlock,
-  createKnowledgeBlock,
-  updateKnowledgeBlock,
-  deleteKnowledgeBlock,
-  restoreKnowledgeBlock,
-} = await import('../src/api/useKnowledgeApi.ts');
-const {
-  useTaskApi,
-  listTasks,
-  getTask,
-  createTask,
-  updateTask,
-  deleteTask,
-  restoreTask,
-} = await import('../src/api/useTaskApi.ts');
-const {
-  useSourceApi,
-  listSources,
-  getSource,
-  createSource,
-  updateSource,
-  deleteSource,
-  restoreSource,
-  reingestSource,
-} = await import('../src/api/useSourceApi.ts');
-const {
-  useRelationApi,
-  listRelations,
-  getRelation,
-  createRelation,
-  updateRelation,
-  deleteRelation,
-  restoreRelation,
-} = await import('../src/api/useRelationApi.ts');
-const {
   useReviewApi,
 } = await import('../src/api/useReviewApi.ts');
 const {
@@ -115,7 +68,6 @@ const {
 } = await import('../src/api/useAssetApi.ts');
 const {
   useAiApi,
-  checkHealth,
   getAiSettings,
   updateAiSettings,
   listConversations,
@@ -237,21 +189,6 @@ test('normalizes Problem Details from a failed HTTP response', () => {
 
   assert.equal(problem.status, 409);
   assert.equal(problem.detail, 'Version mismatch');
-});
-
-test('shares one refresh promise for concurrent 401 retries', async () => {
-  let calls = 0;
-  const coordinator = createRefreshCoordinator(async () => {
-    calls += 1;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    return 'access-token-2';
-  });
-
-  const first = coordinator.refresh();
-  const second = coordinator.refresh();
-  assert.equal(first, second);
-  assert.deepEqual(await Promise.all([first, second]), ['access-token-2', 'access-token-2']);
-  assert.equal(calls, 1);
 });
 
 test('validates UUID format and stable generation for device identity', () => {
@@ -866,354 +803,7 @@ test('parseSseStream parses events, multiline data, comments, chunk splits, and 
   assert.equal(receivedWhileAborting.length, 2);
 });
 
-test('Subject API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
-  const calls = [];
-  const origGet = request.get;
-  const origPost = request.post;
-  const origPut = request.put;
-  const origDelete = request.delete;
-
-  try {
-    request.get = async (url, config) => {
-      calls.push({ method: 'GET', url, config });
-      if (url === '/api/subjects') return { items: [{ id: 'sub-1', name: 'Math' }], nextCursor: 'nc-1', hasMore: false };
-      return { id: 'sub-1', name: 'Math' };
-    };
-    request.post = async (url, data, config) => {
-      calls.push({ method: 'POST', url, data, config });
-       return { id: 'sub-created', name: data?.name ?? 'Created' };
-    };
-    request.put = async (url, data, config) => {
-      calls.push({ method: 'PUT', url, data, config });
-       return { id: 'sub-updated', name: data?.name ?? 'Updated' };
-    };
-    request.delete = async (url, config) => {
-      calls.push({ method: 'DELETE', url, config });
-      return undefined;
-    };
-
-    // listSubjects
-    const listRes = await listSubjects({ cursor: 'cur-1', limit: 20 });
-    assert.equal(calls[0].method, 'GET');
-    assert.equal(calls[0].url, '/api/subjects');
-    assert.deepEqual(calls[0].config?.params, { cursor: 'cur-1', limit: 20 });
-    assert.equal(listRes.items?.length, 1);
-
-    // getSubject
-    const getRes = await getSubject('sub-1');
-    assert.equal(calls[1].method, 'GET');
-    assert.equal(calls[1].url, '/api/subjects/sub-1');
-     assert.equal(getRes.id, 'sub-1');
-
-    // createSubject
-     await createSubject({ baseVersion: 0, name: 'Physics' });
-    assert.equal(calls[2].method, 'POST');
-    assert.equal(calls[2].url, '/api/subjects');
-     assert.deepEqual(calls[2].data, { baseVersion: 0, name: 'Physics' });
-
-    // updateSubject
-     await updateSubject('sub-1', { baseVersion: 1, name: 'Advanced Math' });
-    assert.equal(calls[3].method, 'PUT');
-    assert.equal(calls[3].url, '/api/subjects/sub-1');
-    assert.equal(calls[3].data?.baseVersion, 1);
-
-    // deleteSubject
-    await deleteSubject('sub-1', { baseVersion: 2 });
-    assert.equal(calls[4].method, 'DELETE');
-    assert.equal(calls[4].url, '/api/subjects/sub-1');
-    assert.deepEqual(calls[4].config?.data, { baseVersion: 2 });
-
-    // restoreSubject
-    await restoreSubject('sub-1', { baseVersion: 3 });
-    assert.equal(calls[5].method, 'POST');
-    assert.equal(calls[5].url, '/api/subjects/sub-1/restore');
-    assert.deepEqual(calls[5].data, { baseVersion: 3 });
-  } finally {
-    request.get = origGet;
-    request.post = origPost;
-    request.put = origPut;
-    request.delete = origDelete;
-  }
-});
-
-test('KnowledgeBlock API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
-  const calls = [];
-  const origGet = request.get;
-  const origPost = request.post;
-  const origPut = request.put;
-  const origDelete = request.delete;
-
-  try {
-    request.get = async (url, config) => {
-      calls.push({ method: 'GET', url, config });
-      return { items: [{ id: 'kb-1', title: 'Theorem 1' }], nextCursor: null, hasMore: false };
-    };
-    request.post = async (url, data, config) => {
-      calls.push({ method: 'POST', url, data, config });
-      return { id: 'kb-created' };
-    };
-    request.put = async (url, data, config) => {
-      calls.push({ method: 'PUT', url, data, config });
-      return { id: 'kb-updated' };
-    };
-    request.delete = async (url, config) => {
-      calls.push({ method: 'DELETE', url, config });
-      return undefined;
-    };
-
-    // getKnowledgeBlocks
-     await getKnowledgeBlocks('sub-1', { limit: 50 });
-    assert.equal(calls[0].method, 'GET');
-    assert.equal(calls[0].url, '/api/knowledge-blocks');
-     assert.deepEqual(calls[0].config?.params, { limit: 50 });
-
-    // getKnowledgeBlock
-    await getKnowledgeBlock('kb-1');
-    assert.equal(calls[1].method, 'GET');
-    assert.equal(calls[1].url, '/api/knowledge-blocks/kb-1');
-
-    // createKnowledgeBlock
-     await createKnowledgeBlock({ baseVersion: 0, subjectId: 'sub-1', title: 'Calculus Intro', content: 'Limits' });
-    assert.equal(calls[2].method, 'POST');
-    assert.equal(calls[2].url, '/api/knowledge-blocks');
-    assert.equal(calls[2].data?.baseVersion, 0);
-
-    // updateKnowledgeBlock
-     await updateKnowledgeBlock('kb-1', { baseVersion: 1, subjectId: 'sub-1', title: 'Calculus Advanced', content: 'Derivatives' });
-    assert.equal(calls[3].method, 'PUT');
-    assert.equal(calls[3].url, '/api/knowledge-blocks/kb-1');
-    assert.equal(calls[3].data?.baseVersion, 1);
-
-    // deleteKnowledgeBlock
-    await deleteKnowledgeBlock('kb-1', { baseVersion: 2 });
-    assert.equal(calls[4].method, 'DELETE');
-    assert.equal(calls[4].url, '/api/knowledge-blocks/kb-1');
-    assert.deepEqual(calls[4].config?.data, { baseVersion: 2 });
-
-    // restoreKnowledgeBlock
-    await restoreKnowledgeBlock('kb-1', { baseVersion: 3 });
-    assert.equal(calls[5].method, 'POST');
-    assert.equal(calls[5].url, '/api/knowledge-blocks/kb-1/restore');
-  } finally {
-    request.get = origGet;
-    request.post = origPost;
-    request.put = origPut;
-    request.delete = origDelete;
-  }
-});
-
-test('Task API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
-  const calls = [];
-  const origGet = request.get;
-  const origPost = request.post;
-  const origPut = request.put;
-  const origDelete = request.delete;
-
-  try {
-    request.get = async (url, config) => {
-      calls.push({ method: 'GET', url, config });
-      return { items: [{ id: 't-1', title: 'Task 1' }], nextCursor: null, hasMore: false };
-    };
-    request.post = async (url, data, config) => {
-      calls.push({ method: 'POST', url, data, config });
-      return { id: 't-created' };
-    };
-    request.put = async (url, data, config) => {
-      calls.push({ method: 'PUT', url, data, config });
-      return { id: 't-updated' };
-    };
-    request.delete = async (url, config) => {
-      calls.push({ method: 'DELETE', url, config });
-      return undefined;
-    };
-
-    // listTasks
-     await listTasks({ cursor: 'cur-task', limit: 30 });
-    assert.equal(calls[0].method, 'GET');
-    assert.equal(calls[0].url, '/api/tasks');
-     assert.deepEqual(calls[0].config?.params, { cursor: 'cur-task', limit: 30 });
-
-    // getTask
-    await getTask('t-1');
-    assert.equal(calls[1].method, 'GET');
-    assert.equal(calls[1].url, '/api/tasks/t-1');
-
-    // createTask
-    await createTask({ baseVersion: 0, subjectId: 'sub-1', title: 'Finish homework', status: 'TODO' });
-    assert.equal(calls[2].method, 'POST');
-    assert.equal(calls[2].url, '/api/tasks');
-
-    // updateTask
-    await updateTask('t-1', { baseVersion: 1, subjectId: 'sub-1', title: 'Done homework', status: 'DONE' });
-    assert.equal(calls[3].method, 'PUT');
-    assert.equal(calls[3].url, '/api/tasks/t-1');
-
-    // deleteTask
-    await deleteTask('t-1', { baseVersion: 2 });
-    assert.equal(calls[4].method, 'DELETE');
-    assert.equal(calls[4].url, '/api/tasks/t-1');
-
-    // restoreTask
-    await restoreTask('t-1', { baseVersion: 3 });
-    assert.equal(calls[5].method, 'POST');
-    assert.equal(calls[5].url, '/api/tasks/t-1/restore');
-  } finally {
-    request.get = origGet;
-    request.post = origPost;
-    request.put = origPut;
-    request.delete = origDelete;
-  }
-});
-
-test('Source API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
-  const calls = [];
-  const origGet = request.get;
-  const origPost = request.post;
-  const origPut = request.put;
-  const origDelete = request.delete;
-
-  try {
-    request.get = async (url, config) => {
-      calls.push({ method: 'GET', url, config });
-      return { items: [{ id: 'src-1', title: 'Notes.pdf' }], nextCursor: null, hasMore: false };
-    };
-    request.post = async (url, data, config) => {
-      calls.push({ method: 'POST', url, data, config });
-      return { id: 'src-created' };
-    };
-    request.put = async (url, data, config) => {
-      calls.push({ method: 'PUT', url, data, config });
-      return { id: 'src-updated' };
-    };
-    request.delete = async (url, config) => {
-      calls.push({ method: 'DELETE', url, config });
-      return undefined;
-    };
-
-    // listSources
-     await listSources({ cursor: 'cur-source', limit: 30 });
-    assert.equal(calls[0].method, 'GET');
-    assert.equal(calls[0].url, '/api/sources');
-     assert.deepEqual(calls[0].config?.params, { cursor: 'cur-source', limit: 30 });
-
-    // getSource
-    await getSource('src-1');
-    assert.equal(calls[1].method, 'GET');
-    assert.equal(calls[1].url, '/api/sources/src-1');
-
-    // createSource
-    await createSource({ baseVersion: 0, subjectId: 'sub-1', title: 'Chapter 1', type: 'TEXT' });
-    assert.equal(calls[2].method, 'POST');
-    assert.equal(calls[2].url, '/api/sources');
-
-    // updateSource
-    await updateSource('src-1', { baseVersion: 1, subjectId: 'sub-1', title: 'Chapter 1 v2' });
-    assert.equal(calls[3].method, 'PUT');
-    assert.equal(calls[3].url, '/api/sources/src-1');
-
-    // deleteSource
-    await deleteSource('src-1', { baseVersion: 2 });
-    assert.equal(calls[4].method, 'DELETE');
-    assert.equal(calls[4].url, '/api/sources/src-1');
-
-    // restoreSource
-    await restoreSource('src-1', { baseVersion: 3 });
-    assert.equal(calls[5].method, 'POST');
-    assert.equal(calls[5].url, '/api/sources/src-1/restore');
-
-    // reingestSource
-    await reingestSource('src-1', { baseVersion: 4 });
-    assert.equal(calls[6].method, 'POST');
-    assert.equal(calls[6].url, '/api/sources/src-1/reingest');
-    assert.deepEqual(calls[6].data, { baseVersion: 4 });
-  } finally {
-    request.get = origGet;
-    request.post = origPost;
-    request.put = origPut;
-    request.delete = origDelete;
-  }
-});
-
-test('Relation API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
-  const calls = [];
-  const origGet = request.get;
-  const origPost = request.post;
-  const origPut = request.put;
-  const origDelete = request.delete;
-
-  try {
-    request.get = async (url, config) => {
-      calls.push({ method: 'GET', url, config });
-      return { items: [{ id: 'rel-1' }], nextCursor: null, hasMore: false };
-    };
-    request.post = async (url, data, config) => {
-      calls.push({ method: 'POST', url, data, config });
-      return { id: 'rel-created' };
-    };
-    request.put = async (url, data, config) => {
-      calls.push({ method: 'PUT', url, data, config });
-      return { id: 'rel-updated' };
-    };
-    request.delete = async (url, config) => {
-      calls.push({ method: 'DELETE', url, config });
-      return undefined;
-    };
-
-    // listRelations
-     await listRelations({ cursor: 'cur-relation', limit: 30 });
-    assert.equal(calls[0].method, 'GET');
-    assert.equal(calls[0].url, '/api/relations');
-     assert.deepEqual(calls[0].config?.params, { cursor: 'cur-relation', limit: 30 });
-
-    // getRelation
-    await getRelation('rel-1');
-    assert.equal(calls[1].method, 'GET');
-    assert.equal(calls[1].url, '/api/relations/rel-1');
-
-    // createRelation
-     await createRelation({
-       baseVersion: 0,
-       sourceType: 'SUBJECT',
-       sourceId: 'sub-1',
-       targetType: 'TASK',
-       targetId: 'task-1',
-       type: 'RELATED_TO',
-     });
-    assert.equal(calls[2].method, 'POST');
-    assert.equal(calls[2].url, '/api/relations');
-
-    // updateRelation
-     await updateRelation('rel-1', {
-       baseVersion: 1,
-       sourceType: 'SUBJECT',
-       sourceId: 'sub-1',
-       targetType: 'TASK',
-       targetId: 'task-1',
-       type: 'RELATED_TO',
-       label: 'rel-up',
-     });
-    assert.equal(calls[3].method, 'PUT');
-    assert.equal(calls[3].url, '/api/relations/rel-1');
-
-    // deleteRelation
-    await deleteRelation('rel-1', { baseVersion: 2 });
-    assert.equal(calls[4].method, 'DELETE');
-    assert.equal(calls[4].url, '/api/relations/rel-1');
-
-    // restoreRelation
-    await restoreRelation('rel-1', { baseVersion: 3 });
-    assert.equal(calls[5].method, 'POST');
-    assert.equal(calls[5].url, '/api/relations/rel-1/restore');
-  } finally {
-    request.get = origGet;
-    request.post = origPost;
-    request.put = origPut;
-    request.delete = origDelete;
-  }
-});
-
 test('Review API removes the legacy due, event, and history wrappers', () => {
-  assert.equal(typeof useReviewApi.getSubjectStates, 'function');
   assert.equal(typeof useReviewApi.selectReview, 'function');
   assert.equal(typeof useReviewApi.getLifecycleHistory, 'function');
   for (const method of ['getDueReviews', 'getReviewQueue', 'recordEvent', 'recordReviewEvent', 'getHistory', 'getReviewHistory']) {
@@ -1312,7 +902,7 @@ test('Asset API upload-intent, complete, download-url and size validation contra
   }
 });
 
-test('AI Client calls settings, conversations, and health without legacy paths', async () => {
+test('AI Client calls settings and conversations through direct DTO endpoints', async () => {
   const calls = [];
   const origGet = request.get;
   const origPost = request.post;
@@ -1342,11 +932,6 @@ test('AI Client calls settings, conversations, and health without legacy paths',
       return undefined;
     };
 
-    // checkHealth
-    const isHealthy = await checkHealth();
-    assert.equal(isHealthy, true);
-    assert.equal(calls[0].url, '/actuator/health');
-
     // getAiSettings & updateAiSettings
     const settings = await getAiSettings();
     assert.equal(settings[0].provider, 'DEEPSEEK');
@@ -1357,24 +942,24 @@ test('AI Client calls settings, conversations, and health without legacy paths',
        embeddingModel: 'text-embedding-3-small',
        apiKey: 'sk-test',
      });
-    assert.equal(calls[2].method, 'PUT');
-    assert.equal(calls[2].url, '/api/ai/settings');
+    assert.equal(calls[1].method, 'PUT');
+    assert.equal(calls[1].url, '/api/ai/settings');
 
     // listConversations & createConversation & getConversation & deleteConversation
     const convs = await listConversations();
     assert.equal(convs.length, 1);
     await createConversation({ baseVersion: 0, title: 'Math Help' });
-    assert.equal(calls[4].method, 'POST');
-    assert.equal(calls[4].url, '/api/ai/conversations');
+    assert.equal(calls[3].method, 'POST');
+    assert.equal(calls[3].url, '/api/ai/conversations');
 
     await getConversation('conv-1');
-    assert.equal(calls[5].method, 'GET');
-    assert.equal(calls[5].url, '/api/ai/conversations/conv-1');
+    assert.equal(calls[4].method, 'GET');
+    assert.equal(calls[4].url, '/api/ai/conversations/conv-1');
 
     await deleteConversation('conv-1', 2);
-    assert.equal(calls[6].method, 'DELETE');
-    assert.equal(calls[6].url, '/api/ai/conversations/conv-1');
-    assert.deepEqual(calls[6].config?.params, { baseVersion: 2 });
+    assert.equal(calls[5].method, 'DELETE');
+    assert.equal(calls[5].url, '/api/ai/conversations/conv-1');
+    assert.deepEqual(calls[5].config?.params, { baseVersion: 2 });
 
   } finally {
     request.get = origGet;

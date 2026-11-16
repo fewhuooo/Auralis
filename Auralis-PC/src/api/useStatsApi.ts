@@ -1,6 +1,5 @@
 import request from './request.ts'
 import type { components } from './generated/schema.ts'
-import type { SyncRequestScopeTicket, SyncScopedAxiosRequestConfig } from './request.ts'
 
 export type StatsOverviewView = components['schemas']['StatsOverviewView']
 export type WeeklyStatsView = components['schemas']['WeeklyStatsView']
@@ -47,10 +46,6 @@ export interface SubjectStatsQuery {
   timeZone: string
 }
 
-function scopedConfig(scope?: SyncRequestScopeTicket): SyncScopedAxiosRequestConfig | undefined {
-  return scope ? { __auralisSyncScope: scope } : undefined
-}
-
 export const useStatsApi = {
   getOverview(params?: StatsQuery): Promise<FocusStatsOverviewView> {
     return request.get('/api/stats/overview', { params }) as unknown as Promise<FocusStatsOverviewView>
@@ -63,12 +58,6 @@ export const useStatsApi = {
   },
   getWeeklyStats(params?: WeeklyStatsQuery): Promise<FocusWeeklyStatsView> {
     return request.get('/api/stats/weekly', { params }) as unknown as Promise<FocusWeeklyStatsView>
-  },
-  getSubjectStats(subjectId: string, params: SubjectStatsQuery, scope?: SyncRequestScopeTicket): Promise<SubjectStatsView> {
-    return request.get(`/api/stats/subjects/${encodeURIComponent(subjectId)}`, {
-      params,
-      ...scopedConfig(scope),
-    }) as unknown as Promise<SubjectStatsView>
   },
 }
 

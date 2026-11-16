@@ -130,10 +130,6 @@ function scopedConfig(scope?: SyncRequestScopeTicket): SyncScopedAxiosRequestCon
 }
 
 export const useReviewApi = {
-  getSubjectStates(params: SubjectReviewStatesQuery, scope?: SyncRequestScopeTicket): Promise<CursorPageReviewStateView> {
-    const query = { ...params, cursor: params.cursor || undefined }
-    return request.get('/api/reviews/states', { params: query, ...scopedConfig(scope) }) as unknown as Promise<CursorPageReviewStateView>
-  },
   selectReview(data: ReviewAttemptRequest, scope?: SyncRequestScopeTicket): Promise<LifecycleCommandResponse> {
     return request.post('/api/reviews/lifecycle/attempts', data, scopedConfig(scope)) as unknown as Promise<LifecycleCommandResponse>
   },
