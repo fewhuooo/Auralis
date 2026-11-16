@@ -98,6 +98,61 @@ test('useKnowledgeStore sorts local blocks descending by createdAt/time', async 
   assert.match(storeSrc, /\.sort\(\(a, b\) => \{[\s\S]*?timeB\.localeCompare\(timeA\)/)
 })
 
+test('addBlock does not publish or schedule an old-session commit after account switch', async (t) => {
+  const root = new URL('../src/', import.meta.url)
+  const loader = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const withExtension = /\.[cm]?[jt]s$/.test(specifier) ? specifier : specifier + '.ts'
+      if (specifier.startsWith('@/')) return nextResolve(new URL(withExtension.slice(2), root).href, context)
+      if (specifier.startsWith('.') && context.parentURL?.startsWith(root.href)) {
+        return nextResolve(new URL(withExtension, context.parentURL).href, context)
+      }
+      return nextResolve(specifier, context)
+    },
+  })
+  try {
+    const { useAuthStore } = await import('../src/store/useAuthStore.ts')
+    const { useKnowledgeStore } = await import('../src/store/useKnowledgeStore.ts')
+    const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+    const { getLocalRepository } = await import('../src/services/localDb.ts')
+    setActivePinia(createPinia())
+    const auth = useAuthStore()
+    auth.user = { id: 'knowledge-add-old-user' }
+    auth.serverDeviceId = 'knowledge-add-old-device'
+    const store = useKnowledgeStore()
+    const sync = useSyncStore()
+    const scheduled = []
+    const scheduleSpy = t.mock.method(sync, 'requestBackgroundSync', reason => scheduled.push(reason))
+    const repo = await getLocalRepository(auth.user.id, auth.serverDeviceId)
+    const commit = repo.commitMutation.bind(repo)
+    let announceCommit
+    let releaseCommit
+    const commitStarted = new Promise(resolve => { announceCommit = resolve })
+    const commitGate = new Promise(resolve => { releaseCommit = resolve })
+    const commitSpy = t.mock.method(repo, 'commitMutation', async input => {
+      announceCommit()
+      await commitGate
+      return commit(input)
+    })
+
+    const adding = store.addBlock({ subjectId: 'math', title: 'Old account block', content: 'Private body' })
+    await commitStarted
+    auth.user = { id: 'knowledge-add-new-user' }
+    auth.serverDeviceId = 'knowledge-add-new-device'
+    auth.loginGeneration = Symbol('new-session')
+    releaseCommit()
+    const id = await adding
+
+    assert.ok(await repo.read('KNOWLEDGE_BLOCK', id), 'the completed local write remains in its original scoped repository')
+    assert.deepEqual(store.recentBlocks, [], 'an old-session completion does not enter the current store projection')
+    assert.deepEqual(scheduled, [], 'an old-session completion does not schedule sync in the new session')
+    commitSpy.mock.restore()
+    scheduleSpy.mock.restore()
+  } finally {
+    loader.deregister()
+  }
+})
+
 test('Tablet workspace activates created block immediately upon creation', async () => {
   const mobileRoot = new URL('../../Auralis-Mobile/src/', import.meta.url)
   const tabletSrc = await readFile(new URL('pages/tablet/workspace/index.vue', mobileRoot), 'utf8')
@@ -140,7 +195,7 @@ test('Asset knowledge draft survives refresh and cannot overwrite a newer or del
     const functions = ast.statements.filter(statement => names.includes(statement.name?.text)
       || statement.declarationList?.declarations.some(declaration => names.includes(declaration.name.text)))
       .map(statement => statement.getText(ast)).join('\n')
-    const createEditor = new Function('ref', 'blockStore', 'LocalConflictError', ts.transpile(`
+    const createEditor = new Function('ref', 'blockStore', 'LocalConflictError', 't', ts.transpile(`
       const selected = ref(null), rootNodes = ref([]), focusUnassigned = ref(false), showRegisterModal = ref(false)
       const route = { query: {} }
       const subjectStore = { subjects: [] }, sourceStore = { sources: [] }, taskStore = { allTasks: [] }
@@ -151,7 +206,7 @@ test('Asset knowledge draft survives refresh and cannot overwrite a newer or del
       ${functions}
       return { selected, rootNodes, rebuildAssetTree, findTreeNode, selectItem, saveBlockEdit, notifications }
     `, { target: ts.ScriptTarget.ES2022 }))
-    const editor = createEditor(ref, store, LocalConflictError)
+    const editor = createEditor(ref, store, LocalConflictError, value => value['zh-CN'] ?? value.en ?? value.ja)
     const stop = watch(() => store.recentBlocks, editor.rebuildAssetTree, { deep: true, immediate: true })
     try {
       const treeBlock = () => editor.findTreeNode(editor.rootNodes.value, 'b-block')
@@ -245,6 +300,7 @@ test('workspace saves one knowledge block per in-flight creation and keeps a fai
       const activeSourceFiles = ref([{ id: 'math-source', subjectId: 'math' }])
       const selectedSourceId = ref(undefined), selectedFileId = ref('math-source')
       const selectedFile = ref({ name: 'Source' }), selectedBlockId = ref(null)
+      const selectionScope = ref('preview')
       const isCreateMode = ref(true), showKnowledgeEditor = ref(true)
       const notifications = []
       const ElNotification = notification => notifications.push(notification)

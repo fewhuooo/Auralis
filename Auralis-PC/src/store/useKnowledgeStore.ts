@@ -157,6 +157,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   async function addBlock(block: Partial<KnowledgeBlockModel> & { title: string; subjectId: string }): Promise<string> {
+    const generation = authStore.loginGeneration
     const content = block.content || ''
     const payload: KnowledgeBlockCreateRequest = {
       baseVersion: 0,
@@ -183,6 +184,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         payload: localView as unknown as Record<string, unknown>,
       }),
     })
+    if (generation !== authStore.loginGeneration) return id
     const subjectStore = useSubjectStore()
     const subjectName = subjectStore.subjects.find((s) => s.id === block.subjectId)?.name || block.subject
     const model = mapKnowledgeBlockView(localView, block.source, subjectName)
