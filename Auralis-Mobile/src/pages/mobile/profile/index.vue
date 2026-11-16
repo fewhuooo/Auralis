@@ -17,7 +17,7 @@
           <text class="large-title">个人空间</text>
         </view>
 
-        <!-- Profile Hero Section: Avatar & Name Left, Stats Capsules Right -->
+        <!-- Account identity -->
         <view class="profile-hero-card">
           <!-- Left Column: Avatar & Name -->
           <view class="hero-left">
@@ -27,22 +27,6 @@
             <view class="user-info">
               <text class="account-name">{{ username }}</text>
               <text class="account-sub">{{ accountMeta }}</text>
-            </view>
-          </view>
-
-          <!-- Right Column: 3 Stat Capsules vertically arranged -->
-          <view class="hero-right">
-            <view class="stat-capsule">
-              <text class="capsule-label">知识块</text>
-              <text class="capsule-val">{{ blockCount }}</text>
-            </view>
-            <view class="stat-capsule">
-              <text class="capsule-label">完成任务</text>
-              <text class="capsule-val">{{ completedCount }}</text>
-            </view>
-            <view class="stat-capsule">
-              <text class="capsule-label">总专注</text>
-              <text class="capsule-val">{{ focusHours }}h</text>
             </view>
           </view>
         </view>
@@ -261,8 +245,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useBlockStore } from '@/store/useBlockStore'
-import { useTaskStore } from '@/store/useTaskStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useAiUsage } from '@/utils/useAiUsage'
@@ -271,8 +253,6 @@ import LineIcon from '@/components/LineIcon.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 
-const blockStore = useBlockStore()
-const taskStore = useTaskStore()
 const settingsStore = useSettingsStore()
 const syncStore = useSyncStore()
 const authStore = useAuthStore()
@@ -289,10 +269,6 @@ const { darkMode, language } = storeToRefs(settingsStore)
 const isSyncing = ref(false)
 const scrollTop = ref(0)
 const remindersEnabled = ref(true)
-
-const blockCount = computed(() => blockStore.recentBlocks.length)
-const completedCount = computed(() => taskStore.completedCount)
-const focusHours = computed(() => taskStore.totalFocusHours.replace(/h$/, ''))
 
 const username = computed(() => authStore.username || 'Auralis 同学')
 const accountMeta = computed(() => '跨端同步与账户')
@@ -470,7 +446,6 @@ const showFeatureUnderDevelopment = (name: string) => {
   transition: color 0.3s;
 }
 
-/* Profile Hero Section (Left: Avatar & Name, Right: Stat Capsules) */
 .profile-hero-card {
   display: flex;
   flex-direction: row;
@@ -533,43 +508,6 @@ const showFeatureUnderDevelopment = (name: string) => {
   color: var(--text-sub);
   font-weight: 400;
   transition: color 0.3s;
-}
-
-/* Right Column: Stat Capsules vertically arranged */
-.hero-right {
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-  align-items: flex-end;
-}
-
-.stat-capsule {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
-  padding: 10rpx 24rpx;
-  background: var(--color-bg-tertiary, rgba(125, 147, 114, 0.1));
-  border-radius: 999rpx;
-  min-width: 210rpx;
-  border: 1px solid rgba(125, 147, 114, 0.15);
-}
-
-.profile-page.dark .stat-capsule {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.capsule-label {
-  font-size: 22rpx;
-  color: var(--text-sub);
-  font-weight: 500;
-}
-
-.capsule-val {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--text-main);
 }
 
 /* Group sections & lists (Tighter, narrower, slightly left-aligned) */

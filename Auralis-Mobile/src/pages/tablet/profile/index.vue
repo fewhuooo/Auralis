@@ -6,7 +6,7 @@
       </view>
 
       <view class="content-area">
-        <!-- Left Panel: User Card & Stats -->
+        <!-- Left Panel: User Card -->
         <view class="left-panel">
           <!-- User Card -->
           <view class="user-card">
@@ -17,64 +17,6 @@
               <view class="online-dot"></view>
             </view>
             <text class="username">{{ authStore.username || '未登录' }}</text>
-            <view class="level-badge"><text>Lv.{{ userLevel }}</text></view>
-            <text class="streak-text">连续学习 {{ streakDays }} 天</text>
-          </view>
-
-          <!-- Stats Grid -->
-          <view class="stats-grid">
-            <view class="stat-card">
-              <text class="stat-value">{{ recentBlocks.length }}</text>
-              <text class="stat-label">知识块</text>
-            </view>
-            <view class="stat-card">
-              <text class="stat-value">{{ totalTasks }}</text>
-              <text class="stat-label">任务总数</text>
-            </view>
-            <view class="stat-card">
-              <text class="stat-value">{{ taskStore.totalFocusHours }}</text>
-              <text class="stat-label">专注时长</text>
-            </view>
-            <view class="stat-card">
-              <text class="stat-value">{{ weeklyNew }}</text>
-              <text class="stat-label">本周新增</text>
-            </view>
-          </view>
-
-          <!-- Weekly Bar Chart -->
-          <view class="chart-card">
-            <text class="chart-title">本周学习量</text>
-            <view class="bar-chart">
-              <view v-for="(day, i) in weeklyData" :key="i" class="bar-col">
-                <view class="bar-wrapper">
-                  <view class="bar-fill" :style="{ height: day.percent + '%' }"></view>
-                </view>
-                <text class="bar-label">{{ day.label }}</text>
-              </view>
-            </view>
-          </view>
-
-          <!-- Subject Distribution -->
-          <view class="dist-card">
-            <text class="dist-title">学科分布</text>
-            <view class="dist-list">
-              <view v-for="subj in subjectDistribution" :key="subj.name" class="dist-item">
-                <view class="dist-header">
-                  <text class="dist-icon">{{ subj.icon }}</text>
-                  <text class="dist-name">{{ subj.name }}</text>
-                  <text class="dist-count">{{ subj.count }}</text>
-                </view>
-                <view class="dist-bar">
-                  <view class="dist-fill" :style="{ width: subj.percent + '%' }"></view>
-                </view>
-              </view>
-            </view>
-          </view>
-
-          <!-- AI Insight -->
-          <view class="insight-card">
-            <text class="insight-icon">◇</text>
-            <text class="insight-text">{{ aiInsight }}</text>
           </view>
         </view>
 
@@ -290,8 +232,6 @@ import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useAiUsage } from '@/utils/useAiUsage'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
-import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore } from '@/store/useTaskStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { refreshAiConfig, setAiConfig } from '@/api/aiClient'
@@ -301,12 +241,9 @@ const authStore = useAuthStore()
 const { aiUsage, loadingAiUsage, aiUsageError, fetchAiUsage } = useAiUsage()
 
 const blockStore = useBlockStore()
-const subjectStore = useSubjectStore()
-const taskStore = useTaskStore()
 const settingsStore = useSettingsStore()
 const syncStore = useSyncStore()
 const { recentBlocks } = storeToRefs(blockStore)
-const { subjects } = storeToRefs(subjectStore)
 
 const isSyncing = ref(false)
 const showApiKeyModal = ref(false)
@@ -320,60 +257,8 @@ const weeklyReport = ref(false)
 const hasApiKey = ref(false)
 
 const avatarLetter = computed(() => (authStore.username || 'U').charAt(0).toUpperCase())
-const userLevel = computed(() => {
-  const total = recentBlocks.value.length + taskStore.completedCount
-  if (total < 10) return 1; if (total < 50) return 2; if (total < 100) return 3; if (total < 200) return 4; return 5
-})
-const totalTasks = computed(() => taskStore.pendingTasks.length + taskStore.timeSlots.filter(s => s.task).length)
-const streakDays = computed(() => {
-  // Simple streak: count consecutive days with blocks
-  const dates = new Set(recentBlocks.value.map(b => new Date(b.time).toDateString()))
-  let streak = 0
-  const d = new Date()
-  while (dates.has(d.toDateString())) { streak++; d.setDate(d.getDate() - 1) }
-  return streak
-})
-const weeklyNew = computed(() => {
-  const weekAgo = Date.now() - 7 * 86400000
-  return recentBlocks.value.filter(b => new Date(b.time).getTime() > weekAgo).length
-})
 const fontSizeLabel = computed(() => ({ small: '小', medium: '中', large: '大' })[settingsStore.fontSize] || '中')
 const fontSizeOptions: Array<{ value: 'small' | 'medium' | 'large'; label: string }> = [{ value: 'small', label: '小' }, { value: 'medium', label: '中' }, { value: 'large', label: '大' }]
-const aiInsight = computed(() => {
-  const blocks = recentBlocks.value.length
-  const tasks = totalTasks.value
-  if (blocks === 0 && tasks === 0) return '开始创建知识块和任务，AI 会为你生成学习洞察。'
-  if (blocks > 10 && taskStore.completedCount > 5) return '你的学习节奏很好！建议适当增加复习频率以巩固记忆。'
-  if (tasks > 10 && taskStore.pendingCount > 8) return '待办任务较多，建议优先处理临近截止时间的任务，适当延后低优先级任务。'
-  return `已积累 ${blocks} 个知识块，完成 ${taskStore.completedCount} 个任务。继续保持！`
-})
-
-const weeklyData = computed(() => {
-  const days = ['一', '二', '三', '四', '五', '六', '日']
-  const today = new Date().getDay()
-  const todayIdx = today === 0 ? 6 : today - 1
-  const maxCount = Math.max(...days.map((_, i) => {
-    if (i > todayIdx) return 0
-    const d = new Date(); d.setDate(d.getDate() - (todayIdx - i))
-    return recentBlocks.value.filter(b => new Date(b.time).toDateString() === d.toDateString()).length
-  }), 1)
-  return days.map((label, i) => {
-    if (i > todayIdx) return { label, percent: 0 }
-    const d = new Date(); d.setDate(d.getDate() - (todayIdx - i))
-    const count = recentBlocks.value.filter(b => new Date(b.time).toDateString() === d.toDateString()).length
-    return { label, percent: Math.round((count / maxCount) * 100) }
-  })
-})
-
-const subjectDistribution = computed(() => {
-  const total = recentBlocks.value.length || 1
-  return subjects.value.map(s => ({
-    name: s.name, icon: s.icon,
-    count: recentBlocks.value.filter(b => b.subjectId === s.id).length,
-    percent: Math.round((recentBlocks.value.filter(b => b.subjectId === s.id).length / total) * 100)
-  })).sort((a, b) => b.count - a.count)
-})
-
 const handleSync = async () => {
   if (isSyncing.value) return
   isSyncing.value = true
@@ -414,8 +299,6 @@ const handleLogout = () => {
 
 onMounted(async () => {
   await blockStore.fetchBlocks()
-  await subjectStore.loadSubjects()
-  await taskStore.fetchTasks()
   try {
     hasApiKey.value = (await refreshAiConfig()).hasApiKey
   } catch {
@@ -439,40 +322,6 @@ onMounted(async () => {
 .avatar-text { font-size: 40rpx; font-weight: 800; color: var(--color-zen-white, #FFFFFF); }
 .online-dot { position: absolute; bottom: 2rpx; right: 2rpx; width: 20rpx; height: 20rpx; border-radius: 50%; background: #4b8054; border: 3rpx solid var(--color-zen-white, #FFFFFF); }
 .username { font-size: 32rpx; font-weight: 800; color: var(--color-zen-graphite, #1C1C1A); font-family: "Outfit", "Plus Jakarta Sans", sans-serif; }
-.level-badge { padding: 4rpx 16rpx; border-radius: 999rpx; background: rgba(125, 147, 114, 0.12); font-size: 22rpx; font-weight: 700; color: #7D9372; border: 1px solid rgba(125, 147, 114, 0.3); }
-.streak-text { font-size: 22rpx; color: var(--color-zen-stone, #A8A8A5); font-weight: 600; }
-
-.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }
-.stat-card { background: var(--color-zen-white, #FFFFFF); border: 1px solid var(--color-zen-hairline, #E6E6E4); border-radius: 28rpx; padding: 20rpx; display: flex; flex-direction: column; gap: 4rpx; box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02); }
-.stat-value { font-size: 36rpx; font-weight: 800; color: var(--color-zen-graphite, #1C1C1A); font-family: "Outfit", "Plus Jakarta Sans", sans-serif; }
-.stat-label { font-size: 20rpx; color: var(--color-zen-stone, #A8A8A5); font-weight: 600; }
-
-.chart-card { background: var(--color-zen-white, #FFFFFF); border: 1px solid var(--color-zen-hairline, #E6E6E4); border-radius: 32rpx; padding: 24rpx; box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02); }
-.chart-title { font-size: 26rpx; font-weight: 800; color: var(--color-zen-graphite, #1C1C1A); display: block; margin-bottom: 16rpx; font-family: "Outfit", "Plus Jakarta Sans", sans-serif; }
-.bar-chart { display: flex; gap: 8rpx; align-items: flex-end; height: 120rpx; }
-.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
-.bar-wrapper { width: 100%; height: 100rpx; background: var(--color-zen-ivory, #F9F9F7); border-radius: 6rpx; display: flex; align-items: flex-end; overflow: hidden; }
-.bar-fill { width: 100%; background: #7D9372; border-radius: 6rpx 6rpx 0 0; min-height: 4rpx; transition: height 0.3s; }
-.bar-label { font-size: 18rpx; color: var(--color-zen-stone, #A8A8A5); font-weight: 600; }
-
-.dist-card { background: var(--color-zen-white, #FFFFFF); border: 1px solid var(--color-zen-hairline, #E6E6E4); border-radius: 32rpx; padding: 24rpx; box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02); }
-.dist-title { font-size: 26rpx; font-weight: 800; color: var(--color-zen-graphite, #1C1C1A); display: block; margin-bottom: 12rpx; font-family: "Outfit", "Plus Jakarta Sans", sans-serif; }
-.dist-list { display: flex; flex-direction: column; gap: 12rpx; }
-/* .dist-item */
-.dist-header { display: flex; align-items: center; gap: 8rpx; margin-bottom: 4rpx; }
-.dist-icon { font-size: 22rpx; }
-.dist-name { flex: 1; font-size: 24rpx; font-weight: 600; color: var(--color-zen-graphite, #1C1C1A); }
-.dist-count { font-size: 20rpx; color: var(--color-zen-stone, #A8A8A5); font-weight: 600; }
-.dist-bar { height: 8rpx; background: var(--color-zen-ivory, #F9F9F7); border-radius: 4rpx; overflow: hidden; }
-.dist-fill { height: 100%; border-radius: 4rpx; transition: width 0.3s; background: #7D9372; }
-
-.insight-card { background: var(--color-zen-white, #FFFFFF); border: 1px solid var(--color-zen-hairline, #E6E6E4); border-radius: 32rpx; padding: 24rpx; display: flex; gap: 12rpx; align-items: flex-start; box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02); }
-.insight-icon { font-size: 24rpx; color: #7D9372; font-weight: 800; }
-.insight-text { font-size: 22rpx; color: var(--color-zen-stone, #A8A8A5); line-height: 1.5; font-weight: 600; }
-
-.insight-icon { font-size: 24rpx; color: #7D9372; font-weight: 800; }
-.insight-text { font-size: 22rpx; color: var(--color-zen-stone, #A8A8A5); line-height: 1.5; font-weight: 600; }
-
 .right-panel { flex: 7; display: flex; flex-direction: column; gap: 20rpx; overflow-y: auto; }
 
 .settings-group { background: var(--color-zen-white, #FFFFFF); border: 1px solid var(--color-zen-hairline, #E6E6E4); border-radius: 36rpx; padding: 28rpx; box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02); }

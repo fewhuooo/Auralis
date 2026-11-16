@@ -1,14 +1,11 @@
 <template>
   <TabletLayout>
     <view class="t-dashboard">
-      <!-- Left Column: Schedule & Action (55%) -->
+      <!-- Schedule and tasks -->
       <view class="left-column">
         <!-- Greeting Row & Quick Add Button -->
         <view class="greeting-row">
-          <view class="greeting-text-wrap">
-            <text class="greeting-title">{{ greeting }}，{{ username }}</text>
-            <text class="greeting-sub">本周完成 {{ completedTasks }} 项任务 · 专注 {{ totalFocusHours }} 小时</text>
-          </view>
+          <text class="greeting-title">{{ greeting }}，{{ username }}</text>
           <view class="add-circle-btn" :class="{ 'is-active': showQuickAdd }" @click="showQuickAdd = !showQuickAdd">
             <LineIcon :name="showQuickAdd ? 'close' : 'plus'" size="36rpx" :color="showQuickAdd ? '#FFFFFF' : '#1C1C1A'" />
           </view>
@@ -106,18 +103,6 @@
           </view>
         </view>
 
-        <!-- Focus Stats Capsules -->
-        <view class="focus-capsules">
-          <view class="stat-capsule">
-            <text class="sc-label">今日专注</text>
-            <text class="sc-val">{{ taskStore.totalFocusHours }} <text class="sc-unit">小时</text></text>
-          </view>
-          <view class="stat-capsule">
-            <text class="sc-label">待办任务</text>
-            <text class="sc-val">{{ pendingTasks.length }} <text class="sc-unit">项</text></text>
-          </view>
-        </view>
-
         <!-- Section Header -->
         <view class="section-header">
           <text class="section-title">待办与日程</text>
@@ -167,66 +152,8 @@
         </view>
       </view>
 
-      <!-- Right Column: Stats & Analytics (38% Full-Width Vertical Stack) -->
       <view class="right-column">
-        <view class="stats-grid-container">
-          <!-- Card 1: Hero Summary & Streak Banner (Horizontal 1-story strip) -->
-          <view class="stats-card card-hero-summary">
-            <view class="hero-strip-layout">
-              <view class="hero-streak-left">
-                <LineIcon name="fire" size="44rpx" color="#ffb800" />
-                <text class="hero-streak-num">{{ streakDays }}</text>
-                <view class="streak-text-col">
-                  <text class="hero-streak-text">天连续专注</text>
-                  <text class="hero-rate-badge">完成率 {{ taskCompletionRate }}%</text>
-                </view>
-              </view>
-              <view class="hero-metrics-right">
-                <view class="hero-metric">
-                  <text class="hm-val">{{ totalFocusHours }}</text>
-                  <text class="hm-label">本周专注(h)</text>
-                </view>
-                <view class="hm-divider"></view>
-                <view class="hero-metric">
-                  <text class="hm-val">{{ totalBlocks }}</text>
-                  <text class="hm-label">知识块</text>
-                </view>
-                <view class="hm-divider"></view>
-                <view class="hero-metric">
-                  <text class="hm-val">{{ completedTasks }}</text>
-                  <text class="hm-label">已完成</text>
-                </view>
-              </view>
-            </view>
-          </view>
-
-          <!-- Card 2: Weekly Focus Chart (Full width, flex: 1, min-height: 0) -->
-          <view class="stats-card card-chart-vertical">
-            <view class="card-header-compact">
-              <text class="section-title compact">本周专注趋势</text>
-              <text class="footnote-compact">日均 {{ weeklyAverage }} 分钟</text>
-            </view>
-            <view class="chart-wrapper flex-chart">
-              <WeeklyChart :data="weeklyData" />
-            </view>
-          </view>
-
-          <!-- Card 3: Subject Distribution (Full width, flex: 1, min-height: 0) -->
-          <view class="stats-card card-chart-vertical">
-            <view class="card-header-compact">
-              <text class="section-title compact">学科时间分布</text>
-              <text class="footnote-compact">共 {{ totalBlocks }} 块</text>
-            </view>
-            <view class="chart-wrapper flex-chart">
-              <SubjectPieChart :segments="subjectSegments" :total="totalBlocks" />
-            </view>
-          </view>
-
-          <!-- Card 4: Heatmap (Full width, flex-shrink: 0, compact) -->
-          <view class="stats-card card-heatmap-vertical">
-            <HeatmapChart :dataset="heatmapData" :weeks="5" />
-          </view>
-        </view>
+        <StudyMetrics />
       </view>
     </view>
   </TabletLayout>
@@ -237,22 +164,15 @@ import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
-import WeeklyChart from '@/components/WeeklyChart.vue'
-import SubjectPieChart from '@/components/SubjectPieChart.vue'
-import HeatmapChart from '@/components/HeatmapChart.vue'
-import { useBlockStore } from '@/store/useBlockStore'
+import StudyMetrics from '@/components/StudyMetrics.vue'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useAuthStore } from '@/store/useAuthStore'
-import { statsApi } from '@/api/statsApi'
 
-const blockStore = useBlockStore()
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
 const authStore = useAuthStore()
-const SUBJECT_CHART_PALETTE = ['#7D9372', '#A3B19B', '#C8A97E', '#8DA9B8', '#B58A9B']
 
-const { recentBlocks } = storeToRefs(blockStore)
 const { subjects } = storeToRefs(subjectStore)
 const { pendingTasks } = storeToRefs(taskStore)
 
@@ -414,83 +334,11 @@ const handleDeleteTask = async (id?: string) => {
   })
 }
 
-// --- STATS LOGIC ---
-const totalFocusHours = ref(0)
-const totalBlocks = ref(0)
-const completedTasks = ref(0)
-const activeTasks = ref(0)
-const streakDays = ref(0)
-
-const taskCompletionRate = computed(() => {
-  const total = activeTasks.value + completedTasks.value
-  if (total === 0) return 0
-  return Math.round((completedTasks.value / total) * 100)
-})
-
-const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
-
-const weeklyAverage = computed(() => {
-  if (weeklyData.value.length === 0) return 0
-  const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
-  return Math.round(sum / weeklyData.value.length)
-})
-
-const subjectSegments = computed(() => {
-  const blocks = blockStore.recentBlocks
-  if (blocks.length === 0) return []
-  
-  const counts: Record<string, number> = {}
-  blocks.forEach(b => {
-    const sName = b.subject || '未分类'
-    counts[sName] = (counts[sName] || 0) + 1
-  })
-  
-  const segments = Object.keys(counts).map((subjectName, index) => {
-    return {
-      subject: subjectName,
-      percentage: Math.round((counts[subjectName] / blocks.length) * 100),
-      color: SUBJECT_CHART_PALETTE[index % SUBJECT_CHART_PALETTE.length]
-    }
-  })
-  
-  return segments.sort((a, b) => b.percentage - a.percentage)
-})
-
-const heatmapData = ref<{ date: string; count: number }[]>([])
-
-const loadServerStats = async () => {
-  const today = new Date()
-  const fromDate = new Date(today)
-  fromDate.setUTCDate(today.getUTCDate() - 6)
-  const from = fromDate.toISOString().slice(0, 10)
-  const to = today.toISOString().slice(0, 10)
-  const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
-  const days = weekly.days || []
-  const reversed = [...days].reverse()
-  const firstInactiveDay = reversed.findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0)))
-  streakDays.value = firstInactiveDay < 0 ? days.length : firstInactiveDay
-  totalBlocks.value = Number(summary.activeKnowledgeBlocks || 0)
-  activeTasks.value = Number(summary.activeTasks || 0)
-  completedTasks.value = days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0)
-  totalFocusHours.value = Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1))
-  weeklyData.value = days.map(day => ({
-    day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
-    minutes: Math.round(Number(day.studySeconds || 0) / 60),
-    isToday: day.date === to,
-  }))
-  heatmapData.value = days.map(day => ({
-    date: day.date || '',
-    count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
-  }))
-}
-
 onMounted(async () => {
   try {
     await Promise.all([
-      blockStore.fetchBlocks(),
       subjectStore.loadSubjects(),
       taskStore.fetchTasks(),
-      loadServerStats(),
     ])
     if (subjects.value.length > 0 && !quickSubject.value) {
       quickSubject.value = subjects.value[0]
@@ -544,7 +392,8 @@ onMounted(async () => {
   padding: 28rpx;
   box-sizing: border-box;
   box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02);
-  overflow: hidden;
+  min-width: 0;
+  overflow-y: auto;
 }
 
 /* Greeting Row */
@@ -557,12 +406,6 @@ onMounted(async () => {
   font-size: 36rpx;
   font-weight: 800;
   color: var(--color-zen-graphite, #1C1C1A);
-  display: block;
-}
-.greeting-sub {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-top: 6rpx;
   display: block;
 }
 .add-circle-btn {
@@ -829,38 +672,6 @@ onMounted(async () => {
   bottom: 8rpx;
 }
 
-/* Focus Capsules */
-.focus-capsules {
-  display: flex;
-  gap: 20rpx;
-}
-.stat-capsule {
-  flex: 1;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 24rpx;
-  padding: 24rpx 32rpx;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.sc-label {
-  font-size: 26rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-.sc-val {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.sc-unit {
-  font-size: 22rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-left: 6rpx;
-}
-
 /* Section Header */
 .section-header {
   display: flex;
@@ -984,146 +795,5 @@ onMounted(async () => {
 }
 .action-btn:hover {
   background: #f0f0ee;
-}
-
-/* Stats Cards Grid (Right Column 38% - Full-Width 4-Layer Vertical Stack) */
-.stats-grid-container {
-  flex: 1;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-  overflow: hidden;
-}
-.stats-card {
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 24rpx;
-  box-sizing: border-box;
-}
-
-/* Card 1: Hero Summary Banner (Shrink to wrap text) */
-.card-hero-summary {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
-  color: #FFFFFF;
-  padding: 18rpx 28rpx;
-  flex: none;
-  flex-shrink: 0;
-  height: auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.hero-strip-layout {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-.hero-streak-left {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-.hero-streak-num {
-  font-size: 64rpx;
-  font-weight: 900;
-  color: #ffb800;
-  line-height: 1;
-}
-.streak-text-col {
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
-}
-.hero-streak-text {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: #FFFFFF;
-  line-height: 1.1;
-}
-.hero-rate-badge {
-  background: rgba(255, 255, 255, 0.22);
-  padding: 4rpx 14rpx;
-  border-radius: 999rpx;
-  font-size: 20rpx;
-  font-weight: 700;
-  color: #FFFFFF;
-  width: fit-content;
-}
-.hero-metrics-right {
-  display: flex;
-  align-items: center;
-  gap: 28rpx;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  padding: 16rpx 32rpx;
-  border-radius: 20rpx;
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
-}
-.hero-metric {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.hm-val {
-  font-size: 36rpx;
-  font-weight: 900;
-}
-.hm-label {
-  font-size: 20rpx;
-  opacity: 0.9;
-  margin-top: 4rpx;
-}
-.hm-divider {
-  width: 1px;
-  height: 44rpx;
-  background: rgba(255, 255, 255, 0.25);
-}
-
-/* Card 2 & 3: Vertical Charts */
-.card-chart-vertical {
-  flex: 1;
-  min-height: 0;
-  padding: 16rpx 24rpx;
-  display: flex;
-  flex-direction: column;
-  background: #FFFFFF;
-}
-.card-header-compact {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 8rpx;
-  flex-shrink: 0;
-}
-.compact {
-  font-size: 28rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  flex-shrink: 0;
-}
-.footnote-compact {
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-.chart-wrapper {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Card 4: Vertical Heatmap */
-.card-heatmap-vertical {
-  flex: 1;
-  min-height: 0;
-  padding: 16rpx 24rpx;
-  background: #FFFFFF;
-  display: flex;
-  flex-direction: column;
 }
 </style>

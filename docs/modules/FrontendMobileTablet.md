@@ -123,7 +123,7 @@ Auralis-Mobile/src/
 `openapi-typescript@7.13.0`。从仓库根目录执行
 `scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
 `scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
-冻结类型已进入 Mobile/Tablet 主路径；`check:r4-mobile` 禁止旧 Result、旧 `/ws/sync`、固定本机地址、数值旧游标、旧 AI 路由、Mobile Home/Profile 演示数据、手写伪 OCR、Workspace 固定摘要，以及 Tablet Dashboard/Review 的随机统计或绕过 Stats/Review API。Tablet 仍有真实服务与真机验收缺口，不能把类型检查或构建通过写成前后端联调完成。
+冻结类型已进入 Mobile/Tablet 主路径；`check:r4-mobile` 禁止旧 Result、旧 `/ws/sync`、固定本机地址、数值旧游标、旧 AI 路由、Mobile Home/Profile 演示数据、手写伪 OCR、Workspace 固定摘要，以及 共享统计组件与 Tablet Review 的随机值或绕过 Stats/Review API。Tablet 仍有真实服务与真机验收缺口，不能把类型检查或构建通过写成前后端联调完成。
 
 ### 端侧服务
 
@@ -155,7 +155,7 @@ Auralis-Mobile/src/
 - 侧栏指示器动画当前目标为 `120ms`，路由切换延迟为 `160ms`，脚本检查至少两帧余量。
 - workspace 默认文件面板，总结栏通过 CSS 折叠联动。
 - AI 浮窗通过 modal 插槽脱离 transform 堆叠上下文。
-- `HeatmapChart.vue` 支持 `weeks` 配置；Tablet Dashboard 当前传入 `weeks=5`，使用 7 列 × 5 行的正方形日历网格，并在 Hero Banner 使用统一的 `Primary Gradient`。统计格只渲染服务端 weekly 返回的实际日期，不再生成随机补位数据。
+- 手机统计页和平板仪表盘共用 `StudyMetrics.vue`，展示知识块、本周完成任务、累计专注、完成番茄、本周新增知识块。两端使用与 PC 相同的 UTC 周一到周日周期，完成任务使用周统计的完成数，累计专注和完成番茄使用概览中的实际专注时长与自然完成轮次。平板复习页只显示本轮复习进度。手机和平板的个人资料页集中展示账号与设置。
 - Tablet Review 的旧 due/event 调用仍存在，尚未迁移到生命周期契约，当前不能作为可用业务入口；右滑手势不应被解释为撤销服务端事件。
 
 设计目标和页面布局见 [前端设计](../design/Frontend.md)。

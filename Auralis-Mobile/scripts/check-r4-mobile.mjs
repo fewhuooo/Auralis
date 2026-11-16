@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const scanRoots = ['src/api', 'src/store', 'src/services', 'src/pages', 'src/config', 'src/App.vue']
+const scanRoots = ['src/api', 'src/store', 'src/services', 'src/pages', 'src/config', 'src/App.vue', 'src/components/StudyMetrics.vue']
 const ignored = new Set([
   'src/api/generated/schema.ts',
   'src/services/localDb.ts',
@@ -58,20 +58,9 @@ if (/Math\.random\s*\(/.test(tabletReview)) {
   violations.push('src/pages/tablet/review/index.vue: tablet review must not generate random statistics')
 }
 
-const tabletDashboard = sources.get('src/pages/tablet/dashboard/index.vue') || ''
-if (!tabletDashboard.includes("@/api/statsApi")) {
-  violations.push('src/pages/tablet/dashboard/index.vue: tablet dashboard must use the statistics API')
-}
-if (/Math\.random\s*\(/.test(tabletDashboard)) {
-  violations.push('src/pages/tablet/dashboard/index.vue: tablet dashboard must not generate random statistics')
-}
-
-const tabletStats = sources.get('src/pages/tablet/stats/index.vue') || ''
-if (!tabletStats.includes("@/api/statsApi")) {
-  violations.push('src/pages/tablet/stats/index.vue: tablet stats must use the statistics API')
-}
-if (/Math\.random\s*\(/.test(tabletStats)) {
-  violations.push('src/pages/tablet/stats/index.vue: tablet stats must not generate random statistics')
+const studyMetrics = sources.get('src/components/StudyMetrics.vue') || ''
+if (!studyMetrics.includes("@/api/statsApi") || /Math\.random\s*\(/.test(studyMetrics)) {
+  violations.push('src/components/StudyMetrics.vue: shared metrics must use the statistics API without random values')
 }
 
 const taskSelectSheet = await readFile(join(root, 'src/components/TaskSelectSheet.vue'), 'utf8')

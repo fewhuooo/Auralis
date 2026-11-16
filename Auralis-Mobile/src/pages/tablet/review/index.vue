@@ -1,10 +1,8 @@
 <template>
   <TabletLayout>
-    <view class="t-review-stats">
-      <view class="main-content-split">
-        
-        <!-- Left Column: Review (55%) -->
-        <view class="left-column">
+    <view class="t-review">
+      <view class="review-content">
+        <view class="review-column">
           <!-- Pill Capsules Info Bar -->
           <view class="info-capsules">
             <view class="capsule">
@@ -16,11 +14,6 @@
               <LineIcon name="check" size="36rpx" color="var(--text-primary)" />
               <text class="capsule-val">{{ completedCount }}</text>
               <text class="capsule-label">已完成</text>
-            </view>
-            <view class="capsule">
-              <LineIcon name="chart" size="36rpx" color="var(--text-primary)" />
-              <text class="capsule-val">{{ masteryRate }}%</text>
-              <text class="capsule-label">掌握度</text>
             </view>
           </view>
 
@@ -100,75 +93,6 @@
             </view>
           </view>
         </view>
-
-        <!-- Right Column: Stats (45%) -->
-        <view class="right-column">
-          <view class="stats-cards-grid">
-            
-            <!-- Row 1: Big Numbers & Streak -->
-            <view class="stats-card card-bignums">
-              <view class="big-stats-row">
-                <view class="big-stat">
-                  <view class="big-stat-val">{{ totalFocusHours }}</view>
-                  <view class="big-stat-label">本周专注(h)</view>
-                </view>
-                <view class="big-stat">
-                  <view class="big-stat-val">{{ totalBlocks }}</view>
-                  <view class="big-stat-label">知识块</view>
-                </view>
-              </view>
-            </view>
-
-            <view class="stats-card card-streak">
-              <view class="streak-row">
-                <view class="icon-align">
-                  <LineIcon name="fire" size="40rpx" color="var(--color-danger)" />
-                </view>
-                <text class="streak-num">{{ streakDays }}</text>
-                <text class="streak-unit">天连续学习</text>
-              </view>
-              <view class="sub-metrics-row">
-                <view class="metric-item">
-                  <text class="metric-val">{{ completedTasks }}</text>
-                  <text class="metric-label">完成任务</text>
-                </view>
-                <view class="metric-divider"></view>
-                <view class="metric-item">
-                  <text class="metric-val">{{ taskCompletionRate }}%</text>
-                  <text class="metric-label">任务完成率</text>
-                </view>
-              </view>
-            </view>
-
-            <!-- Row 2: Weekly Focus Chart -->
-            <view class="stats-card card-weekly">
-              <view class="card-header-compact">
-                <text class="section-title compact">本周专注</text>
-                <text class="footnote-compact">日均 {{ weeklyAverage }} 分钟</text>
-              </view>
-              <view class="chart-wrapper flex-chart">
-                <WeeklyChart :data="weeklyData" />
-              </view>
-            </view>
-
-            <!-- Row 3: Subject Distribution & Heatmap -->
-            <view class="stats-card card-subject">
-              <text class="section-title compact">学科分布</text>
-              <view class="chart-wrapper flex-chart">
-                <SubjectPieChart :segments="subjectSegments" :total="totalBlocks" />
-              </view>
-            </view>
-
-            <view class="stats-card card-heatmap">
-              <!-- HeatmapChart has its own internal title, we can just render it directly -->
-              <view class="chart-wrapper flex-chart">
-                <HeatmapChart :dataset="heatmapData" />
-              </view>
-            </view>
-
-          </view>
-        </view>
-
       </view>
     </view>
   </TabletLayout>
@@ -177,20 +101,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useBlockStore } from '@/store/useBlockStore'
-import { useTaskStore } from '@/store/useTaskStore'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import FlashCard from '@/components/FlashCard.vue'
-import WeeklyChart from '@/components/WeeklyChart.vue'
-import SubjectPieChart from '@/components/SubjectPieChart.vue'
-import HeatmapChart from '@/components/HeatmapChart.vue'
 import { reviewApi } from '@/api/reviewApi'
-import { statsApi } from '@/api/statsApi'
 import { uuidv7 } from '@/utils/uuid'
 
 const blockStore = useBlockStore()
-const taskStore = useTaskStore()
-const SUBJECT_CHART_PALETTE = ['#7D9372', '#A3B19B', '#C8A97E', '#8DA9B8', '#B58A9B']
 
 // --- REVIEW LOGIC ---
 const sessionQueue = ref<any[]>([])
@@ -222,13 +139,6 @@ const resetReview = () => {
 const remainingCount = computed(() => {
   if (currentIndex.value >= sessionQueue.value.length) return 0
   return sessionQueue.value.length - currentIndex.value
-})
-
-const masteryRate = computed(() => {
-  const blocks = blockStore.recentBlocks
-  if (blocks.length === 0) return 0
-  const total = blocks.reduce((acc, curr) => acc + (curr.mastery || 0), 0)
-  return Math.round(total / blocks.length)
 })
 
 const activeCard = computed(() => {
@@ -406,76 +316,6 @@ const handleSwipeAction = async (dir: 'left' | 'right' | 'up' | 'down') => {
   isFlipped.value = false
 }
 
-// --- STATS LOGIC ---
-const totalFocusHours = ref(0)
-const totalBlocks = ref(0)
-const completedTasks = ref(0)
-const activeTasks = ref(0)
-const streakDays = ref(0)
-
-const taskCompletionRate = computed(() => {
-  const total = activeTasks.value + completedTasks.value
-  if (total === 0) return 0
-  return Math.round((completedTasks.value / total) * 100)
-})
-
-const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
-
-const weeklyAverage = computed(() => {
-  if (weeklyData.value.length === 0) return 0
-  const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
-  return Math.round(sum / weeklyData.value.length)
-})
-
-const subjectSegments = computed(() => {
-  const blocks = blockStore.recentBlocks
-  if (blocks.length === 0) return []
-  
-  const counts: Record<string, number> = {}
-  blocks.forEach(b => {
-    const sName = b.subject || '未分类'
-    counts[sName] = (counts[sName] || 0) + 1
-  })
-  
-  const segments = Object.keys(counts).map((subjectName, index) => {
-    return {
-      subject: subjectName,
-      percentage: Math.round((counts[subjectName] / blocks.length) * 100),
-      color: SUBJECT_CHART_PALETTE[index % SUBJECT_CHART_PALETTE.length]
-    }
-  })
-  
-  return segments.sort((a, b) => b.percentage - a.percentage)
-})
-
-const heatmapData = ref<{ date: string; count: number }[]>([])
-
-const loadServerStats = async () => {
-  const today = new Date()
-  const fromDate = new Date(today)
-  fromDate.setUTCDate(today.getUTCDate() - 6)
-  const from = fromDate.toISOString().slice(0, 10)
-  const to = today.toISOString().slice(0, 10)
-  const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
-  const days = weekly.days || []
-  const reversed = [...days].reverse()
-  const firstInactiveDay = reversed.findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0)))
-  streakDays.value = firstInactiveDay < 0 ? days.length : firstInactiveDay
-  totalBlocks.value = Number(summary.activeKnowledgeBlocks || 0)
-  activeTasks.value = Number(summary.activeTasks || 0)
-  completedTasks.value = days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0)
-  totalFocusHours.value = Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1))
-  weeklyData.value = days.map(day => ({
-    day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
-    minutes: Math.round(Number(day.studySeconds || 0) / 60),
-    isToday: day.date === to,
-  }))
-  heatmapData.value = days.map(day => ({
-    date: day.date || '',
-    count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
-  }))
-}
-
 const loadReviewQueue = async () => {
   const states = await reviewApi.due()
   const blocks = new Map(blockStore.recentBlocks.map(block => [block.id, block]))
@@ -483,17 +323,14 @@ const loadReviewQueue = async () => {
     if (!state.knowledgeBlockId) return []
     reviewVersions.set(state.knowledgeBlockId, Number(state.version || 0))
     const block = blocks.get(state.knowledgeBlockId)
-    return block ? [{ ...block, mastery: Math.round(Math.min(100, Number(state.stability || 0) * 10)) }] : []
+    return block ? [block] : []
   })
 }
 
 const loadPage = async () => {
   try {
-    await Promise.all([
-      blockStore.fetchBlocks(),
-      taskStore.fetchTasks(),
-    ])
-    await Promise.all([loadReviewQueue(), loadServerStats()])
+    await blockStore.fetchBlocks()
+    await loadReviewQueue()
     resetReview()
   } catch (error) {
     console.error('[TabletReview] Failed to load server data:', error)
@@ -507,47 +344,29 @@ onMounted(loadPage)
 
 <style scoped>
 /* Layout */
-.t-review-stats {
+.t-review {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  inset: 0;
   display: flex;
+  justify-content: center;
   background: var(--color-zen-ivory, #F9F9F7);
   overflow: hidden;
 }
 
-.main-content-split {
-  flex: 1;
+.review-content {
   width: 100%;
+  max-width: 1200rpx;
   height: 100%;
-  display: flex;
-  flex-direction: row;
   padding: 48rpx 56rpx;
-  gap: 56rpx;
   box-sizing: border-box;
 }
 
-.left-column {
-  flex: 5.5;
+.review-column {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
 }
-
-.right-column {
-  flex: 4.5;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  height: 100%;
-  background: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 40rpx;
-  overflow: hidden;
-  box-shadow: 0 12rpx 36rpx rgba(0, 0, 0, 0.02);
-}
-
-/* ================== LEFT COLUMN (REVIEW) ================== */
 
 /* Capsules info bar */
 .info-capsules {
@@ -808,167 +627,5 @@ onMounted(loadPage)
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-20rpx); }
-}
-
-
-/* ================== RIGHT COLUMN (STATS) ================== */
-
-.stats-cards-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr 1fr;
-  gap: 20rpx;
-  width: 100%;
-  height: 100%;
-  padding: 36rpx;
-  box-sizing: border-box;
-}
-
-/* Cards */
-.stats-card {
-  padding: 28rpx;
-  border-radius: 32rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: none;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.card-bignums { grid-column: 1 / 2; justify-content: center; }
-.card-streak { grid-column: 2 / 3; justify-content: center; }
-.card-weekly { grid-column: 1 / 3; }
-.card-subject { grid-column: 1 / 2; }
-.card-heatmap { grid-column: 2 / 3; }
-
-.section-title.compact {
-  font-size: 26rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  margin-bottom: 12rpx;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
-}
-
-.card-header-compact {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 12rpx;
-}
-
-.footnote-compact {
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-
-.chart-wrapper.flex-chart {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Deep overrides to make charts fill available flex space */
-:deep(.heatmap-chart) { height: 100% !important; padding: 0 !important; display: flex; flex-direction: column; min-height: 0; }
-:deep(.heatmap-header) { margin-bottom: 12rpx !important; }
-:deep(.heatmap-title) { font-size: 24rpx !important; color: var(--color-zen-graphite, #1C1C1A) !important; font-weight: 800 !important; }
-
-/* Icon fine-tuning */
-.icon-align {
-  display: flex;
-  transform: translateY(-2rpx);
-}
-
-/* Big Numbers Double Column */
-.big-stats-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  gap: 16rpx;
-}
-
-.big-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.big-stat-val {
-  font-size: 56rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  line-height: 1.1;
-  letter-spacing: -1rpx;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
-}
-
-.big-stat-label {
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-  margin-top: 8rpx;
-}
-
-/* Streak and Sub-metrics */
-.streak-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
-  margin-bottom: 24rpx;
-}
-
-.streak-num {
-  font-size: 48rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  line-height: 1;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
-}
-
-.streak-unit {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone, #A8A8A5);
-}
-
-.sub-metrics-row {
-  display: flex;
-  align-items: center;
-  background: var(--color-zen-white, #FFFFFF);
-  padding: 16rpx 24rpx;
-  border-radius: 20rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-}
-
-.metric-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6rpx;
-}
-
-.metric-val {
-  font-size: 28rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-
-.metric-label {
-  font-size: 20rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-
-.metric-divider {
-  width: 1px;
-  height: 40rpx;
-  background: var(--color-zen-hairline, #E6E6E4);
-  margin: 0 24rpx;
 }
 </style>
