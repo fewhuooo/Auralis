@@ -11,9 +11,9 @@ async function startAuthenticatedRuntime() {
   await localDb.init()
   const focusStore = useFocusStore()
   focusStore.reconcileNow(false)
-  await focusStore.flushPendingSessions()
   const syncStore = useSyncStore()
   await syncStore.triggerSync()
+  await focusStore.flushPendingSessions()
   await connectRealtimeSync()
 }
 
@@ -37,7 +37,7 @@ onShow(() => {
   const focusStore = useFocusStore()
   focusStore.reconcileNow(true)
   if (useAuthStore().isAuthenticated) {
-    void focusStore.flushPendingSessions()
+    void useSyncStore().triggerSync().then(() => focusStore.flushPendingSessions())
     void connectRealtimeSync()
   }
 })

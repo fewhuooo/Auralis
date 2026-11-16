@@ -100,6 +100,12 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function addTask(task: Task) {
+    const id = task.id || uuidv7()
+    if (updatingTaskIds.value.includes(id)) return
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
     const scheduledAt = task.scheduledAt || undefined
     const status: Task['status'] = task.status === 'completed'
       ? 'completed'
@@ -107,7 +113,7 @@ export const useTaskStore = defineStore('task', () => {
         ? 'scheduled'
         : 'pending'
     const newTask: Task = {
-      id: task.id || uuidv7(),
+      id,
       name: task.name,
       subject: task.subject,
       desc: task.desc || '',
@@ -121,10 +127,21 @@ export const useTaskStore = defineStore('task', () => {
       subjectId: task.subjectId,
     }
 
-    allTasks.value = [...allTasks.value, newTask]
-    await localDb.saveTask(newTask, 'pending_create')
-    await recordMutation('task', newTask.id || '', 'create', newTask)
-    void syncPendingChanges()
+    updatingTaskIds.value = [...updatingTaskIds.value, id]
+    try {
+      await localDb.saveTask(newTask, 'pending_create')
+      await recordMutation('task', id, 'create', newTask)
+      if (
+        generation === auth.getLoginGeneration()
+        && userId === auth.user?.id
+        && serverDeviceId === auth.serverDeviceId
+      ) {
+        allTasks.value = [...allTasks.value.filter(item => item.id !== id), newTask]
+      }
+      void syncPendingChanges()
+    } finally {
+      updatingTaskIds.value = updatingTaskIds.value.filter(item => item !== id)
+    }
   }
 
   async function updateTask(task: Task) {
@@ -132,6 +149,7 @@ export const useTaskStore = defineStore('task', () => {
     const auth = useAuthStore()
     const generation = auth.getLoginGeneration()
     const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
     const id = task.id
     updatingTaskIds.value = [...updatingTaskIds.value, id]
     try {
@@ -147,7 +165,11 @@ export const useTaskStore = defineStore('task', () => {
       }
       await localDb.saveTask(updatedTask, updatedTask.sync_status)
       await recordMutation('task', id, 'update', updatedTask)
-      if (generation === auth.getLoginGeneration() && userId === auth.user?.id) {
+      if (
+        generation === auth.getLoginGeneration()
+        && userId === auth.user?.id
+        && serverDeviceId === auth.serverDeviceId
+      ) {
         allTasks.value = allTasks.value.map(item => item.id === id ? updatedTask : item)
       }
       void syncPendingChanges()
@@ -158,14 +180,33 @@ export const useTaskStore = defineStore('task', () => {
 
   async function removeTask(id: string) {
     if (!id || updatingTaskIds.value.includes(id)) return
-    const existing = allTasks.value.find(item => item.id === id)
-    allTasks.value = allTasks.value.filter(item => item.id !== id)
-    await localDb.deleteTask(id)
-    await recordMutation('task', id, 'delete', {
-      id,
-      sync_version: existing?.sync_version ?? 0,
-    })
-    void syncPendingChanges()
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
+    updatingTaskIds.value = [...updatingTaskIds.value, id]
+    try {
+      const existing = allTasks.value.find(item => item.id === id)
+      await localDb.deleteTask(id)
+      if (existing?.sync_status === 'pending_create') {
+        await localDb.discardLocalMutations('task', id)
+      } else {
+        await recordMutation('task', id, 'delete', {
+          id,
+          sync_version: existing?.sync_version ?? 0,
+        })
+      }
+      if (
+        generation === auth.getLoginGeneration()
+        && userId === auth.user?.id
+        && serverDeviceId === auth.serverDeviceId
+      ) {
+        allTasks.value = allTasks.value.filter(item => item.id !== id)
+      }
+      void syncPendingChanges()
+    } finally {
+      updatingTaskIds.value = updatingTaskIds.value.filter(item => item !== id)
+    }
   }
 
   async function scheduleTask(id: string, scheduledAtIso: string) {

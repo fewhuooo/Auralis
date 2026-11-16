@@ -145,6 +145,10 @@ import type { SourceView } from '@/api/sourceApi'
 import { useAuthStore } from '@/store/useAuthStore'
 import { formatShortDateTime } from '@/utils/sourceFormat'
 import { uuidv7 } from '@/utils/uuid'
+import {
+  buildWorkspaceReadingContext,
+  doesConversationMatchWorkspaceScope,
+} from '@/utils/workspaceChatScope'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -173,19 +177,7 @@ let activeStreamToken = 0
 
 const isSourceScoped = computed(() => Boolean(props.selectedSource && props.selectedSource.ingestionStatus === 'READY'))
 
-const readingContext = computed<ReadingContext>(() => {
-  if (props.selectedSource && props.selectedSource.ingestionStatus === 'READY' && props.selectedSource.id) {
-    return {
-      subjectId: props.subjectId,
-      retrievalMode: 'AUTO',
-      currentSourceId: props.selectedSource.id,
-    }
-  }
-  return {
-    subjectId: props.subjectId,
-    retrievalMode: 'SUBJECT',
-  }
-})
+const readingContext = computed<ReadingContext>(() => buildWorkspaceReadingContext(props.subjectId, props.selectedSource))
 
 const scopeKey = computed(() => {
   const ctx = readingContext.value
@@ -204,13 +196,7 @@ const scopeBadgeText = computed(() => {
 
 const scopedConversations = computed(() => {
   const ctx = readingContext.value
-  return conversations.value.filter((item) => {
-    if (item.deletedAt) return false
-    if (item.chatScopeState !== 'BOUND' || !item.chatScope) return false
-    if (item.chatScope.subjectId !== ctx.subjectId) return false
-    if (ctx.currentSourceId) return item.chatScope.currentSourceId === ctx.currentSourceId
-    return !item.chatScope.currentSourceId
-  })
+  return conversations.value.filter(item => doesConversationMatchWorkspaceScope(item, ctx))
 })
 
 const quickPrompts = computed(() => (
@@ -291,13 +277,18 @@ async function selectConversation(conversationId: string) {
 }
 
 async function deleteScopedConversation(conversationId: string, baseVersion: number) {
+  if (isTyping.value && currentConversationId.value === conversationId) return
+  const generation = authStore.getLoginGeneration()
+  const capturedScope = scopeKey.value
   try {
     await aiApi.deleteConversation(conversationId, baseVersion)
+    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
     conversations.value = conversations.value.filter(item => item.id !== conversationId)
     if (currentConversationId.value === conversationId) {
       resetConversation()
     }
   } catch {
+    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
     uni.showToast({ title: '删除失败，请刷新重试', icon: 'none' })
   }
 }
@@ -378,6 +369,9 @@ async function sendMessage() {
       && generation === authStore.getLoginGeneration()
       && capturedScope === scopeKey.value
     ) {
+      if (!query.value.trim()) {
+        query.value = text
+      }
       const msg = error instanceof ApiProblemError && error.code === 'CHAT_SCOPE_CONFLICT'
         ? '当前会话作用域已发生变化，请点击右上角“新对话”后重新提问。'
         : (error instanceof Error && error.message ? error.message : '回复生成失败，请重试。')

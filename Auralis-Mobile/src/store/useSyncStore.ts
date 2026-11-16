@@ -4,6 +4,7 @@ import type { SyncChange, SyncMutation, SyncSnapshotResponse } from '@/api/useSy
 import { useSyncApi } from '@/api/useSyncApi'
 import { localDb } from '@/services/localDb'
 import { localDataScope } from '@/services/localDataScope'
+import { fromServerBlockPayload, resolveBlockSyncVersion } from '@/utils/blockSyncMapper'
 import { fromServerTaskPayload, toServerTaskCommand } from '@/utils/taskSyncMapper'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -98,24 +99,16 @@ async function applyResource(resourceType: string, resourceId: string, mutationT
     return
   }
   if (resourceType === 'KNOWLEDGE_BLOCK' || resourceType === 'TASK') {
+    const resolvedVersion = resolveBlockSyncVersion((payload || {}) as Record<string, unknown>, version)
     const mappedPayload = resourceType === 'TASK'
       ? fromServerTaskPayload({ ...payload, id: resourceId }, version)
-      : {
-          ...payload,
-          subject: payload?.subject || '',
-          preview: payload?.content || '',
-          time: payload?.updatedAt || payload?.createdAt || payload?.time || '',
-          source: payload?.source || '',
-          color: payload?.colorOverride || '',
-          sourceFileId: payload?.sourceId,
-          sync_version: payload?.version ?? version,
-        }
+      : fromServerBlockPayload((payload || {}) as Record<string, unknown>, version)
     await localDb.applyRemoteMutation({
       entityType: resourceType === 'TASK' ? 'task' : 'block',
       entityId: resourceId,
       action: deleted ? 'delete' : mutationType === 'RESTORE' ? 'update' : mutationType.toLowerCase(),
       payload: mappedPayload,
-      createdAt: version,
+      createdAt: resolvedVersion,
     })
   }
 }

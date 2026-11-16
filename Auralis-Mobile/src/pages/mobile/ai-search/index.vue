@@ -202,11 +202,13 @@ async function openHistoryDrawer() {
 }
 
 async function loadConversation(conversationId: string) {
+  if (isTyping.value) return
   const generation = authStore.getLoginGeneration()
   try {
     const detail = await aiApi.getConversation(conversationId)
     if (generation !== authStore.getLoginGeneration()) return
     activeStreamToken++
+    isTyping.value = false
     currentConversationId.value = detail.id || conversationId
     messages.value = (detail.messages || [])
       .filter(m => m.role === 'USER' || m.role === 'ASSISTANT')
@@ -217,31 +219,41 @@ async function loadConversation(conversationId: string) {
     showHistorySheet.value = false
     scrollToBottom()
   } catch {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: '加载对话内容失败', icon: 'none' })
   }
 }
 
 async function deleteConversation(conversationId: string, baseVersion: number) {
+  if (isTyping.value && currentConversationId.value === conversationId) return
+  const generation = authStore.getLoginGeneration()
   try {
     await aiApi.deleteConversation(conversationId, baseVersion)
+    if (generation !== authStore.getLoginGeneration()) return
     conversations.value = conversations.value.filter(item => item.id !== conversationId)
     if (currentConversationId.value === conversationId) {
+      activeStreamToken++
+      isTyping.value = false
       currentConversationId.value = ''
       messages.value = []
     }
     uni.showToast({ title: '已删除对话', icon: 'none' })
   } catch {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: '删除失败，请刷新重试', icon: 'none' })
   }
 }
 
-async function ensureConversation(): Promise<string> {
+async function ensureConversation(seedTitle: string, generation: symbol): Promise<string> {
   if (currentConversationId.value) return currentConversationId.value
   const created = await aiApi.createConversation({
-    title: query.value.trim().slice(0, 20) || 'AI 问答',
+    title: seedTitle.slice(0, 20) || 'AI 问答',
     baseVersion: 0,
     clientRequestId: uuidv7(),
   })
+  if (generation !== authStore.getLoginGeneration()) {
+    throw new Error('登录状态已变化，请重试。')
+  }
   if (!created.id) throw new Error('创建对话失败')
   currentConversationId.value = created.id
   return created.id
@@ -263,7 +275,7 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const conversationId = await ensureConversation()
+    const conversationId = await ensureConversation(text, generation)
     if (!isCurrent()) return
     await chatWithAI(text, [], (delta) => {
       if (!isCurrent()) return
@@ -281,6 +293,9 @@ async function sendMessage() {
     })
   } catch (err) {
     if (!isCurrent()) return
+    if (!query.value.trim()) {
+      query.value = text
+    }
     if (!messages.value[aiIndex].content) {
       messages.value[aiIndex].content = err instanceof Error ? err.message : '请求失败，请稍后重试。'
     }

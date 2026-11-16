@@ -1,5 +1,6 @@
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
+import { buildSyncedBlockRecord } from '@/utils/blockSyncMapper';
 import { formatLocalTimeHHmm } from '@/utils/dateKey';
 import { localDataScope } from './localDataScope';
 
@@ -916,6 +917,13 @@ export const localDb = {
     await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${id}`);
   },
 
+  async discardLocalMutations(entityType: string, entityId: string) {
+    const esc = (val: string) => (val || '').replace(/'/g, "''");
+    await sqlite.execute(
+      `DELETE FROM local_mutations WHERE entity_type = '${esc(entityType)}' AND entity_id = '${esc(entityId)}'`
+    );
+  },
+
   async applyRemoteMutation(mutation: any) {
     const entityType = mutation.entityType;
     const action = mutation.action;
@@ -924,23 +932,8 @@ export const localDb = {
 
     if (entityType === 'block') {
       if (action === 'create' || action === 'update') {
-        const block: KnowledgeBlock = {
-          id: entityId,
-          subject: payload.subject,
-          title: payload.title,
-          preview: payload.preview,
-          time: payload.time,
-          source: payload.source,
-          color: payload.color,
-          sync_status: 'synced',
-          subjectId: payload.subjectId || payload.subject_id || undefined,
-          sourceFileId: payload.sourceFileId || payload.source_file_id || undefined,
-          tags: payload.tags ? (typeof payload.tags === 'string' ? JSON.parse(payload.tags) : payload.tags) : [],
-          mastery: payload.mastery || 0,
-          reviewAt: payload.reviewAt || payload.review_at || undefined,
-          relatedBlockIds: payload.relatedBlockIds ? (typeof payload.relatedBlockIds === 'string' ? JSON.parse(payload.relatedBlockIds) : payload.relatedBlockIds) : []
-        };
-        await this.saveBlock(block, 'synced', mutation.createdAt);
+        const block = buildSyncedBlockRecord(entityId, payload || {}, mutation.createdAt || 0);
+        await this.saveBlock(block, 'synced', block.sync_version || 0);
       } else if (action === 'delete') {
         await this.hardDeleteBlock(entityId);
       }

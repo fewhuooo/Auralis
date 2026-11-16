@@ -235,25 +235,32 @@ async function switchConversation(conversationId: string) {
 }
 
 async function deleteConversation(conversationId: string, baseVersion: number) {
+  if (isTyping.value && currentConversationId.value === conversationId) return
+  const generation = authStore.getLoginGeneration()
   try {
     await aiApi.deleteConversation(conversationId, baseVersion)
+    if (generation !== authStore.getLoginGeneration()) return
     conversations.value = conversations.value.filter(item => item.id !== conversationId)
     if (currentConversationId.value === conversationId) {
       startNewChat()
     }
     uni.showToast({ title: '已删除会话', icon: 'none' })
   } catch {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: '删除失败，请刷新重试', icon: 'none' })
   }
 }
 
-async function ensureConversation(seedTitle: string): Promise<string> {
+async function ensureConversation(seedTitle: string, generation: symbol): Promise<string> {
   if (currentConversationId.value) return currentConversationId.value
   const created = await aiApi.createConversation({
     title: seedTitle.slice(0, 24) || 'AI 问答',
     baseVersion: 0,
     clientRequestId: uuidv7(),
   })
+  if (generation !== authStore.getLoginGeneration()) {
+    throw new Error('登录状态已变化，请重试。')
+  }
   if (!created.id) throw new Error('创建对话失败')
   currentConversationId.value = created.id
   currentConversationTitle.value = created.title || seedTitle.slice(0, 24) || 'AI 问答'
@@ -284,7 +291,7 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const conversationId = await ensureConversation(text)
+    const conversationId = await ensureConversation(text, generation)
     if (!isCurrent()) return
     await chatWithAI(text, [], (delta) => {
       if (!isCurrent()) return
@@ -302,6 +309,9 @@ async function sendMessage() {
     })
   } catch (err) {
     if (!isCurrent()) return
+    if (!query.value.trim()) {
+      query.value = text
+    }
     if (!messages.value[aiIndex].content) {
       messages.value[aiIndex].content = err instanceof Error ? err.message : '网络请求失败，请稍后重试。'
     }

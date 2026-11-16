@@ -1,5 +1,5 @@
 import type { components } from './generated/schema'
-import { defaultApiCallClient, type ApiCallClient } from './apiCallClient'
+import { defaultApiCallClient, type ApiCallClient } from './apiCallClient.ts'
 
 export type SourceView = components['schemas']['SourceResponse']
 export type SourceListResponse = components['schemas']['SourceListResponse']

@@ -312,9 +312,14 @@
         </view>
 
         <view class="review-controls">
-          <button class="rate-btn again" :disabled="reviewSaving" @click="rateCard('AGAIN')">需要巩固</button>
-          <button class="rate-btn skip" :disabled="reviewSaving" @click="skipCard">跳过</button>
-          <button class="rate-btn good" :disabled="reviewSaving" @click="rateCard('GOOD')">已掌握</button>
+          <template v-if="!isFlipped">
+            <button class="rate-btn skip" :disabled="reviewSaving" @click="skipCard">跳过</button>
+            <button class="rate-btn good" :disabled="reviewSaving" @click="isFlipped = true">显示答案</button>
+          </template>
+          <template v-else>
+            <button class="rate-btn again" :disabled="reviewSaving" @click="rateCard('AGAIN')">需要巩固</button>
+            <button class="rate-btn good" :disabled="reviewSaving" @click="rateCard('GOOD')">已掌握</button>
+          </template>
         </view>
       </view>
     </view>

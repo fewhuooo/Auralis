@@ -26,6 +26,23 @@ export interface KnowledgeBlock {
 export const useBlockStore = defineStore('block', () => {
   const recentBlocks = ref<KnowledgeBlock[]>([])
   const isSyncing = ref(false)
+  const updatingBlockIds = ref<string[]>([])
+
+  function captureAuthFence() {
+    const auth = useAuthStore()
+    return {
+      generation: auth.getLoginGeneration(),
+      userId: auth.user?.id,
+      serverDeviceId: auth.serverDeviceId,
+    }
+  }
+
+  function isFenceCurrent(fence: ReturnType<typeof captureAuthFence>): boolean {
+    const auth = useAuthStore()
+    return fence.generation === auth.getLoginGeneration()
+      && fence.userId === auth.user?.id
+      && fence.serverDeviceId === auth.serverDeviceId
+  }
 
   const checkOnline = async (): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -106,8 +123,11 @@ export const useBlockStore = defineStore('block', () => {
   }
 
   const addBlock = async (block: Omit<KnowledgeBlock, 'id' | 'time'> & { id?: string; time?: string }) => {
+    const blockId = block.id || uuidv7()
+    if (updatingBlockIds.value.includes(blockId)) return
+    const fence = captureAuthFence()
     const newBlock: KnowledgeBlock = {
-      id: block.id || uuidv7(),
+      id: blockId,
       subject: block.subject,
       title: block.title,
       preview: block.preview,
@@ -123,37 +143,67 @@ export const useBlockStore = defineStore('block', () => {
       relatedBlockIds: block.relatedBlockIds || []
     }
 
-    recentBlocks.value.unshift(newBlock)
-    await localDb.saveBlock(newBlock, 'pending_create')
-    await recordMutation('block', newBlock.id || '', 'create', newBlock)
-    
-    syncPendingChanges()
+    updatingBlockIds.value = [...updatingBlockIds.value, blockId]
+    try {
+      await localDb.saveBlock(newBlock, 'pending_create')
+      await recordMutation('block', blockId, 'create', newBlock)
+      if (isFenceCurrent(fence)) {
+        recentBlocks.value = [newBlock, ...recentBlocks.value.filter(b => b.id !== blockId)]
+      }
+      void syncPendingChanges()
+    } finally {
+      updatingBlockIds.value = updatingBlockIds.value.filter(item => item !== blockId)
+    }
   }
 
   const removeBlock = async (id: string) => {
-    const existing = recentBlocks.value.find(b => b.id === id)
-    recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
-    await localDb.deleteBlock(id)
-    await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
-    
-    syncPendingChanges()
+    if (!id || updatingBlockIds.value.includes(id)) return
+    const fence = captureAuthFence()
+    updatingBlockIds.value = [...updatingBlockIds.value, id]
+    try {
+      const existing = recentBlocks.value.find(b => b.id === id)
+      await localDb.deleteBlock(id)
+      if (existing?.sync_status === 'pending_create') {
+        await localDb.discardLocalMutations('block', id)
+      } else {
+        await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
+      }
+      if (isFenceCurrent(fence)) {
+        recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
+      }
+      void syncPendingChanges()
+    } finally {
+      updatingBlockIds.value = updatingBlockIds.value.filter(item => item !== id)
+    }
   }
 
   const updateBlock = async (block: KnowledgeBlock) => {
-    if (!block.id) return
-    const updatedBlock: KnowledgeBlock = {
-      ...block,
-      sync_status: block.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
+    if (!block.id || updatingBlockIds.value.includes(block.id)) return
+    const blockId = block.id
+    const fence = captureAuthFence()
+    updatingBlockIds.value = [...updatingBlockIds.value, blockId]
+    try {
+      const existing = recentBlocks.value.find(b => b.id === blockId)
+      const updatedBlock: KnowledgeBlock = {
+        ...existing,
+        ...block,
+        sync_version: block.sync_version ?? existing?.sync_version ?? 0,
+        sync_status: existing?.sync_status === 'pending_create' || block.sync_status === 'pending_create'
+          ? 'pending_create'
+          : 'pending_update',
+      }
+      await localDb.saveBlock(updatedBlock, updatedBlock.sync_status)
+      await recordMutation('block', blockId, 'update', updatedBlock)
+      if (isFenceCurrent(fence)) {
+        const index = recentBlocks.value.findIndex(b => b.id === blockId)
+        if (index !== -1) {
+          recentBlocks.value = recentBlocks.value.map(b => b.id === blockId ? updatedBlock : b)
+        }
+      }
+      void syncPendingChanges()
+    } finally {
+      updatingBlockIds.value = updatingBlockIds.value.filter(item => item !== blockId)
     }
-
-    const index = recentBlocks.value.findIndex(b => b.id === block.id)
-    if (index !== -1) {
-      recentBlocks.value[index] = updatedBlock
-    }
-    await localDb.saveBlock(updatedBlock, updatedBlock.sync_status)
-    await recordMutation('block', block.id, 'update', updatedBlock)
-
-    syncPendingChanges()
   }
 
   const syncFromRemote = (blocks: KnowledgeBlock[]) => {

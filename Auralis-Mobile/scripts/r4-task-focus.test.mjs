@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createFocusApi } from '../src/api/focusApi.ts'
+import { ApiProblemError } from '../src/api/protocol.ts'
 import { createFocusController } from '../src/services/focusController.ts'
+import {
+  buildSyncedBlockRecord,
+  fromServerBlockPayload,
+  toServerBlockBaseVersion,
+} from '../src/utils/blockSyncMapper.ts'
 import { combineLocalDateAndTime, formatLocalTimeHHmm, toLocalDateKey } from '../src/utils/dateKey.ts'
 import {
   fromServerTaskPayload,
@@ -174,4 +180,67 @@ test('focus API wrapper posts to /api/focus-sessions', async () => {
   }
   await api.recordSession(payload)
   assert.deepEqual(calls, [{ path: '/api/focus-sessions', method: 'post', options: { body: payload } }])
+})
+
+test('focus outbox drops terminal 4xx records without blocking later items and retries 5xx failures', async () => {
+  const store = new Map()
+  let nowMs = new Date(2026, 10, 16, 10, 0, 0).getTime()
+  const attempts = []
+  let failSecondAsServer = true
+
+  const controller = createFocusController({
+    storage: {
+      get: (key) => store.get(key),
+      set: (key, value) => store.set(key, value),
+    },
+    getScope: () => 'user-a:dev-1',
+    getLoginGeneration: () => Symbol.for('gen-a'),
+    canSyncSession: () => true,
+    now: () => nowMs,
+    nextId: (() => {
+      let seq = 0
+      return () => `session-${++seq}`
+    })(),
+    recordSession: async (cmd) => {
+      attempts.push(cmd.clientSessionId)
+      if (cmd.clientSessionId === 's-missing-task') {
+        throw new ApiProblemError({ title: 'Not Found', status: 404, detail: 'Task missing', fieldErrors: [] })
+      }
+      if (cmd.clientSessionId === 's-retry' && failSecondAsServer) {
+        throw new ApiProblemError({ title: 'Unavailable', status: 503, detail: 'Retry later', fieldErrors: [] })
+      }
+    },
+  })
+
+  // Seed outbox directly via storage scope key
+  store.set('auralis:local:user-a:dev-1:focus_outbox', [
+    { clientSessionId: 's-missing-task', startedAt: new Date(nowMs).toISOString(), endedAt: new Date(nowMs + 900000).toISOString(), durationSeconds: 900, completed: true },
+    { clientSessionId: 's-retry', startedAt: new Date(nowMs).toISOString(), endedAt: new Date(nowMs + 900000).toISOString(), durationSeconds: 900, completed: true },
+    { clientSessionId: 's-later', startedAt: new Date(nowMs).toISOString(), endedAt: new Date(nowMs + 900000).toISOString(), durationSeconds: 900, completed: true },
+  ])
+
+  const firstPass = await controller.flushOutbox()
+  assert.equal(firstPass, 0)
+  assert.deepEqual(attempts, ['s-missing-task', 's-retry'])
+  assert.deepEqual(controller.readOutbox().map(item => item.clientSessionId), ['s-retry', 's-later'])
+
+  failSecondAsServer = false
+  const secondPass = await controller.flushOutbox()
+  assert.equal(secondPass, 2)
+  assert.equal(controller.readOutbox().length, 0)
+})
+
+test('knowledge block sync preserves server version after APPLIED push and passes baseVersion on edits', () => {
+  const mappedPayload = fromServerBlockPayload({
+    id: 'blk-1',
+    subjectId: 'sub-1',
+    title: 'Bayes Theorem',
+    content: 'P(A|B) formula',
+    updatedAt: '2026-11-16T08:00:00Z',
+    version: 3,
+  }, 0)
+  const localRecord = buildSyncedBlockRecord('blk-1', mappedPayload, 0)
+  assert.equal(localRecord.sync_version, 3)
+  assert.equal(localRecord.time, '2026-11-16T08:00:00Z')
+  assert.equal(toServerBlockBaseVersion(localRecord), 3)
 })

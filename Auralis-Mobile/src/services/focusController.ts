@@ -1,4 +1,5 @@
 import type { components } from '../api/generated/schema.ts'
+import { ApiProblemError } from '../api/protocol.ts'
 import { toLocalDateKey } from '../utils/dateKey.ts'
 
 export type FocusPhase = 'focus' | 'shortBreak' | 'longBreak'
@@ -348,6 +349,10 @@ export function createFocusController(deps: FocusControllerDeps) {
     return nextState
   }
 
+  function isTerminalOutboxError(error: unknown): boolean {
+    return error instanceof ApiProblemError && [400, 404, 409, 422].includes(error.status)
+  }
+
   async function flushOutbox(): Promise<number> {
     if (!deps.canSyncSession()) return 0
     const capturedScope = deps.getScope()
@@ -365,7 +370,10 @@ export function createFocusController(deps: FocusControllerDeps) {
       try {
         await deps.recordSession(command)
         flushed++
-      } catch {
+      } catch (error) {
+        if (isTerminalOutboxError(error)) {
+          continue
+        }
         remaining.push(command, ...queue.slice(i + 1))
         break
       }

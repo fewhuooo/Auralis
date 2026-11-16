@@ -17,6 +17,11 @@ import { createRealtimeApi } from '../src/api/realtimeApi.ts'
 import { createAiApi } from '../src/api/aiApi.ts'
 import { createSyncApi } from '../src/api/useSyncApi.ts'
 import { createOverviewApi } from '../src/api/overviewApi.ts'
+import { createSourceApi } from '../src/api/sourceApi.ts'
+import {
+  buildWorkspaceReadingContext,
+  doesConversationMatchWorkspaceScope,
+} from '../src/utils/workspaceChatScope.ts'
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
 import { createSseDecoder } from '../src/api/sse.ts'
@@ -306,6 +311,93 @@ test('overview API returns null on 404 and preserves source revision query', asy
     method: 'get',
     options: { pathParams: { sourceId: 'src-1' }, query: { ingestionRevision: 'rev-9' } },
   })
+})
+
+test('source API paginates all subject sources, filters deletedAt, and passes delete baseVersion', async () => {
+  const calls = []
+  const api = createSourceApi({
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      if (method === 'get') {
+        const cursor = options?.query?.cursor
+        if (!cursor) {
+          return {
+            items: [{ id: 'src-1', subjectId: 'sub-1', title: 'Ch1' }],
+            hasMore: true,
+            nextCursor: 'cursor-2',
+          }
+        }
+        return {
+          items: [
+            { id: 'src-2', subjectId: 'sub-1', title: 'Ch2' },
+            { id: 'src-deleted', subjectId: 'sub-1', title: 'Old', deletedAt: '2026-11-16T00:00:00Z' },
+          ],
+          hasMore: false,
+        }
+      }
+      return undefined
+    },
+  })
+
+  const active = await api.listAllBySubject('sub-1')
+  assert.deepEqual(active.map(item => item.id), ['src-1', 'src-2'])
+  assert.equal(calls[1].options.query.cursor, 'cursor-2')
+
+  await api.delete('src-2', 4)
+  assert.deepEqual(calls.at(-1), {
+    path: '/api/sources/{id}',
+    method: 'delete',
+    options: { pathParams: { id: 'src-2' }, body: { baseVersion: 4 } },
+  })
+})
+
+test('workspace AI scope omits currentSourceId/sourceIds in SUBJECT mode and matches full 4-field chatScope', () => {
+  const subjectCtx = buildWorkspaceReadingContext('sub-1', null)
+  assert.deepEqual(subjectCtx, { subjectId: 'sub-1', retrievalMode: 'SUBJECT' })
+  assert.equal('currentSourceId' in subjectCtx, false)
+  assert.equal('sourceIds' in subjectCtx, false)
+
+  const pendingSourceCtx = buildWorkspaceReadingContext('sub-1', {
+    id: 'src-pending',
+    subjectId: 'sub-1',
+    type: 'FILE',
+    title: 'Pending.pdf',
+    ingestionStatus: 'PARSING',
+  })
+  assert.deepEqual(pendingSourceCtx, { subjectId: 'sub-1', retrievalMode: 'SUBJECT' })
+
+  const readyCtx = buildWorkspaceReadingContext('sub-1', {
+    id: 'src-ready',
+    subjectId: 'sub-1',
+    type: 'FILE',
+    title: 'Ready.pdf',
+    ingestionStatus: 'READY',
+  })
+  assert.deepEqual(readyCtx, { subjectId: 'sub-1', retrievalMode: 'AUTO', currentSourceId: 'src-ready' })
+
+  assert.equal(doesConversationMatchWorkspaceScope({
+    id: 'c-1',
+    chatScopeState: 'BOUND',
+    chatScope: { subjectId: 'sub-1', currentSourceId: null, retrievalMode: 'SUBJECT', sourceIds: [] },
+  }, subjectCtx), true)
+
+  assert.equal(doesConversationMatchWorkspaceScope({
+    id: 'c-2',
+    chatScopeState: 'BOUND',
+    chatScope: { subjectId: 'sub-1', currentSourceId: null, retrievalMode: 'SELECTED_SOURCES', sourceIds: ['src-ready'] },
+  }, subjectCtx), false)
+
+  assert.equal(doesConversationMatchWorkspaceScope({
+    id: 'c-3',
+    chatScopeState: 'BOUND',
+    chatScope: { subjectId: 'sub-1', currentSourceId: null, retrievalMode: 'AUTO', sourceIds: [] },
+  }, subjectCtx), false)
+
+  assert.equal(doesConversationMatchWorkspaceScope({
+    id: 'c-4',
+    chatScopeState: 'BOUND',
+    chatScope: { subjectId: 'sub-1', currentSourceId: 'src-ready', retrievalMode: 'AUTO', sourceIds: [] },
+  }, readyCtx), true)
 })
 
 test('SSE decoder preserves event boundaries across transport chunks', () => {

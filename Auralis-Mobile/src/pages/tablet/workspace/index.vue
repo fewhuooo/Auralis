@@ -252,9 +252,16 @@ async function loadSourcePreview() {
 
 async function loadOverview() {
   if (!subjectId.value) return
+  const source = selectedSource.value
+  if (source && source.ingestionStatus !== 'READY') {
+    overviewReqToken++
+    overviewLoading.value = false
+    overviewError.value = ''
+    overview.value = null
+    return
+  }
   const token = ++overviewReqToken
   const fence = captureFence()
-  const source = selectedSource.value
   overviewLoading.value = true
   overviewError.value = ''
   try {
