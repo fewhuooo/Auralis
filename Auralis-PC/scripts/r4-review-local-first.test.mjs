@@ -1730,7 +1730,8 @@ test('local new-learning statistics require explicit knowledge that ReviewState 
     'an explicitly imported absent ReviewState counts as new learning')
 })
 
-test('local statistics preserve soft-deleted history and require lifecycle coverage for each active block', async () => {
+test('local statistics preserve soft-deleted history and require lifecycle coverage for each active block', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-10T12:00:00.000Z') })
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
   const { LocalSubjectStats } = await import('../src/services/localSubjectStats.ts')
