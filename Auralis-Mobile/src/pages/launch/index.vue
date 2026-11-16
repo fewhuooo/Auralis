@@ -1,24 +1,37 @@
 <template>
   <view class="launch-page">
-    <text class="launch-title">Auralis</text>
+    <view class="launch-card">
+      <BrandLogo size="96rpx" />
+      <text class="launch-title">Auralis</text>
+      <text class="launch-subtitle">正在载入工作空间…</text>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import BrandLogo from '@/components/BrandLogo.vue'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useDeviceStore } from '@/store/useDeviceStore'
 
-onMounted(() => {
+onMounted(async () => {
   const deviceStore = useDeviceStore()
+  const authStore = useAuthStore()
   deviceStore.detect()
 
-  let target = '/pages/mobile/home/index'
+  let authed = Boolean(authStore.token)
+  if (authed) {
+    authed = await authStore.restoreSession()
+  }
 
+  let isTablet = false
   // #ifndef MP-WEIXIN
-  target = deviceStore.isTablet
-    ? '/pages/tablet/dashboard/index'
-    : '/pages/mobile/home/index'
+  isTablet = deviceStore.isTablet
   // #endif
+
+  const target = authed
+    ? (isTablet ? '/pages/tablet/dashboard/index' : '/pages/mobile/home/index')
+    : (isTablet ? '/pages/tablet/login/index' : '/pages/mobile/login/index')
 
   uni.reLaunch({ url: target })
 })
@@ -30,12 +43,25 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-zen-ivory, #F9F9F7);
+  background-color: var(--color-bg-primary);
+}
+
+.launch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18rpx;
 }
 
 .launch-title {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: var(--text-primary, #2c2a26);
+  font-size: 42rpx;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: 1rpx;
+}
+
+.launch-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
 }
 </style>

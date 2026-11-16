@@ -1,218 +1,217 @@
-/* ===== Fonts: loaded via system fallback for cross-platform compatibility ===== */
-
 /* ==========================================================================
-   CSS Variables Dictionary - Auralis Design System (Mobile/Pad)
-   Aligned with PC Oatmeal Minimalist Style
+   CSS Variables Dictionary - Auralis Design System (Mobile & Tablet)
+   Aligned with Auralis-PC Zen Minimalist Oatmeal Palette
    ========================================================================== */
 
-page, :root {
-  /* ===== Zen Minimalist System Colors ===== */
-  --color-zen-ivory: #F9F9F7;
+page,
+:root {
+  /* ===== Zen Minimalist System Colors (Matches PC) ===== */
+  --color-zen-ivory: #F7F2EB;
   --color-zen-graphite: #1C1C1A;
-  --color-zen-sage: #A3B19B;
-  --color-zen-hairline: #E6E6E4;
+  --color-zen-sage: #8B9A6E;
+  --color-sage-dark: #76855B;
+  --color-zen-hairline: #DDD5C7;
   --color-zen-white: #FFFFFF;
   --color-zen-stone: #A8A8A5;
 
-  /* ===== 1. Base Palette (Light Mode Default mapped to Zen Minimalist) ===== */
+  /* ===== 1. Base Palette ===== */
   --color-white: var(--color-zen-white);
   --color-black: var(--color-zen-graphite);
   --color-transparent: transparent;
-  
-  /* Ins-style Clean Grays */
-  --color-gray-50: var(--color-zen-ivory);
-  --color-gray-100: #f4f4f2;
-  --color-gray-200: var(--color-zen-hairline);
-  --color-gray-300: #dadad8;
+
+  --color-gray-50: #F7F2EB;
+  --color-gray-100: #EAE2D6;
+  --color-gray-200: #EEEEEE;
+  --color-gray-300: #DDD5C7;
   --color-gray-400: var(--color-zen-stone);
   --color-gray-500: #777771;
-  --color-gray-600: #5f5e5c;
+  --color-gray-600: #5F5E5C;
   --color-gray-700: #474741;
-  --color-gray-800: #2f3130;
+  --color-gray-800: #2F3130;
   --color-gray-900: var(--color-zen-graphite);
 
-  /* Oatmeal & Minimalist Gray Palette */
-  --color-oatmeal-light: var(--color-zen-ivory);
-  --color-oatmeal-mid: #eeeeec;
-  --color-oatmeal-dark: #e8e8e6;
-  --color-gray-soft: #f4f4f2;
+  /* Oatmeal Palette */
+  --color-oatmeal-light: #F7F2EB;
+  --color-oatmeal-mid: #EEEEEE;
+  --color-oatmeal-dark: #DDD5C7;
+  --color-gray-soft: #EAE2D6;
   --color-gray-muted: var(--color-zen-stone);
 
-  /* ===== 2. Semantic Colors (Light Mode) ===== */
-  /* Backgrounds */
-  --color-bg-primary: var(--color-zen-ivory);
-  --color-bg-secondary: var(--color-zen-ivory);
-  --color-bg-tertiary: var(--color-zen-white);
-  --color-bg-elevated: var(--color-zen-white);
-  
-  /* Text */
-  --text-primary: var(--color-zen-graphite);
-  --text-secondary: var(--color-zen-graphite);
-  --text-muted: var(--color-zen-stone);
+  /* ===== 2. Semantic Surface & Text Tokens ===== */
+  --color-bg-page: #EEEEEE;
+  --color-bg-primary: #F7F2EB;
+  --color-bg-secondary: #EEEEEE;
+  --color-bg-tertiary: #FAF7F2;
+  --color-bg-elevated: #FAF7F2;
+  --color-bg-card: #FAF7F2;
+
+  --bg-primary: var(--color-bg-primary);
+  --bg-secondary: var(--color-bg-secondary);
+  --bg-tertiary: var(--color-bg-tertiary);
+  --bg-card: var(--color-bg-card);
+
+  --text-primary: #1C1C1A;
+  --text-secondary: #2C2C28;
+  --text-muted: #7A7A75;
   --text-accent: var(--color-zen-sage);
   --text-inverse: var(--color-zen-white);
 
   /* Borders */
-  --border-subtle: var(--color-zen-hairline);
-  --border-default: var(--color-zen-hairline);
-  --border-strong: var(--color-zen-stone);
-  --border-accent: rgba(163, 177, 155, 0.4);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --border-accent: rgba(139, 154, 110, 0.45);
 
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: var(--color-zen-hairline);
-  --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.02);
+  --glass-bg: rgba(247, 242, 235, 0.92);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.03);
   --glass-blur: blur(40rpx);
 
   /* Status / Feedback */
-  --color-success: var(--color-zen-sage);
-  --color-warning: #d9c5b2;
-  --color-danger: #ba1a1a;
-  --color-info: #b3c0cf;
+  --color-success: #8B9A6E;
+  --color-warning: #C89B6D;
+  --color-danger: #D14343;
+  --color-danger-bg: rgba(209, 67, 67, 0.10);
+  --color-info: #78909C;
 
-  /* Accent Colors - Solid Nordic */
-  --accent-start: var(--color-zen-sage);
-  --accent-gradient: var(--accent-start); /* Solid color instead of gradient */
-  --accent-glow: 0 0 40rpx rgba(163, 177, 155, 0.4);
+  /* Accent */
+  --accent-start: #8B9A6E;
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
+  --btn-primary-bg: var(--accent-gradient);
+  --accent-glow: 0 0 40rpx rgba(139, 154, 110, 0.35);
+  --color-sage-bg: rgba(139, 154, 110, 0.12);
+  --color-sage-glow: rgba(139, 154, 110, 0.35);
 
-  /* ===== 3. Typography (Converted to rpx: 1px -> 2rpx) ===== */
+  /* ===== 3. Typography ===== */
   --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  
-  --font-size-xs: 24rpx;    /* 12px */
-  --font-size-sm: 28rpx;    /* 14px */
-  --font-size-base: 32rpx;  /* 16px */
-  --font-size-lg: 36rpx;    /* 18px */
-  --font-size-xl: 40rpx;    /* 20px */
-  --font-size-2xl: 48rpx;   /* 24px */
-  --font-size-3xl: 60rpx;   /* 30px */
+  --font-family-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --font-size-xs: 24rpx;
+  --font-size-sm: 28rpx;
+  --font-size-base: 32rpx;
+  --font-size-lg: 36rpx;
+  --font-size-xl: 40rpx;
+  --font-size-2xl: 48rpx;
+  --font-size-3xl: 60rpx;
 
   --line-height-tight: 1.25;
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
 
-  /* ===== 4. Spacing System (Converted to rpx) ===== */
-  --spacing-1: 8rpx;   /* 4px */
-  --spacing-2: 16rpx;  /* 8px */
-  --spacing-3: 24rpx;  /* 12px */
-  --spacing-4: 32rpx;  /* 16px */
-  --spacing-5: 40rpx;  /* 20px */
-  --spacing-6: 48rpx;  /* 24px */
-  --spacing-8: 64rpx;  /* 32px */
-  --spacing-10: 80rpx; /* 40px */
-  --spacing-12: 96rpx; /* 48px */
+  /* ===== 4. Spacing System ===== */
+  --spacing-1: 8rpx;
+  --spacing-2: 16rpx;
+  --spacing-3: 24rpx;
+  --spacing-4: 32rpx;
+  --spacing-5: 40rpx;
+  --spacing-6: 48rpx;
+  --spacing-8: 64rpx;
+  --spacing-10: 80rpx;
+  --spacing-12: 96rpx;
 
   /* ===== 5. Borders & Radius ===== */
   --radius-sm: 16rpx;
-  --radius-md: 32rpx;
-  --radius-lg: 48rpx;   /* 24px */
-  --radius-xl: 64rpx;   /* 32px */
+  --radius-md: 24rpx;
+  --radius-lg: 32rpx;
+  --radius-xl: 40rpx;
   --radius-full: 9999rpx;
 
   /* ===== 6. Shadows ===== */
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-xl: none;
+  --shadow-sm: 0 4rpx 16rpx rgba(28, 28, 26, 0.03);
+  --shadow-md: 0 12rpx 36rpx rgba(28, 28, 26, 0.05);
+  --shadow-lg: 0 24rpx 60rpx rgba(28, 28, 26, 0.08);
+  --shadow-xl: 0 36rpx 80rpx rgba(28, 28, 26, 0.12);
 
-  /* ===== 7. Responsive & New Features ===== */
-  --phone-header-height: 110rpx;
-  --tablet-sidebar-width: 120rpx;
-  --tablet-panel-gap: 40rpx;
-  
-  --color-pomodoro: var(--color-zen-sage);
-  --color-pomodoro-glow: rgba(163, 177, 155, 0.3);
-  --color-pomodoro-break: #85967e;
-  --color-pomodoro-break-glow: rgba(133, 150, 126, 0.3);
+  /* ===== 7. Layout & Pomodoro ===== */
+  --phone-header-height: 112rpx;
+  --tablet-sidebar-width: 136rpx;
+  --tablet-panel-gap: 32rpx;
 
-  --hw-canvas-bg: #fdfbf7;
-  --hw-tool-bg: rgba(255, 255, 255, 0.85);
-  --hw-lasso-bg: rgba(181, 172, 159, 0.1);
-  --hw-lasso-border: #8a867e;
+  --color-pomodoro: #8B9A6E;
+  --color-pomodoro-glow: rgba(139, 154, 110, 0.26);
+  --color-pomodoro-break: #C89B6D;
+  --color-pomodoro-break-glow: rgba(200, 155, 109, 0.26);
+
+  --hw-canvas-bg: #FAF7F2;
+  --hw-tool-bg: rgba(250, 247, 242, 0.92);
+  --hw-lasso-bg: rgba(139, 154, 110, 0.12);
+  --hw-lasso-border: var(--color-zen-sage);
 }
 
-/* ==========================================================================
-   Dark Mode Overrides
-   ========================================================================== */
-
-@media (prefers-color-scheme: dark) {
-  page, :root {
-    --color-bg-primary: #1f1e1c;       /* Warm Charcoal Base */
-    --color-bg-secondary: #292825;     /* Sidebar / Header */
-    --color-bg-tertiary: #33312e;      /* Cards / Inputs */
-    --color-bg-elevated: #3d3b38;      /* Modals */
-
-    --text-primary: #e6dfd8;           /* Light Oatmeal Text */
-    --text-secondary: #b0aca5;
-    --text-muted: #8a867e;
-    --text-accent: #d9d0c7;
-
-    --border-subtle: rgba(230, 223, 216, 0.05);
-    --border-default: rgba(230, 223, 216, 0.1);
-    --border-strong: rgba(230, 223, 216, 0.15);
-    --border-accent: rgba(217, 208, 199, 0.3);
-
-    --glass-bg: rgba(31, 30, 28, 0.8);
-    --glass-border: rgba(230, 223, 216, 0.05);
-    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.2);
-
-    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.4), 0 4rpx 8rpx -2rpx rgba(0, 0, 0, 0.2);
-    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.5), 0 8rpx 12rpx -4rpx rgba(0, 0, 0, 0.3);
-    
-    --accent-glow: 0 0 48rpx rgba(217, 208, 199, 0.15);
-  }
-}
-
-html.dark, page.dark {
-    --color-bg-primary: #1f1e1c;
-    --color-bg-secondary: #292825;
-    --color-bg-tertiary: #33312e;
-    --color-bg-elevated: #3d3b38;
-
-    --text-primary: #e6dfd8;
-    --text-secondary: #b0aca5;
-    --text-muted: #8a867e;
-    --text-accent: #d9d0c7;
-
-    --border-subtle: rgba(230, 223, 216, 0.05);
-    --border-default: rgba(230, 223, 216, 0.1);
-    --border-strong: rgba(230, 223, 216, 0.15);
-    --border-accent: rgba(217, 208, 199, 0.3);
-
-    --glass-bg: rgba(31, 30, 28, 0.8);
-    --glass-border: rgba(230, 223, 216, 0.05);
-    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.2);
-
-    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.4), 0 4rpx 8rpx -2rpx rgba(0, 0, 0, 0.2);
-    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.5), 0 8rpx 12rpx -4rpx rgba(0, 0, 0, 0.3);
-    
-    --accent-glow: 0 0 48rpx rgba(217, 208, 199, 0.15);
-}
-
-/* Base utility classes for gradients */
-.text-gradient {
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-body, page {
+body,
+page {
   background-color: var(--color-bg-primary);
   color: var(--text-primary);
   font-family: var(--font-family-base);
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
-  transition: background-color 0.3s, color 0.3s;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ==========================================================================
-   Global Overrides for H5 (Uni-app Native Components) & Scrollbars
-   ========================================================================== */
+/* Shared Zen Minimalist Surfaces */
+.zen-card {
+  background-color: var(--color-bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+}
 
+.zen-modal-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-color: rgba(28, 28, 26, 0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+  padding: 32rpx;
+  box-sizing: border-box;
+}
+
+.zen-sheet-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-color: rgba(28, 28, 26, 0.36);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  z-index: 900;
+}
+
+.zen-modal-body {
+  width: 100%;
+  background-color: var(--color-bg-elevated);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.zen-sheet-body {
+  width: 100%;
+  background-color: var(--color-bg-elevated);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-lg);
+  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+
+/* H5 Scrollbar hiding */
 /* #ifdef H5 */
-/* 全局隐藏所有页面与容器的滚动条 / 侧边滑动条 */
 ::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
@@ -220,49 +219,9 @@ body, page {
   color: transparent !important;
   background: transparent !important;
 }
+
 * {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
 /* #endif */
-
-/* 加粗四大模块的 TabBar 字体 */
-.uni-tabbar__label {
-  font-weight: 700 !important;
-  font-size: 24rpx !important;
-}
-
-/* 加粗顶部导航栏标题字体 */
-.uni-page-head__title {
-  font-weight: 800 !important;
-  font-size: 34rpx !important;
-  letter-spacing: 1rpx;
-}
-
-/* ==========================================================================
-   Ambient Glow Effects (Background)
-   ========================================================================== */
-.bg-glow {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(240rpx);
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.4;
-}
-
-.bg-glow--1 {
-  width: 1200rpx;
-  height: 1200rpx;
-  background: rgba(230, 223, 216, 0.2);
-  top: -400rpx;
-  right: -200rpx;
-}
-
-.bg-glow--2 {
-  width: 800rpx;
-  height: 800rpx;
-  background: rgba(217, 208, 199, 0.2);
-  bottom: -200rpx;
-  left: 20%;
-}

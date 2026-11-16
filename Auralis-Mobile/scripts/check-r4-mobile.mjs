@@ -1,9 +1,9 @@
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { access, readFile, readdir, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const scanRoots = ['src/api', 'src/store', 'src/services', 'src/pages', 'src/config', 'src/App.vue', 'src/components/StudyMetrics.vue']
+const scanRoots = ['src/api', 'src/store', 'src/services', 'src/pages', 'src/config', 'src/components', 'src/App.vue']
 const ignored = new Set([
   'src/api/generated/schema.ts',
   'src/services/localDb.ts',
@@ -29,6 +29,15 @@ async function collect(path) {
   return files
 }
 
+async function exists(relPath) {
+  try {
+    await access(join(root, relPath))
+    return true
+  } catch {
+    return false
+  }
+}
+
 const files = []
 for (const scanRoot of scanRoots) {
   try {
@@ -50,32 +59,38 @@ for (const file of files) {
   }
 }
 
-const tabletReview = sources.get('src/pages/tablet/review/index.vue') || ''
-if (!tabletReview.includes("@/api/reviewApi")) {
-  violations.push('src/pages/tablet/review/index.vue: tablet review must use the review event API')
+const retiredPages = [
+  'src/pages/mobile/settings/index.vue',
+  'src/pages/mobile/timeline/index.vue',
+  'src/pages/mobile/handwriting/index.vue',
+  'src/pages/mobile/asset/index.vue',
+  'src/pages/mobile/stats/index.vue',
+  'src/pages/tablet/review/index.vue',
+]
+for (const retired of retiredPages) {
+  if (await exists(retired)) {
+    violations.push(`${retired}: retired orphan route must be deleted`)
+  }
 }
-if (/Math\.random\s*\(/.test(tabletReview)) {
-  violations.push('src/pages/tablet/review/index.vue: tablet review must not generate random statistics')
+
+const mobileReview = sources.get('src/pages/mobile/review/index.vue') || ''
+if (!mobileReview.includes('@/api/reviewApi') || /Math\.random\s*\(/.test(mobileReview)) {
+  violations.push('src/pages/mobile/review/index.vue: review must use the review event API without random statistics')
 }
 
 const studyMetrics = sources.get('src/components/StudyMetrics.vue') || ''
-if (!studyMetrics.includes("@/api/statsApi") || /Math\.random\s*\(/.test(studyMetrics)) {
+if (!studyMetrics.includes('@/api/statsApi') || /Math\.random\s*\(/.test(studyMetrics)) {
   violations.push('src/components/StudyMetrics.vue: shared metrics must use the statistics API without random values')
 }
 
-const taskSelectSheet = await readFile(join(root, 'src/components/TaskSelectSheet.vue'), 'utf8')
+const taskSelectSheet = sources.get('src/components/TaskSelectSheet.vue') || ''
 if (/mockTasks|mock-\d+/.test(taskSelectSheet)) {
   violations.push('src/components/TaskSelectSheet.vue: task picker must not inject mock tasks')
 }
 
 const mobilePomodoro = sources.get('src/pages/mobile/pomodoro/index.vue') || ''
 if (/completedToday\s*=\s*ref\(3\)/.test(mobilePomodoro)) {
-  violations.push('src/pages/mobile/pomodoro/index.vue: pomodoro count must come from the task store')
-}
-
-const mobileSettings = sources.get('src/pages/mobile/settings/index.vue') || ''
-if (/joinedDays\s*=\s*ref\(12\)/.test(mobileSettings)) {
-  violations.push('src/pages/mobile/settings/index.vue: joined days must not use a fixed demo value')
+  violations.push('src/pages/mobile/pomodoro/index.vue: pomodoro count must not use fixed demo value')
 }
 
 const mobileHome = sources.get('src/pages/mobile/home/index.vue') || ''
@@ -88,14 +103,8 @@ if (/completedCount\s*\|\|\s*38|focusHours\s*\|\|\s*24\.5|joinedDays\s*=\s*ref\(
   violations.push('src/pages/mobile/profile/index.vue: profile metrics must not use fixed demo values')
 }
 
-const mobileHandwriting = sources.get('src/pages/mobile/handwriting/index.vue') || ''
-if (/Mock handwriting|Mock AI|识别内容：|已为您建立结构化关系|mock-hw-layer/.test(mobileHandwriting)
-  || !mobileHandwriting.includes('识别服务尚未接通')) {
-  violations.push('src/pages/mobile/handwriting/index.vue: handwriting must not fabricate OCR or extraction')
-}
-
 const tabletAi = sources.get('src/pages/tablet/ai-search/index.vue') || ''
-if (!tabletAi.includes("@/api/aiApi")) {
+if (!tabletAi.includes('@/api/aiApi')) {
   violations.push('src/pages/tablet/ai-search/index.vue: AI history must use the conversation API')
 }
 if (/historySessions\s*=\s*ref<HistorySession\[\]>\(\[\s*\{/.test(tabletAi)) {

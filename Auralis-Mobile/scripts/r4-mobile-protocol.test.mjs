@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 
 import { resolveRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts'
 import {
@@ -254,10 +254,18 @@ test('mobile home and profile do not inject demo task or profile metrics', async
   assert.doesNotMatch(profileSource, /joinedDays\s*=\s*ref\(42\)/)
 })
 
-test('mobile handwriting does not fabricate OCR or knowledge extraction', async () => {
-  const source = await readFile(new URL('../src/pages/mobile/handwriting/index.vue', import.meta.url), 'utf8')
-  assert.doesNotMatch(source, /Mock handwriting|Mock AI|识别内容：|已为您建立结构化关系/)
-  assert.match(source, /识别服务尚未接通/)
+test('retired orphan mobile and tablet routes are removed', async () => {
+  const retired = [
+    '../src/pages/mobile/handwriting/index.vue',
+    '../src/pages/mobile/settings/index.vue',
+    '../src/pages/mobile/timeline/index.vue',
+    '../src/pages/mobile/asset/index.vue',
+    '../src/pages/mobile/stats/index.vue',
+    '../src/pages/tablet/review/index.vue',
+  ]
+  for (const relPath of retired) {
+    await assert.rejects(access(new URL(relPath, import.meta.url)), { code: 'ENOENT' })
+  }
 })
 
 test('tablet workspace summary uses the AI stream instead of fixed demo text', async () => {
@@ -404,11 +412,10 @@ test('Task color removal assertions (Mobile)', async () => {
   assert.doesNotMatch(syncStoreTaskBranch, /colorOverride\s*:/)
 
   const mobileHome = await readFile(new URL('pages/mobile/home/index.vue', root), 'utf8')
-  const mobileTimeline = await readFile(new URL('pages/mobile/timeline/index.vue', root), 'utf8')
   const tabletDashboard = await readFile(new URL('pages/tablet/dashboard/index.vue', root), 'utf8')
   const taskSelectSheet = await readFile(new URL('components/TaskSelectSheet.vue', root), 'utf8')
 
-  for (const page of [mobileHome, mobileTimeline, tabletDashboard, taskSelectSheet]) {
+  for (const page of [mobileHome, tabletDashboard, taskSelectSheet]) {
     assert.doesNotMatch(page, /task\.color\b/)
   }
 })
