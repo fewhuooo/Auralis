@@ -48,6 +48,9 @@ public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
     List<SourceEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
             UUID userId, Pageable pageable);
 
+    List<SourceEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+            UUID userId, UUID subjectId, Pageable pageable);
+
     @Query("""
             select source from SourceEntity source
             where source.userId = :userId and source.deletedAt is null
@@ -58,6 +61,20 @@ public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
     List<SourceEntity> findPageAfter(
             @Param("userId") UUID userId,
             @Param("updatedAt") java.time.Instant updatedAt,
+            @Param("id") UUID id,
+            Pageable pageable);
+
+    @Query("""
+            select source from SourceEntity source
+            where source.userId = :userId and source.subjectId = :subjectId and source.deletedAt is null
+              and (source.updatedAt < :updatedAt
+                or (source.updatedAt = :updatedAt and source.id > :id))
+            order by source.updatedAt desc, source.id asc
+            """)
+    List<SourceEntity> findSubjectPageAfter(
+            @Param("userId") UUID userId,
+            @Param("subjectId") UUID subjectId,
+            @Param("updatedAt") Instant updatedAt,
             @Param("id") UUID id,
             Pageable pageable);
 

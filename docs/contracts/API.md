@@ -256,7 +256,7 @@ New internal Provider invocations carry a server-resolved credential source with
 | Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | implemented-phase-2a |
 | Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore、/api/tasks/schedule-swaps、/api/tasks/schedule-insertions | implemented-phase-2a |
 | Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore | implemented-phase-2b |
-| Review | /api/reviews/states、/api/reviews/lifecycle/* | implemented-phase-4 |
+| Review | /api/reviews/states、/api/reviews/queue、/api/reviews/lifecycle/* | implemented-phase-4 |
 | Stats | /api/stats/overview、/api/stats/weekly、/api/stats/subjects/{subjectId} | implemented-phase-4 |
 | Sync | /api/sync/push、/api/sync/pull、/api/sync/snapshot | implemented-phase-3 |
 | AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、Chat run/text-generation routes、建议类接口、/api/ai/source-overviews、/api/ai/subject-overviews | chat-protocol-1-backend-candidate; focused backend tests/package pass; full/PG/client acceptance pending |
@@ -324,7 +324,7 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 - FILE Source 创建进入 `AWAITING_CLIENT`，Asset 替换或 FILE reingest 轮换 revision 并保持该状态，不发布服务端 ingestion event；TEXT/URL 创建、更新和 reingest 清理安全错误并进入 `PENDING`，继续发布 `SourceIngestionRequestedEvent`。FILE 仅标题等不影响解析的更新保留当前状态。Source 其余成功操作沿用直接 DTO、版本冲突、软删除、恢复和列表 envelope 规则。
 - Relation 创建/更新字段为 `baseVersion`、`sourceType`、`sourceId`、`targetType`、`targetId`、`type`、可选 `label`；节点仅允许 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`，关系类型仅允许 `CONTAINS`、`REFERENCES`、`DERIVED_FROM`、`DEPENDS_ON`、`RELATED_TO`。
 - Relation 创建、更新、恢复都会验证两端属于当前用户且未删除，禁止自关联；`RELATED_TO` 对端点排序后去重，其他类型保持方向性。端点软删除会级联软删除相关 Relation，端点恢复不自动恢复关系。
-- `GET /api/sources` 和 `GET /api/relations` 同样返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 与 `limit`（1–200），按 `updatedAt DESC, id ASC` 稳定分页。
+- `GET /api/sources` 和 `GET /api/relations` 同样返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 与 `limit`（1–200），按 `updatedAt DESC, id ASC` 稳定分页。 `GET /api/sources` 可选 `subjectId`，只在当前用户的指定活动学科中分页。指定其他账号、已删除或不存在的学科返回 `404 RESOURCE_NOT_FOUND`。全账号和不同学科的游标不可混用，范围不匹配返回 `400 VALIDATION_FAILED`。
 - 阶段 2B 的 H2/MockMvc 自动测试覆盖以上路由、错误、版本、用户隔离和级联语义；真实 MinIO 签名 URL、HEAD/stat、PostgreSQL 和人工验收仍未执行。
 
 ## 阶段 3 离线同步已实现契约
@@ -382,6 +382,7 @@ PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约�
 ### 学科复习状态与统计（2026-10-08，代码、相关自动验证与只读审查通过；真实联调待验收）
 
 - `GET /api/reviews/states?subjectId=<UUID>&cursor=<opaque>&limit=<1..200>` 使用现行 `{items,nextCursor,hasMore}`，默认 limit 为 50。items 为完整 `ReviewStateView`，包含当前用户、活动学科中活动知识块的到期及未来状态；无状态知识块不注入虚构行。按 knowledgeBlockId 升序 keyset 分页，过滤发生在 limit 前，游标绑定用户与学科范围；跨范围或非法游标返回 `400 VALIDATION_FAILED`，不存在或跨用户学科按未找到处理。
+- `GET /api/reviews/queue?at=<RFC3339>&subjectId=<UUID>&cursor=<opaque>&limit=<1..200>` 分页返回当前用户活动学科中已到期的 `ReviewStateView`。`at` 必填，`subjectId` 可选，默认跨学科，limit 默认 50。过滤发生在分页前，待学习、已掌握、未到期及已删除内容不入队。按 `dueAt ASC, knowledgeBlockId ASC` 排序，状态与知识块版本来自同一查询。继续分页时重复使用同一个 `at` 和学科范围，跨用户、学科或截止时间使用游标返回 `400 VALIDATION_FAILED`。生命周期写入仍使用原有命令接口。
 - `GET /api/stats/subjects/{subjectId}?days=7|30&timeZone=<IANA>` 返回 `SubjectStatsView`。days 仅接受 7 或 30，timeZone 为服务端支持的 IANA 区域 ID（包括 UTC）；非法参数返回 `400 VALIDATION_FAILED`。所有聚合先校验当前用户的活动学科，并以同一可重复读事务读取。
 - 顶层字段为 `subjectId,generatedAt,timeZone,from,to,overview,daily,ratingCounts`；from/to 是包含首尾的本地日期，to 为请求时该时区的今天。每天使用 `[dayStart,nextDayStart)`，按日期升序返回 7 / 30 项并补零。用户级 weekly 的可选时区见下方接口。
 - overview 返回资料、知识块和任务原计数字段，以及 `newLearningCount,dueReviewCount,scheduledReviewCount,pendingLearningCount,reviewingCount,masteredCount`。无state计newLearningCount；reviewing的到期/未来子集分别计dueReviewCount/scheduledReviewCount。当前互斥分区为pendingLearning/reviewing/mastered，三者之和等于活动KB总数；资料总量由三种Source相加。

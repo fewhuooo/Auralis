@@ -7,10 +7,12 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
 import com.auralis.app.subject.SubjectService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,6 +50,30 @@ public class ReviewService {
                 ? CursorCodec.encode(resource, "", Instant.EPOCH, page.getLast().getKnowledgeBlockId())
                 : null;
         return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<ReviewStateView> queue(UUID userId, Instant at, UUID subjectId, String encodedCursor, int limit) {
+        checkLimit(limit);
+        if (subjectId != null) {
+            subjectService.requireActiveSubject(userId, subjectId);
+        }
+        String resource = "review-queue:" + userId + ":" + subjectId + ":" + at.getEpochSecond() + ":" + at.getNano();
+        CursorCodec.Cursor cursor = encodedCursor == null ? null : CursorCodec.decode(resource, encodedCursor);
+        if (cursor != null && (!cursor.sortKey().isEmpty() || cursor.updatedAt().isAfter(at))) {
+            throw new DomainException("VALIDATION_FAILED", "Cursor is invalid");
+        }
+        var rows = stateRepository.findDueQueue(userId, subjectId, at.truncatedTo(ChronoUnit.MICROS), cursor == null,
+                cursor == null ? at : cursor.updatedAt(), cursor == null ? userId : cursor.id(), PageRequest.of(0, limit + 1));
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        String nextCursor = null;
+        if (hasMore) {
+            var last = page.getLast().getState();
+            nextCursor = CursorCodec.encode(resource, "", last.getDueAt(), last.getKnowledgeBlockId());
+        }
+        return new CursorPage<>(page.stream().map(row -> view(row.getState(), row.getKnowledgeBlockVersion())).toList(),
+                nextCursor, hasMore);
     }
 
     private void checkLimit(int limit) {

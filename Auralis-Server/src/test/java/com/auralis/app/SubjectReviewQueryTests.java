@@ -119,6 +119,70 @@ class SubjectReviewQueryTests {
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
 
+    @Test
+    void pagesDueReviewsAcrossActiveSubjectsWithCursorBoundToTheQuery() throws Exception {
+        Owner owner = owner("review-queue");
+        Owner otherOwner = owner("review-queue-other");
+        UUID firstSubject = subject(owner, "Queue first");
+        UUID secondSubject = subject(owner, "Queue second");
+        UUID deletedSubject = subject(owner, "Queue deleted");
+        UUID foreignSubject = subject(otherOwner, "Queue foreign");
+        UUID parameterSetId = insertParameterSet();
+        long namespace = UUID.randomUUID().getMostSignificantBits();
+        Instant persistedDueAt = Instant.parse("2026-11-15T11:00:00.123456Z");
+        Instant at = persistedDueAt.plusNanos(900);
+        List<UUID> ids = java.util.stream.LongStream.rangeClosed(1, 9)
+                .mapToObj(sequence -> new UUID(namespace, sequence)).toList();
+        List<UUID> subjects = List.of(firstSubject, secondSubject, firstSubject, firstSubject, firstSubject,
+                firstSubject, deletedSubject, foreignSubject, secondSubject);
+        for (int index = 0; index < ids.size(); index++) {
+            insertBlockAndState(index == 7 ? otherOwner.userId() : owner.userId(), subjects.get(index), ids.get(index),
+                    parameterSetId, index == 5 ? at : null);
+            jdbcTemplate.update("update review_states set due_at = ? where knowledge_block_id = ?",
+                    index == 8 ? persistedDueAt.minusSeconds(1) : persistedDueAt, ids.get(index));
+        }
+        jdbcTemplate.update("update review_states set needs_learning = true where knowledge_block_id = ?", ids.get(2));
+        jdbcTemplate.update("update review_states set mastered = true, stable_success_count = 3 where knowledge_block_id = ?", ids.get(3));
+        jdbcTemplate.update("update review_states set due_at = ? where knowledge_block_id = ?",
+                persistedDueAt.plusNanos(1000), ids.get(4));
+        jdbcTemplate.update("update subjects set deleted_at = ? where id = ?", at, deletedSubject);
+        jdbcTemplate.update("update knowledge_blocks set version = 7 where id = ?", ids.getFirst());
+
+        var response = mockMvc.perform(get("/api/reviews/queue").header("Authorization", owner.authorization())
+                        .param("at", at.toString()).param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].knowledgeBlockId").value(ids.getLast().toString()))
+                .andExpect(jsonPath("$.items[1].knowledgeBlockId").value(ids.getFirst().toString()))
+                .andExpect(jsonPath("$.items[1].knowledgeBlockVersion").value(7))
+                .andExpect(jsonPath("$.hasMore").value(true))
+                .andReturn().getResponse();
+        String cursor = objectMapper.readTree(response.getContentAsString()).path("nextCursor").asText();
+        mockMvc.perform(get("/api/reviews/queue").header("Authorization", owner.authorization())
+                        .param("at", at.toString()).param("cursor", cursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].knowledgeBlockId").value(ids.get(1).toString()))
+                .andExpect(jsonPath("$.hasMore").value(false));
+        mockMvc.perform(get("/api/reviews/queue").header("Authorization", owner.authorization())
+                        .param("at", at.toString()).param("subjectId", firstSubject.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].knowledgeBlockId").value(ids.getFirst().toString()));
+        mockMvc.perform(get("/api/reviews/queue").header("Authorization", owner.authorization())
+                        .param("at", at.toString()).param("subjectId", firstSubject.toString()).param("cursor", cursor))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/reviews/queue").header("Authorization", owner.authorization())
+                        .param("at", at.plusSeconds(1).toString()).param("cursor", cursor))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/reviews/queue").header("Authorization", otherOwner.authorization())
+                        .param("at", at.toString()).param("cursor", cursor))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/reviews/queue").header("Authorization", owner.authorization())
+                        .param("at", at.toString()).param("subjectId", foreignSubject.toString()))
+                .andExpect(status().isNotFound());
+    }
+
     private JsonNode states(Owner owner, UUID subjectId, String cursor, int limit) throws Exception {
         var request = get("/api/reviews/states")
                 .header("Authorization", owner.authorization())

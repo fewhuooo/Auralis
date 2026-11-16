@@ -5,6 +5,7 @@ import com.auralis.app.shared.pagination.CursorPage;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @RestController
@@ -33,6 +35,15 @@ public class ReviewController {
                                                @RequestParam(required = false) String cursor,
                                                @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
         return reviewService.states(user.userId(), subjectId, cursor, limit);
+    }
+
+    @GetMapping("/queue")
+    public CursorPage<ReviewStateView> queue(@AuthenticationPrincipal AuthenticatedUser user,
+                                            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant at,
+                                            @RequestParam(required = false) UUID subjectId,
+                                            @RequestParam(required = false) String cursor,
+                                            @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
+        return reviewService.queue(user.userId(), at, subjectId, cursor, limit);
     }
 
     @PostMapping("/lifecycle/learning-completions")

@@ -97,21 +97,39 @@ public class SourceService {
 
     @Transactional(readOnly = true)
     public CursorPage<SourceView> list(UUID userId, String encodedCursor, int requestedLimit) {
+        return list(userId, null, encodedCursor, requestedLimit);
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<SourceView> list(UUID userId, UUID subjectId, String encodedCursor, int requestedLimit) {
         int limit = pageLimit(requestedLimit);
+        String cursorScope = subjectId == null ? "sources" : "sources-" + subjectId;
         CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
                 ? null
-                : CursorCodec.decode("sources", encodedCursor);
-        var rows = cursor == null
-                ? sourceRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
-                        userId, PageRequest.of(0, limit + 1))
-                : sourceRepository.findPageAfter(
-                        userId, cursor.updatedAt(), cursor.id(), PageRequest.of(0, limit + 1));
+                : CursorCodec.decode(cursorScope, encodedCursor);
+        var pageRequest = PageRequest.of(0, limit + 1);
+        var rows = sourcePage(userId, subjectId, cursor, pageRequest);
         boolean hasMore = rows.size() > limit;
         var page = hasMore ? rows.subList(0, limit) : rows;
         String nextCursor = hasMore
-                ? CursorCodec.encode("sources", "", page.getLast().getUpdatedAt(), page.getLast().getId())
+                ? CursorCodec.encode(cursorScope, "", page.getLast().getUpdatedAt(), page.getLast().getId())
                 : null;
         return new CursorPage<>(views(page), nextCursor, hasMore);
+    }
+
+    private List<SourceEntity> sourcePage(
+            UUID userId, UUID subjectId, CursorCodec.Cursor cursor, PageRequest pageRequest) {
+        if (subjectId == null) {
+            return cursor == null
+                    ? sourceRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+                            userId, pageRequest)
+                    : sourceRepository.findPageAfter(userId, cursor.updatedAt(), cursor.id(), pageRequest);
+        }
+        return cursor == null
+                ? sourceRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+                        userId, subjectId, pageRequest)
+                : sourceRepository.findSubjectPageAfter(
+                        userId, subjectId, cursor.updatedAt(), cursor.id(), pageRequest);
     }
 
     @Transactional(readOnly = true)

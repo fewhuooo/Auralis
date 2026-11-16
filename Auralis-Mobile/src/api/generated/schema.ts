@@ -988,6 +988,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews/lifecycle/history": {
         parameters: {
             query?: never;
@@ -1920,27 +1936,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            object?: boolean;
-            container?: boolean;
             missingNode?: boolean;
-            bigDecimal?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            container?: boolean;
+            object?: boolean;
             valueNode?: boolean;
             integralNumber?: boolean;
             bigInteger?: boolean;
-            floatingPointNumber?: boolean;
-            pojo?: boolean;
-            string?: boolean;
-            number?: boolean;
-            short?: boolean;
+            bigDecimal?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             int?: boolean;
+            string?: boolean;
             double?: boolean;
-            boolean?: boolean;
-            binary?: boolean;
             /** @deprecated */
             textual?: boolean;
+            binary?: boolean;
+            short?: boolean;
+            pojo?: boolean;
+            boolean?: boolean;
             long?: boolean;
+            number?: boolean;
+            floatingPointNumber?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {
@@ -3166,6 +3182,7 @@ export interface operations {
     list_2: {
         parameters: {
             query?: {
+                subjectId?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -4340,6 +4357,31 @@ export interface operations {
         parameters: {
             query: {
                 subjectId: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CursorPageReviewStateView"];
+                };
+            };
+        };
+    };
+    queue: {
+        parameters: {
+            query: {
+                at: string;
+                subjectId?: string;
                 cursor?: string;
                 limit?: number;
             };
