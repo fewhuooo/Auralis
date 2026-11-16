@@ -317,7 +317,7 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 
 ## 阶段 2B Source、Asset、Relation 已构建契约
 
-- `POST /api/assets/upload-intents` 请求字段为 `baseVersion=0`、必填 UUID `clientImportId`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt,uploadStatus}`。同一用户重放同一 `clientImportId` 且 immutable metadata（文件名、大小、MIME、sha256）一致时返回同一 Asset 及当前 `uploadStatus`；`UPLOADING` 会重新签发 URL，`READY`/`ORPHANED` 不会签发可覆盖对象的 URL。metadata 冲突返回 `409 MUTATION_REJECTED`。该 key 按用户隔离，不同用户可以复用。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
+- `POST /api/assets/upload-intents` 请求字段为 `baseVersion=0`、必填 UUID `clientImportId`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt,uploadStatus}`。同一用户重放同一 `clientImportId` 且 文件名、大小、MIME 一致，且请求显式提供 sha256 时与已存值一致，返回同一 Asset 及当前 `uploadStatus`；`UPLOADING` 会重新签发 URL，`READY`/`ORPHANED` 不会签发可覆盖对象的 URL。metadata 冲突返回 `409 MUTATION_REJECTED`。该 key 按用户隔离，不同用户可以复用。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
 - `POST /api/assets/{id}/complete` 不接受客户端对象元数据；服务端对绑定 object key 执行 HEAD/stat，校验真实大小、MIME 和已声明 sha256，成功返回 `AssetResponse` 并将状态置为 `READY`。校验失败返回 `400 UPLOAD_VALIDATION_FAILED` 并记录 `FAILED`。
 - `POST /api/assets/{id}/download-url` 只对当前用户拥有且 `READY` 的 Asset 返回 `{url,expiresAt,originalName,mimeType}`；Asset 不作为 Relation 节点，也不进入普通同步资源列表。
 - Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。Source 成功响应对 FILE 资料额外返回可选 `assetSizeBytes`（Asset 原始字节数），以及服务端生成、客户端只读的 `ingestionRevision`；TEXT/URL 或无法关联 Asset 时 `assetSizeBytes` 为 JSON `null`。
@@ -511,3 +511,7 @@ PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约�
 - Chat 历史保持 stable USER/run、每 attempt 独立 assistant reply message 与公开 snapshot；私有 reference、工具结果和答案资料不进入 public DTO。`reasoning.delta` 仅转发 provider 明确返回的 reasoning 字符串，和工具调用事件同属过程流，不进入正文/parts；字段、过程/正文事件边界、thinking 回传规则与 activeRun 恢复以 [Chat Runtime API protocol 1](chat-runtime-api.md) 为准。
 - Chat run status 的既有 `accountingSummary` Map 仅增加 `modelCalls`、`embeddingCalls`（同一 run ledger，跨 retry 按 RESERVED/已派发 reservation 统计）和 `currentAttemptToolCalls`（当前 attempt trace 内 distinct tool call ID）；不增加数据库列或改变 DTO Map 形状。
 - Chat `request_hash` 仅使用规范化客户端 body 字段，不包含独立的 `requestId`、解析后的 provider profile 或凭据。retry 通过 `CHAT_PROFILE_CHANGED`（409）告知客户端该 run 的 provider/model/endpoint 已变化；失败前不会新增 attempt 或 reservation。详见 [Chat Runtime API protocol 1](chat-runtime-api.md)。
+
+### 2026-11-16 手机资料上传重试
+
+`POST /api/assets/upload-intents` 重放省略 `sha256` 时不新增哈希声明，也不清除已存哈希。服务端补算原对象 SHA 后，原无 SHA 请求仍能重放并返回同一 Asset；显式 SHA 不一致继续返回 `409 MUTATION_REJECTED`。UPLOADING/FAILED 重试仍以持久化 SHA 签名和校验，READY 重放不签发覆盖对象的 PUT URL。请求/响应字段及 OpenAPI shape 不变。

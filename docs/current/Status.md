@@ -107,3 +107,11 @@
 4. 补齐真实 Provider/MinIO 异常、安全专项、安装升级、备份恢复与发布演练。
 
 更新时改写对应模块摘要及最近证据，不在标题前追加日期流水。已发生的过程进入 [Changelog](../release/Changelog.md)或任务报告；风险仅在满足关闭条件后从[开放清单](IssuesAndReview.md)移出。
+
+## 手机优先：后端首步（2026-11-16）
+
+修复无 SHA 上传经服务端补算后的原请求幂等重放；UPLOADING/FAILED 重试保留原校验要求，READY 不重新签发 PUT。源码和两项行为回归已完成。现有 Task、Review、Focus、Source/Asset 和 ParsedDocument 接口作为后续手机接入基础，不新增手机/平板专属后端。
+
+最终 `mvnw.cmd -B -ntp -DskipTests compile` 通过；`-Dtest=AssetShaBackfillTests,SourceAssetRelationServiceTests,ParsedDocumentCompleteTests,FocusSessionControllerTests,ReviewLifecycleServiceTests,StatsControllerTests,CoreDomainControllerTests test` 60/60，通过；`scripts/check-openapi.ps1` 运行时契约及双端 SDK 比对通过。唯一只读 reviewer：BLOCKER 0、IMPORTANT 0、OPTIONAL 0。证据：`D:/Temp/auralis-mobile-backend/`。
+
+本轮无 DTO/数据库/客户端改动，未运行前端类型检查、全量 Server、真实 MinIO/Provider 或 GUI/真机验收，未部署或重启服务。用户级 weekly 仍按现行 UTC 七天；本地自然日趋势与对象存储事务边界见问题登记，未在本轮关闭。

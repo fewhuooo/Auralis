@@ -141,7 +141,7 @@ public class AssetService {
         if (!existing.getOriginalName().equals(metadata.originalName())
                 || existing.getSizeBytes() != metadata.sizeBytes()
                 || !existing.getMimeType().equals(metadata.mimeType())
-                || !java.util.Objects.equals(existing.getSha256(), metadata.sha256())) {
+                || (metadata.sha256() != null && !java.util.Objects.equals(existing.getSha256(), metadata.sha256()))) {
             throw new DomainException(
                     "MUTATION_REJECTED",
                     "clientImportId is already bound to different asset metadata");

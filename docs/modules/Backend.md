@@ -140,3 +140,9 @@ Realtime 使用 `POST /api/realtime/ticket` 获取一次性 ticket，再连接 `
 ## 回写规则
 
 模块实现变化更新本页对应主题；接口和数据变化分别更新 API / Database；配置拓扑变化更新基础设施与运维；验证结果及未关闭风险更新 current，已发生的交付变化进入 Changelog。
+
+## 手机优先的后端接入基线（2026-11-16）
+
+手机和平板复用 Task、Review lifecycle、Focus、Source/Asset、Overview 和 Chat 契约。Task 支持无排期及完整 Instant；复习使用状态与生命周期命令；专注记录按稳定 session ID 保存真实秒数。FILE 原文件上传与学科资料登记分别执行，PC Tauri 提交解析结果，平板读取原文件及正式结果。本地手写画布不新增服务端数据域。
+
+Asset 上传重放省略 SHA 时保留已存 SHA；明确提供 SHA 时仍要求一致。该规则修复手机无 SHA 上传经 PC 接手补算后原请求重放被拒，文件名、大小、MIME、用户隔离及对象完成校验保持。其余客户端接入缺口见 Mobile/Tablet 模块，不能以本轮后端验证代替页面可用性。
