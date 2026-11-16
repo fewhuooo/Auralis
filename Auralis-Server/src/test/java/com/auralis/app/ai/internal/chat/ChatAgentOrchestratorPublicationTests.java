@@ -4,7 +4,6 @@ import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiMessageStatus;
 import com.auralis.app.ai.AiProviderType;
-import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
 import com.auralis.app.ai.MessageView;
@@ -139,8 +138,7 @@ class ChatAgentOrchestratorPublicationTests {
                 requestMapper.toProviderRequest(invocation.getArgument(0), "test-model", 256,
                         invocation.getArgument(1)));
         when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
-                List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, ConversationPurpose.GENERAL,
-                null, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
+                List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
         when(messages.findById(userMessageId)).thenReturn(Optional.of(userMessage));
         doAnswer(invocation -> {
             StreamingChatResponseHandler handler = invocation.getArgument(1);

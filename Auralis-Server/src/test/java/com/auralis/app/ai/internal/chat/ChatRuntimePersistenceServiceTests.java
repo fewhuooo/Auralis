@@ -2,7 +2,6 @@ package com.auralis.app.ai.internal.chat;
 
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiMessageStatus;
-import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.internal.persistence.ChatActivityEntity;
 import com.auralis.app.ai.internal.persistence.ChatActivityRepository;
 import com.auralis.app.ai.internal.persistence.ChatAttemptEntity;
@@ -66,10 +65,8 @@ class ChatRuntimePersistenceServiceTests {
         attemptId = UUID.randomUUID();
         replyId = UUID.randomUUID();
         sourceId = UUID.randomUUID();
-        conversation = new ConversationEntity(conversationId, userId, "Chat", null,
-                ConversationPurpose.GENERAL, null);
+        conversation = new ConversationEntity(conversationId, userId, "Chat", null);
         conversation.enableChatProtocolOne();
-        conversation.markChatScopeUnbound();
         conversation.bindChatScope(null);
         fence = conversation.reserveChatRun(runId);
         UUID userMessageId = UUID.randomUUID();

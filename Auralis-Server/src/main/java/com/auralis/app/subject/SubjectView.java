@@ -9,7 +9,6 @@ public record SubjectView(
         String description,
         String iconKey,
         String sortKey,
-        boolean defaultSubject,
         long version,
         Instant createdAt,
         Instant updatedAt,

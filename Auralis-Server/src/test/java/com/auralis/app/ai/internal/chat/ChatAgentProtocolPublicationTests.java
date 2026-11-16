@@ -198,10 +198,10 @@ class ChatAgentProtocolPublicationTests {
                         10_000, true, invocation.getArgument(2)));
         when(conversations.get(userId, conversationId)).thenReturn(
                 new ConversationView(conversationId, "Chat", List.of(), Instant.now(), Instant.now(), null, 0L,
-                        ConversationPurpose.GENERAL, null, (short) 1, true, null,
+                        (short) 1, true, null,
                         com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null),
                 new ConversationView(conversationId, "Chat", List.of(firstUserView, firstReplyView, secondUserView),
-                        Instant.now(), Instant.now(), null, 0L, ConversationPurpose.GENERAL, null, (short) 1, true, null,
+                        Instant.now(), Instant.now(), null, 0L, (short) 1, true, null,
                         com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
         when(messages.findById(firstUserId)).thenReturn(Optional.of(firstUser));
         when(messages.findById(secondUserId)).thenReturn(Optional.of(secondUser));
@@ -487,8 +487,7 @@ class ChatAgentProtocolPublicationTests {
                         new AiChatRequestMapper(new ObjectMapper()), ChatAgentProperties.defaults(), 4096,
                         10_000, true, invocation.getArgument(2)));
         when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
-                List.of(), Instant.now(), Instant.now(), null, 0L, ConversationPurpose.GENERAL,
-                null, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
+                List.of(), Instant.now(), Instant.now(), null, 0L, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
         when(messages.findById(userMessageId)).thenReturn(Optional.of(userMessage));
 
         ChatAgentOrchestrator orchestrator = new ChatAgentOrchestrator(persistence, conversations, messages, settings,
@@ -597,8 +596,7 @@ class ChatAgentProtocolPublicationTests {
         when(gateway.beginTask(any())).thenReturn(taskScope);
         when(adapterFactory.create(any(), eq(taskScope), any())).thenReturn(adapter);
         when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
-                List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, ConversationPurpose.GENERAL,
-                null, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
+                List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
         when(messages.findById(userMessageId)).thenReturn(Optional.of(userMessage));
         String arguments = "{\"title\":\"Flow\",\"items\":[{\"title\":\"One\"},{\"title\":\"Two\"}]}";
         ToolExecutionRequest toolRequest = ToolExecutionRequest.builder().id("display-1").name("render_steps")
@@ -725,8 +723,7 @@ class ChatAgentProtocolPublicationTests {
         when(gateway.beginTask(any())).thenReturn(taskScope);
         when(adapterFactory.create(any(), eq(taskScope), any())).thenReturn(adapter);
         when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
-                List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, ConversationPurpose.GENERAL,
-                null, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
+                List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
         when(messages.findById(userMessageId)).thenReturn(Optional.of(userMessage));
         AtomicReference<ChatRequest> capturedRequest = new AtomicReference<>();
         doAnswer(invocation -> {

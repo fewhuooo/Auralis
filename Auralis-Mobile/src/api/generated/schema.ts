@@ -1920,27 +1920,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            container?: boolean;
             object?: boolean;
+            container?: boolean;
             missingNode?: boolean;
-            pojo?: boolean;
             string?: boolean;
-            number?: boolean;
-            short?: boolean;
             int?: boolean;
-            floatingPointNumber?: boolean;
-            integralNumber?: boolean;
-            bigDecimal?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            valueNode?: boolean;
-            bigInteger?: boolean;
-            long?: boolean;
+            number?: boolean;
             /** @deprecated */
             textual?: boolean;
             binary?: boolean;
+            pojo?: boolean;
+            short?: boolean;
             double?: boolean;
             boolean?: boolean;
+            long?: boolean;
+            floatingPointNumber?: boolean;
+            bigInteger?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            integralNumber?: boolean;
+            valueNode?: boolean;
+            bigDecimal?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {
@@ -1957,10 +1957,6 @@ export interface components {
             /** Format: int64 */
             baseVersion: number;
             clientRequestId?: string;
-            /** @enum {string} */
-            purpose?: "GENERAL" | "READING_SESSION";
-            /** Format: uuid */
-            sourceId?: string;
         };
         ActiveChatRunView: {
             /** Format: uuid */
@@ -2004,16 +2000,12 @@ export interface components {
             deletedAt?: string;
             /** Format: int64 */
             version?: number;
-            /** @enum {string} */
-            purpose?: "GENERAL" | "READING_SESSION";
-            /** Format: uuid */
-            sourceId?: string;
             /** Format: int32 */
             chatProtocolVersion?: number;
             chatSupported?: boolean;
             activeRun?: components["schemas"]["ActiveChatRunView"];
             /** @enum {string} */
-            chatScopeState: "LEGACY" | "UNBOUND" | "BOUND";
+            chatScopeState: "UNBOUND" | "BOUND";
             chatScope: components["schemas"]["ChatConversationScope"] | null;
         };
         MessageView: {

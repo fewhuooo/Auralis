@@ -832,7 +832,7 @@ class AiOverviewServiceTests {
     private static SubjectService subjectService(UUID userId, UUID subjectId) {
         SubjectService service = mock(SubjectService.class);
         when(service.requireActiveSubject(userId, subjectId)).thenReturn(new SubjectView(subjectId,
-                "Mathematics", null, null, null, false, 1, Instant.now(), Instant.now(), null));
+                "Mathematics", null, null, null, 1, Instant.now(), Instant.now(), null));
         return service;
     }
 

@@ -525,11 +525,7 @@ public class ReviewLifecycleService {
                                long baseVersion, String contentHash, UUID reviewId, ReviewRating rating,
                                Integer durationSeconds, Instant occurredAt, Boolean expectedStateAbsent) {
         Instant normalizedOccurredAt = occurredAt == null ? null : occurredAt.truncatedTo(ChronoUnit.MICROS);
-        if (normalizedOccurredAt == null && expectedStateAbsent == null) {
-            return json(new CommandFingerprint(action, clientCommandId, blockId, blockVersion, baseVersion,
-                    contentHash, reviewId, rating, durationSeconds));
-        }
-        return json(new OfflineCommandFingerprint(action, clientCommandId, blockId, blockVersion, baseVersion,
+        return json(new CommandFingerprint(action, clientCommandId, blockId, blockVersion, baseVersion,
                 contentHash, reviewId, rating, durationSeconds, normalizedOccurredAt, expectedStateAbsent));
     }
 
@@ -627,9 +623,6 @@ public class ReviewLifecycleService {
 
     private record Schedule(Instant dueAt, String nextStage, boolean mastered, int stableSuccessCount) { }
     private record CommandFingerprint(String action, UUID clientCommandId, UUID knowledgeBlockId,
-                                      long knowledgeBlockVersion, long baseVersion, String contentHash,
-                                      UUID reviewId, ReviewRating rating, Integer durationSeconds) { }
-    private record OfflineCommandFingerprint(String action, UUID clientCommandId, UUID knowledgeBlockId,
                                              long knowledgeBlockVersion, long baseVersion, String contentHash,
                                              UUID reviewId, ReviewRating rating, Integer durationSeconds,
                                              Instant occurredAt, Boolean expectedStateAbsent) { }

@@ -275,7 +275,7 @@ class ChatDisplayToolArgumentRepairTests {
         });
         when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
                 List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L,
-                com.auralis.app.ai.ConversationPurpose.GENERAL, null, (short) 1, true, null,
+                (short) 1, true, null,
                 com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
         when(messages.findById(userMessageId)).thenReturn(Optional.of(userMessage));
         when(tools.execute(eq(readScope), any(AiTaskScope.class), eq("read_source_overview"), anyString()))

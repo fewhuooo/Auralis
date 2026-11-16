@@ -590,9 +590,6 @@ public class ChatRuntimePersistenceService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChatActivityEntity> activityHistory(UUID runId) { return activities.findAllByRunIdOrderByCreatedAtAsc(runId); }
-
-    @Transactional(readOnly = true)
     public ChatActivityEntity activityForSubmissionRun(UUID runId, UUID userId) {
         return activities.findByReplyRunIdAndUserId(runId, userId).orElse(null);
     }
@@ -764,7 +761,6 @@ public class ChatRuntimePersistenceService {
         catch (Exception e) { throw new IllegalStateException("Unable to fingerprint Chat request", e); }
     }
     private ChatConversationScope resolveConversationScope(ConversationEntity conversation, AiMessageCommand command) {
-        if (conversation.getChatScopeState() == ChatConversationScopeState.LEGACY) throw scopeConflict();
         if (conversation.getChatScopeState() == ChatConversationScopeState.UNBOUND) {
             if (!"turn".equals(command.action())) throw scopeConflict();
             ReadingContext requested = command.readingContext();

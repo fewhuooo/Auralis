@@ -302,10 +302,12 @@ class OpenApiArtifactTests {
                 .contains("SELECTED_SOURCES")
                 .contains("SUBJECT");
         assertThat(readingContext.at("/properties").has("selectionText")).isFalse();
-        assertThat(document.at("/components/schemas/ConversationCommand/properties/purpose/enum").toString())
-                .contains("READING_SESSION");
-        assertThat(document.at("/components/schemas/ConversationCommand/properties/sourceId").isObject()).isTrue();
-        assertThat(document.at("/components/schemas/ConversationView/properties/purpose").isObject()).isTrue();
+        assertThat(document.at("/components/schemas/ConversationCommand/properties").has("purpose")).isFalse();
+        assertThat(document.at("/components/schemas/ConversationCommand/properties").has("sourceId")).isFalse();
+        assertThat(document.at("/components/schemas/ConversationView/properties").has("purpose")).isFalse();
+        assertThat(document.at("/components/schemas/ConversationView/properties").has("sourceId")).isFalse();
+        assertThat(document.at("/components/schemas/ConversationView/properties/chatScopeState/enum").toString())
+                .contains("UNBOUND", "BOUND").doesNotContain("LEGACY");
     }
 
     @Test

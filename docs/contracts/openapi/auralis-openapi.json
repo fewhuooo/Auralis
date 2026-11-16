@@ -5031,50 +5031,22 @@
           "float" : {
             "type" : "boolean"
           },
-          "container" : {
+          "object" : {
             "type" : "boolean"
           },
-          "object" : {
+          "container" : {
             "type" : "boolean"
           },
           "missingNode" : {
             "type" : "boolean"
           },
-          "pojo" : {
-            "type" : "boolean"
-          },
           "string" : {
-            "type" : "boolean"
-          },
-          "number" : {
-            "type" : "boolean"
-          },
-          "short" : {
             "type" : "boolean"
           },
           "int" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
-            "type" : "boolean"
-          },
-          "integralNumber" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
-            "type" : "boolean"
-          },
-          "nodeType" : {
-            "type" : "string",
-            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
-          },
-          "valueNode" : {
-            "type" : "boolean"
-          },
-          "bigInteger" : {
-            "type" : "boolean"
-          },
-          "long" : {
+          "number" : {
             "type" : "boolean"
           },
           "textual" : {
@@ -5084,10 +5056,38 @@
           "binary" : {
             "type" : "boolean"
           },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "short" : {
+            "type" : "boolean"
+          },
           "double" : {
             "type" : "boolean"
           },
           "boolean" : {
+            "type" : "boolean"
+          },
+          "long" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
+            "type" : "boolean"
+          },
+          "nodeType" : {
+            "type" : "string",
+            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
+          },
+          "integralNumber" : {
+            "type" : "boolean"
+          },
+          "valueNode" : {
+            "type" : "boolean"
+          },
+          "bigDecimal" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -5138,14 +5138,6 @@
             "type" : "string",
             "maxLength" : 128,
             "minLength" : 0
-          },
-          "purpose" : {
-            "type" : "string",
-            "enum" : [ "GENERAL", "READING_SESSION" ]
-          },
-          "sourceId" : {
-            "type" : "string",
-            "format" : "uuid"
           }
         },
         "required" : [ "baseVersion" ]
@@ -5252,14 +5244,6 @@
             "type" : "integer",
             "format" : "int64"
           },
-          "purpose" : {
-            "type" : "string",
-            "enum" : [ "GENERAL", "READING_SESSION" ]
-          },
-          "sourceId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
           "chatProtocolVersion" : {
             "type" : "integer",
             "format" : "int32"
@@ -5272,7 +5256,7 @@
           },
           "chatScopeState" : {
             "type" : "string",
-            "enum" : [ "LEGACY", "UNBOUND", "BOUND" ]
+            "enum" : [ "UNBOUND", "BOUND" ]
           },
           "chatScope" : {
             "anyOf" : [ {

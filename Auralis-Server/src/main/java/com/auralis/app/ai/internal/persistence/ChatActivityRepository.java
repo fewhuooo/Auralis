@@ -12,7 +12,6 @@ import java.util.UUID;
 public interface ChatActivityRepository extends JpaRepository<ChatActivityEntity, UUID> {
     Optional<ChatActivityEntity> findByIdAndUserId(UUID id, UUID userId);
     Optional<ChatActivityEntity> findByIdAndRunIdAndUserId(UUID id, UUID runId, UUID userId);
-    List<ChatActivityEntity> findAllByRunIdOrderByCreatedAtAsc(UUID runId);
     List<ChatActivityEntity> findAllByAttemptIdAndRunIdAndUserIdOrderByCreatedAtAsc(
             UUID attemptId, UUID runId, UUID userId);
     Optional<ChatActivityEntity> findByReplyRunIdAndUserId(UUID replyRunId, UUID userId);

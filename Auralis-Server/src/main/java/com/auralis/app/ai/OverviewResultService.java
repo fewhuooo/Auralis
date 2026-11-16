@@ -375,13 +375,6 @@ public class OverviewResultService {
     }
 
     private void checkBaseVersion(OverviewResultEntity entity, boolean current, OverviewResultCommand command) {
-        if (entity != null && entity.getSchemaVersion() == 1) {
-            if (entity.getVersion() != command.baseVersion() || command.mode() != OverviewMode.ALL) {
-                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview version requires a complete replacement",
-                        Map.of("version", entity.getVersion(), "schemaVersion", entity.getSchemaVersion()));
-            }
-            return;
-        }
         if (current) {
             if (entity.getVersion() != command.baseVersion()) {
                 throw versionConflict(entity);
@@ -396,7 +389,6 @@ public class OverviewResultService {
     }
 
     private boolean hasMarkdownSchema(OverviewResultEntity entity) {
-        if (entity.getSchemaVersion() == 1) return false;
         if (entity.getSchemaVersion() != OverviewDocumentValidator.SCHEMA_VERSION) {
             throw new DomainException("INTERNAL_ERROR", "Stored overview result has an unsupported schema version");
         }
@@ -548,9 +540,6 @@ public class OverviewResultService {
             JsonNode snapshot = objectMapper.readTree(receipt.getResponseSnapshot());
             if (snapshot.path("revoked").asBoolean(false)) {
                 throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview write receipt was revoked with its source");
-            }
-            if (snapshot.path("schemaVersion").asInt() == 1) {
-                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview write receipt belongs to an unavailable result format");
             }
             if (snapshot.path("schemaVersion").asInt() != OverviewDocumentValidator.SCHEMA_VERSION) {
                 throw new DomainException("INTERNAL_ERROR", "Overview write receipt has an invalid result format");
