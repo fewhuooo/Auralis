@@ -152,7 +152,7 @@ export interface OverviewResultView {
 }
 
 export type OverviewOutboxState = 'PREPARED' | 'PENDING' | 'INFLIGHT' | 'CONFLICT' | 'ERROR' | 'STALE'
-export type OverviewIntentOrigin = 'LOCAL_WRITE' | 'LEGACY_SEED'
+export type OverviewIntentOrigin = 'LOCAL_WRITE' | 'LOCAL_CACHE_SEED'
 
 /** A prepared intent may be materialized only after its server baseline is known. */
 export interface OverviewOutboxRecord {

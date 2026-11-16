@@ -141,7 +141,7 @@ onMounted(() => {
   window.addEventListener('online', updateBrowserOnline)
   window.addEventListener('offline', updateBrowserOnline)
   window.addEventListener('auralis-realtime-status', handleRealtimeStatus)
-  window.addEventListener('sc-theme-change', handleThemeChangeEvent)
+  window.addEventListener('auralis:theme-change', handleThemeChangeEvent)
 
   if (authStore.isAuthenticated) {
     startAuthenticatedRuntime()
@@ -164,7 +164,7 @@ onUnmounted(() => {
   window.removeEventListener('online', updateBrowserOnline)
   window.removeEventListener('offline', updateBrowserOnline)
   window.removeEventListener('auralis-realtime-status', handleRealtimeStatus)
-  window.removeEventListener('sc-theme-change', handleThemeChangeEvent)
+  window.removeEventListener('auralis:theme-change', handleThemeChangeEvent)
   if (curtainTimer) clearTimeout(curtainTimer)
   stopWatchingAuth?.()
   stopWatchingAuth = undefined

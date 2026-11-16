@@ -368,7 +368,7 @@ export class OverviewResultsSyncService {
         return
       }
       if (remote) return
-      if (validCompleteRecord(stored)) await this.repository.enqueueLegacySeed(stored)
+      if (validCompleteRecord(stored)) await this.repository.enqueueLocalCacheSeed(stored)
       intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'FILE'
         && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
       if (!intents.length) return
@@ -382,7 +382,7 @@ export class OverviewResultsSyncService {
       if (remote && matchesFileView(remote, source)) {
         const record = await remoteCacheRecord(remote, 'FILE', source.id, revision)
         for (const intent of intents) {
-          if (intent.origin === 'LEGACY_SEED') await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SEED_ALREADY_EXISTS')
+          if (intent.origin === 'LOCAL_CACHE_SEED') await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SEED_ALREADY_EXISTS')
           else if (intent.state === 'PREPARED') await this.repository.setOverviewIntentState(intent.clientWriteId, 'CONFLICT', 'OVERVIEW_BASELINE_UNKNOWN')
         }
         await this.repository.installRemoteOverview(record, stateFromView(remote, 'FILE', source.id, revision), true,fenceToken)
@@ -505,7 +505,7 @@ export class OverviewResultsSyncService {
       if (!this.repository.isScopeFenceTokenCurrent(fenceToken) || !await this.isSubjectCurrent(subjectId, options)) return
 
       if (status?.status === 'MISSING') {
-        if (validCompleteRecord(local)) await this.repository.enqueueLegacySeed(local)
+        if (validCompleteRecord(local)) await this.repository.enqueueLocalCacheSeed(local)
         intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
           && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
         if (!intents.length) return
@@ -543,7 +543,7 @@ export class OverviewResultsSyncService {
         return
       }
       if (remote) return
-      if (validCompleteRecord(local)) await this.repository.enqueueLegacySeed(local)
+      if (validCompleteRecord(local)) await this.repository.enqueueLocalCacheSeed(local)
       intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
         && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
       if (!intents.length) return
@@ -558,7 +558,7 @@ export class OverviewResultsSyncService {
         const fingerprint = await this.subjectContentFingerprint(subjectSources)
         const record = await remoteCacheRecord(remote, 'SUBJECT', subjectId, 'subject-v1', fingerprint)
         for (const intent of intents) {
-          if (intent.origin === 'LEGACY_SEED') await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SEED_ALREADY_EXISTS')
+          if (intent.origin === 'LOCAL_CACHE_SEED') await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_SEED_ALREADY_EXISTS')
           else if (intent.state === 'PREPARED') await this.repository.setOverviewIntentState(intent.clientWriteId, 'CONFLICT', 'OVERVIEW_BASELINE_UNKNOWN')
         }
         await this.repository.installRemoteOverview(record, stateFromView(remote, 'SUBJECT', subjectId, 'subject-v1'), true,fenceToken)
