@@ -468,10 +468,10 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         }
 
         private long estimateAgentRequestTokens(AiProviderRequest request) {
-            long legacyMessageByteLimit = Math.multiplyExact((long) ai.maxPromptChars(), 4L);
+            long messageContentByteLimit = Math.multiplyExact((long) ai.maxPromptChars(), 4L);
             AiChatRequestCapacity.Check capacity = AiChatRequestCapacity.inspect(request, objectMapper,
                     chatAgent.maxSerializedRequestUtf8Bytes(), chatAgent.maxToolResultUtf8Bytes(),
-                    legacyMessageByteLimit);
+                    messageContentByteLimit);
             if (!capacity.fits()) {
                 AiChatRequestCapacity.Diagnostic diagnostic = AiChatRequestCapacity.diagnose(request, objectMapper);
                 LOGGER.warn("Chat request capacity rejected dimension={} actualBytes={} limitBytes={} "

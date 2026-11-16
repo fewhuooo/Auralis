@@ -46,7 +46,7 @@ class AiChatRequestCapacityTests {
         assertThat(serializedTooLarge.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.SERIALIZED_REQUEST_BYTES);
         assertThat(serializedTooLarge.comparedBytes()).isEqualTo(serializedBytes);
         assertThat(serializedTooLarge.limitBytes()).isEqualTo(serializedBytes - 1);
-        assertThat(messageTooLarge.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.LEGACY_MESSAGE_BYTES);
+        assertThat(messageTooLarge.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.MESSAGE_CONTENT_BYTES);
         assertThat(messageTooLarge.comparedBytes()).isEqualTo(messageBytes);
         assertThat(toolTooLarge.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.TOOL_RESULT_BYTES);
         assertThat(toolTooLarge.comparedBytes()).isEqualTo("é".repeat(4).getBytes(StandardCharsets.UTF_8).length);

@@ -171,7 +171,7 @@ class AiInvocationGatewayTests {
                         List.of()));
         List<ChatMessage> required = List.of(SystemMessage.from("required context ".repeat(400)));
         List<ChatMessage> current = List.of(UserMessage.from("current question ".repeat(30)));
-        long legacyMessageLimit = (long) ai(limits).maxPromptChars() * 4L;
+        long messageContentByteLimit = (long) ai(limits).maxPromptChars() * 4L;
         var unprojected = new ArrayList<ChatMessage>(required);
         history.forEach(turn -> unprojected.addAll(turn.publicMessages()));
         unprojected.addAll(current);
@@ -179,8 +179,8 @@ class AiInvocationGatewayTests {
                 .messages(unprojected).toolSpecifications(tool).build(), "test-model", 16);
         AiChatRequestCapacity.Check unprojectedCheck = AiChatRequestCapacity.inspect(unprojectedMapped,
                 objectMapper, chatLimits.maxSerializedRequestUtf8Bytes(), chatLimits.maxToolResultUtf8Bytes(),
-                legacyMessageLimit);
-        assertThat(unprojectedCheck.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.LEGACY_MESSAGE_BYTES);
+                messageContentByteLimit);
+        assertThat(unprojectedCheck.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.MESSAGE_CONTENT_BYTES);
         assertThat(unprojectedCheck.secondaryBytes()).isLessThan(chatLimits.maxSerializedRequestUtf8Bytes());
 
         var projection = projector.project(required, history, current, List.of(), List.of(), (messages, reasoning) -> {
@@ -188,7 +188,7 @@ class AiInvocationGatewayTests {
                     .messages(messages).toolSpecifications(tool).build(), "test-model", 16, reasoning);
             return AiChatRequestCapacity.inspect(mapped, objectMapper,
                     chatLimits.maxSerializedRequestUtf8Bytes(), chatLimits.maxToolResultUtf8Bytes(),
-                    legacyMessageLimit);
+                    messageContentByteLimit);
         });
         assertThat(projection.fits()).isTrue();
         assertThat(projection.messages()).hasSizeLessThan(unprojected.size())
@@ -199,7 +199,7 @@ class AiInvocationGatewayTests {
                 projection.reasoningByToolCallId());
         assertThat(AiChatRequestCapacity.inspect(projected, objectMapper,
                 chatLimits.maxSerializedRequestUtf8Bytes(), chatLimits.maxToolResultUtf8Bytes(),
-                legacyMessageLimit).fits()).isTrue();
+                messageContentByteLimit).fits()).isTrue();
 
         UUID runId = UUID.randomUUID();
         AiTaskContext context = new AiTaskContext(userId, AiFeature.CHAT, "chat-agent:" + runId,
@@ -250,7 +250,7 @@ class AiInvocationGatewayTests {
         }
         assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class)).isZero();
         assertThat(provider.completeCalls()).isZero();
-        assertThat(output.getOut()).contains("Chat request capacity rejected dimension=LEGACY_MESSAGE_BYTES",
+        assertThat(output.getOut()).contains("Chat request capacity rejected dimension=MESSAGE_CONTENT_BYTES",
                 "Chat request capacity rejected dimension=TOOL_RESULT_BYTES", "actualBytes=", "limitBytes=",
                 "serializedRequestBytes=", "messageContentBytes=", "systemContentBytes=",
                 "userContentBytes=", "assistantContentBytes=", "toolResultContentBytes=",

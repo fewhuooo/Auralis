@@ -289,7 +289,7 @@ class ChatEvidenceHistoryProjectorTests {
                         objectMapper, 100_000, 1_000, 100));
 
         assertThat(projection.fits()).isFalse();
-        assertThat(projection.capacityCheck().dimension()).isEqualTo(AiChatRequestCapacity.Dimension.LEGACY_MESSAGE_BYTES);
+        assertThat(projection.capacityCheck().dimension()).isEqualTo(AiChatRequestCapacity.Dimension.MESSAGE_CONTENT_BYTES);
         assertThat(projection.statistics().protectedCurrentContentBytes()).isEqualTo(380);
         assertThat(projection.statistics().toolCallCount()).isEqualTo(1);
         assertThat(projection.statistics().toolResultCount()).isEqualTo(1);
