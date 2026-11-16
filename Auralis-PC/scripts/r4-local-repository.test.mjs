@@ -27,11 +27,6 @@ const { createVersionedLocalSchema, LOCAL_SCHEMA_VERSION } = await import('../sr
 const { serializeLocalSqlDatabase } = await import('../src/services/localSqlQueue.ts');
 const { LocalDatabaseRuntime } = await import('../src/services/localDatabaseRuntime.ts');
 const { runSyncCycle } = await import('../src/services/syncCycle.ts');
-const {
-  backupLegacyUnassignedData,
-  getLegacyUnassignedBackup,
-  recordLegacyMigrationChoice,
-} = await import('../src/services/legacyLocalData.ts');
 
 class TemporarySqlite {
   constructor() {
@@ -347,24 +342,6 @@ test('saveCursor persists the current local schema version', async () => {
   }
 });
 
-test('SQLite legacy account-less rows are copied to unassigned backup without deletion', async () => {
-  const sqlite = new TemporarySqlite();
-  try {
-    await sqlite.execute('CREATE TABLE subjects (id TEXT PRIMARY KEY, name TEXT NOT NULL)');
-    await sqlite.execute('INSERT INTO subjects (id, name) VALUES ($1, $2)', ['old-1', 'Unassigned']);
-
-    const repository = new LocalRepository('user-a', 'device-1', { sql: sqlite });
-    await repository.getSyncState();
-
-    const backup = sqlite.database
-      .prepare('SELECT source_table, source_id, payload FROM legacy_unassigned_records')
-      .all();
-    assert.deepEqual(backup.map((row) => ({ ...row })), [{ source_table: 'subjects', source_id: 'old-1', payload: JSON.stringify({ id: 'old-1', name: 'Unassigned' }) }]);
-    assert.equal(sqlite.database.prepare('SELECT COUNT(*) AS count FROM subjects').get().count, 1);
-  } finally {
-    sqlite.close();
-  }
-});
 
 test('PC SQLite startup retries failed schema initialization without creating or altering retired business tables', async (t) => {
   const sqlite = new TemporarySqlite();
@@ -1102,42 +1079,7 @@ for (const backend of ['browser', 'sqlite']) {
   });
 }
 
-test('legacy data is backed up without assignment or deletion and requires an explicit choice', () => {
-  const storage = createMemoryStorage();
-  storage.setItem('auralis_subjects', JSON.stringify([{ id: 'old-1', name: 'Unassigned' }]));
 
-  const backup = backupLegacyUnassignedData(storage, () => '2026-08-20T02:00:00.000Z');
-  assert.equal(backup?.capturedAt, '2026-08-20T02:00:00.000Z');
-  assert.equal(storage.getItem('auralis_subjects'), JSON.stringify([{ id: 'old-1', name: 'Unassigned' }]));
-  assert.equal(getLegacyUnassignedBackup(storage)?.migrationChoice, undefined);
-
-  const chosen = recordLegacyMigrationChoice(storage, 'import_current_account', 'user-a');
-  assert.equal(chosen?.migrationChoice, 'import_current_account');
-  assert.equal(chosen?.importedIntoUserId, 'user-a');
-});
-
-test('localSchema sanitizer processes TASK color removal correctly and preserves KnowledgeBlock and metadata', async () => {
-  const sqlite = new TemporarySqlite();
-  const db = { execute: async (s, b) => sqlite.execute(s, b), select: async (s, b) => sqlite.select(s, b) };
-  await createVersionedLocalSchema(db);
-
-  sqlite.database.prepare("INSERT INTO local_resource_records (user_id, resource_type, resource_id, payload, version, sync_status) VALUES ('u1', 'TASK', 't1', '{\"id\":\"t1\",\"color\":\"#123\",\"colorOverride\":\"#456\",\"title\":\"T\"}', 1, 'synced')").run();
-  sqlite.database.prepare("INSERT INTO local_resource_records (user_id, resource_type, resource_id, payload, version, sync_status) VALUES ('u1', 'KNOWLEDGE_BLOCK', 'b1', '{\"id\":\"b1\",\"colorOverride\":\"#789\",\"title\":\"B\"}', 1, 'synced')").run();
-  sqlite.database.prepare("INSERT INTO local_mutations (user_id, client_mutation_id, resource_type, resource_id, mutation_type, base_version, payload, remote_payload, created_at, status) VALUES ('u1', 'm1', 'TASK', 't1', 'UPDATE', 1, '{\"color\":\"#123\"}', '{\"colorOverride\":\"#456\"}', '2026-09-08', 'pending')").run();
-
-  await createVersionedLocalSchema(db);
-
-  const tasks = sqlite.database.prepare("SELECT payload FROM local_resource_records WHERE resource_id = 't1'").all();
-  assert.equal(tasks[0].payload, '{"id":"t1","title":"T"}');
-
-  const blocks = sqlite.database.prepare("SELECT payload FROM local_resource_records WHERE resource_id = 'b1'").all();
-  assert.equal(blocks[0].payload, '{"id":"b1","colorOverride":"#789","title":"B"}');
-
-  const muts = sqlite.database.prepare("SELECT payload, remote_payload FROM local_mutations WHERE client_mutation_id = 'm1'").all();
-  assert.equal(muts[0].payload, '{}');
-  assert.equal(muts[0].remote_payload, '{}');
-  sqlite.close();
-});
 test('upsertSyncedBatch merges browser members atomically without regressing versions or clearing tombstones', async () => {
   const { storage, first: repository } = createRepositories();
   const row = (id, marker) => ({ id, marker });

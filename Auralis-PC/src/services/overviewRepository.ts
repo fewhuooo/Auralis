@@ -237,8 +237,7 @@ export async function computeSubjectInputFingerprint(files: FileFingerprintInput
 }
 
 function fromRow(row: Row): OverviewCacheRecord | null {
-  // Legacy v1 rows are retained in DB, but not returned as valid v2 content
-  if (row.schema_version !== 2) return null
+  if (row.schema_version !== 2) throw new Error('OVERVIEW_CACHE_CORRUPT')
   return {
     scopeType: row.scope_type,
     scopeId: row.scope_id,
@@ -327,9 +326,7 @@ export class OverviewRepository {
     try {
       const state = JSON.parse(raw) as BrowserState
       if (!Array.isArray(state.records) || !Array.isArray(state.states) || !Array.isArray(state.outbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
-      // Ignore legacy v1 records from cache
-      state.records = state.records.filter(r => r && (r.schemaVersion as unknown) === 2 && validCacheRecord(r))
-      if (!state.states.every(validSyncState) || !state.outbox.every(validOutbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
+      if (!state.records.every(validCacheRecord) || !state.states.every(validSyncState) || !state.outbox.every(validOutbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
       return state
     } catch { throw new Error('OVERVIEW_CACHE_CORRUPT') }
   }

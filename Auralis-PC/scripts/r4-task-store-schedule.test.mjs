@@ -181,7 +181,7 @@ test('store derives scheduling queue from unscheduled active tasks', () => {
 })
 
 test('status changes preserve schedule and unschedule is explicit', () => {
-  assert.match(source, /const model = toTaskModel\(\{ \.\.\.current, status: newStatus, scheduledAt: current\.scheduledAt, startTime: undefined \}\)/)
+  assert.match(source, /const model = toTaskModel\(\{ \.\.\.current, status: newStatus, scheduledAt: current\.scheduledAt \}\)/)
   assert.doesNotMatch(source, /status: newStatus, scheduledAt: newStatus === 'scheduled' \? current\.scheduledAt : undefined/)
 })
 
@@ -204,11 +204,6 @@ test('deprecated presentation-status records are rejected before the timeline pr
   assert.doesNotMatch(dtoFromLocalSource, /return toTaskModel\(candidate\)/, 'The deprecated local presentation conversion must not remain')
 })
 
-test('scheduledAt is normalized to a UTC ISO instant at the API boundary', () => {
-  assert.match(source, /function normalizeScheduledAtForApi\(/)
-  assert.match(source, /new Date\(timestamp\)\.toISOString\(\)/)
-  assert.doesNotMatch(source, /if \(trimmed\.includes\('T'\)\) return trimmed/)
-})
 
 test('elapsed scheduled tasks and overdue unscheduled tasks both complete automatically while preserving deadlines', () => {
   assert.match(taskViewRules, /export function isOverdueTask\(/)
@@ -1949,3 +1944,15 @@ test('unscheduleTask commits atomically through schedule queue without fence err
   assert.equal(pendingMutations[0].mutationType, 'SCHEDULE_UNSCHEDULE');
   assert.equal(pendingMutations[1].mutationType, 'SCHEDULE_INSERTION');
 });
+
+
+test('deleting a future scheduled task preserves its canonical date instead of converting its display clock', async () => {
+  const scheduledAt = '2099-12-15T09:30:00.000Z'
+  const fixture = await createTaskStoreFixture([{ id: 'future-delete', subjectId: 'subject', title: 'Future',
+    description: '', status: 'TODO', scheduledAt, durationMinutes: 30, version: 1, deletedAt: null }])
+  await fixture.taskStore.loadLocalTasks()
+  await fixture.taskStore.deleteTask('future-delete')
+  const row = await fixture.repository.read('TASK', 'future-delete')
+  assert.equal(row.value.scheduledAt, scheduledAt)
+  assert.ok(row.deletedAt)
+})

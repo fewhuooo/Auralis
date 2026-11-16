@@ -151,11 +151,6 @@ export interface OverviewResultView {
   summaryInputDescriptor?: OverviewInputDescriptor
 }
 
-export interface OverviewConflictMetadata {
-  version: number
-  schemaVersion: number
-}
-
 export type OverviewOutboxState = 'PREPARED' | 'PENDING' | 'INFLIGHT' | 'CONFLICT' | 'ERROR' | 'STALE'
 export type OverviewIntentOrigin = 'LOCAL_WRITE' | 'LEGACY_SEED'
 

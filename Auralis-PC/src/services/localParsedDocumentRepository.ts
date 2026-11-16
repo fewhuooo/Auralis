@@ -6,7 +6,7 @@ import {
   type LocalParsedDocumentRow,
   type LocalSqlDatabase,
 } from '@/services/localSchema'
-import type { LocalStorageLike } from '@/services/legacyLocalData'
+import type { LocalStorageLike } from '@/types/localStorage'
 import {
   type DocumentCacheReceipt,
   isDocumentCacheReceiptV1,

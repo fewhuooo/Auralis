@@ -150,8 +150,6 @@ function mapSafeErrorMessage(errorCode?: string): string {
       return '当前尝试状态不可恢复或已变更。'
     case 'CHAT_SCOPE_CONFLICT':
       return '当前会话已固定资料范围，无法切换范围提问。请开启新会话。'
-    case 'CHAT_SCOPE_LEGACY':
-      return '此历史会话未绑定资料范围，不可继续提问。请开始新会话。'
     default:
       return '生成遇到问题，请重试。'
   }
@@ -177,11 +175,9 @@ export const useChatStore = defineStore('chat', () => {
 
   const activeSession = computed(() => sessions.value.find((session) => session.id === activeSessionId.value) || null)
   // Both PENDING/FAILED user turns and FAILED/INTERRUPTED assistant replies expose retry entry points
-  const isLegacySession = computed(() => activeSession.value?.chatScopeState === 'LEGACY')
   const isBoundSession = computed(() => activeSession.value?.chatScopeState === 'BOUND')
 
   const pendingMessage = computed(() => {
-    if (activeSession.value?.chatScopeState === 'LEGACY') return null
     return (
       [...messages.value]
         .reverse()
@@ -423,10 +419,6 @@ export const useChatStore = defineStore('chat', () => {
     if (detail.chatScopeState) {
       session.chatScopeState = detail.chatScopeState
       session.chatScope = detail.chatScope ?? null
-    }
-    if (session.chatScopeState === 'LEGACY') {
-      lastError.value = '此历史会话未绑定资料范围，不可继续提问。请开始新会话。'
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
     }
     messages.value = (detail.messages || []).map((message) => mapMessage(message, session.id))
 
@@ -820,12 +812,6 @@ export const useChatStore = defineStore('chat', () => {
     const session = activeSession.value
     if (!text || !session || isStreaming.value || activeRun.value?.executionActive || isRecovering.value) return
 
-    if (session.chatScopeState === 'LEGACY') {
-      lastError.value = '此历史会话未绑定资料范围，不可继续提问。请开始新会话。'
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-      return
-    }
-
     const message = appendUser(text, options)
     const requestId = message.clientRequestId!
 
@@ -868,11 +854,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function retryPendingMessage(messageId: string): Promise<void> {
-    if (isLegacySession.value) {
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-      lastError.value = mapSafeErrorMessage(lastErrorCode.value)
-      return
-    }
     const targetMsg = messages.value.find((item) => item.id === messageId)
     if (!targetMsg || isStreaming.value || activeRun.value?.executionActive || isRecovering.value) return
 
@@ -1011,11 +992,6 @@ export const useChatStore = defineStore('chat', () => {
     answer: ChatActivityAnswer,
     block: ChatBlockPart
   ): Promise<void> {
-    if (isLegacySession.value) {
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-      lastError.value = mapSafeErrorMessage(lastErrorCode.value)
-      return
-    }
     if (isStreaming.value || activeRun.value?.executionActive || isRecovering.value || block.state !== 'READY') return
     const session = activeSession.value
     if (!session) return
@@ -1194,7 +1170,6 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId,
     activeSession,
     pendingMessage,
-    isLegacySession,
     isBoundSession,
     messages,
     activityDrafts,

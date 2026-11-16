@@ -334,7 +334,6 @@ function subjectModel(subjectId) {
     icon: 'BookOpen',
     iconKey: 'book',
     version: 0,
-    defaultSubject: false,
     sortKey: null,
     createdAt: '2026-10-08T00:00:00.000Z',
     updatedAt: '2026-10-08T00:00:00.000Z',

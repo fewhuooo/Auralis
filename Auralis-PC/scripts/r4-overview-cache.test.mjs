@@ -159,84 +159,19 @@ test('SQLite overview cache isolates revisions and replaces only the requested p
   } finally { sql.close() }
 })
 
-test('SQLite v12 overview rows and frozen intents migrate to v14 with metadata columns and idempotent round trips', async () => {
+test('reopening the current SQLite schema preserves Markdown overview content', async () => {
   const sql = new TemporarySqlite()
   try {
-    const legacyOutline = '## Limits\n- Sequence limits'
-    const legacySummary = 'Calculus overview'
-    const legacyRequestBody = {
-      baseVersion: 4,
-      clientWriteId: 'legacy-write-12',
-      mode: 'ALL',
-      ingestionRevision: 'rev-12',
-      outlineGeneratedAt: '2026-10-18T10:00:00.000Z',
-      summaryGeneratedAt: '2026-10-18T10:01:00.000Z',
-      result: { schemaVersion: 1, title: 'Legacy overview', outline: [], summary: {} },
-    }
-    const legacyIntent = {
-      clientWriteId: 'legacy-write-12', scopeType: 'FILE', scopeId: 'source-1', revisionKey: 'rev-12',
-      mode: 'ALL', origin: 'LOCAL_WRITE', result: legacyRequestBody.result, inputFingerprint: null,
-      outlineGeneratedAt: legacyRequestBody.outlineGeneratedAt, summaryGeneratedAt: legacyRequestBody.summaryGeneratedAt,
-      state: 'PENDING', requestBody: legacyRequestBody, errorCode: null,
-      createdAt: '2026-10-18T10:02:00.000Z', updatedAt: '2026-10-18T10:02:00.000Z',
-    }
-    await sql.execute('CREATE TABLE local_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
-    await sql.execute('INSERT INTO local_schema_migrations (version,applied_at) VALUES ($1,$2)', [12, '2026-10-18T00:00:00.000Z'])
-    await sql.execute(`CREATE TABLE ai_overview_cache (
-      user_id TEXT NOT NULL, device_id TEXT NOT NULL,
-      scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')),
-      scope_id TEXT NOT NULL, revision_key TEXT NOT NULL CHECK (length(trim(revision_key)) > 0),
-      schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version = 1), title TEXT NOT NULL,
-      outline_json TEXT, summary_json TEXT, outline_generated_at TEXT, summary_generated_at TEXT,
-      input_fingerprint TEXT, status TEXT NOT NULL CHECK (status IN ('READY', 'FAILED')),
-      error_code TEXT, error_detail TEXT, updated_at TEXT NOT NULL,
-      CHECK ((scope_type = 'SUBJECT' AND revision_key = 'subject-v1') OR (scope_type = 'FILE' AND revision_key <> 'subject-v1')),
-      PRIMARY KEY (user_id,device_id,scope_type,scope_id,revision_key)
-    )`)
-    await sql.execute(`INSERT INTO ai_overview_cache
-      (user_id,device_id,scope_type,scope_id,revision_key,schema_version,title,outline_json,summary_json,
-       outline_generated_at,summary_generated_at,input_fingerprint,status,error_code,error_detail,updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-    ['user-a','device-a','FILE','source-1','rev-12',1,'Legacy overview',legacyOutline,legacySummary,
-      legacyRequestBody.outlineGeneratedAt,legacyRequestBody.summaryGeneratedAt,null,'READY',null,null,'2026-10-18T10:02:00.000Z'])
-    await sql.execute(`CREATE TABLE overview_sync_outbox (
-      user_id TEXT NOT NULL, device_id TEXT NOT NULL, client_write_id TEXT NOT NULL,
-      scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')), scope_id TEXT NOT NULL, revision_key TEXT NOT NULL,
-      state TEXT NOT NULL CHECK (state IN ('PREPARED', 'PENDING', 'INFLIGHT', 'CONFLICT', 'ERROR', 'STALE')),
-      intent_json TEXT NOT NULL, request_json TEXT, error_code TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      PRIMARY KEY (user_id,device_id,client_write_id)
-    )`)
-    await sql.execute(`INSERT INTO overview_sync_outbox
-      (user_id,device_id,client_write_id,scope_type,scope_id,revision_key,state,intent_json,request_json,error_code,created_at,updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-    ['user-a','device-a','legacy-write-12','FILE','source-1','rev-12','PENDING',JSON.stringify(legacyIntent),
-      JSON.stringify(legacyRequestBody),null,legacyIntent.createdAt,legacyIntent.updatedAt])
-
     const repository = new OverviewRepository('user-a', 'device-a', { sql })
-    const legacy = await repository.getFileOverview('source-1', 'rev-12')
-    assert.equal(LOCAL_SCHEMA_VERSION, 14)
-    // Legacy schema_version = 1 rows are ignored by fromRow (return null)
-    assert.equal(legacy, null)
-    const migratedColumns = sql.database.prepare('PRAGMA table_info(ai_overview_cache)').all()
-    assert.ok(migratedColumns.some(c => c.name === 'outline_markdown'))
-    assert.ok(migratedColumns.some(c => c.name === 'summary_markdown'))
-    const queued = await repository.listOverviewOutbox()
-    assert.equal(queued.length, 1)
-    assert.equal(queued[0].clientWriteId, 'legacy-write-12')
-    assert.equal(queued[0].state, 'PENDING')
-    assert.deepEqual(queued[0].requestBody, legacyRequestBody)
-
-    await createVersionedLocalSchema(sql)
-    assert.equal(await repository.getFileOverview('source-1', 'rev-12'), null)
-    assert.equal((await repository.listOverviewOutbox()).length, 1)
-    assert.deepEqual(sql.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map(row => row.version), [12, 14])
-
     await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-14', mode: 'ALL',
       response: { schemaVersion: 2, title: 'Markdown round trip', outlineMarkdown, summaryMarkdown } })
-    const roundTrip = await repository.getFileOverview('source-1', 'rev-14')
+    await createVersionedLocalSchema(sql)
+    const reopened = new OverviewRepository('user-a', 'device-a', { sql })
+    const roundTrip = await reopened.getFileOverview('source-1', 'rev-14')
     assert.equal(roundTrip.schemaVersion, 2)
     assert.equal(roundTrip.outlineMarkdown, outlineMarkdown)
     assert.equal(roundTrip.summaryMarkdown, summaryMarkdown)
+    assert.deepEqual(sql.database.prepare('SELECT version FROM local_schema_migrations').all().map(row => row.version), [LOCAL_SCHEMA_VERSION])
   } finally { sql.close() }
 })
 
@@ -359,6 +294,7 @@ test('browser cache rejects structurally invalid records with a stable corruptio
     '{bad json',
     JSON.stringify({ records: 'not-an-array' }),
     JSON.stringify({ records: [], states: 'not-an-array' }),
+    JSON.stringify({ records: [{ schemaVersion: 1 }], states: [] }),
   ]) {
     const storage = createMemoryStorage()
     storage.setItem('auralis:v1:overviews:user-a:device-a', payload)

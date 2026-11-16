@@ -1042,7 +1042,6 @@ test('subject chat restores its bound history and explicitly starts a new unboun
   const boundConversation = {
     id: 'conv-1',
     title: 'Subject history',
-    purpose: 'GENERAL',
     version: 1,
     chatProtocolVersion: 1,
     chatSupported: true,
@@ -1056,7 +1055,7 @@ test('subject chat restores its bound history and explicitly starts a new unboun
   });
   const create = t.mock.method(request, 'post', async (url) => {
     assert.equal(url, '/api/ai/conversations');
-    return { id: 'conv-2', purpose: 'GENERAL', chatScopeState: 'UNBOUND' };
+    return { id: 'conv-2', chatScopeState: 'UNBOUND' };
   });
 
   const chat = useChatStore();

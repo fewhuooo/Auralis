@@ -90,7 +90,6 @@ async function createFixture({ includeSubject = true, subjectName = '原学科�
       createdAt,
       updatedAt: createdAt,
       deletedAt: null,
-      defaultSubject: false,
     }, { version: baseVersion, syncStatus: 'synced' })
   }
 
@@ -478,3 +477,40 @@ test('the Subject modal disables actions and blocks ModalShell close requests wh
   guardedClose()
   assert.deepEqual(events, [], 'Escape/backdrop, cancel, and save callbacks must not emit while saving')
 })
+
+
+for (const switchAccount of [false, true]) {
+  test(`SubjectHall repository statistics ${switchAccount ? 'discard a late previous account result' : 'count current canonical knowledge records'}`, async (t) => {
+    const { createMemoryStorage } = await import('../src/services/localRepository.ts')
+    const previousStorage = globalThis.localStorage
+    globalThis.localStorage = createMemoryStorage()
+    t.after(() => { if (previousStorage) globalThis.localStorage = previousStorage; else delete globalThis.localStorage })
+    const fixture = await createFixture({})
+    const authStore = useAuthStore()
+    authStore.tokens = { accessToken: 'test-access', refreshToken: 'test-refresh' }
+    authStore.authStatus = 'authenticated'
+    await fixture.repo.upsert('KNOWLEDGE_BLOCK', 'hall-block', { id: 'hall-block', subjectId: fixture.subjectId },
+      { version: 1, syncStatus: 'synced' })
+    const subjectMasteryMap = ref({ retained: { total: 42 } })
+    const load = setupCallback(hallScript, 'loadSubjectMasteryData', {
+      subjectStore: fixture.subjectStore, authStore, subjectMasteryMap,
+      isLoadingMastery: false, masteryPending: false, masteryGeneration: 0, disposed: false,
+      defaultMasteryStats: { masteredPercent: 0, pendingPct: 0, reviewingPct: 0, masteredPct: 0,
+        pendingCount: 0, reviewingCount: 0, masteredCount: 0, total: 0 },
+    })
+    const originalList = fixture.repo.list.bind(fixture.repo)
+    fixture.repo.list = async (...args) => {
+      const rows = await originalList(...args)
+      if (switchAccount) authStore.serverDeviceId = 'another-device'
+      return rows
+    }
+    try {
+      await load()
+      if (switchAccount) assert.deepEqual(subjectMasteryMap.value, { retained: { total: 42 } })
+      else {
+        assert.equal(subjectMasteryMap.value[fixture.subjectId].total, 1)
+        assert.equal(subjectMasteryMap.value[fixture.subjectId].pendingCount, 1)
+      }
+    } finally { fixture.repo.list = originalList }
+  })
+}

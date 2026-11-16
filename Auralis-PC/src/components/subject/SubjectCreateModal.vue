@@ -15,10 +15,9 @@
           class="preview-icon"
           style="background: #7D9372; color: #fff"
         >
-          <ElIcon v-if="isSubjectIconKey(form.icon) || !getLegacySubjectIcon(form.icon)" :size="28">
+          <ElIcon :size="28">
             <component :is="getSubjectIconComponent(form.icon)" />
           </ElIcon>
-          <span v-else>{{ getLegacySubjectIcon(form.icon) }}</span>
         </div>
         <div class="preview-info">
           <span class="preview-name">{{ form.name || t({ 'zh-CN': '学科名称预览', en: 'Subject name preview', ja: '科目名のプレビュー' }) }}</span>
@@ -89,9 +88,7 @@ import { ref, watch } from 'vue'
 import { ElIcon } from 'element-plus'
 import ModalShell from '@/components/modal/ModalShell.vue'
 import {
-  getLegacySubjectIcon,
   getSubjectIconComponent,
-  isSubjectIconKey,
   subjectIconOptions
 } from '@/utils/subjectIcon'
 

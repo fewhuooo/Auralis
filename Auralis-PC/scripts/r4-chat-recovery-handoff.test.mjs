@@ -378,7 +378,6 @@ test('Chat reading-scope handoff: first turn binds scope, ordinary later turns o
   ]
   chatStore.activeSessionId = 'session-scope-test'
 
-  assert.equal(chatStore.isLegacySession, false)
   assert.equal(chatStore.isBoundSession, false)
 
   let lastSentBody = null
@@ -543,71 +542,6 @@ test('Chat reading-scope handoff: HTTP 409 CHAT_SCOPE_CONFLICT cleans optimistic
   }
 })
 
-test('Chat reading-scope handoff: LEGACY session blocks turns, retry, and activity submission', async () => {
-  setActivePinia(createPinia())
-  const authStore = useAuthStore()
-  authStore.user = { id: 'user-scope-3', username: 'scopeuser3', displayName: 'Scope User 3', version: 1, hasAvatar: false }
-
-  const chatStore = useChatStore()
-  chatStore.sessions = [
-    {
-      id: 'session-legacy-1',
-      remoteId: 'remote-legacy-conv',
-      title: '历史会话',
-      version: 1,
-      chatProtocolVersion: 1,
-      chatSupported: true,
-      chatScopeState: 'LEGACY',
-      chatScope: null,
-    },
-  ]
-  chatStore.activeSessionId = 'session-legacy-1'
-  assert.equal(chatStore.isLegacySession, true)
-
-  let fetchCalled = false
-  const origFetch = globalThis.fetch
-  try {
-    globalThis.fetch = async () => {
-      fetchCalled = true
-      throw new Error('Fetch must not be called for LEGACY session')
-    }
-
-    await chatStore.sendMessage('Question on legacy session', {
-      subjectId: 'sub-legacy',
-      retrievalMode: 'SUBJECT',
-    })
-
-    assert.equal(fetchCalled, false)
-    assert.equal(chatStore.lastErrorCode, 'CHAT_SCOPE_LEGACY')
-    assert.equal(chatStore.lastError, '此历史会话未绑定资料范围，不可继续提问。请开始新会话。')
-
-    // Failed message in legacy session cannot be retried via pendingMessage
-    chatStore.messages = [
-      {
-        id: 'legacy-msg-failed',
-        conversationId: 'session-legacy-1',
-        role: 'USER',
-        status: 'FAILED',
-        runId: 'legacy-run',
-        content: 'Historical failed message',
-        parts: [],
-      },
-    ]
-    assert.equal(chatStore.pendingMessage, null)
-    await chatStore.retryPendingMessage('legacy-msg-failed')
-    await chatStore.submitActivity('legacy-activity', 'answer', {
-      id: 'legacy-block', componentId: 'legacy-block', kind: 'block', component: 'question',
-      state: 'READY', questionId: 'legacy-activity', meta: { question: 'Historical question' }, items: [],
-    })
-    assert.equal(fetchCalled, false)
-    assert.equal(chatStore.messages.length, 1)
-    assert.equal(chatStore.messages[0].status, 'FAILED')
-    assert.equal(chatStore.lastErrorCode, 'CHAT_SCOPE_LEGACY')
-  } finally {
-    globalThis.fetch = origFetch
-  }
-})
-
 test('Chat reading-scope handoff: workspace file switching does not mutate locked conversation options or trigger scope conflict', async () => {
   setActivePinia(createPinia())
   const authStore = useAuthStore()
@@ -645,9 +579,6 @@ test('Chat reading-scope handoff: workspace file switching does not mutate locke
 
   // The helper reproducing aiChatReferenceOptions when boundScope is active:
   const getAiChatReferenceOptions = () => {
-    if (chatStore.isLegacySession) {
-      return { subjectId: 'sub-locked', retrievalMode: 'SUBJECT' }
-    }
     const bound = chatStore.activeSession?.chatScope
     if (chatStore.isBoundSession && bound) {
       if (bound.retrievalMode === 'SUBJECT') {
@@ -670,7 +601,6 @@ test('Chat reading-scope handoff: workspace file switching does not mutate locke
   }
 
   const getAiSourceSummaryText = () => {
-    if (chatStore.isLegacySession) return '未绑定资料'
     const bound = chatStore.activeSession?.chatScope
     if (chatStore.isBoundSession && bound) {
       if (bound.retrievalMode === 'SUBJECT') return '全学科资料'
@@ -723,24 +653,7 @@ test('Chat reading-scope handoff: workspace file switching does not mutate locke
     globalThis.fetch = origFetch
   }
 
-  // 5. In LEGACY session, switching workspace file does not leak into summary text
-  chatStore.sessions = [
-    {
-      id: 'session-legacy-2',
-      remoteId: 'remote-legacy-2',
-      title: 'Legacy Session',
-      version: 1,
-      chatProtocolVersion: 1,
-      chatSupported: true,
-      chatScopeState: 'LEGACY',
-      chatScope: null,
-    },
-  ]
-  chatStore.activeSessionId = 'session-legacy-2'
-  assert.equal(chatStore.isLegacySession, true)
-  selectedFileId = 'file-2-workspace'
-  assert.equal(getAiSourceSummaryText(), '未绑定资料', 'Legacy session summary text must remain fixed')
-  assert.equal(getAiChatReferenceOptions().sourceId, undefined, 'Legacy session options must not leak workspace sourceId')
+
 })
 
 for (const scenario of ['bound turn', 'first scoped turn', 'activity submission']) {

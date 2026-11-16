@@ -43,8 +43,6 @@ export const useSubjectStore = defineStore('subject', () => {
 
   function replaceSubjects(models: Subject[]): void {
     const sorted = [...models].sort((a, b) => {
-      if (a.defaultSubject && !b.defaultSubject) return -1
-      if (!a.defaultSubject && b.defaultSubject) return 1
       if (a.sortKey && b.sortKey) {
         if (a.sortKey < b.sortKey) return -1
         if (a.sortKey > b.sortKey) return 1

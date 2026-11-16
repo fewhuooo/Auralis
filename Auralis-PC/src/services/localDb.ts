@@ -46,12 +46,10 @@ export const localDb = {
 export async function getLocalRepository(userId: string, serverDeviceId: string): Promise<LocalRepository> {
   const database = await localDb.init();
   if (database === 'localstorage') {
-    const repository = localDatabaseRuntime.getOrCreate(
+    return localDatabaseRuntime.getOrCreate(
       `repository:${userId}:${serverDeviceId}`,
       () => createLocalRepository(userId, serverDeviceId)
     );
-    await repository.backupLegacyData();
-    return repository;
   }
   return localDatabaseRuntime.getOrCreate(
     `repository:${userId}:${serverDeviceId}`,

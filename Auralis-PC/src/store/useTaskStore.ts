@@ -68,7 +68,6 @@ export interface TaskInput {
   sortKey?: string
   version?: number
   subject?: string
-  startTime?: string
   position?: string
 }
 
@@ -78,49 +77,12 @@ export interface TimeSlot {
   isCurrent: boolean
 }
 
-function statusFromLegacy(value: TaskInput['status'], hasSchedule: boolean): TaskStatus {
+function toTaskStatus(value: TaskInput['status']): TaskStatus {
   if (value === 'TODO' || value === 'IN_PROGRESS' || value === 'DONE' || value === 'CANCELLED') return value
   if (value === 'completed') return 'DONE'
   if (value === 'learning') return 'IN_PROGRESS'
   if (value === 'cancelled') return 'CANCELLED'
-  if (value === 'scheduled' || hasSchedule) return 'TODO'
   return 'TODO'
-}
-
-function dateForDay(dayOrDateKey: string, time: string): Date {
-  const [hours, minutes] = time.split(':').map(Number)
-  const h = Number.isFinite(hours) ? hours : 9
-  const m = Number.isFinite(minutes) ? minutes : 0
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dayOrDateKey.trim())) {
-    const [y, mon, d] = dayOrDateKey.trim().split('-').map(Number)
-    return new Date(y, mon - 1, d, h, m, 0, 0)
-  }
-
-  const day = (DAY_CODES as readonly string[]).includes(dayOrDateKey) ? (dayOrDateKey as DayCode) : getTodayDayCode()
-  const now = new Date()
-  const currentDay = now.getDay()
-  const targetDay = DAY_CODES.indexOf(day)
-  const delta = targetDay < 0 ? 0 : targetDay - currentDay
-  const date = new Date(now)
-  date.setDate(now.getDate() + delta)
-  date.setHours(h, m, 0, 0)
-  return date
-}
-
-function normalizeScheduledAtForApi(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
-  if (!value?.trim()) return undefined
-  const trimmed = value.trim()
-  const timestamp = Date.parse(trimmed)
-  if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString()
-  const parts = trimmed.split(/\s+/)
-  const day = (DAY_CODES as readonly string[]).includes(parts[0]) ? parts[0] as DayCode : fallbackDay
-  const time = parts.length > 1 ? parts[1] : parts[0]
-  return dateForDay(day, time).toISOString()
-}
-
-function scheduledAtFromLegacy(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
-  return normalizeScheduledAtForApi(value, fallbackDay)
 }
 
 function dayCodeForScheduledAt(value?: string): DayCode | undefined {
@@ -161,11 +123,9 @@ function normalizeDueAtForUserInput(value?: string | null): string | undefined {
   return new Date(timestamp).toISOString()
 }
 
-function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
-  const scheduledAt = input.startTime !== undefined
-    ? scheduledAtFromLegacy(input.startTime, fallbackDay)
-    : input.scheduledAt
-  const status = statusFromLegacy(input.status, Boolean(scheduledAt))
+function toTaskModel(input: TaskInput): TaskModel {
+  const scheduledAt = input.scheduledAt
+  const status = toTaskStatus(input.status)
   const rawDueAt = input.dueAt
   return {
     id: input.id || uuidv7(),
@@ -228,7 +188,7 @@ function createPayload(model: TaskModel): TaskCreateRequest {
     title: model.title,
     description: model.description || undefined,
     status: model.status,
-    scheduledAt: normalizeScheduledAtForApi(model.scheduledAt),
+    scheduledAt: model.scheduledAt,
     dueAt: model.dueAt,
     durationMinutes: model.durationMinutes,
     sortKey: model.sortKey,
@@ -535,7 +495,7 @@ export const useTaskStore = defineStore('task', () => {
       const model = toTaskModel({
         ...input,
         dueAt: normalizeDueAtForUserInput(rawDueAt),
-      }, (selectedDay.value as DayCode) || getTodayDayCode())
+      })
       if (!model.subjectId) throw new Error('Task requires a subjectId')
       const payload = createPayload(model)
       await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
@@ -587,7 +547,7 @@ export const useTaskStore = defineStore('task', () => {
       subjectId: task.subjectId,
       title: task.title,
       description: task.description,
-      status: statusFromLegacy(task.status, Boolean(task.scheduledAt)),
+      status: toTaskStatus(task.status),
       scheduledAt: task.scheduledAt ?? undefined,
       dueAt: task.dueAt,
       durationMinutes: task.durationMinutes,
@@ -688,7 +648,7 @@ export const useTaskStore = defineStore('task', () => {
       if (newStatus !== 'completed' && isScheduledCompletionLocked(current)) {
         throw new Error('已结束的排期任务不能取消完成状态')
       }
-      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt, startTime: undefined })
+      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
       model.version = current.version
       await updateTaskModel(model)
     })
@@ -709,7 +669,6 @@ export const useTaskStore = defineStore('task', () => {
         durationMinutes: changes.durationMinutes ?? current.durationMinutes,
         scheduledAt: current.scheduledAt,
         status: current.status,
-        startTime: undefined,
       })
       model.version = current.version
       await updateTaskModel(model)

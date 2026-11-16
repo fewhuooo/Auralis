@@ -10,7 +10,7 @@ import {
   type LocalSourceDraftRow,
   type LocalSqlDatabase,
 } from '@/services/localSchema'
-import type { LocalStorageLike } from '@/services/legacyLocalData'
+import type { LocalStorageLike } from '@/types/localStorage'
 import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import {
   computeLocalAssetRelativePath,

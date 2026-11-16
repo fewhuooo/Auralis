@@ -33,11 +33,9 @@
           <span v-if="selectedSubjectId === subj.id" class="active-dot" :style="{ background: SUBJECT_THEME_COLOR }"></span>
           <span class="subject-icon">
             <component
-              v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
               :is="getSubjectIconComponent(subj.icon)"
               style="width: 1em; height: 1em;"
             />
-            <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
           </span>
           <span class="subject-name">{{ subj.name }}</span>
           <span class="subject-count">{{ subj.blockCount || 0 }}</span>
@@ -308,7 +306,7 @@ import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task, type TaskPresentationStatus, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
 import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, isCompletedTask, isScheduledCompletionLocked, comparePendingTasks, parseDueTimestamp } from '@/services/taskViewRules'
 import { IconLayoutGrid, IconHistory, IconCircleCheck, IconChevronRight, IconX, IconPlus, IconArrowRight, IconArrowUpRight } from '@tabler/icons-vue'
-import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import { getSubjectIconComponent } from '@/utils/subjectIcon'
 import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
 import KnowledgeBlockViewDialog from '@/components/knowledge/KnowledgeBlockViewDialog.vue'
 

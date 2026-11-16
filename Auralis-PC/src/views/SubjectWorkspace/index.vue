@@ -56,10 +56,9 @@
       </div>
       <div class="tier1-bottom">
         <div class="subject-mini-icon" :title="activeSubject?.name">
-          <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="24">
+          <ElIcon :size="24">
             <component :is="getSubjectIconComponent(activeSubject?.icon)" />
           </ElIcon>
-          <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
         </div>
       </div>
     </nav>
@@ -537,10 +536,9 @@
           <div v-else key="onboarding-view" class="onboarding-workspace">
             <div class="onboarding-header">
               <div class="onboarding-emoji">
-                <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="60">
+                <ElIcon :size="60">
                   <component :is="getSubjectIconComponent(activeSubject?.icon)" />
                 </ElIcon>
-                <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
               </div>
               <h2 class="onboarding-title">{{ t(messages.workspaceWelcome, { name: activeSubject?.name ?? '' }) }}</h2>
               <p class="onboarding-subtitle">{{ activeSubject?.description || t(messages.workspaceDescription) }}</p>
@@ -691,8 +689,7 @@
                 <ChatContentRenderer
                   :parts="msg.parts"
                   :streaming="false"
-                  :busy="!canSendWorkspaceChat && !chatStore.isLegacySession"
-                  :read-only="chatStore.isLegacySession"
+                  :busy="!canSendWorkspaceChat"
                   @submit="submitChatActivity"
                 />
                 <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
@@ -770,7 +767,7 @@
         <div v-else-if="chatStore.lastError" class="chat-error" role="alert">
           <span class="chat-error-message">{{ chatStore.lastError }}</span>
           <button
-            v-if="chatStore.lastErrorCode === 'CHAT_SCOPE_CONFLICT' || chatStore.lastErrorCode === 'CHAT_SCOPE_LEGACY'"
+            v-if="chatStore.lastErrorCode === 'CHAT_SCOPE_CONFLICT'"
             type="button"
             class="chat-error-retry"
             @click="clearChat"
@@ -830,8 +827,7 @@
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            :placeholder="chatStore.isLegacySession ? t(messages.legacyChatPlaceholder) : (quotedSelection ? t(messages.quotedChatPlaceholder) : t(messages.chatPlaceholder))"
-            :disabled="chatStore.isLegacySession"
+            :placeholder="quotedSelection ? t(messages.quotedChatPlaceholder) : t(messages.chatPlaceholder)"
             rows="1"
             @keydown.enter.exact="handleChatKeydown"
             @compositionstart="handleCompositionStart"
@@ -841,10 +837,10 @@
           <button
             class="ai-send-btn"
             :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
-            :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
+            :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
-            :title="chatStore.isLegacySession ? t(messages.legacyChatDisabled) : (chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage)))"
-            :aria-label="chatStore.isLegacySession ? t(messages.legacyChatDisabled) : (chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage)))"
+            :title="chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage))"
+            :aria-label="chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage))"
           >
             <IconX v-if="isAiStreaming" :size="16" :stroke-width="2" />
             <IconArrowUp v-else :size="16" :stroke-width="2" />
@@ -1002,7 +998,7 @@ import { autoSyncEnabled } from '@/services/desktopPreferences'
 import type { FileOverviewRecord, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import { shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
 import type { KnowledgeBlockModel, SourceFileModel } from '@/services/domainMappers'
-import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import { getSubjectIconComponent } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
 
 const route = useRoute()
@@ -1027,7 +1023,7 @@ const {
   pendingMessage: storedPendingMessage,
 } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
-const isScopeLocked = computed(() => Boolean(chatStore.isBoundSession || chatStore.isLegacySession))
+const isScopeLocked = computed(() => Boolean(chatStore.isBoundSession))
 const boundScope = computed(() => {
   if (isScopeLocked.value && chatStore.activeSession?.chatScope) {
     return chatStore.activeSession.chatScope
@@ -2386,7 +2382,6 @@ function handleThinkingComplete() {
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const showProcessingRequired = computed(() => {
-  if (chatStore.isLegacySession) return false
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   const sourceIds = bound
     ? (bound.retrievalMode === 'AUTO'
@@ -2491,7 +2486,6 @@ watch(
 )
 
 const isAllAiSourcesSelected = computed(() => {
-  if (chatStore.isLegacySession) return false
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     return bound.retrievalMode === 'SUBJECT'
@@ -2500,7 +2494,6 @@ const isAllAiSourcesSelected = computed(() => {
 })
 
 const isAiSourceSelected = (id: string) => {
-  if (chatStore.isLegacySession) return false
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2521,7 +2514,6 @@ const isAiSourceSelected = (id: string) => {
 }
 
 const aiSourceSelectedCount = computed(() => {
-  if (chatStore.isLegacySession) return 0
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2629,9 +2621,6 @@ const selectAllAiSources = () => {
 }
 
 const aiChatReferenceOptions = () => {
-  if (chatStore.isLegacySession) {
-    return { subjectId: subjectId.value, retrievalMode: 'SUBJECT' as const }
-  }
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2679,7 +2668,6 @@ const aiChatReferenceOptions = () => {
 }
 
 const aiSourceSummaryText = computed(() => {
-  if (chatStore.isLegacySession) return t(messages.noReferences)
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') return t(messages.allMaterials)
@@ -2706,7 +2694,6 @@ const aiSourceSummaryText = computed(() => {
 })
 
 const aiSourceSummaryTitle = computed(() => {
-  if (chatStore.isLegacySession) return t(messages.legacyChatDisabled)
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -3138,7 +3125,7 @@ const canUseWorkspaceChat = computed(() => workspaceChatSession.value !== null
   && workspaceChatSession.value.subjectId === subjectId.value
   && workspaceChatSession.value.sessionId === chatStore.activeSession?.id)
 const canSendWorkspaceChat = computed(() => canUseWorkspaceChat.value
-  && !chatStore.isLegacySession && !isAiStreaming.value && !chatStore.activeRun?.executionActive && !chatStore.isRecovering)
+  && !isAiStreaming.value && !chatStore.activeRun?.executionActive && !chatStore.isRecovering)
 
 const startFreshChatSession = (fallbackTitle = '学科对话', createNew = false) => {
   const id = subjectId.value

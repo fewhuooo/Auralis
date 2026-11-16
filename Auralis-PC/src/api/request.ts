@@ -115,7 +115,7 @@ function invalidRefreshSession(
   const scopeKeys = new Set(Array.from(flight.scopes)
     .filter((scope) => scope.isCurrent())
     .map((scope) => scope.key))
-  authStore.requireReauthentication(message)
+  authStore.requireReauthentication()
 
   const failedGeneration = authStore.loginGeneration
   return new RefreshAuthenticationRequiredError(scopeKeys, () => authStore.loginGeneration === failedGeneration

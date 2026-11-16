@@ -9,7 +9,6 @@ export type SubjectView = Pick<
   name?: string
   iconKey?: string
   sortKey?: string
-  defaultSubject?: boolean
 }
 
 export interface SubjectCreateRequest {

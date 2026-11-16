@@ -3,7 +3,6 @@ import type {
   FileOverviewRecord, OverviewCacheRecord, OverviewMode,
   OverviewResultCommand, OverviewResultView, OverviewSourceManifestEntry, OverviewSyncState,
   OverviewSubjectStatusItem, OverviewSubjectStatusesResponse,
-  OverviewConflictMetadata,
 } from '@/types/overview'
 import { computeSubjectInputFingerprint, isOverviewGenerationEditConflict, type OverviewRepository, type OverviewScopeFenceToken } from './overviewRepository.ts'
 
@@ -282,10 +281,6 @@ export class OverviewResultsSyncService {
     for (const intent of outbox) {
       if (!options.isCurrent()) return
       if (intent.state === 'STALE') continue
-      if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
-        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
-        continue
-      }
       if (intent.scopeType === 'FILE') {
         if (readyRevisions.get(intent.scopeId) === intent.revisionKey) continue
         if (!currentReadyRevisions && options.getCurrentSources) {
@@ -431,10 +426,6 @@ export class OverviewResultsSyncService {
     for (const intent of intents) {
       if (!await this.isSourceCurrent(source, options)) return
       if (intent.state === 'CONFLICT' || intent.state === 'ERROR') return
-      if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
-        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
-        continue
-      }
       let requestBody = intent.requestBody
       if (!requestBody) {
         const result = {
@@ -471,24 +462,6 @@ export class OverviewResultsSyncService {
         await this.repository.setOverviewIntentState(intent.clientWriteId, status, status === 'CONFLICT' ? 'OVERVIEW_VERSION_CONFLICT'
           : status === 'STALE' ? 'OVERVIEW_SOURCE_STALE' : status === 'PENDING' ? 'OVERVIEW_TRANSPORT_RETRY' : 'OVERVIEW_SYNC_FAILED')
         if (status === 'CONFLICT' && this.repository.isScopeFenceTokenCurrent(fenceToken) && await this.isSourceCurrent(source, options)) {
-          const problem = error instanceof ApiProblemError ? error.problem : null
-          const currentMeta = (problem as unknown as { current?: OverviewConflictMetadata })?.current
-          if (currentMeta && currentMeta.schemaVersion === 1) {
-            await this.repository.saveOverviewSyncState({
-              scopeType: 'FILE',
-              scopeId: source.id,
-              revisionKey: revision,
-              version: currentMeta.version,
-              outlineVersion: null,
-              summaryVersion: null,
-              outlineSourceManifest: null,
-              summarySourceManifest: null,
-              outlineInputFingerprint: null,
-              summaryInputFingerprint: null,
-              updatedAt: new Date().toISOString(),
-            })
-            return
-          }
           const remote = await this.api.getFile(source.id, revision).catch(() => null)
           if (remote && await this.isSourceCurrent(source, options) && matchesFileView(remote, source)) {
             await this.repository.installRemoteOverview(await remoteCacheRecord(remote,'FILE',source.id,revision), stateFromView(remote,'FILE',source.id,revision),false,fenceToken)
@@ -616,10 +589,6 @@ export class OverviewResultsSyncService {
     for (const intent of intents) {
       if (!await this.isSubjectCurrent(subjectId, options) || !await this.subjectInputsCurrent(subjectId, sources, options)) return
       if (intent.state === 'CONFLICT' || intent.state === 'ERROR') return
-      if ((intent.result as unknown as { schemaVersion?: number })?.schemaVersion === 1) {
-        await this.repository.setOverviewIntentState(intent.clientWriteId, 'STALE', 'OVERVIEW_LEGACY_SCHEMA_V1')
-        continue
-      }
       let requestBody = intent.requestBody
       if (!requestBody) {
         const result = {
@@ -674,24 +643,6 @@ export class OverviewResultsSyncService {
           : status === 'PENDING' ? 'OVERVIEW_TRANSPORT_RETRY' : 'OVERVIEW_SYNC_FAILED')
         if (status === 'CONFLICT' && this.repository.isScopeFenceTokenCurrent(fenceToken) && await this.isSubjectCurrent(subjectId, options)
           && await this.subjectInputsCurrent(subjectId, sources, options)) {
-          const problem = error instanceof ApiProblemError ? error.problem : null
-          const currentMeta = (problem as unknown as { current?: OverviewConflictMetadata })?.current
-          if (currentMeta && currentMeta.schemaVersion === 1) {
-            await this.repository.saveOverviewSyncState({
-              scopeType: 'SUBJECT',
-              scopeId: subjectId,
-              revisionKey: 'subject-v1',
-              version: currentMeta.version,
-              outlineVersion: null,
-              summaryVersion: null,
-              outlineSourceManifest: null,
-              summarySourceManifest: null,
-              outlineInputFingerprint: null,
-              summaryInputFingerprint: null,
-              updatedAt: new Date().toISOString(),
-            })
-            return
-          }
           const remote = await this.api.getSubject(subjectId).catch(() => null)
           if (remote && await this.isSubjectCurrent(subjectId, options) && await this.subjectInputsCurrent(subjectId, sources, options)
             && matchesSubjectView(remote, subjectId)) {

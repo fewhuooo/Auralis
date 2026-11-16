@@ -18,12 +18,7 @@ import {
   type LocalResourceRow,
   type LocalSqlDatabase,
 } from '@/services/localSchema'
-import {
-  backupLegacyUnassignedData,
-  getLegacyUnassignedBackup,
-  type LegacyUnassignedBackup,
-  type LocalStorageLike,
-} from '@/services/legacyLocalData'
+import type { LocalStorageLike } from '@/types/localStorage'
 import { DOCUMENT_JOB_PHASES, type CreateDocumentProcessingJobInput, type DocumentJobPhase, type DocumentJobTransitionOptions, type DocumentProcessingJob } from '@/types/documentProcessing'
 import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import { parseDueTimestamp } from '@/services/taskViewRules'
@@ -1965,13 +1960,6 @@ export class LocalRepository {
     })
   }
 
-  async backupLegacyData(): Promise<LegacyUnassignedBackup | null> {
-    return backupLegacyUnassignedData(this.storage, this.now)
-  }
-
-  getLegacyBackup(): LegacyUnassignedBackup | null {
-    return getLegacyUnassignedBackup(this.storage)
-  }
 }
 
 const DOCUMENT_JOB_TRANSITIONS: Record<DocumentJobPhase, readonly DocumentJobPhase[]> = {
@@ -2005,8 +1993,8 @@ function documentJobStorage(): LocalStorageLike {
   return createMemoryStorage()
 }
 
-function documentJobKey(userId: string, serverDeviceId: string, version = 5): string {
-  return `auralis:v${version}:document-jobs:${encodePart(userId)}:${encodePart(serverDeviceId)}`
+function documentJobKey(userId: string, serverDeviceId: string): string {
+  return `auralis:v5:document-jobs:${encodePart(userId)}:${encodePart(serverDeviceId)}`
 }
 
 export class DocumentProcessingJobRepository {
@@ -2039,16 +2027,7 @@ export class DocumentProcessingJobRepository {
 
   private readBrowserJobs(): DocumentProcessingJob[] {
     const currentKey = documentJobKey(this.userId, this.serverDeviceId)
-    let raw = this.storage.getItem(currentKey)
-    let migrated = false
-    if (!raw) {
-      raw = this.storage.getItem(documentJobKey(this.userId, this.serverDeviceId, 4))
-      migrated = Boolean(raw)
-    }
-    if (!raw) {
-      raw = this.storage.getItem(documentJobKey(this.userId, this.serverDeviceId, 3))
-      migrated = Boolean(raw)
-    }
+    const raw = this.storage.getItem(currentKey)
     if (!raw) return []
     try {
       const jobs = JSON.parse(raw) as unknown
@@ -2059,7 +2038,6 @@ export class DocumentProcessingJobRepository {
         checkpoint: normalizeDocumentJobCheckpoint((job as Record<string, unknown>).checkpoint),
         payloadReceipt: sanitizeDocumentCacheReceipt((job as Record<string, unknown>).payloadReceipt) ?? null,
       })) as DocumentProcessingJob[]
-      if (migrated) this.storage.setItem(currentKey, JSON.stringify(normalized))
       return normalized
     } catch {
       return []
