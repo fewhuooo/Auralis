@@ -411,7 +411,7 @@
             </scroll-view>
             <view class="form-footer">
               <view class="btn secondary-btn" @click="showCreateBlock = false"><text>取消</text></view>
-              <view class="btn primary-btn" @click="handleCreateBlock"><text>创建</text></view>
+              <view class="btn primary-btn" @click="handleCreateBlock"><text>{{ creatingBlock ? '创建中…' : '创建' }}</text></view>
             </view>
           </view>
         </view>
@@ -725,6 +725,8 @@ const showSummarySidePanel = ref(false)
 const activeFileId = ref<string | null>(null)
 const activeBlockId = ref<string | null>(null)
 const showCreateBlock = ref(false)
+const creatingBlock = ref(false)
+let workspaceMounted = true
 
 watch(activePanel, (newVal) => {
   if (newVal !== 'files') {
@@ -1421,29 +1423,48 @@ const handleDeleteFile = async (id: string) => {
 }
 
 const handleCreateBlock = async () => {
-  if (!newBlock.value.title.trim()) {
+  if (creatingBlock.value) return
+  const draft = { ...newBlock.value }
+  if (!draft.title.trim()) {
     uni.showToast({ title: '请输入标题', icon: 'none' })
     return
   }
-  const subject = activeSubject.value
-  const created = await blockStore.addBlock({
-    subject: subject?.name || '未分类',
-    title: newBlock.value.title,
-    preview: newBlock.value.preview,
-    source: newBlock.value.source,
-    color: 'rgba(181,196,177,0.4)',
-    subjectId: subjectId.value,
-    difficulty: newBlock.value.difficulty,
-    mastery: 0
-  })
-  showCreateBlock.value = false
-  newBlock.value = { title: '', preview: '', source: '', difficulty: 'medium' }
-  if (created?.id) {
-    activeBlockId.value = created.id
-    activeFileId.value = null
-    activePanel.value = 'blocks'
+  const id = uuidv7()
+  const targetSubjectId = subjectId.value
+  const panel = activePanel.value
+  const generation = authStore.getLoginGeneration()
+  const userId = authStore.user?.id
+  const deviceId = authStore.serverDeviceId
+  const isCurrent = () => workspaceMounted && authStore.getLoginGeneration() === generation
+    && authStore.user?.id === userId && authStore.serverDeviceId === deviceId
+    && subjectId.value === targetSubjectId
+  creatingBlock.value = true
+  try {
+    await blockStore.addBlock({
+      ...draft,
+      id,
+      subject: activeSubject.value?.name || '未分类',
+      color: 'rgba(181,196,177,0.4)',
+      subjectId: targetSubjectId,
+      mastery: 0,
+    })
+    if (!isCurrent()) return
+    if (showCreateBlock.value && activePanel.value === panel
+      && newBlock.value.title === draft.title && newBlock.value.preview === draft.preview
+      && newBlock.value.source === draft.source && newBlock.value.difficulty === draft.difficulty) {
+      showCreateBlock.value = false
+      newBlock.value = { title: '', preview: '', source: '', difficulty: 'medium' }
+      activeBlockId.value = id
+      activeFileId.value = null
+      activePanel.value = 'blocks'
+    }
+    uni.showToast({ title: '知识块已创建', icon: 'success' })
+  } catch (error) {
+    console.error('[TabletWorkspace] Failed to create knowledge block:', error)
+    if (isCurrent()) uni.showToast({ title: '知识块创建失败，请重试', icon: 'none' })
+  } finally {
+    creatingBlock.value = false
   }
-  uni.showToast({ title: '知识块已创建', icon: 'success' })
 }
 
 const editBlock = (block: KnowledgeBlock) => {
@@ -1978,6 +1999,7 @@ onMounted(async () => {
 
 // 清理 window 事件监听，防止组件卸载后内存泄漏
 onUnmounted(() => {
+  workspaceMounted = false
   if (typeof window !== 'undefined') {
     window.removeEventListener('mousemove', onAiMouseMove)
     window.removeEventListener('mouseup', onAiMouseUp)

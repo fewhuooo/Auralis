@@ -18,13 +18,12 @@
           </view>
 
           <!-- Card Stack Main Container -->
-          <view class="card-stack-container">
+          <view v-if="activeCard || (!saving && !saveError)" class="card-stack-container">
             <view v-if="activeCard" class="card-stack">
               
               <!-- Card Stack Background Layer 2 (Next + 1) -->
               <view v-if="sessionQueue[currentIndex + 2]" class="stack-card card-layer-3">
                 <view class="dummy-card-face">
-                  <text class="dummy-subject">{{ sessionQueue[currentIndex + 2].subject }}</text>
                   <view class="dummy-body"></view>
                 </view>
               </view>
@@ -32,7 +31,6 @@
               <!-- Card Stack Background Layer 1 (Next) -->
               <view v-if="sessionQueue[currentIndex + 1]" class="stack-card card-layer-2">
                 <view class="dummy-card-face">
-                  <text class="dummy-subject">{{ sessionQueue[currentIndex + 1].subject }}</text>
                   <view class="dummy-body"></view>
                 </view>
               </view>
@@ -49,20 +47,19 @@
                   :front="activeCard.title"
                   :back="activeCard.preview"
                   :subject="activeCard.subject"
-                  :color="activeCard.color"
                   v-model:flipped="isFlipped"
                 />
 
                 <!-- Gesture Indicators (Stamps) -->
                 <view class="stamp-container">
                   <!-- Mastered Stamp (Swipe Up) -->
-                  <view class="stamp stamp-mastered" :style="{ opacity: stampOpacity.up }">掌握</view>
+                  <view class="stamp stamp-mastered" :style="{ opacity: stampOpacity.up }">认识</view>
                   <!-- Retry Stamp (Swipe Down) -->
                   <view class="stamp stamp-retry" :style="{ opacity: stampOpacity.down }">不熟</view>
                   <!-- Skip Stamp (Swipe Left) -->
                   <view class="stamp stamp-skip" :style="{ opacity: stampOpacity.left }">下一张</view>
                   <!-- Prev Stamp (Swipe Right) -->
-                  <view class="stamp stamp-prev" :style="{ opacity: stampOpacity.right }">上一张</view>
+                  <view class="stamp stamp-prev" :style="{ opacity: stampOpacity.right }">取消手势</view>
                 </view>
               </view>
 
@@ -71,23 +68,29 @@
             <!-- Empty State / Completed -->
             <view v-else class="finished-state">
               <LineIcon name="star" size="120rpx" color="var(--text-primary)" class="finish-icon" />
-              <text class="finish-title">完成全部复习</text>
-              <text class="finish-desc">今日的待复习队列已经全部清空，棒极了！</text>
-              <button class="reset-btn" @click="resetReview">
-                <LineIcon name="sync" size="34rpx" color="var(--color-bg-primary)" style="margin-right: 12rpx;" /> 重新复习
+              <text class="finish-title">{{ loading ? '正在加载复习' : loadError || '本轮复习结束' }}</text>
+              <text v-if="!loadError && !loading" class="finish-desc">已处理本轮卡片</text>
+              <button v-if="!loading" class="reset-btn" @click="loadReview">
+                <LineIcon name="sync" size="34rpx" color="var(--color-bg-primary)" style="margin-right: 12rpx;" /> 刷新复习队列
               </button>
             </view>
           </view>
 
+          <view v-if="saving || saveError" class="gesture-legend">
+            <text>{{ saving ? '正在保存复习结果' : saveError }}</text>
+            <button v-if="saveError" size="mini" @click="refreshRequired ? loadReview() : retrySave()">
+              {{ refreshRequired ? '刷新队列' : '重试' }}
+            </button>
+          </view>
           <!-- Bottom Gesture Instruction Legend -->
-          <view class="gesture-legend" v-if="activeCard">
+          <view class="gesture-legend" v-if="activeCard && !saving && !saveError">
             <view class="legend-row">
               <text class="legend-item">← 左滑 下一张</text>
               <text class="legend-dot">·</text>
               <text class="legend-item">右滑 取消手势 →</text>
             </view>
             <view class="legend-row">
-              <text class="legend-item">↑ 上滑 掌握</text>
+              <text class="legend-item">↑ 上滑 认识</text>
               <text class="legend-dot">·</text>
               <text class="legend-item">下滑 不熟 ↓</text>
             </view>
@@ -100,23 +103,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useBlockStore } from '@/store/useBlockStore'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import FlashCard from '@/components/FlashCard.vue'
 import { reviewApi } from '@/api/reviewApi'
-import { uuidv7 } from '@/utils/uuid'
+import { useDueReview } from '@/composables/useDueReview'
 
-const blockStore = useBlockStore()
-
-// --- REVIEW LOGIC ---
-const sessionQueue = ref<any[]>([])
-const currentIndex = ref(0)
-const isFlipped = ref(false)
-const completedCount = ref(0)
-const dueQueue = ref<any[]>([])
-const reviewVersions = new Map<string, number>()
-let cardStartedAt = Date.now()
+const {
+  sessionQueue, currentIndex, completedCount, remainingCount, activeCard, isFlipped,
+  loading, saving, loadError, saveError, refreshRequired, loadReview, retrySave, skipCard, rateCard,
+} = useDueReview(reviewApi)
 
 const startX = ref(0)
 const startY = ref(0)
@@ -126,27 +122,6 @@ const isDragging = ref(false)
 const flyDirection = ref<'left' | 'right' | 'up' | 'down' | null>(null)
 const animateReset = ref(false)
 const animateFly = ref(false)
-
-const resetReview = () => {
-  sessionQueue.value = [...dueQueue.value]
-  currentIndex.value = 0
-  completedCount.value = 0
-  isFlipped.value = false
-  cardStartedAt = Date.now()
-  resetDrag()
-}
-
-const remainingCount = computed(() => {
-  if (currentIndex.value >= sessionQueue.value.length) return 0
-  return sessionQueue.value.length - currentIndex.value
-})
-
-const activeCard = computed(() => {
-  if (currentIndex.value < 0 || currentIndex.value >= sessionQueue.value.length) {
-    return null
-  }
-  return sessionQueue.value[currentIndex.value]
-})
 
 const activeCardStyle = computed(() => {
   if (animateReset.value) {
@@ -212,7 +187,7 @@ const stampOpacity = computed(() => {
 })
 
 const onTouchStart = (e: TouchEvent) => {
-  if (animateReset.value || animateFly.value) return
+  if (animateReset.value || animateFly.value || saving.value) return
   const touch = e.touches[0]
   startX.value = touch.clientX
   startY.value = touch.clientY
@@ -272,74 +247,28 @@ const triggerResetAnimation = () => {
   }, 400)
 }
 
-const triggerFlyAnimation = (dir: 'left' | 'right' | 'up' | 'down') => {
+const triggerFlyAnimation = (dir: 'left' | 'up' | 'down') => {
+  const card = activeCard.value
+  if (dir !== 'left' && !isFlipped.value) {
+    triggerResetAnimation()
+    uni.showToast({ title: '请先翻面核对答案', icon: 'none' })
+    return
+  }
   flyDirection.value = dir
   animateFly.value = true
-  
+
   setTimeout(() => {
-    handleSwipeAction(dir)
     resetDrag()
+    if (!card || activeCard.value !== card) return
+    if (dir === 'left') {
+      void skipCard()
+      return
+    }
+    void rateCard(dir === 'up' ? 'GOOD' : 'AGAIN')
   }, 350)
 }
 
-const handleSwipeAction = async (dir: 'left' | 'right' | 'up' | 'down') => {
-  const card = activeCard.value
-  if (!card) return
-
-  if (dir === 'right') return
-
-  const rating = dir === 'up' ? 'GOOD' : dir === 'down' ? 'AGAIN' : 'SKIP'
-  try {
-    const result = await reviewApi.record({
-      clientEventId: uuidv7(),
-      knowledgeBlockId: card.id,
-      rating,
-      reviewedAt: new Date().toISOString(),
-      durationSeconds: Math.max(0, Math.round((Date.now() - cardStartedAt) / 1000)),
-      baseVersion: reviewVersions.get(card.id),
-    })
-    if (result.state?.version !== undefined) reviewVersions.set(card.id, result.state.version)
-  } catch (error) {
-    console.error('[TabletReview] Failed to persist event:', error)
-    uni.showToast({ title: '复习结果保存失败', icon: 'none' })
-    return
-  }
-
-  if (dir === 'up') {
-    completedCount.value++
-  } else if (dir === 'down') {
-    sessionQueue.value.push(card)
-  }
-
-  currentIndex.value++
-  cardStartedAt = Date.now()
-  isFlipped.value = false
-}
-
-const loadReviewQueue = async () => {
-  const states = await reviewApi.due()
-  const blocks = new Map(blockStore.recentBlocks.map(block => [block.id, block]))
-  dueQueue.value = states.flatMap((state) => {
-    if (!state.knowledgeBlockId) return []
-    reviewVersions.set(state.knowledgeBlockId, Number(state.version || 0))
-    const block = blocks.get(state.knowledgeBlockId)
-    return block ? [block] : []
-  })
-}
-
-const loadPage = async () => {
-  try {
-    await blockStore.fetchBlocks()
-    await loadReviewQueue()
-    resetReview()
-  } catch (error) {
-    console.error('[TabletReview] Failed to load server data:', error)
-    uni.showToast({ title: '复习数据加载失败', icon: 'none' })
-  }
-}
-
-// --- INITIALIZATION ---
-onMounted(loadPage)
+onMounted(loadReview)
 </script>
 
 <style scoped>
@@ -465,17 +394,6 @@ onMounted(loadPage)
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-}
-
-.dummy-subject {
-  font-size: 26rpx;
-  font-weight: 600;
-  padding: 10rpx 28rpx;
-  border-radius: 999rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  color: var(--color-zen-stone, #A8A8A5);
-  align-self: flex-start;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
 }
 
 .dummy-body {
