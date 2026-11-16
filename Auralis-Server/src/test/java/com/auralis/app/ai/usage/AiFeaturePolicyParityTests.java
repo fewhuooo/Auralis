@@ -15,6 +15,9 @@ class AiFeaturePolicyParityTests {
             assertThat(policy.stages()).isNotEmpty();
             if (kind == AiOperationKind.SOURCE_OVERVIEW || kind == AiOperationKind.SUBJECT_OVERVIEW) {
                 assertThat(policy.platformMaxCalls()).isZero();
+            } else if (kind == AiOperationKind.CHAT_AGENT_TURN) {
+                // Chat Agent call caps are configured independently for each stage.
+                assertThat(policy.platformMaxCalls()).isZero();
             } else {
                 assertThat(policy.platformMaxCalls()).isPositive();
             }
