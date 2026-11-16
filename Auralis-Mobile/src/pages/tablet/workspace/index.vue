@@ -71,39 +71,20 @@
           <view v-if="activePanel === 'review'" class="drawer-content">
             <view class="drawer-header">
               <text class="drawer-title">复习</text>
-              <view class="drawer-action" @click="resetReview">
-                <text>🔄 重置</text>
+              <view v-if="activeCard && !reviewSaving && !reviewSaveError" class="drawer-action" @click="loadReview">
+                <text>刷新</text>
               </view>
             </view>
             <view class="review-mini-stats">
               <view class="mini-stat">
                 <text class="ms-val">{{ remainingCount }}</text>
-                <text class="ms-label">待练</text>
+                <text class="ms-label">待复习</text>
               </view>
               <view class="mini-stat">
                 <text class="ms-val">{{ completedCount }}</text>
-                <text class="ms-label">掌握</text>
-              </view>
-              <view class="mini-stat">
-                <text class="ms-val">{{ masteryRate }}%</text>
-                <text class="ms-label">进度</text>
+                <text class="ms-label">已完成</text>
               </view>
             </view>
-            <scroll-view scroll-y class="drawer-scroll">
-              <view v-if="sessionQueue.length === 0" class="drawer-empty">
-                <text>队列为空</text>
-              </view>
-              <view
-                v-for="(item, idx) in sessionQueue"
-                :key="idx"
-                class="review-queue-item"
-                :class="{ current: idx === currentIndex, done: idx < currentIndex }"
-                @click="currentIndex = idx; isFlipped = false"
-              >
-                <text class="rq-icon">{{ idx < currentIndex ? '✓' : (idx === currentIndex ? '▶' : '○') }}</text>
-                <text class="rq-title">{{ item.title }}</text>
-              </view>
-            </scroll-view>
           </view>
 
           <!-- Knowledge Base Panel -->
@@ -153,67 +134,69 @@
         <view class="content-body">
           <!-- Review Deck Workspace -->
           <view v-if="activePanel === 'review'" class="review-deck-workspace">
-            <view class="card-stack-container">
+            <view v-if="activeCard || (!reviewSaving && !reviewSaveError)" class="card-stack-container">
               <view v-if="activeCard" class="card-stack">
                 <!-- Layer 3 -->
                 <view v-if="sessionQueue[currentIndex + 2]" class="stack-card card-layer-3">
                   <view class="dummy-card-face">
-                    <text class="dummy-subject">{{ sessionQueue[currentIndex + 2].subject || activeSubject?.name }}</text>
+                    <text class="dummy-subject">{{ activeSubject?.name }}</text>
                   </view>
                 </view>
 
                 <!-- Layer 2 -->
                 <view v-if="sessionQueue[currentIndex + 1]" class="stack-card card-layer-2">
                   <view class="dummy-card-face">
-                    <text class="dummy-subject">{{ sessionQueue[currentIndex + 1].subject || activeSubject?.name }}</text>
+                    <text class="dummy-subject">{{ activeSubject?.name }}</text>
                   </view>
                 </view>
 
                 <!-- Layer 1 (Active) -->
-                <view 
-                  class="stack-card card-layer-1" 
+                <view
+                  class="stack-card card-layer-1"
                   :style="activeCardStyle"
                   @touchstart="onTouchStart"
                   @touchmove="onTouchMove"
                   @touchend="onTouchEnd"
+                  @touchcancel="resetDrag"
                 >
                   <FlashCard
                     :front="activeCard.title"
                     :back="activeCard.preview"
                     :subject="activeCard.subject || activeSubject?.name"
-                    :color="activeCard.color"
                     v-model:flipped="isFlipped"
                   />
 
                   <!-- Stamps -->
                   <view class="stamp-container">
-                    <view class="stamp stamp-mastered" :style="{ opacity: stampOpacity.up }">掌握</view>
+                    <view class="stamp stamp-mastered" :style="{ opacity: stampOpacity.up }">认识</view>
                     <view class="stamp stamp-retry" :style="{ opacity: stampOpacity.down }">不熟</view>
                     <view class="stamp stamp-skip" :style="{ opacity: stampOpacity.left }">下一张</view>
-                    <view class="stamp stamp-prev" :style="{ opacity: stampOpacity.right }">上一张</view>
+                    <view class="stamp stamp-prev" :style="{ opacity: stampOpacity.right }">取消手势</view>
                   </view>
                 </view>
               </view>
 
               <!-- Finished State -->
               <view v-else class="finished-state">
-                <LineIcon name="star" size="100rpx" color="#7D9372" class="finish-icon" />
-                <text class="finish-title">完成当前复习队列</text>
-                <text class="finish-desc">你已经复习完了当前所有知识块，继续保持！</text>
-                <button class="reset-btn" @click="resetReview">
-                  <LineIcon name="sync" size="30rpx" color="#fff" style="margin-right: 10rpx;" /> 重新本轮复习
-                </button>
+                <LineIcon name="star" size="100rpx" color="var(--text-primary)" class="finish-icon" />
+                <text class="finish-title">{{ reviewLoading ? '正在加载复习' : reviewLoadError || reviewEmptyLabel }}</text>
+                <button v-if="!reviewLoading" class="reset-btn" @click="loadReview">刷新复习队列</button>
               </view>
             </view>
 
-            <!-- Gesture Legend -->
-            <view class="gesture-legend" v-if="activeCard">
+            <view v-if="reviewSaving || reviewSaveError" class="gesture-legend">
+              <text>{{ reviewSaving ? '正在保存复习结果' : reviewSaveError }}</text>
+              <button v-if="reviewSaveError" size="mini" @click="refreshRequired ? loadReview() : retrySave()">
+                {{ refreshRequired ? '刷新队列' : '重试' }}
+              </button>
+            </view>
+            <view v-else-if="activeCard" class="gesture-legend">
               <view class="legend-row">
                 <text class="legend-item">← 左滑 下一张</text>
                 <text class="legend-dot">·</text>
-                <text class="legend-item">右滑 上一张 →</text>
+                <text class="legend-item">右滑 取消手势 →</text>
                 <text class="legend-dot">·</text>
-                <text class="legend-item">↑ 上滑 掌握</text>
+                <text class="legend-item">↑ 上滑 认识</text>
                 <text class="legend-dot">·</text>
                 <text class="legend-item">下滑 不熟 ↓</text>
               </view>
@@ -690,8 +673,10 @@ import { isSubjectIconKey } from '@/utils/subjectIcon'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore, type CatalogItem } from '@/store/useSubjectStore'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useDueReview } from '@/composables/useDueReview'
 import { chatWithAI, generateAiText } from '@/api/aiClient'
 import { aiApi } from '@/api/aiApi'
+import { reviewApi } from '@/api/reviewApi'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
 import { HandwritingEngine, type Stroke, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
@@ -1765,49 +1750,27 @@ const extractSummaryToBlock = async () => {
   uni.showToast({ title: '已归纳至知识块', icon: 'success' })
 }
 
-// --- REVIEW LOGIC ---
-const sessionQueue = ref<any[]>([])
-const currentIndex = ref(0)
-const isFlipped = ref(false)
-const completedCount = ref(0)
-const historyStack = ref<any[]>([])
+const {
+  sessionQueue, currentIndex, activeCard, isFlipped, remainingCount, completedCount,
+  loading: reviewLoading, saving: reviewSaving, loadError: reviewLoadError, saveError: reviewSaveError,
+  refreshRequired, loadReview, retrySave, skipCard, rateCard,
+} = useDueReview(reviewApi, {
+  subjectId: () => subjectId.value || undefined,
+  enabled: () => activePanel.value === 'review' && Boolean(subjectId.value),
+})
+const reviewEmptyLabel = computed(() => currentIndex.value > 0 || completedCount.value > 0
+  ? '本轮复习结束'
+  : '当前学科没有到期卡片')
 
 const startX = ref(0)
 const startY = ref(0)
 const deltaX = ref(0)
 const deltaY = ref(0)
 const isDragging = ref(false)
-const flyDirection = ref<'left' | 'right' | 'up' | 'down' | null>(null)
+const flyDirection = ref<'left' | 'up' | 'down' | null>(null)
 const animateReset = ref(false)
 const animateFly = ref(false)
-
-const resetReview = () => {
-  sessionQueue.value = [...subjectBlocks.value]
-  currentIndex.value = 0
-  completedCount.value = 0
-  isFlipped.value = false
-  historyStack.value = []
-  resetDrag()
-}
-
-const remainingCount = computed(() => {
-  if (currentIndex.value >= sessionQueue.value.length) return 0
-  return sessionQueue.value.length - currentIndex.value
-})
-
-const masteryRate = computed(() => {
-  const blocks = subjectBlocks.value
-  if (blocks.length === 0) return 0
-  const total = blocks.reduce((acc, curr) => acc + (curr.mastery || 0), 0)
-  return Math.round(total / blocks.length)
-})
-
-const activeCard = computed(() => {
-  if (currentIndex.value < 0 || currentIndex.value >= sessionQueue.value.length) {
-    return null
-  }
-  return sessionQueue.value[currentIndex.value]
-})
+let reviewAnimationTimer: ReturnType<typeof setTimeout> | undefined
 
 const activeCardStyle = computed(() => {
   if (animateReset.value) {
@@ -1819,7 +1782,6 @@ const activeCardStyle = computed(() => {
   if (animateFly.value) {
     let dest = 'translate3d(0, 0, 0)'
     if (flyDirection.value === 'left') dest = 'translate3d(-150vw, 0, 0) rotate(-45deg)'
-    else if (flyDirection.value === 'right') dest = 'translate3d(150vw, 0, 0) rotate(45deg)'
     else if (flyDirection.value === 'up') dest = 'translate3d(0, -150vh, 0)'
     else if (flyDirection.value === 'down') dest = 'translate3d(0, 150vh, 0)'
     return {
@@ -1863,7 +1825,7 @@ const stampOpacity = computed(() => {
 })
 
 const onTouchStart = (e: TouchEvent) => {
-  if (animateReset.value || animateFly.value) return
+  if (animateReset.value || animateFly.value || reviewLoading.value || reviewSaving.value || refreshRequired.value) return
   const touch = e.touches[0]
   startX.value = touch.clientX
   startY.value = touch.clientY
@@ -1891,17 +1853,15 @@ const onTouchEnd = () => {
   }
   if (absX > absY) {
     if (deltaX.value < 0) triggerFlyAnimation('left')
-    else {
-      if (historyStack.value.length > 0) triggerFlyAnimation('right')
-      else triggerResetAnimation()
-    }
-  } else {
-    if (deltaY.value < 0) triggerFlyAnimation('up')
-    else triggerFlyAnimation('down')
+    else triggerResetAnimation()
+    return
   }
+  triggerFlyAnimation(deltaY.value < 0 ? 'up' : 'down')
 }
 
 const resetDrag = () => {
+  clearTimeout(reviewAnimationTimer)
+  reviewAnimationTimer = undefined
   deltaX.value = 0
   deltaY.value = 0
   isDragging.value = false
@@ -1912,62 +1872,31 @@ const resetDrag = () => {
 
 const triggerResetAnimation = () => {
   animateReset.value = true
-  setTimeout(() => { resetDrag() }, 400)
+  reviewAnimationTimer = setTimeout(resetDrag, 400)
 }
 
-const triggerFlyAnimation = (dir: 'left' | 'right' | 'up' | 'down') => {
+const triggerFlyAnimation = (dir: 'left' | 'up' | 'down') => {
+  const card = activeCard.value
+  if (!card) return
+  if (dir !== 'left' && !isFlipped.value) {
+    triggerResetAnimation()
+    uni.showToast({ title: '请先翻面核对答案', icon: 'none' })
+    return
+  }
   flyDirection.value = dir
   animateFly.value = true
-  setTimeout(() => {
-    handleSwipeAction(dir)
+  reviewAnimationTimer = setTimeout(() => {
     resetDrag()
+    if (activePanel.value !== 'review' || activeCard.value !== card) return
+    if (dir === 'left') {
+      void skipCard()
+      return
+    }
+    void rateCard(dir === 'up' ? 'GOOD' : 'AGAIN')
   }, 350)
 }
 
-const handleSwipeAction = async (dir: 'left' | 'right' | 'up' | 'down') => {
-  const card = activeCard.value
-  if (!card) return
-  if (dir === 'right') {
-    const lastAction = historyStack.value.pop()
-    if (lastAction) {
-      currentIndex.value = Math.max(0, currentIndex.value - 1)
-      if (lastAction.requeued) sessionQueue.value.pop()
-      if (lastAction.actionType === 'mastered') completedCount.value = Math.max(0, completedCount.value - 1)
-      await blockStore.updateBlock({
-        ...sessionQueue.value[currentIndex.value],
-        mastery: lastAction.prevMastery
-      })
-    }
-    isFlipped.value = false
-    return
-  }
-  let actionType: 'mastered' | 'retry' | 'skip' = 'skip'
-  let requeued = false
-  const prevMastery = card.mastery || 50
-  if (dir === 'up') {
-    actionType = 'mastered'
-    completedCount.value++
-    const newMastery = Math.min(prevMastery + 15, 100)
-    await blockStore.updateBlock({ ...card, mastery: newMastery, difficulty: 'easy' })
-  } else if (dir === 'down') {
-    actionType = 'retry'
-    requeued = true
-    const newMastery = Math.max(prevMastery - 15, 10)
-    await blockStore.updateBlock({ ...card, mastery: newMastery, difficulty: 'hard' })
-    sessionQueue.value.push({ ...card, mastery: newMastery })
-  } else if (dir === 'left') {
-    actionType = 'skip'
-  }
-  historyStack.value.push({ blockId: card.id, prevMastery, actionType, requeued })
-  currentIndex.value++
-  isFlipped.value = false
-}
-
-watch(activePanel, (val) => {
-  if (val === 'review' && sessionQueue.value.length === 0) {
-    resetReview()
-  }
-})
+watch(activeCard, resetDrag, { flush: 'sync' })
 
 // Load data on page mount
 onLoad((options) => {
@@ -2000,6 +1929,7 @@ onMounted(async () => {
 // 清理 window 事件监听，防止组件卸载后内存泄漏
 onUnmounted(() => {
   workspaceMounted = false
+  resetDrag()
   if (typeof window !== 'undefined') {
     window.removeEventListener('mousemove', onAiMouseMove)
     window.removeEventListener('mouseup', onAiMouseUp)
@@ -3782,7 +3712,7 @@ onUnmounted(() => {
   color: var(--color-zen-stone, #A8A8A5);
 }
 
-/* Review Mini Stats & Queue */
+/* Review counters */
 .review-mini-stats {
   display: flex;
   justify-content: space-around;
@@ -3803,38 +3733,6 @@ onUnmounted(() => {
 .ms-label {
   font-size: 22rpx;
   color: var(--color-zen-stone, #A8A8A5);
-}
-.review-queue-item {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 20rpx 24rpx;
-  border-radius: 16rpx;
-  margin-bottom: 8rpx;
-  background: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  cursor: pointer;
-}
-.review-queue-item.current {
-  border-color: #7D9372;
-  background: rgba(125, 147, 114, 0.08);
-}
-.review-queue-item.done {
-  opacity: 0.5;
-}
-.rq-icon {
-  font-size: 24rpx;
-  color: #7D9372;
-}
-.rq-title {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Review Deck Workspace */
@@ -3959,11 +3857,6 @@ onUnmounted(() => {
   font-size: 40rpx;
   font-weight: 800;
   color: var(--color-zen-graphite, #1C1C1A);
-}
-.finish-desc {
-  font-size: 28rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-bottom: 20rpx;
 }
 .reset-btn {
   display: flex;

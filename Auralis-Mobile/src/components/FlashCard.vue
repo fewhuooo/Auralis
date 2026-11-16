@@ -29,9 +29,9 @@
           <text class="card-text back-text">{{ back }}</text>
         </scroll-view>
         <view class="card-footer gestures-footer">
-          <text class="gesture-hint"><text class="icon">↑</text> 上滑掌握</text>
+          <text class="gesture-hint"><text class="icon">↑</text> 上滑认识</text>
           <text class="gesture-divider">|</text>
-          <text class="gesture-hint"><text class="icon">↓</text> 下滑重温</text>
+          <text class="gesture-hint"><text class="icon">↓</text> 下滑不熟</text>
         </view>
       </view>
     </view>

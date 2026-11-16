@@ -1,13 +1,18 @@
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { reviewApi, ReviewAttemptRequest, ReviewResolutionRequest, ReviewState } from '@/api/reviewApi'
 import { ApiProblemError } from '@/api/protocol'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { uuidv7 } from '@/utils/uuid'
 
-type PendingReview = { attempt: ReviewAttemptRequest; confirmation?: ReviewResolutionRequest }
+type PendingReview = { attempt: ReviewAttemptRequest; confirmation?: ReviewResolutionRequest; subjectId?: string }
 
-export function useDueReview(api: typeof reviewApi) {
+interface DueReviewScope {
+  subjectId: () => string | undefined
+  enabled: () => boolean
+}
+
+export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
   const auth = useAuthStore()
   const subjects = useSubjectStore()
   const sessionQueue = ref<ReviewState[]>([])
@@ -19,8 +24,10 @@ export function useDueReview(api: typeof reviewApi) {
   const loadError = ref('')
   const saveError = ref('')
   const refreshRequired = ref(false)
-  const activeCard = ref<{ title: string; preview: string; subject?: string } | null>(null)
+  const activeCard = ref<{ title: string; preview: string; subject?: string; subjectId?: string } | null>(null)
   const remainingCount = computed(() => sessionQueue.value.length - currentIndex.value)
+  const subjectId = computed(() => options?.subjectId())
+  const enabled = computed(() => !options || Boolean(options.enabled() && subjectId.value))
   let revision = 0
   let cardStartedAt = 0
   let pending: PendingReview | null = null
@@ -29,8 +36,10 @@ export function useDueReview(api: typeof reviewApi) {
     const generation = auth.getLoginGeneration()
     const userId = auth.user?.id
     const serverDeviceId = auth.serverDeviceId
+    const currentSubjectId = subjectId.value
     const capturedRevision = revision
-    return () => Boolean(userId && serverDeviceId && capturedRevision === revision
+    return () => Boolean(enabled.value && subjectId.value === currentSubjectId
+      && userId && serverDeviceId && capturedRevision === revision
       && generation === auth.getLoginGeneration() && userId === auth.user?.id
       && serverDeviceId === auth.serverDeviceId)
   }
@@ -50,7 +59,14 @@ export function useDueReview(api: typeof reviewApi) {
     pending = null
   }
 
-  watch(() => [auth.sessionId, auth.serverDeviceId, auth.user?.id], clear, { flush: 'sync' })
+  watch([() => auth.sessionId, () => auth.serverDeviceId, () => auth.user?.id, enabled, subjectId], () => {
+    clear()
+    if (!options || !enabled.value) return
+    const capturedRevision = revision
+    void nextTick(() => {
+      if (revision === capturedRevision) void loadReview()
+    })
+  }, { flush: 'sync', immediate: Boolean(options) })
   onUnmounted(clear)
 
   async function loadCard(isCurrent: () => boolean) {
@@ -62,6 +78,7 @@ export function useDueReview(api: typeof reviewApi) {
     const block = await api.block(state.knowledgeBlockId)
     if (!isCurrent() || state !== sessionQueue.value[currentIndex.value]) return
     if (block.id !== state.knowledgeBlockId || block.version !== state.knowledgeBlockVersion
+      || (subjectId.value && block.subjectId !== subjectId.value)
       || !('content' in block) || typeof block.content !== 'string' || typeof block.title !== 'string') {
       throw new Error('Review knowledge block revision changed')
     }
@@ -69,12 +86,13 @@ export function useDueReview(api: typeof reviewApi) {
       title: block.title,
       preview: block.content,
       subject: subjects.subjects.find(subject => subject.id === block.subjectId)?.name,
+      subjectId: block.subjectId,
     }
     cardStartedAt = Date.now()
   }
 
   async function loadReview() {
-    if (loading.value || saving.value || !auth.isAuthenticated) return
+    if (loading.value || saving.value || !enabled.value || !auth.isAuthenticated) return
     const discardPending = refreshRequired.value ? pending?.attempt.clientCommandId : undefined
     clear()
     const isCurrent = scope()
@@ -92,7 +110,9 @@ export function useDueReview(api: typeof reviewApi) {
       return
     }
     if (pending) {
-      saveError.value = '有一条复习结果等待保存，请重试'
+      saveError.value = subjectId.value && pending.subjectId !== subjectId.value
+        ? '此前有一条复习结果等待保存，请重试后继续'
+        : '有一条复习结果等待保存，请重试'
       return
     }
     await loadQueue(isCurrent)
@@ -101,11 +121,12 @@ export function useDueReview(api: typeof reviewApi) {
   async function loadQueue(isCurrent: () => boolean) {
     loading.value = true
     const at = new Date().toISOString()
+    const currentSubjectId = subjectId.value
     const states: ReviewState[] = []
     try {
       let cursor: string | undefined
       do {
-        const page = await api.queue(at, cursor)
+        const page = await api.queue(at, cursor, currentSubjectId)
         if (!isCurrent()) return
         states.push(...(page.items ?? []))
         if (page.hasMore && !page.nextCursor) throw new Error('Review queue cursor is missing')
@@ -154,6 +175,7 @@ export function useDueReview(api: typeof reviewApi) {
         return
       }
       pending = {
+        subjectId: activeCard.value.subjectId,
         attempt: {
           clientCommandId: uuidv7(),
           knowledgeBlockId: state.knowledgeBlockId,
@@ -200,7 +222,7 @@ export function useDueReview(api: typeof reviewApi) {
         uni.removeStorageSync(key)
       }
       pending = null
-      completedCount.value++
+      if (!subjectId.value || command.subjectId === subjectId.value) completedCount.value++
       if (state) {
         await nextCard(isCurrent)
       } else {

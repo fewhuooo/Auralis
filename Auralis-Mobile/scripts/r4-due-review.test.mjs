@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import test from 'node:test'
-import { createSSRApp } from 'vue'
+import { setImmediate } from 'node:timers/promises'
+import { createRenderer, createSSRApp, ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
 const storeModules = new Map([
@@ -28,7 +29,7 @@ const loader = registerHooks({
 })
 const { useDueReview } = await import('../src/composables/useDueReview.ts').finally(() => loader.deregister())
 
-test('skipping stays local and a lost GOOD confirmation survives page recreation', async (context) => {
+function useStorageFixture(context) {
   const storage = new Map()
   globalThis.uni = {
     getStorageSync: key => storage.get(key),
@@ -36,6 +37,11 @@ test('skipping stays local and a lost GOOD confirmation survives page recreation
     removeStorageSync: key => storage.delete(key),
   }
   context.after(() => { delete globalThis.uni })
+  return storage
+}
+
+test('skipping stays local and a lost GOOD confirmation survives page recreation', async (context) => {
+  const storage = useStorageFixture(context)
   const states = ['skip', 'good'].map(knowledgeBlockId => ({
     knowledgeBlockId, knowledgeBlockVersion: 4, contentHash: 'a'.repeat(64), version: 7,
   }))
@@ -97,4 +103,97 @@ test('skipping stays local and a lost GOOD confirmation survives page recreation
   assert.equal(queueReads, 2)
   assert.equal(reopened.activeCard.value.title, 'skip')
   assert.equal(storage.has('auralis:review:pending:account:device'), false)
+})
+
+test('workspace review scopes every page and ignores a late card after switching subjects', async (context) => {
+  useStorageFixture(context)
+  const enabled = ref(false)
+  const subjectId = ref('alpha')
+  const alpha = Promise.withResolvers()
+  const alphaRequested = Promise.withResolvers()
+  const calls = []
+  const api = {
+    async queue(at, cursor, subject) {
+      calls.push({ at, cursor, subject })
+      const id = cursor ? `${subject}-next` : subject
+      const page = { items: [{ knowledgeBlockId: id, knowledgeBlockVersion: 4 }] }
+      return subject === 'beta' && !cursor ? { ...page, hasMore: true, nextCursor: 'beta-cursor' } : page
+    },
+    async block(id) {
+      if (id === 'alpha') {
+        alphaRequested.resolve()
+        return alpha.promise
+      }
+      return { id, title: id, subjectId: 'beta', version: 4, content: 'beta body' }
+    },
+  }
+  const renderer = createRenderer({ createComment: () => ({}), insert() {}, remove() {} })
+  let review
+  const app = renderer.createApp({
+    setup() {
+      review = useDueReview(api, { subjectId: () => subjectId.value, enabled: () => enabled.value })
+      return () => null
+    },
+  })
+  app.mount({})
+  context.after(() => app.unmount())
+
+  await setImmediate()
+  assert.deepEqual(calls, [])
+  enabled.value = true
+  await alphaRequested.promise
+
+  subjectId.value = 'beta'
+  assert.equal(review.activeCard.value, null)
+  await setImmediate()
+  assert.deepEqual(calls.map(({ cursor, subject }) => [cursor, subject]), [
+    [undefined, 'alpha'], [undefined, 'beta'], ['beta-cursor', 'beta'],
+  ])
+  assert.equal(calls[1].at, calls[2].at)
+  assert.equal(review.activeCard.value.title, 'beta')
+  assert.equal(review.remainingCount.value, 2)
+
+  alpha.resolve({ id: 'alpha', title: 'alpha', subjectId: 'alpha', version: 4, content: 'alpha body' })
+  await setImmediate()
+  assert.equal(review.activeCard.value.title, 'beta')
+  assert.equal(review.loading.value, false)
+
+  enabled.value = false
+  assert.equal(review.activeCard.value, null)
+  await review.loadReview()
+  assert.equal(calls.length, 3)
+})
+
+test('workspace recovers a previous subject confirmation before loading without counting it locally', async (context) => {
+  const storage = useStorageFixture(context)
+  const key = 'auralis:review:pending:account:device'
+  const block = { knowledgeBlockId: 'alpha', knowledgeBlockVersion: 4, contentHash: 'a'.repeat(64) }
+  const attempt = { ...block, clientCommandId: 'attempt', baseVersion: 7, reviewId: 'review', rating: 'GOOD' }
+  const confirmation = { ...block, clientCommandId: 'confirm', baseVersion: 8 }
+  storage.set(key, { subjectId: 'alpha', attempt, confirmation })
+  const calls = []
+  const api = {
+    async queue(_at, _cursor, subject) {
+      calls.push(['queue', subject])
+      return { items: [] }
+    },
+    async confirm(reviewId, body) {
+      calls.push(['confirm', reviewId, body])
+      return { effectiveReview: { effectiveRating: 'GOOD' } }
+    },
+  }
+  let review
+  await renderToString(createSSRApp({
+    setup() {
+      review = useDueReview(api, { subjectId: () => 'beta', enabled: () => true })
+      return () => null
+    },
+  }))
+  await review.loadReview()
+  assert.deepEqual(calls, [])
+  assert.match(review.saveError.value, /此前/)
+  await review.retrySave()
+  assert.deepEqual(calls, [['confirm', 'review', confirmation], ['queue', 'beta']])
+  assert.equal(review.completedCount.value, 0)
+  assert.equal(storage.has(key), false)
 })
