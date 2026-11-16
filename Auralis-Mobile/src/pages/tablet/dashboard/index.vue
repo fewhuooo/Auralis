@@ -1,799 +1,1121 @@
 <template>
   <TabletLayout>
     <view class="t-dashboard">
-      <!-- Schedule and tasks -->
       <view class="left-column">
-        <!-- Greeting Row & Quick Add Button -->
-        <view class="greeting-row">
-          <text class="greeting-title">{{ greeting }}，{{ username }}</text>
-          <view class="add-circle-btn" :class="{ 'is-active': showQuickAdd }" @click="showQuickAdd = !showQuickAdd">
-            <LineIcon :name="showQuickAdd ? 'close' : 'plus'" size="36rpx" :color="showQuickAdd ? '#FFFFFF' : '#1C1C1A'" />
+        <view class="greeting-header">
+          <view class="greeting-meta">
+            <text class="greeting-title">{{ greeting }}，{{ displayName }}</text>
+            <view class="date-row">
+              <text class="date-subtitle">{{ selectedDateHeading }}</text>
+              <text v-if="selectedDateKey !== todayKey" class="back-today" @click="jumpToToday">回到今天</text>
+            </view>
+          </view>
+          <view class="primary-create-btn" @click="openCreateModal">
+            <LineIcon name="plus" size="28rpx" color="#FFFFFF" />
+            <text>新建任务</text>
           </view>
         </view>
 
-        <!-- 悬浮最顶层的遮罩层 -->
-        <view v-if="showQuickAdd" class="quick-add-mask" @click="showQuickAdd = false"></view>
-
-        <!-- +号触发的快速创建输入框（覆盖在最顶层） -->
-        <view v-if="showQuickAdd" class="quick-add-container">
-          <view class="quick-input-row">
-            <input 
-              class="quick-input" 
-              v-model="quickTaskName" 
-              placeholder="输入日程或待办内容，按回车添加..." 
-              confirm-type="done"
-              :focus="showQuickAdd"
-              @confirm="submitQuickAdd"
-            />
-            <view class="quick-submit-btn" :class="{ disabled: !quickTaskName.trim() }" @click="submitQuickAdd">
-              <LineIcon name="check" size="32rpx" color="#FFFFFF" />
+        <view class="week-card zen-card">
+          <view class="week-nav">
+            <view class="week-arrow" @click="shiftWeek(-7)">
+              <LineIcon name="chevron-left" size="26rpx" color="var(--text-muted)" />
+            </view>
+            <text class="week-range">{{ weekRangeLabel }}</text>
+            <view class="week-arrow" @click="shiftWeek(7)">
+              <LineIcon name="chevron-right" size="26rpx" color="var(--text-muted)" />
             </view>
           </view>
 
-          <!-- 学科选择：带箭头的单行触发器 -->
-          <view class="quick-select-row">
-            <text class="quick-label">学科：</text>
-            <view class="subject-dropdown-btn" @click="showSubjectList = !showSubjectList">
-              <view class="sub-dot"></view>
-              <text class="dropdown-text">{{ quickSubject?.name || '选择学科...' }}</text>
-              <LineIcon :name="showSubjectList ? 'chevron-up' : 'chevron-down'" size="32rpx" color="var(--color-zen-stone)" />
-            </view>
-          </view>
-
-          <!-- 点击箭头后弹出的竖直排列学科列表 -->
-          <view v-if="showSubjectList" class="subject-vertical-popup">
-            <scroll-view scroll-y class="subject-vertical-scroll" :show-scrollbar="false">
-              <view class="subject-vertical-list">
-                <view 
-                  v-for="sub in displaySubjects" 
-                  :key="sub.id || sub.name"
-                  class="subject-vertical-item"
-                  :class="{ active: quickSubject?.name === sub.name }"
-                  @click="selectSubject(sub)"
-                >
-                  <view class="sub-dot"></view>
-                  <text class="sub-item-name">{{ sub.name }}</text>
-                  <LineIcon v-if="quickSubject?.name === sub.name" name="check" size="32rpx" color="#7D9372" />
-                </view>
-              </view>
-            </scroll-view>
-          </view>
-
-          <!-- 整半小时时长选择（0-2小时每半小时一档，四段连在一起的可拖动选择器） -->
-          <view class="quick-select-row">
-            <text class="quick-label">时长：</text>
-            <view 
-              class="segmented-track"
-              id="durTrack"
-              @touchstart="onDurTouchStart"
-              @touchmove="onDurTouchMove"
+          <view class="week-strip">
+            <view
+              v-for="day in weekDays"
+              :key="day.dateKey"
+              class="week-day"
+              :class="{ active: selectedDateKey === day.dateKey, 'is-today': day.isToday }"
+              @click="selectedDateKey = day.dateKey"
             >
-              <!-- 滑动高亮滑块 -->
-              <view 
-                class="segmented-thumb" 
-                :style="{ transform: `translateX(${durSelectedIndex * 100}%)` }"
-              ></view>
-
-              <!-- 4个连在一起的选项 -->
-              <view 
-                v-for="item in durationOptions" 
-                :key="item.val"
-                class="segmented-item"
-                :class="{ active: quickDuration === item.val }"
-                @click="quickDuration = item.val"
-              >
-                <text>{{ item.label }}</text>
-              </view>
+              <text class="w-label">{{ day.weekdayLabel }}</text>
+              <text class="w-num">{{ day.dayNumber }}</text>
+              <view class="w-dot" :class="{ visible: hasScheduledOnDate(day.dateKey) }"></view>
             </view>
           </view>
         </view>
 
-        <!-- Week Strip (周视图) -->
-        <view class="week-strip">
-          <view 
-            v-for="(day, idx) in weekDays" 
-            :key="day.dateStr" 
-            class="w-day" 
-            :class="{ active: selectedDateIndex === idx, today: day.isToday }" 
-            @click="selectedDateIndex = idx"
-          >
-            <text class="w-week">{{ day.weekdayShort }}</text>
-            <text class="w-num">{{ day.day }}</text>
-            <view v-if="day.isToday" class="today-dot"></view>
-          </view>
-        </view>
+        <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
+          <view class="task-section">
+            <view class="section-header">
+              <text class="section-title">当日日程</text>
+              <text class="section-count">{{ scheduledForDay.length }} 项</text>
+            </view>
 
-        <!-- Section Header -->
-        <view class="section-header">
-          <text class="section-title">待办与日程</text>
-          <text class="section-count">{{ pendingTasks.length > 4 ? `显示前 4 项 · 共 ${pendingTasks.length} 项待办` : '点击左侧完成 · 右上方 + 新建' }}</text>
-        </view>
+            <view v-if="scheduledForDay.length === 0" class="empty-box zen-card">
+              <text class="empty-text">{{ selectedDateHeading }} 暂无已排期任务</text>
+            </view>
 
-        <!-- Task List (Zen Pills - Non-scrollable compact) -->
-        <view class="task-list-container">
-          <view v-if="pendingTasks.length === 0" class="empty-tasks">
-            <text class="empty-icon">🍃</text>
-            <text class="empty-text">当前无待办日程</text>
-            <text class="empty-sub">点击右上方 + 创建专注任务</text>
-          </view>
-          <view 
-            v-for="task in pendingTasks.slice(0, 4)" 
-            :key="task.id" 
-            class="zen-pill-task" 
-            :class="{ completed: task.status === 'completed' }" 
-            :style="{ borderLeftColor: 'var(--color-primary)' }"
-          >
-            <view class="task-left" @click="handleToggleTask(task)">
-              <view 
-                class="task-checkbox" 
-                :class="{ checked: task.status === 'completed' }" 
-                :style="{ 
-                  borderColor: 'var(--color-primary)',
-                  backgroundColor: task.status === 'completed' ? 'var(--color-primary)' : 'transparent'
-                }"
+            <view v-else class="card-stack">
+              <view
+                v-for="item in scheduledForDay"
+                :key="item.id"
+                class="task-row zen-card"
+                :class="{ 'is-completed': item.status === 'completed' }"
               >
-                <LineIcon v-if="task.status === 'completed'" name="check" size="20rpx" color="#FFFFFF" />
-              </view>
-              <view class="task-info">
-                <text class="task-name" :class="{ done: task.status === 'completed' }">{{ task.name }}</text>
-                <view class="task-meta">
-                <text class="task-subject">{{ task.subject }}</text>
-                  <text class="task-duration">· {{ task.duration }} 分钟</text>
+                <view
+                  class="check-circle"
+                  :class="{
+                    checked: item.status === 'completed',
+                    locked: item.id ? taskStore.updatingTaskIds.includes(item.id) : false,
+                  }"
+                  @click="item.id && taskStore.toggleTaskComplete(item.id)"
+                >
+                  <LineIcon v-if="item.status === 'completed'" name="check" size="20rpx" color="#FFFFFF" />
+                </view>
 
+                <view class="row-info" @click="item.id && taskStore.toggleTaskComplete(item.id)">
+                  <view class="row-badges">
+                    <text class="time-badge">{{ formatLocalTimeHHmm(item.scheduledAt) || '全天' }}</text>
+                    <text v-if="item.subject" class="subject-tag">{{ item.subject }}</text>
+                    <text v-if="item.dueAt" class="ddl-tag">截止 {{ formatShortDate(item.dueAt) }}</text>
+                  </view>
+                  <text class="row-title" :class="{ strike: item.status === 'completed' }">{{ item.name }}</text>
+                </view>
+
+                <text class="dur-text">{{ item.duration || 30 }} 分钟</text>
+
+                <view
+                  v-if="item.id && item.status !== 'completed'"
+                  class="row-icon-btn"
+                  title="移回待办清单"
+                  @click.stop="unscheduleTaskItem(item.id)"
+                >
+                  <LineIcon name="close" size="24rpx" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
-            <view class="task-actions">
-              <view class="action-btn del-btn" @click.stop="handleDeleteTask(task.id)">
-                <LineIcon name="close" size="22rpx" color="#A8A8A5" />
+          </view>
+
+          <view class="task-section">
+            <view class="section-header">
+              <text class="section-title">待办清单</text>
+              <text class="section-count">{{ taskStore.pendingTasks.length }} 项</text>
+            </view>
+
+            <view v-if="taskStore.pendingTasks.length === 0" class="empty-box zen-card">
+              <text class="empty-text">暂无待办任务</text>
+            </view>
+
+            <view v-else class="card-stack">
+              <view v-for="todo in taskStore.pendingTasks" :key="todo.id" class="task-row zen-card">
+                <view
+                  class="check-circle"
+                  :class="{ locked: todo.id ? taskStore.updatingTaskIds.includes(todo.id) : false }"
+                  @click="todo.id && taskStore.toggleTaskComplete(todo.id)"
+                ></view>
+
+                <view class="row-info">
+                  <view class="row-badges">
+                    <text v-if="todo.subject" class="subject-tag">{{ todo.subject }}</text>
+                    <text v-if="todo.dueAt" class="ddl-tag">截止 {{ formatShortDate(todo.dueAt) }}</text>
+                  </view>
+                  <text class="row-title">{{ todo.name }}</text>
+                </view>
+
+                <picker
+                  v-if="todo.id"
+                  mode="time"
+                  value="09:00"
+                  @change="onSchedulePending(todo.id, $event)"
+                >
+                  <view class="schedule-chip">
+                    <text>排入该日</text>
+                  </view>
+                </picker>
+
+                <view
+                  v-if="todo.id"
+                  class="row-icon-btn"
+                  @click="confirmDeleteTodo(todo.id, todo.name)"
+                >
+                  <LineIcon name="trash" size="24rpx" color="var(--text-muted)" />
+                </view>
               </view>
             </view>
           </view>
-        </view>
+        </scroll-view>
       </view>
 
       <view class="right-column">
-        <StudyMetrics />
+        <view class="review-card zen-card">
+          <view class="panel-header">
+            <text class="panel-title">学科待复习</text>
+            <view class="refresh-pill" @click="loadDueCounts">
+              <LineIcon name="refresh" size="24rpx" color="var(--color-zen-sage)" />
+              <text>{{ loadingDueCounts ? '加载中' : '刷新' }}</text>
+            </view>
+          </view>
+
+          <view v-if="subjectStore.subjects.length === 0" class="review-empty">
+            <text class="empty-text">请先在「学科大厅」创建学科空间</text>
+          </view>
+
+          <scroll-view v-else scroll-y :show-scrollbar="false" class="due-subjects-scroll">
+            <view class="due-subject-list">
+              <view
+                v-for="sub in subjectStore.subjects"
+                :key="sub.id"
+                class="due-subject-row"
+                @click="openSubjectReview(sub.id)"
+              >
+                <view class="due-sub-left">
+                  <view class="sub-icon-badge">
+                    <LineIcon
+                      :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
+                      size="30rpx"
+                      color="var(--color-zen-sage)"
+                    />
+                  </view>
+                  <text class="sub-name">{{ sub.name }}</text>
+                </view>
+                <view class="due-sub-right">
+                  <text class="due-badge" :class="{ active: (dueCounts[sub.id] ?? 0) > 0 }">
+                    {{ dueCountText(sub.id) }}
+                  </text>
+                  <LineIcon name="chevron-right" size="24rpx" color="var(--text-muted)" />
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+
+        <view class="metrics-wrap">
+          <text class="panel-caption">全局学习指标</text>
+          <StudyMetrics />
+        </view>
       </view>
     </view>
+
+    <template #modal>
+      <view v-if="showCreateModal" class="zen-modal-mask" @click="closeCreateModal">
+        <view class="zen-modal-body create-modal" @click.stop>
+          <view class="modal-header">
+            <text class="modal-title">新建学习任务</text>
+            <view class="modal-close" @click="closeCreateModal">
+              <LineIcon name="close" size="28rpx" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <view class="modal-form">
+            <view class="field-group">
+              <text class="field-label">任务名称</text>
+              <input
+                class="zen-input"
+                v-model="taskForm.name"
+                placeholder="输入具体学习内容…"
+                :disabled="savingTask"
+              />
+            </view>
+
+            <view class="field-group">
+              <text class="field-label">所属学科</text>
+              <view v-if="subjectStore.subjects.length === 0" class="empty-text">暂无可选学科，请先创建学科</view>
+              <view v-else class="chips-row">
+                <view
+                  v-for="sub in subjectStore.subjects"
+                  :key="sub.id"
+                  class="chip-item"
+                  :class="{ active: taskForm.subjectId === sub.id }"
+                  @click="taskForm.subjectId = sub.id"
+                >
+                  <text>{{ sub.name }}</text>
+                </view>
+              </view>
+            </view>
+
+            <view class="field-group">
+              <text class="field-label">预计时长</text>
+              <view class="chips-row">
+                <view
+                  v-for="mins in [30, 60, 90, 120]"
+                  :key="mins"
+                  class="chip-item"
+                  :class="{ active: taskForm.duration === mins }"
+                  @click="taskForm.duration = mins"
+                >
+                  <text>{{ mins }} 分钟</text>
+                </view>
+              </view>
+            </view>
+
+            <view class="switch-row">
+              <view>
+                <text class="field-label">排入 {{ selectedDateHeading }}</text>
+                <text class="switch-sub">{{ taskForm.scheduled ? '创建后直接展示在当日日程' : '创建为未排期待办' }}</text>
+              </view>
+              <switch :checked="taskForm.scheduled" color="#8B9A6E" @change="onScheduledSwitch" />
+            </view>
+
+            <view class="dual-row">
+              <view v-if="taskForm.scheduled" class="picker-col">
+                <text class="field-label">开始时间</text>
+                <picker mode="time" :value="taskForm.timeHHmm" @change="onModalTimeChange">
+                  <view class="picker-box">{{ taskForm.timeHHmm }}</view>
+                </picker>
+              </view>
+              <view class="picker-col">
+                <text class="field-label">截止日期（可选）</text>
+                <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onModalDueDateChange">
+                  <view class="picker-box">{{ taskForm.dueDateKey || '不设置 DDL' }}</view>
+                </picker>
+              </view>
+            </view>
+          </view>
+
+          <view class="modal-footer">
+            <view class="btn ghost-btn" @click="closeCreateModal">取消</view>
+            <view class="btn save-btn" :class="{ disabled: savingTask }" @click="submitCreateTask">
+              {{ savingTask ? '保存中…' : '保存任务' }}
+            </view>
+          </view>
+        </view>
+      </view>
+    </template>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
-import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { reviewApi } from '@/api/reviewApi'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
+import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
-import { useAuthStore } from '@/store/useAuthStore'
+import {
+  combineLocalDateAndTime,
+  endOfLocalDateIso,
+  formatDateHeading,
+  formatLocalTimeHHmm,
+  formatShortDate,
+  getWeekDays,
+  shiftDateKey,
+  toLocalDateKey,
+} from '@/utils/dateKey'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 
+const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
-const authStore = useAuthStore()
 
-const { subjects } = storeToRefs(subjectStore)
-const { pendingTasks } = storeToRefs(taskStore)
-
-const username = computed(() => authStore.username || '同学')
-
+const displayName = computed(() => authStore.user?.displayName || authStore.username || '同学')
 const greeting = computed(() => {
-  const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 9) return '早上好'
-  if (h < 12) return '上午好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  if (h < 22) return '晚上好'
-  return '夜深了'
+  const hour = new Date().getHours()
+  if (hour < 12) return '早安'
+  if (hour < 18) return '午后'
+  return '晚安'
 })
 
-// --- QUICK ADD LOGIC ---
-const showQuickAdd = ref(false)
-const quickTaskName = ref('')
-const quickSubject = ref<any>(null)
-const quickDuration = ref(30)
-const showSubjectList = ref(false)
+const todayKey = ref(toLocalDateKey(new Date()))
+const selectedDateKey = ref(todayKey.value)
+const weekDays = computed(() => getWeekDays(selectedDateKey.value, todayKey.value))
+const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
+const weekRangeLabel = computed(() => {
+  const days = weekDays.value
+  return `${formatShortDate(days[0].dateKey)} - ${formatShortDate(days[6].dateKey)}`
+})
 
-const selectSubject = (sub: any) => {
-  quickSubject.value = sub
-  showSubjectList.value = false
+const scheduledForDay = computed(() => taskStore.getScheduledTasksForDate(selectedDateKey.value))
+
+function hasScheduledOnDate(dateKey: string): boolean {
+  return taskStore.allTasks.some(item => !item.is_deleted && item.scheduledAt && toLocalDateKey(item.scheduledAt) === dateKey)
 }
 
-const durationOptions = [
-  { label: '0.5h', val: 30 },
-  { label: '1h', val: 60 },
-  { label: '1.5h', val: 90 },
-  { label: '2h', val: 120 }
-]
+function shiftWeek(deltaDays: number) {
+  selectedDateKey.value = shiftDateKey(selectedDateKey.value, deltaDays)
+}
 
-const durSelectedIndex = computed(() => {
-  const idx = durationOptions.findIndex(item => item.val === quickDuration.value)
-  return idx !== -1 ? idx : 0
-})
+function jumpToToday() {
+  todayKey.value = toLocalDateKey(new Date())
+  selectedDateKey.value = todayKey.value
+}
 
-const durTrackRect = ref<any>(null)
-const getDurTrackRect = () => {
-  return new Promise((resolve) => {
-    if (durTrackRect.value) {
-      resolve(durTrackRect.value)
-      return
-    }
-    const query = uni.createSelectorQuery()
-    query.select('#durTrack').boundingClientRect((data: any) => {
-      if (data) {
-        durTrackRect.value = data
-        resolve(data)
-      }
-    }).exec()
+async function unscheduleTaskItem(id: string) {
+  await taskStore.unscheduleTask(id)
+  uni.showToast({ title: '已移回待办清单', icon: 'none' })
+}
+
+async function onSchedulePending(taskId: string, event: { detail?: { value?: string } }) {
+  const hhmm = event?.detail?.value
+  if (!hhmm) return
+  await taskStore.scheduleTask(taskId, combineLocalDateAndTime(selectedDateKey.value, hhmm))
+  uni.showToast({ title: `已排入 ${selectedDateHeading.value} ${hhmm}`, icon: 'none' })
+}
+
+function confirmDeleteTodo(id: string, title: string) {
+  uni.showModal({
+    title: '删除待办',
+    content: `确定要删除「${title}」吗？`,
+    success: (res) => {
+      if (res.confirm) void taskStore.removeTask(id)
+    },
   })
 }
 
-const handleDurTouch = async (e: any) => {
-  const touch = e.touches && e.touches[0]
-  if (!touch) return
-  const rect: any = await getDurTrackRect()
-  if (!rect || !rect.width) return
-
-  const clientX = touch.clientX
-  let ratio = (clientX - rect.left) / rect.width
-  if (ratio < 0) ratio = 0
-  if (ratio > 0.999) ratio = 0.999
-
-  const index = Math.floor(ratio * 4)
-  if (durationOptions[index] && quickDuration.value !== durationOptions[index].val) {
-    quickDuration.value = durationOptions[index].val
-  }
-}
-
-const onDurTouchStart = (e: any) => {
-  handleDurTouch(e)
-}
-const onDurTouchMove = (e: any) => {
-  handleDurTouch(e)
-}
-
-const displaySubjects = computed(() => {
-  return subjects.value || []
+// Create Task Modal
+const showCreateModal = ref(false)
+const savingTask = ref(false)
+const taskForm = reactive({
+  name: '',
+  subjectId: '',
+  duration: 60,
+  scheduled: true,
+  timeHHmm: '09:00',
+  dueDateKey: '',
 })
 
-const submitQuickAdd = async () => {
-  const name = quickTaskName.value.trim()
-  if (!name) return
+function openCreateModal() {
+  if (!taskForm.subjectId) {
+    taskForm.subjectId = subjectStore.subjects[0]?.id || ''
+  }
+  showCreateModal.value = true
+}
 
-  const selectedSub = quickSubject.value || displaySubjects.value[0]
-  if (!selectedSub) {
-    uni.showToast({ title: '请先创建学科', icon: 'none' })
+function closeCreateModal() {
+  if (savingTask.value) return
+  showCreateModal.value = false
+}
+
+function onScheduledSwitch(event: Event) {
+  const detail = (event as Event & { detail?: { value?: boolean } }).detail
+  taskForm.scheduled = Boolean(detail?.value)
+}
+
+function onModalTimeChange(event: { detail?: { value?: string } }) {
+  if (event?.detail?.value) taskForm.timeHHmm = event.detail.value
+}
+
+function onModalDueDateChange(event: { detail?: { value?: string } }) {
+  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
+}
+
+async function submitCreateTask() {
+  if (savingTask.value) return
+  const title = taskForm.name.trim()
+  const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
+  if (!title) {
+    uni.showToast({ title: '请输入任务名称', icon: 'none' })
     return
   }
-  const now = new Date()
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  if (!subject) {
+    uni.showToast({ title: '请选择所属学科', icon: 'none' })
+    return
+  }
 
-  await taskStore.addTask({
-    name,
-    subject: selectedSub.name,
-    duration: quickDuration.value,
-
-    status: 'scheduled',
-    startTime: timeStr,
-    subjectId: selectedSub.id
-  })
-  quickTaskName.value = ''
-  showQuickAdd.value = false
-  uni.showToast({ title: '已添加日程', icon: 'success' })
-}
-
-// --- WEEK STRIP LOGIC ---
-const weekDays = computed(() => {
-  const days = []
-  const today = new Date()
-  const dayOfWeek = today.getDay() || 7
-  const monday = new Date(today)
-  monday.setDate(today.getDate() - (dayOfWeek - 1))
-  
-  const names = ['一', '二', '三', '四', '五', '六', '日']
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    const dateStr = d.toISOString().split('T')[0]
-    days.push({
-      day: d.getDate(),
-      weekdayShort: names[i],
-      dateStr,
-      isToday: d.toDateString() === today.toDateString()
+  const generation = authStore.getLoginGeneration()
+  savingTask.value = true
+  try {
+    const scheduledAt = taskForm.scheduled
+      ? combineLocalDateAndTime(selectedDateKey.value, taskForm.timeHHmm)
+      : undefined
+    const dueAt = taskForm.dueDateKey ? endOfLocalDateIso(taskForm.dueDateKey) : undefined
+    await taskStore.addTask({
+      name: title,
+      subject: subject.name,
+      subjectId: subject.id,
+      duration: taskForm.duration,
+      status: scheduledAt ? 'scheduled' : 'pending',
+      scheduledAt,
+      dueAt,
     })
+    if (generation !== authStore.getLoginGeneration()) return
+    taskForm.name = ''
+    taskForm.dueDateKey = ''
+    showCreateModal.value = false
+    uni.showToast({ title: scheduledAt ? '已加入当日日程' : '已加入待办清单', icon: 'none' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '任务保存失败', icon: 'none' })
+  } finally {
+    savingTask.value = false
   }
-  return days
-})
-const selectedDateIndex = ref((new Date().getDay() || 7) - 1)
-
-const handleToggleTask = async (task: any) => {
-  if (task.status === 'completed') {
-    task.status = 'pending'
-    uni.showToast({ title: '已恢复待办', icon: 'none' })
-  } else {
-    task.status = 'completed'
-    uni.showToast({ title: '任务已完成！', icon: 'success' })
-  }
-  await taskStore.updateTask(task)
-  await taskStore.loadLocalTasks()
 }
 
-const handleDeleteTask = async (id?: string) => {
-  if (!id) return
-  uni.showModal({
-    title: '确认删除',
-    content: '删除后不可恢复',
-    success: async (res) => {
-      if (res.confirm) {
-        await taskStore.removeTask(id)
-        uni.showToast({ title: '已删除', icon: 'success' })
+// Per-subject Due Review Shortcuts
+const dueCounts = ref<Record<string, number>>({})
+const dueHasMore = ref<Record<string, boolean>>({})
+const loadingDueCounts = ref(false)
+let dueCountRequestId = 0
+
+function dueCountText(subjectId: string): string {
+  const count = dueCounts.value[subjectId]
+  if (count === undefined) return '点击复习'
+  if (count === 0) return '暂无到期'
+  return dueHasMore.value[subjectId] ? `${count}+ 张待复习` : `${count} 张待复习`
+}
+
+async function loadDueCounts() {
+  if (!authStore.isAuthenticated || subjectStore.subjects.length === 0) {
+    dueCounts.value = {}
+    dueHasMore.value = {}
+    return
+  }
+  const id = ++dueCountRequestId
+  const generation = authStore.getLoginGeneration()
+  const userId = authStore.user?.id
+  const deviceId = authStore.serverDeviceId
+  const isCurrent = () => id === dueCountRequestId
+    && generation === authStore.getLoginGeneration()
+    && userId === authStore.user?.id
+    && deviceId === authStore.serverDeviceId
+
+  loadingDueCounts.value = true
+  const at = new Date().toISOString()
+  try {
+    const entries = await Promise.all(
+      subjectStore.subjects.map(async (sub) => {
+        try {
+          const page = await reviewApi.queue(at, undefined, sub.id)
+          return {
+            id: sub.id,
+            count: page.items?.length ?? 0,
+            hasMore: Boolean(page.hasMore),
+          }
+        } catch {
+          return null
+        }
+      }),
+    )
+    if (!isCurrent()) return
+    const nextCounts: Record<string, number> = {}
+    const nextMore: Record<string, boolean> = {}
+    for (const item of entries) {
+      if (item) {
+        nextCounts[item.id] = item.count
+        nextMore[item.id] = item.hasMore
       }
     }
-  })
+    dueCounts.value = nextCounts
+    dueHasMore.value = nextMore
+  } finally {
+    if (isCurrent()) loadingDueCounts.value = false
+  }
 }
 
+function openSubjectReview(subjectId: string) {
+  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${subjectId}&panel=review` })
+}
+
+watch(() => subjectStore.subjects.map(item => item.id).join(','), () => {
+  void loadDueCounts()
+})
+
 onMounted(async () => {
-  try {
-    await Promise.all([
-      subjectStore.loadSubjects(),
-      taskStore.fetchTasks(),
-    ])
-    if (subjects.value.length > 0 && !quickSubject.value) {
-      quickSubject.value = subjects.value[0]
-    }
-  } catch (error) {
-    console.error('[TabletDashboard] Failed to load server data:', error)
-    uni.showToast({ title: '看板数据加载失败', icon: 'none' })
-  }
+  await subjectStore.loadSubjects()
+  await taskStore.fetchTasks()
+  await loadDueCounts()
 })
 </script>
 
 <style scoped>
 .t-dashboard {
   display: flex;
+  flex-direction: row;
   width: 100%;
   height: 100%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  padding: 24rpx;
+  padding: 40rpx 44rpx;
+  gap: 32rpx;
+  background-color: var(--color-bg-primary);
   box-sizing: border-box;
-  gap: 24rpx;
+  overflow: hidden;
 }
 
-/* Left Column (62%) */
 .left-column {
-  width: 62%;
-  flex: 62;
-  height: calc(100vh - 48rpx);
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
-  background: var(--color-zen-white, #FFFFFF);
-  border-radius: 36rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  padding: 32rpx;
-  box-sizing: border-box;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02);
-  overflow: visible;
-  position: relative;
-}
-
-/* Right Column (38%) */
-.right-column {
-  width: 38%;
-  flex: 38;
-  height: calc(100vh - 48rpx);
-  display: flex;
-  flex-direction: column;
-  background: var(--color-zen-white, #FFFFFF);
-  border-radius: 36rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  padding: 28rpx;
-  box-sizing: border-box;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02);
+  flex: 6;
   min-width: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  height: 100%;
 }
 
-/* Greeting Row */
-.greeting-row {
+.right-column {
+  flex: 4;
+  min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  height: 100%;
+}
+
+.greeting-header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-}
-.greeting-title {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  display: block;
-}
-.add-circle-btn {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 50%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.add-circle-btn:hover {
-  transform: scale(1.05);
-}
-.add-circle-btn.is-active {
-  background: #7D9372;
-  border-color: #7D9372;
-}
-
-/* 悬浮最顶层的半透明遮罩 */
-.quick-add-mask {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 9990;
-  background-color: rgba(0, 0, 0, 0.15);
-  animation: fadeIn 0.2s;
-}
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* +号下拉展开输入框（绝对定位覆盖在最顶层，不推挤下方元素） */
-.quick-add-container {
-  position: absolute;
-  top: 130rpx;
-  left: 32rpx;
-  right: 32rpx;
-  z-index: 9999;
-  padding: 28rpx 32rpx;
-  background-color: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-stone, #A8A8A5);
-  border-radius: 28rpx;
-  box-shadow: 0 24rpx 60rpx rgba(0, 0, 0, 0.14);
-  animation: quickSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes quickSlideDown {
-  from { opacity: 0; transform: translateY(-12rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.quick-input-row {
-  display: flex;
-  align-items: center;
   gap: 16rpx;
-}
-.quick-input {
-  flex: 1;
-  height: 72rpx;
-  font-size: 28rpx;
-  color: var(--color-zen-graphite, #1C1C1A);
-  background: #FFFFFF;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 16rpx;
-  padding: 0 24rpx;
-}
-.quick-submit-btn {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
-  background-color: #7D9372;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s;
-  cursor: pointer;
-}
-.quick-submit-btn:active {
-  transform: scale(0.92);
-}
-.quick-submit-btn.disabled {
-  opacity: 0.3;
-}
-.quick-select-row {
-  display: flex;
-  align-items: center;
-  margin-top: 20rpx;
-  padding-top: 16rpx;
-  border-top: 1px dashed var(--color-zen-hairline, #E6E6E4);
-}
-.quick-label {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  flex-shrink: 0;
-  width: 80rpx;
-  font-weight: 600;
-}
-/* 单行选择触发器（带箭头） */
-.subject-dropdown-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  padding: 14rpx 24rpx;
-  background-color: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.subject-dropdown-btn:active {
-  background-color: var(--color-zen-surface, #EEEEEC);
-  border-color: #7D9372;
-}
-.sub-dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
   flex-shrink: 0;
 }
-.dropdown-text {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
 
-/* 弹出的竖直排列学科列表 */
-.subject-vertical-popup {
-  margin: 12rpx 0 6rpx;
-  background-color: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 24rpx;
-  box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  animation: dropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes dropdownSlide {
-  from { opacity: 0; transform: translateY(-10rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.subject-vertical-scroll {
-  width: 100%;
-  max-height: 360rpx;
-}
-.subject-vertical-list {
-  display: flex;
-  flex-direction: column;
-  padding: 12rpx;
-  gap: 8rpx;
-}
-.subject-vertical-item {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 20rpx 24rpx;
-  border-radius: 16rpx;
-  background-color: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid transparent;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.subject-vertical-item.active {
-  background-color: rgba(125, 147, 114, 0.12);
-  border-color: #7D9372;
-}
-.sub-item-name {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-
-/* 连在一起的 0-2 小时可拖动分段选择器 */
-.segmented-track {
-  flex: 1;
-  height: 68rpx;
-  background-color: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  padding: 6rpx;
-  display: flex;
-  position: relative;
-  overflow: hidden;
-  user-select: none;
-  cursor: pointer;
-}
-.segmented-thumb {
-  position: absolute;
-  top: 6rpx;
-  left: 6rpx;
-  bottom: 6rpx;
-  width: calc((100% - 12rpx) / 4);
-  background-color: var(--color-zen-white, #FFFFFF);
-  border-radius: 999rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(125, 147, 114, 0.35);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 1;
-}
-.segmented-item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  font-size: 24rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone, #A8A8A5);
-  transition: color 0.2s;
-}
-.segmented-item.active {
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-weight: 800;
-}
-
-/* Week Strip */
-.week-strip {
-  display: flex;
-  justify-content: space-between;
-  gap: 12rpx;
-  margin: 8rpx 0;
-}
-.w-day {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20rpx 0;
-  border-radius: 24rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
-}
-.w-day:hover {
-  background: #f0f0ee;
-}
-.w-day.active {
-  background: #7D9372;
-  color: #FFFFFF;
-  border-color: #7D9372;
-  box-shadow: 0 8rpx 20rpx rgba(125, 147, 114, 0.3);
-}
-.w-week {
-  font-size: 22rpx;
-  opacity: 0.8;
-  margin-bottom: 6rpx;
-}
-.w-num {
-  font-size: 32rpx;
-  font-weight: 800;
-}
-.today-dot {
-  width: 8rpx;
-  height: 8rpx;
-  border-radius: 50%;
-  background: #7D9372;
-  position: absolute;
-  bottom: 8rpx;
-}
-
-/* Section Header */
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 8rpx;
-}
-.section-title {
-  font-size: 30rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.section-count {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-
-/* Task List Container (Non-scrollable) */
-.task-list-container {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.empty-tasks {
-  padding: 60rpx 0;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16rpx;
-}
-.empty-icon { font-size: 64rpx; }
-.empty-text { font-size: 28rpx; font-weight: 700; color: var(--color-zen-graphite, #1C1C1A); }
-.empty-sub { font-size: 24rpx; color: var(--color-zen-stone, #A8A8A5); }
-
-.zen-pill-task {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20rpx 24rpx;
-  background: #FFFFFF;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-left: 8rpx solid #7D9372;
-  border-radius: 20rpx;
-  margin-bottom: 12rpx;
-  transition: all 0.2s;
-  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.01);
-  cursor: pointer;
-}
-.zen-pill-task:hover {
-  transform: translateY(-2rpx);
-  box-shadow: 0 6rpx 16rpx rgba(0,0,0,0.03);
-}
-.zen-pill-task.completed {
-  opacity: 0.5;
-  background: var(--color-zen-ivory, #F9F9F7);
-}
-.task-left {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  flex: 1;
-}
-.task-checkbox {
-  width: 36rpx;
-  height: 36rpx;
-  border-radius: 50%;
-  border: 2px solid #7D9372;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.task-checkbox.checked {
-  background: #7D9372;
-}
-.task-info {
+.greeting-meta {
   display: flex;
   flex-direction: column;
   gap: 6rpx;
 }
-.task-name {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.task-name.done {
-  text-decoration: line-through;
-  color: var(--color-zen-stone, #A8A8A5);
-}
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-}
-.task-subject {
-  font-weight: 700;
+
+.greeting-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
 }
 
-.task-actions {
+.date-row {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 14rpx;
 }
-.action-btn {
-  width: 56rpx;
-  height: 56rpx;
+
+.date-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.back-today {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.primary-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 16rpx 28rpx;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: 0 8rpx 20rpx rgba(139, 154, 110, 0.24);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.week-card {
+  padding: 18rpx 20rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.week-arrow {
+  width: 44rpx;
+  height: 44rpx;
   border-radius: 50%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+  background-color: var(--color-bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
 }
-.action-btn:hover {
-  background: #f0f0ee;
+
+.week-range {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 8rpx;
+}
+
+.week-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 0;
+  border-radius: 20rpx;
+  cursor: pointer;
+}
+
+.week-day.active {
+  background: var(--accent-gradient);
+}
+
+.w-label {
+  font-size: 20rpx;
+  color: var(--text-muted);
+}
+
+.w-num {
+  font-size: 26rpx;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-day.is-today:not(.active) .w-num {
+  color: var(--color-zen-sage);
+}
+
+.week-day.active .w-label,
+.week-day.active .w-num {
+  color: #FFFFFF;
+}
+
+.w-dot {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background-color: transparent;
+}
+
+.w-dot.visible {
+  background-color: var(--color-zen-sage);
+}
+
+.week-day.active .w-dot.visible {
+  background-color: #FFFFFF;
+}
+
+.tasks-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.task-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-bottom: 24rpx;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.section-count {
+  font-size: 22rpx;
+  color: var(--text-muted);
+}
+
+.empty-box {
+  padding: 28rpx;
+  text-align: center;
+}
+
+.empty-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.task-row {
+  padding: 20rpx 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.task-row.is-completed {
+  opacity: 0.62;
+}
+
+.check-circle {
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.check-circle.checked {
+  background-color: var(--color-zen-sage);
+  border-color: var(--color-zen-sage);
+}
+
+.check-circle.locked {
+  opacity: 0.45;
+}
+
+.row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.row-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.time-badge {
+  font-size: 22rpx;
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-zen-sage);
+}
+
+.subject-tag {
+  font-size: 20rpx;
+  padding: 2rpx 12rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-primary);
+  color: var(--text-muted);
+}
+
+.ddl-tag {
+  font-size: 20rpx;
+  padding: 2rpx 12rpx;
+  border-radius: var(--radius-full);
+  background-color: rgba(200, 155, 109, 0.16);
+  color: #8C6235;
+}
+
+.row-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.row-title.strike {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.dur-text {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono);
+  flex-shrink: 0;
+}
+
+.schedule-chip {
+  padding: 8rpx 16rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-size: 22rpx;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.row-icon-btn {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.row-icon-btn:hover {
+  background-color: var(--color-bg-primary);
+}
+
+.review-card {
+  flex: 1;
+  min-height: 0;
+  padding: 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.refresh-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 8rpx 16rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-size: 22rpx;
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.review-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.due-subjects-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.due-subject-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.due-subject-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 20rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 22rpx;
+  cursor: pointer;
+}
+
+.due-sub-left {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  min-width: 0;
+}
+
+.sub-icon-badge {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 16rpx;
+  background-color: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sub-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.due-sub-right {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  flex-shrink: 0;
+}
+
+.due-badge {
+  font-size: 22rpx;
+  padding: 6rpx 14rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-card);
+  color: var(--text-muted);
+}
+
+.due-badge.active {
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-bold);
+}
+
+.metrics-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  flex-shrink: 0;
+}
+
+.panel-caption {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  padding-left: 8rpx;
+}
+
+.create-modal {
+  max-width: 780rpx;
+  padding: 36rpx;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.modal-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.modal-close {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.field-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.zen-input {
+  height: 82rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20rpx;
+  padding: 0 22rpx;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.chip-item {
+  padding: 10rpx 20rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.chip-item.active {
+  background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-bold);
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14rpx 20rpx;
+  background-color: var(--color-bg-primary);
+  border-radius: 20rpx;
+}
+
+.switch-sub {
+  display: block;
+  font-size: 20rpx;
+  color: var(--text-muted);
+  margin-top: 4rpx;
+}
+
+.dual-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.picker-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.picker-box {
+  height: 76rpx;
+  line-height: 76rpx;
+  padding: 0 22rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18rpx;
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
+
+.btn {
+  padding: 16rpx 32rpx;
+  border-radius: 20rpx;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.ghost-btn {
+  background-color: var(--color-bg-primary);
+  color: var(--text-secondary);
+}
+
+.save-btn {
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+}
+
+.save-btn.disabled {
+  opacity: 0.55;
 }
 </style>

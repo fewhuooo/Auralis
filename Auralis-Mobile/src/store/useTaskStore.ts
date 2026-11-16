@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { localDb } from '@/services/localDb'
-import { formatLocalTimeHHmm, toLocalDateKey } from '@/utils/dateKey'
+import { formatLocalTimeHHmm } from '@/utils/dateKey'
 import { Lexorank } from '@/utils/lexorank'
 import { getPendingTodos, getScheduledTasksForLocalDate } from '@/utils/taskSyncMapper'
 import { uuidv7 } from '@/utils/uuid'
@@ -24,44 +24,18 @@ export interface Task {
   subjectId?: string
 }
 
-export interface TimeSlot {
-  time: string
-  task: Task | null
-}
-
-const DEFAULT_SLOT_HOURS = [
-  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
-  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00',
-]
-
 export const useTaskStore = defineStore('task', () => {
   const allTasks = ref<Task[]>([])
   const isSyncing = ref(false)
   const updatingTaskIds = ref<string[]>([])
 
   const pendingTasks = computed(() => getPendingTodos(allTasks.value))
+  const completedCount = computed(() => allTasks.value.filter(t => !t.is_deleted && t.status === 'completed').length)
+  const pendingCount = computed(() => pendingTasks.value.length)
 
   function getScheduledTasksForDate(dateKey: string): Task[] {
     return getScheduledTasksForLocalDate(allTasks.value, dateKey)
   }
-
-  // Compatibility derived getter for today's hourly grid until Home & Dashboard pages are migrated in Commits 3 & 4
-  const timeSlots = computed<TimeSlot[]>(() => {
-    const todayTasks = getScheduledTasksForDate(toLocalDateKey(new Date()))
-    return DEFAULT_SLOT_HOURS.map(hour => ({
-      time: hour,
-      task: todayTasks.find(t => (t.startTime || formatLocalTimeHHmm(t.scheduledAt))?.startsWith(hour.slice(0, 2))) || null,
-    }))
-  })
-
-  const completedCount = computed(() => allTasks.value.filter(t => !t.is_deleted && t.status === 'completed').length)
-  const pendingCount = computed(() => pendingTasks.value.length)
-  const totalFocusHours = computed(() => {
-    const mins = allTasks.value
-      .filter(t => !t.is_deleted && t.status === 'completed')
-      .reduce((sum, t) => sum + (t.duration || 0), 0)
-    return `${(mins / 60).toFixed(1)}h`
-  })
 
   const checkOnline = async (): Promise<boolean> => new Promise((resolve) => {
     uni.getNetworkType({
@@ -98,7 +72,7 @@ export const useTaskStore = defineStore('task', () => {
     entityType: 'block' | 'task',
     entityId: string,
     action: 'create' | 'update' | 'delete',
-    payload: any,
+    payload: unknown,
   ) {
     const { getClientId } = await import('./useSyncStore')
     const clientId = getClientId()
@@ -228,20 +202,6 @@ export const useTaskStore = defineStore('task', () => {
     })
   }
 
-  async function completeTask(slotTime: string) {
-    const slot = timeSlots.value.find(s => s.time === slotTime)
-    if (slot?.task?.id) {
-      await updateTask({ ...slot.task, status: 'completed' })
-    }
-  }
-
-  async function deferTask(slotTime: string) {
-    const slot = timeSlots.value.find(s => s.time === slotTime)
-    if (slot?.task?.id) {
-      await unscheduleTask(slot.task.id)
-    }
-  }
-
   uni.onNetworkStatusChange((res) => {
     if (res.isConnected) {
       console.log('[Mobile Store] Network re-established. Auto-syncing tasks...')
@@ -252,11 +212,9 @@ export const useTaskStore = defineStore('task', () => {
   return {
     allTasks,
     pendingTasks,
-    timeSlots,
     updatingTaskIds,
     completedCount,
     pendingCount,
-    totalFocusHours,
     getScheduledTasksForDate,
     loadLocalTasks,
     fetchTasks,
@@ -266,8 +224,6 @@ export const useTaskStore = defineStore('task', () => {
     scheduleTask,
     unscheduleTask,
     toggleTaskComplete,
-    completeTask,
-    deferTask,
     syncPendingChanges,
   }
 })
