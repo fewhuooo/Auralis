@@ -1,5 +1,6 @@
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
+import { formatLocalTimeHHmm } from '@/utils/dateKey';
 import { localDataScope } from './localDataScope';
 
 function databaseIdentity() {
@@ -412,6 +413,8 @@ export const localDb = {
 
         status TEXT,
         startTime TEXT,
+        scheduled_at TEXT,
+        due_at TEXT,
         sync_status TEXT DEFAULT 'synced',
         is_deleted INTEGER DEFAULT 0,
         sync_version INTEGER DEFAULT 0,
@@ -517,6 +520,12 @@ export const localDb = {
     } catch (e) {}
     try {
       await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN scheduled_at TEXT");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN due_at TEXT");
     } catch (e) {}
     try {
       await sqlite.execute("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
@@ -743,22 +752,25 @@ export const localDb = {
   // Task Blocks
   async getTasks(): Promise<Task[]> {
     const records = await sqlite.select('SELECT * FROM task_blocks WHERE is_deleted = 0 ORDER BY position ASC');
-    return records.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      subject: r.subject,
-      desc: r.desc || '',
-      color: r.color,
-      duration: r.duration,
-
-      status: r.status,
-      startTime: r.startTime || undefined,
-      sync_status: r.sync_status,
-      sync_version: r.sync_version || 0,
-      is_deleted: r.is_deleted === 1,
-      position: r.position || '0',
-      subjectId: r.subject_id || undefined
-    }));
+    return records.map((r: any) => {
+      const scheduledAt = r.scheduled_at || undefined;
+      return {
+        id: r.id,
+        name: r.name,
+        subject: r.subject || '',
+        desc: r.desc || '',
+        duration: r.duration,
+        status: r.status,
+        scheduledAt,
+        dueAt: r.due_at || undefined,
+        startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : (r.startTime || r.starttime || undefined),
+        sync_status: r.sync_status,
+        sync_version: r.sync_version || 0,
+        is_deleted: r.is_deleted === 1,
+        position: r.position || '0',
+        subjectId: r.subject_id || undefined,
+      };
+    });
   },
 
   async saveTask(task: Task, syncStatus = 'synced', syncVersion = 0) {
@@ -772,6 +784,10 @@ export const localDb = {
     const versionVal = task.sync_version || syncVersion || 0;
     const positionVal = task.position || '0';
     const subjectIdVal = task.subjectId || '';
+    const scheduledAtSql = task.scheduledAt ? `'${esc(task.scheduledAt)}'` : 'NULL';
+    const dueAtSql = task.dueAt ? `'${esc(task.dueAt)}'` : 'NULL';
+    const startTimeVal = task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || '');
+    const startTimeSql = startTimeVal ? `'${esc(startTimeVal)}'` : 'NULL';
     if (exists && exists.length > 0) {
       await sqlite.execute(`
         UPDATE task_blocks SET
@@ -779,9 +795,10 @@ export const localDb = {
           subject = '${esc(task.subject)}',
           desc = '${esc(task.desc || '')}',
           duration = ${task.duration},
-
           status = '${esc(task.status)}',
-          startTime = ${task.startTime ? `'${esc(task.startTime)}'` : 'NULL'},
+          startTime = ${startTimeSql},
+          scheduled_at = ${scheduledAtSql},
+          due_at = ${dueAtSql},
           sync_status = '${syncStatus}',
           is_deleted = ${isDeletedVal},
           sync_version = ${versionVal},
@@ -791,16 +808,17 @@ export const localDb = {
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO task_blocks (id, name, subject, desc, duration, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
+        INSERT INTO task_blocks (id, name, subject, desc, duration, status, startTime, scheduled_at, due_at, sync_status, is_deleted, sync_version, position, subject_id)
         VALUES (
           '${esc(taskId)}',
           '${esc(task.name)}',
           '${esc(task.subject)}',
           '${esc(task.desc || '')}',
           ${task.duration},
-
           '${esc(task.status)}',
-          ${task.startTime ? `'${esc(task.startTime)}'` : 'NULL'},
+          ${startTimeSql},
+          ${scheduledAtSql},
+          ${dueAtSql},
           '${syncStatus}',
           ${isDeletedVal},
           ${versionVal},
@@ -873,7 +891,9 @@ export const localDb = {
         desc: task.desc || '',
         duration: task.duration,
         status: task.status,
-        startTime: task.startTime || undefined,
+        scheduledAt: task.scheduledAt || undefined,
+        dueAt: task.dueAt || undefined,
+        startTime: task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || undefined),
         sync_version: task.syncVersion || task.sync_version || 0,
         is_deleted: false,
         position: task.position || '0',
@@ -932,20 +952,22 @@ export const localDb = {
       }
     } else if (entityType === 'task') {
       if (action === 'create' || action === 'update') {
+        const scheduledAt = payload.scheduledAt || undefined;
         const task: Task = {
           id: entityId,
           name: payload.name,
-          subject: payload.subject,
+          subject: payload.subject || '',
           desc: payload.desc || '',
           duration: payload.duration,
-
           status: payload.status,
-          startTime: payload.startTime || undefined,
+          scheduledAt,
+          dueAt: payload.dueAt || undefined,
+          startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : (payload.startTime || undefined),
           sync_status: 'synced',
           position: payload.position || '0',
           subjectId: payload.subjectId || payload.subject_id || undefined
         };
-        await this.saveTask(task, 'synced', mutation.createdAt);
+        await this.saveTask(task, 'synced', payload.sync_version || mutation.createdAt);
       } else if (action === 'delete') {
         await this.hardDeleteTask(entityId);
       }

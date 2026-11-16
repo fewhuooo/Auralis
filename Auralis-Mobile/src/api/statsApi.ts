@@ -9,8 +9,8 @@ export function createStatsApi(client: ApiCallClient = defaultApiCallClient) {
     overview: (at = new Date().toISOString()) => client.request(
       '/api/stats/overview', 'get', { query: { at } },
     ) as Promise<StatsOverview>,
-    weekly: (from: string, to: string) => client.request(
-      '/api/stats/weekly', 'get', { query: { from, to } },
+    weekly: (from: string, to: string, timeZone?: string) => client.request(
+      '/api/stats/weekly', 'get', { query: timeZone ? { from, to, timeZone } : { from, to } },
     ) as Promise<WeeklyStats>,
   }
 }

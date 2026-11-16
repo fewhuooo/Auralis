@@ -1,9 +1,11 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import { localDb } from '@/services/localDb'
-import { localDataScope } from '@/services/localDataScope'
-import { uuidv7 } from '@/utils/uuid'
+import { formatLocalTimeHHmm, toLocalDateKey } from '@/utils/dateKey'
 import { Lexorank } from '@/utils/lexorank'
+import { getPendingTodos, getScheduledTasksForLocalDate } from '@/utils/taskSyncMapper'
+import { uuidv7 } from '@/utils/uuid'
+import { useAuthStore } from './useAuthStore'
 
 export interface Task {
   id?: string
@@ -13,6 +15,8 @@ export interface Task {
   duration: number
   status: 'pending' | 'scheduled' | 'completed'
   startTime?: string
+  scheduledAt?: string
+  dueAt?: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete'
   position?: string
   sync_version?: number
@@ -25,66 +29,62 @@ export interface TimeSlot {
   task: Task | null
 }
 
+const DEFAULT_SLOT_HOURS = [
+  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
+  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00',
+]
+
 export const useTaskStore = defineStore('task', () => {
-  const pendingTasks = ref<Task[]>([])
+  const allTasks = ref<Task[]>([])
   const isSyncing = ref(false)
+  const updatingTaskIds = ref<string[]>([])
 
-  const timeSlots = ref<TimeSlot[]>([
-    { time: '08:00', task: null },
-    { time: '09:00', task: null },
-    { time: '10:00', task: null },
-    { time: '11:00', task: null },
-    { time: '12:00', task: null },
-    { time: '13:00', task: null },
-    { time: '14:00', task: null },
-    { time: '15:00', task: null },
-    { time: '16:00', task: null },
-    { time: '17:00', task: null },
-    { time: '18:00', task: null },
-    { time: '19:00', task: null },
-    { time: '20:00', task: null },
-    { time: '21:00', task: null },
-    { time: '22:00', task: null },
-  ])
+  const pendingTasks = computed(() => getPendingTodos(allTasks.value))
 
-  const checkOnline = async (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      uni.getNetworkType({
-        success: (res) => {
-          resolve(res.networkType !== 'none')
-        },
-        fail: () => {
-          resolve(true)
-        }
-      })
-    })
+  function getScheduledTasksForDate(dateKey: string): Task[] {
+    return getScheduledTasksForLocalDate(allTasks.value, dateKey)
   }
 
-  const loadLocalTasks = async () => {
+  // Compatibility derived getter for today's hourly grid until Home & Dashboard pages are migrated in Commits 3 & 4
+  const timeSlots = computed<TimeSlot[]>(() => {
+    const todayTasks = getScheduledTasksForDate(toLocalDateKey(new Date()))
+    return DEFAULT_SLOT_HOURS.map(hour => ({
+      time: hour,
+      task: todayTasks.find(t => (t.startTime || formatLocalTimeHHmm(t.scheduledAt))?.startsWith(hour.slice(0, 2))) || null,
+    }))
+  })
+
+  const completedCount = computed(() => allTasks.value.filter(t => !t.is_deleted && t.status === 'completed').length)
+  const pendingCount = computed(() => pendingTasks.value.length)
+  const totalFocusHours = computed(() => {
+    const mins = allTasks.value
+      .filter(t => !t.is_deleted && t.status === 'completed')
+      .reduce((sum, t) => sum + (t.duration || 0) * 60, 0)
+    return `${(mins / 60).toFixed(1)}h`
+  })
+
+  const checkOnline = async (): Promise<boolean> => new Promise((resolve) => {
+    uni.getNetworkType({
+      success: res => resolve(res.networkType !== 'none'),
+      fail: () => resolve(true),
+    })
+  })
+
+  async function loadLocalTasks() {
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
     try {
       const tasks = await localDb.getTasks()
-      pendingTasks.value = tasks.filter((t: Task) => t.status === 'pending')
-
-      // Clear slots
-      timeSlots.value.forEach(slot => { slot.task = null })
-
-      const scheduledTasks = tasks.filter((t: Task) => t.status !== 'pending')
-      scheduledTasks.forEach((t: Task) => {
-        const slot = timeSlots.value.find(s => s.time === t.startTime)
-        if (slot) {
-          slot.task = t
-        }
-      })
+      if (generation !== auth.getLoginGeneration() || userId !== auth.user?.id) return
+      allTasks.value = tasks
     } catch (e) {
       console.error('[Mobile Store] Failed to load local tasks:', e)
     }
   }
 
-  const fetchTasks = async () => {
-    // 1. Read from local SQLite
+  async function fetchTasks() {
     await loadLocalTasks()
-
-    // 2. Try bidirectional sync
     try {
       const { useSyncStore } = await import('./useSyncStore')
       await useSyncStore().triggerSync()
@@ -94,13 +94,18 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  const recordMutation = async (entityType: 'block' | 'task', entityId: string, action: 'create' | 'update' | 'delete', payload: any) => {
+  async function recordMutation(
+    entityType: 'block' | 'task',
+    entityId: string,
+    action: 'create' | 'update' | 'delete',
+    payload: any,
+  ) {
     const { getClientId } = await import('./useSyncStore')
     const clientId = getClientId()
     await localDb.addLocalMutation(clientId, entityType, entityId, action, payload)
   }
 
-  const syncPendingChanges = async () => {
+  async function syncPendingChanges() {
     const online = await checkOnline()
     if (!online || isSyncing.value) return
     isSyncing.value = true
@@ -108,201 +113,161 @@ export const useTaskStore = defineStore('task', () => {
       const { useSyncStore } = await import('./useSyncStore')
       await useSyncStore().triggerSync()
     } catch (err) {
-      console.error(`[Mobile Store] Background sync failed:`, err)
+      console.error('[Mobile Store] Background sync failed:', err)
     } finally {
       isSyncing.value = false
     }
   }
 
-  const addTask = async (task: Task) => {
-    const allTasks = [...pendingTasks.value, ...timeSlots.value.map(s => s.task).filter(Boolean) as Task[]]
-    allTasks.sort((a, b) => (a.position || '0').localeCompare(b.position || '0'))
-    const lastTask = allTasks[allTasks.length - 1]
-    const lastPos = lastTask ? (lastTask.position || '0') : ''
-    const newPos = Lexorank.getMedian(lastPos, '')
+  function nextPosition(): string {
+    const sorted = [...allTasks.value].sort((a, b) => (a.position || '0').localeCompare(b.position || '0'))
+    const lastPos = sorted.length > 0 ? (sorted[sorted.length - 1].position || '0') : ''
+    return Lexorank.getMedian(lastPos, '')
+  }
 
+  async function addTask(task: Task) {
+    const scheduledAt = task.scheduledAt || undefined
+    const status: Task['status'] = task.status === 'completed'
+      ? 'completed'
+      : scheduledAt
+        ? 'scheduled'
+        : 'pending'
     const newTask: Task = {
       id: task.id || uuidv7(),
       name: task.name,
       subject: task.subject,
       desc: task.desc || '',
       duration: task.duration,
-      status: task.status || 'pending',
-      startTime: task.startTime || '',
+      status,
+      scheduledAt,
+      dueAt: task.dueAt || undefined,
+      startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : (task.startTime || undefined),
       sync_status: 'pending_create',
-      position: newPos,
-      subjectId: task.subjectId
+      position: task.position || nextPosition(),
+      subjectId: task.subjectId,
     }
 
-    if (newTask.status === 'pending') {
-      pendingTasks.value.push(newTask)
-    } else {
-      const slot = timeSlots.value.find(s => s.time === newTask.startTime)
-      if (slot) slot.task = newTask
-    }
-
+    allTasks.value = [...allTasks.value, newTask]
     await localDb.saveTask(newTask, 'pending_create')
     await recordMutation('task', newTask.id || '', 'create', newTask)
-    syncPendingChanges()
+    void syncPendingChanges()
   }
 
-  const removeTask = async (id: string) => {
-    pendingTasks.value = pendingTasks.value.filter(t => t.id !== id)
-    timeSlots.value.forEach(slot => {
-      if (slot.task && slot.task.id === id) {
-        slot.task = null
-      }
-    })
-    await localDb.deleteTask(id)
-    await recordMutation('task', id, 'delete', { id })
-    syncPendingChanges()
-  }
-
-  const updateTask = async (task: Task) => {
-    if (!task.id) return
-    const updatedTask: Task = {
-      ...task,
-      sync_status: task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
-    }
-
-    if (updatedTask.status === 'pending') {
-      const idx = pendingTasks.value.findIndex(t => t.id === task.id)
-      if (idx !== -1) pendingTasks.value[idx] = updatedTask
-    } else {
-      const slot = timeSlots.value.find(s => s.time === updatedTask.startTime)
-      if (slot) slot.task = updatedTask
-    }
-
-    await localDb.saveTask(updatedTask, updatedTask.sync_status)
-    await recordMutation('task', task.id, 'update', updatedTask)
-    syncPendingChanges()
-  }
-
-  // Getters
-  const completedCount = computed(() => timeSlots.value.filter(s => s.task?.status === 'completed').length)
-  const pendingCount = computed(() => pendingTasks.value.length)
-  const totalFocusHours = computed(() => {
-    let mins = 0
-    timeSlots.value.forEach(s => {
-      if (s.task && s.task.status === 'completed') mins += s.task.duration * 60
-    })
-    return (mins / 60).toFixed(1) + 'h'
-  })
-
-  /**
-   * 完成任务（移动端手势操作）
-   */
-  const completeTask = async (slotTime: string) => {
-    const slot = timeSlots.value.find(s => s.time === slotTime)
-    if (slot && slot.task) {
-      slot.task.status = 'completed'
-      const updated: Task = {
-        ...slot.task,
-        sync_status: slot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
-      }
-      await localDb.saveTask(updated, updated.sync_status)
-      await recordMutation('task', updated.id || '', 'update', updated)
-      syncPendingChanges()
-    }
-  }
-
-  /**
-   * 延后任务（移动端手势操作 — 从时间轴退回待办）
-   */
-  const deferTask = async (slotTime: string) => {
-    const slot = timeSlots.value.find(s => s.time === slotTime)
-    if (slot && slot.task) {
-      const allTasks = [...pendingTasks.value, ...timeSlots.value.map(s => s.task).filter(Boolean) as Task[]]
-      allTasks.sort((a, b) => (a.position || '0').localeCompare(b.position || '0'))
-      const lastTask = allTasks[allTasks.length - 1]
-      const lastPos = lastTask ? (lastTask.position || '0') : ''
-      const newPos = Lexorank.getMedian(lastPos, '')
-
-      const task = { 
-        ...slot.task, 
-        status: 'pending' as const, 
-        startTime: '',
-        position: newPos
-      }
-      const updated: Task = {
+  async function updateTask(task: Task) {
+    if (!task.id || updatingTaskIds.value.includes(task.id)) return
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const id = task.id
+    updatingTaskIds.value = [...updatingTaskIds.value, id]
+    try {
+      const existing = allTasks.value.find(item => item.id === id)
+      const scheduledAt = task.scheduledAt || undefined
+      const updatedTask: Task = {
+        ...existing,
         ...task,
-        sync_status: task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
+        scheduledAt,
+        dueAt: task.dueAt || undefined,
+        startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : undefined,
+        sync_status: existing?.sync_status === 'pending_create' ? 'pending_create' : 'pending_update',
       }
-      
-      pendingTasks.value.push(updated)
-      slot.task = null
-      
-      await localDb.saveTask(updated, updated.sync_status)
-      await recordMutation('task', updated.id || '', 'update', updated)
-      syncPendingChanges()
+      await localDb.saveTask(updatedTask, updatedTask.sync_status)
+      await recordMutation('task', id, 'update', updatedTask)
+      if (generation === auth.getLoginGeneration() && userId === auth.user?.id) {
+        allTasks.value = allTasks.value.map(item => item.id === id ? updatedTask : item)
+      }
+      void syncPendingChanges()
+    } finally {
+      updatingTaskIds.value = updatingTaskIds.value.filter(item => item !== id)
     }
   }
 
-  const syncFromRemote = (data: { pending: Task[], slots: TimeSlot[] }) => {
-    const tasksToSave: Task[] = []
-    data.pending.forEach(t => tasksToSave.push({ ...t, status: 'pending', startTime: '' }))
-    data.slots.forEach(s => {
-      if (s.task) {
-        tasksToSave.push({ ...s.task, status: s.task.status, startTime: s.time })
-      }
+  async function removeTask(id: string) {
+    if (!id || updatingTaskIds.value.includes(id)) return
+    const existing = allTasks.value.find(item => item.id === id)
+    allTasks.value = allTasks.value.filter(item => item.id !== id)
+    await localDb.deleteTask(id)
+    await recordMutation('task', id, 'delete', {
+      id,
+      sync_version: existing?.sync_version ?? 0,
     })
-    
-    localDb.mergeTasksFromServer(tasksToSave).then(() => loadLocalTasks())
+    void syncPendingChanges()
   }
 
-  // Set up reactive sync listener on network status change
+  async function scheduleTask(id: string, scheduledAtIso: string) {
+    const task = allTasks.value.find(item => item.id === id)
+    if (!task) return
+    await updateTask({
+      ...task,
+      scheduledAt: scheduledAtIso,
+      startTime: formatLocalTimeHHmm(scheduledAtIso),
+      status: task.status === 'completed' ? 'completed' : 'scheduled',
+    })
+  }
+
+  async function unscheduleTask(id: string) {
+    const task = allTasks.value.find(item => item.id === id)
+    if (!task) return
+    await updateTask({
+      ...task,
+      scheduledAt: undefined,
+      startTime: undefined,
+      status: task.status === 'completed' ? 'completed' : 'pending',
+    })
+  }
+
+  async function toggleTaskComplete(id: string) {
+    const task = allTasks.value.find(item => item.id === id)
+    if (!task) return
+    const nextStatus: Task['status'] = task.status === 'completed'
+      ? (task.scheduledAt ? 'scheduled' : 'pending')
+      : 'completed'
+    await updateTask({
+      ...task,
+      status: nextStatus,
+    })
+  }
+
+  async function completeTask(slotTime: string) {
+    const slot = timeSlots.value.find(s => s.time === slotTime)
+    if (slot?.task?.id) {
+      await updateTask({ ...slot.task, status: 'completed' })
+    }
+  }
+
+  async function deferTask(slotTime: string) {
+    const slot = timeSlots.value.find(s => s.time === slotTime)
+    if (slot?.task?.id) {
+      await unscheduleTask(slot.task.id)
+    }
+  }
+
   uni.onNetworkStatusChange((res) => {
     if (res.isConnected) {
       console.log('[Mobile Store] Network re-established. Auto-syncing tasks...')
-      syncPendingChanges()
+      void syncPendingChanges()
     }
   })
 
-  // Pomodoro local tracking
-  const todayPomodoros = ref(0)
-  const pomodoroStorageKey = () => `auralis:local:${localDataScope.current()}:pomodoro_counts`
-  const loadPomodoroCount = () => {
-    const dateStr = new Date().toISOString().split('T')[0]
-    const storedStr = uni.getStorageSync(pomodoroStorageKey())
-    if (storedStr) {
-      try {
-        const counts = JSON.parse(storedStr)
-        todayPomodoros.value = counts[dateStr] || 0
-      } catch(e) {}
-    }
-  }
-  loadPomodoroCount()
-
-  const incrementPomodoro = () => {
-    todayPomodoros.value++
-    const dateStr = new Date().toISOString().split('T')[0]
-    const storageKey = pomodoroStorageKey()
-    const storedStr = uni.getStorageSync(storageKey)
-    let counts: Record<string, number> = {}
-    if (storedStr) {
-      try { counts = JSON.parse(storedStr) } catch(e) {}
-    }
-    counts[dateStr] = todayPomodoros.value
-    uni.setStorageSync(storageKey, JSON.stringify(counts))
-  }
-
   return {
+    allTasks,
     pendingTasks,
     timeSlots,
+    updatingTaskIds,
     completedCount,
     pendingCount,
     totalFocusHours,
-    todayPomodoros,
-    loadPomodoroCount,
+    getScheduledTasksForDate,
     loadLocalTasks,
     fetchTasks,
     addTask,
     removeTask,
     updateTask,
+    scheduleTask,
+    unscheduleTask,
+    toggleTaskComplete,
     completeTask,
     deferTask,
-    syncFromRemote,
     syncPendingChanges,
-    incrementPomodoro
   }
 })

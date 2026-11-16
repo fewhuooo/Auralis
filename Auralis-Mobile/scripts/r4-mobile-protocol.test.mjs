@@ -234,14 +234,15 @@ test('local data scope isolates users without deleting the legacy namespace', ()
   assert.equal(values.has('h5_db_subjects'), false)
 })
 
-test('pomodoro counts use the active local data scope', async () => {
-  const source = await readFile(new URL('../src/store/useTaskStore.ts', import.meta.url), 'utf8')
+test('focus store scopes persisted state and outbox by active local data scope', async () => {
+  const source = await readFile(new URL('../src/store/useFocusStore.ts', import.meta.url), 'utf8')
+  const controllerSource = await readFile(new URL('../src/services/focusController.ts', import.meta.url), 'utf8')
   const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(source, /localDataScope/)
-  assert.doesNotMatch(source, /getStorageSync\(['"]pomodoro_counts['"]\)/)
-  assert.doesNotMatch(source, /setStorageSync\(['"]pomodoro_counts['"]\)/)
-  assert.match(source, /auralis:local:\$\{localDataScope\.current\(\)\}:pomodoro_counts/)
-  assert.match(appSource, /loadPomodoroCount/)
+  assert.match(controllerSource, /auralis:local:\$\{scope\}:focus_state/)
+  assert.match(controllerSource, /auralis:local:\$\{scope\}:focus_daily/)
+  assert.match(controllerSource, /auralis:local:\$\{scope\}:focus_outbox/)
+  assert.match(appSource, /reconcileNow/)
 })
 
 test('mobile home and profile do not inject demo task or profile metrics', async () => {

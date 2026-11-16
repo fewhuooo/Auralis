@@ -2,95 +2,119 @@
   <TabletLayout>
     <view class="t-pomodoro">
       <view class="main-content">
-        
-        <!-- Left Column: Timer Core (60%) -->
         <view class="left-column">
-          <TimerCore @center-click="showTaskSelect = true" />
+          <TimerCore @center-click="openTaskPicker" />
         </view>
 
-        <!-- Right Column: Stats & Details (40%) -->
         <view class="right-column">
-          
-          <!-- Card 1: Current Focus -->
-          <view class="panel-card top-card" style="position: relative; z-index: 100;">
+          <view class="panel-card zen-card">
             <view class="card-header">
-              <text class="card-title">当前专注</text>
+              <text class="card-title">当前专注任务</text>
             </view>
-            <view class="task-selector-wrap" style="position: relative;">
-              <view class="task-selector" @click="showTaskSelect = !showTaskSelect">
-                <view class="task-box">
-                  <text class="t-name" v-if="currentTask">{{ currentTask.name }}</text>
-                  <text class="t-name placeholder" v-else>点击选择任务</text>
-                  <view class="selector-arrow" :style="{ transform: showTaskSelect ? 'rotate(90deg)' : 'rotate(0deg)' }">
-                    <LineIcon name="chevron-right" size="26rpx" color="var(--color-zen-stone, #A8A8A5)" />
-                  </view>
-                </view>
-              </view>
-
-              <!-- Anchored Popover Menu -->
-              <TaskSelectSheet v-model:visible="showTaskSelect" @select="onTaskSelect" />
+            <view
+              class="task-box"
+              :class="{ 'is-locked': focusStore.isTaskLocked }"
+              @click="openTaskPicker"
+            >
+              <LineIcon
+                :name="focusStore.isTaskLocked ? 'lock' : 'calendar'"
+                size="32rpx"
+                color="var(--color-zen-sage)"
+              />
+              <text class="task-name" :class="{ placeholder: !focusStore.selectedTaskTitle }">
+                {{ focusStore.selectedTaskTitle || '自由学习（点击选择关联任务）' }}
+              </text>
+              <LineIcon name="chevron-down" size="30rpx" color="var(--text-muted)" />
             </view>
           </view>
 
-          <!-- Card 2: Today's Data -->
-          <view class="panel-card middle-card">
+          <view v-if="focusStore.lastCompletedTask" class="panel-card zen-card prompt-card">
+            <text class="card-title">本轮专注已完成</text>
+            <text class="prompt-desc">是否将「{{ focusStore.lastCompletedTask.title }}」标记为已完成？</text>
+            <view class="prompt-actions">
+              <view class="prompt-btn ghost" @click="focusStore.dismissCompletedTaskPrompt()">暂不</view>
+              <view class="prompt-btn primary" @click="completeBoundTask">标记完成</view>
+            </view>
+          </view>
+
+          <view class="panel-card zen-card">
             <view class="card-header">
-              <text class="card-title">今日数据看板</text>
+              <text class="card-title">今日专注统计</text>
             </view>
             <view class="stats-container">
               <view class="stat-col">
-                <text class="stat-val">{{ completedToday }}</text>
-                <view class="stat-label-row">
-                  <LineIcon name="check" size="26rpx" color="var(--color-zen-stone, #A8A8A5)" />
-                  <text class="stat-label">今日番茄</text>
-                </view>
+                <text class="stat-val">{{ focusStore.todayRounds }}</text>
+                <text class="stat-label">完成轮次</text>
               </view>
-              
               <view class="stat-divider"></view>
-
               <view class="stat-col">
                 <view class="val-wrapper">
-                  <text class="stat-val">{{ completedToday * FOCUS_MINS }}</text>
+                  <text class="stat-val">{{ focusStore.todayFocusMinutes }}</text>
                   <text class="stat-unit">m</text>
                 </view>
                 <text class="stat-label">专注时长</text>
               </view>
             </view>
           </view>
-          
         </view>
-
       </view>
     </view>
+
+    <template #modal>
+      <TaskSelectSheet
+        v-model:visible="showTaskSelect"
+        :selected-task-id="focusStore.selectedTaskId"
+        @select="onTaskSelect"
+      />
+    </template>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { onMounted, ref } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
 import TaskSelectSheet from '@/components/TaskSelectSheet.vue'
-import TimerCore from './TimerCore.vue'
+import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { useFocusStore } from '@/store/useFocusStore'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
+import TimerCore from './TimerCore.vue'
 
+const focusStore = useFocusStore()
 const taskStore = useTaskStore()
-
-const currentTask = ref<Task | null>(null)
 const showTaskSelect = ref(false)
 
-const onTaskSelect = (task: Task) => {
-  currentTask.value = task
+function syncFocusState() {
+  focusStore.reconcileNow(false)
+  void focusStore.flushPendingSessions()
+  void taskStore.fetchTasks()
 }
 
-const FOCUS_MINS = 25
+onMounted(syncFocusState)
+onShow(syncFocusState)
 
-const completedToday = computed(() => {
-  return taskStore.todayPomodoros || 0
-})
+function openTaskPicker() {
+  if (focusStore.isTaskLocked) {
+    uni.showToast({ title: '计时进行中或已暂停，重置后可切换任务', icon: 'none' })
+    return
+  }
+  showTaskSelect.value = true
+}
 
-onMounted(() => {
-  taskStore.fetchTasks()
-})
+function onTaskSelect(task: Task | null) {
+  focusStore.selectTask(task)
+}
+
+async function completeBoundTask() {
+  const target = focusStore.lastCompletedTask
+  if (!target?.id) return
+  const existing = taskStore.allTasks.find(item => item.id === target.id)
+  if (existing && existing.status !== 'completed') {
+    await taskStore.toggleTaskComplete(target.id)
+    uni.showToast({ title: '任务已标记完成', icon: 'none' })
+  }
+  focusStore.dismissCompletedTaskPrompt()
+}
 </script>
 
 <style scoped>
@@ -98,8 +122,7 @@ onMounted(() => {
   display: flex;
   width: 100%;
   height: 100%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  position: relative;
+  background-color: var(--color-bg-primary);
   overflow: hidden;
 }
 
@@ -110,8 +133,8 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 80rpx 60rpx;
-  gap: 160rpx; 
+  padding: 56rpx 60rpx;
+  gap: 72rpx;
   box-sizing: border-box;
 }
 
@@ -119,7 +142,6 @@ onMounted(() => {
   flex: 5.5;
   display: flex;
   flex-direction: column;
-  position: relative;
   height: 100%;
 }
 
@@ -127,77 +149,98 @@ onMounted(() => {
   flex: 4.5;
   display: flex;
   flex-direction: column;
-  gap: 40rpx;
+  gap: 28rpx;
   height: 100%;
   justify-content: center;
 }
 
-/* Card UI */
 .panel-card {
-  background: var(--color-zen-white, #FFFFFF);
-  border-radius: 40rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  padding: 40rpx;
-  box-shadow: 0 12rpx 36rpx rgba(0, 0, 0, 0.02);
-  display: flex;
-  flex-direction: column;
+  padding: 36rpx;
 }
 
 .card-header {
-  margin-bottom: 30rpx;
+  margin-bottom: 24rpx;
 }
 
 .card-title {
-  font-size: 32rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
-}
-
-/* Task Selector */
-.task-selector {
-  width: 100%;
-  cursor: pointer;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
 }
 
 .task-box {
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  padding: 24rpx 36rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 24rpx;
+  padding: 22rpx 26rpx;
   display: flex;
   align-items: center;
-  transition: all 0.2s;
+  gap: 16rpx;
+  cursor: pointer;
 }
 
-.task-box:active {
-  background: rgba(0, 0, 0, 0.04);
+.task-box.is-locked {
+  opacity: 0.78;
 }
 
-.t-name {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
+.task-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.t-name.placeholder {
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 400;
+.task-name.placeholder {
+  color: var(--text-muted);
+  font-weight: var(--font-weight-regular);
 }
-.selector-arrow {
-  margin-left: auto;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+.prompt-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 14rpx;
 }
 
-/* Stats Container */
+.prompt-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14rpx;
+  margin-top: 6rpx;
+}
+
+.prompt-btn {
+  padding: 12rpx 24rpx;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.prompt-btn.ghost {
+  background-color: var(--color-bg-primary);
+  color: var(--text-muted);
+}
+
+.prompt-btn.primary {
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+}
+
 .stats-container {
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 20rpx 0;
+  padding: 12rpx 0;
 }
 
 .stat-col {
@@ -205,12 +248,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 10rpx;
 }
 
 .stat-divider {
   width: 1px;
-  height: 80rpx;
-  background-color: var(--color-zen-hairline, #E6E6E4);
+  height: 72rpx;
+  background-color: var(--border-subtle);
 }
 
 .val-wrapper {
@@ -219,33 +263,22 @@ onMounted(() => {
 }
 
 .stat-val {
-  font-size: 64rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-size: 56rpx;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .stat-unit {
-  font-size: 28rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-left: 8rpx;
-  font-weight: 600;
-}
-
-.stat-label-row {
-  display: flex;
-  align-items: center;
-  margin-top: 16rpx;
-  gap: 8rpx;
+  font-size: 26rpx;
+  color: var(--text-muted);
+  margin-left: 6rpx;
 }
 
 .stat-label {
-  font-size: 26rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-.stat-col > .stat-label {
-  margin-top: 16rpx;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
 }
 </style>

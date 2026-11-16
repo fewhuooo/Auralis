@@ -1,197 +1,226 @@
 <template>
-  <view v-if="visible" class="popover-wrapper">
-    <!-- Transparent backdrop overlay covering the whole viewport to close on outside click -->
-    <view class="popover-backdrop" @click.stop="close" @touchmove.stop.prevent></view>
-
-    <!-- Dropdown Popover Card -->
-    <transition name="popover-anim" appear>
-      <view class="popover-menu" @click.stop>
-        <!-- Triangle Arrow pointing up to the button -->
-        <view class="popover-arrow"></view>
-
-        <view class="popover-header">
-          <text class="pop-title">选择专注任务 ✦</text>
+  <view v-if="visible" class="zen-sheet-mask" @click="close">
+    <view class="zen-sheet-body sheet-panel" @click.stop>
+      <view class="sheet-header">
+        <text class="sheet-title">选择专注关联任务</text>
+        <view class="sheet-close" @click="close">
+          <LineIcon name="close" size="34rpx" color="var(--text-muted)" />
         </view>
-        
-        <!-- Scrollable Task List -->
-        <scroll-view scroll-y :show-scrollbar="false" class="popover-scroll">
-          <view v-if="displayTasks.length === 0" class="empty-state">
-            <text class="empty-icon">☕</text>
-            <text class="empty-text">当前无待办任务</text>
-          </view>
-          
-          <view 
-            v-else
-            v-for="task in displayTasks" 
-            :key="task.id"
-            class="task-item"
-            @click="selectTask(task)"
-          >
-            <view class="t-color-bar" :style="{ background: 'var(--color-primary)' }"></view>
-            <view class="t-info">
-              <text class="t-name">{{ task.name }}</text>
-              <text class="t-subject">{{ task.subject }} · {{ task.duration }} 分钟</text>
-            </view>
-            <view class="check-icon">✦</view>
-          </view>
-        </scroll-view>
       </view>
-    </transition>
+
+      <scroll-view scroll-y :show-scrollbar="false" class="sheet-scroll">
+        <view
+          class="task-option"
+          :class="{ 'is-selected': !selectedTaskId }"
+          @click="choose(null)"
+        >
+          <view class="option-icon free">
+            <LineIcon name="sparkles" size="32rpx" color="var(--color-zen-sage)" />
+          </view>
+          <view class="option-body">
+            <text class="option-title">自由学习</text>
+            <text class="option-meta">不绑定具体任务，专注计时完成后仍计入专注记录</text>
+          </view>
+          <LineIcon v-if="!selectedTaskId" name="check" size="32rpx" color="var(--color-zen-sage)" />
+        </view>
+
+        <view v-if="scheduledTasks.length > 0" class="group-section">
+          <text class="group-label">已排期日程</text>
+          <view
+            v-for="task in scheduledTasks"
+            :key="task.id"
+            class="task-option"
+            :class="{ 'is-selected': selectedTaskId === task.id }"
+            @click="choose(task)"
+          >
+            <view class="option-icon">
+              <LineIcon name="calendar" size="30rpx" color="var(--color-zen-sage)" />
+            </view>
+            <view class="option-body">
+              <text class="option-title">{{ task.name }}</text>
+              <text class="option-meta">
+                {{ formatShortDate(task.scheduledAt) }} {{ formatLocalTimeHHmm(task.scheduledAt) }}
+                · {{ task.subject || '通用' }} · {{ Math.round((task.duration || 0.5) * 60) }} 分钟
+              </text>
+            </view>
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="32rpx" color="var(--color-zen-sage)" />
+          </view>
+        </view>
+
+        <view v-if="pendingTasks.length > 0" class="group-section">
+          <text class="group-label">待办清单</text>
+          <view
+            v-for="task in pendingTasks"
+            :key="task.id"
+            class="task-option"
+            :class="{ 'is-selected': selectedTaskId === task.id }"
+            @click="choose(task)"
+          >
+            <view class="option-icon">
+              <LineIcon name="layers" size="30rpx" color="var(--text-muted)" />
+            </view>
+            <view class="option-body">
+              <text class="option-title">{{ task.name }}</text>
+              <text class="option-meta">
+                {{ task.subject || '通用' }} · {{ Math.round((task.duration || 0.5) * 60) }} 分钟
+              </text>
+            </view>
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="32rpx" color="var(--color-zen-sage)" />
+          </view>
+        </view>
+
+        <view v-if="scheduledTasks.length === 0 && pendingTasks.length === 0" class="empty-tip">
+          <LineIcon name="coffee" size="48rpx" color="var(--text-muted)" />
+          <text class="empty-text">暂无待办或已排期任务，可直接使用自由学习</text>
+        </view>
+      </scroll-view>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import LineIcon from '@/components/LineIcon.vue'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
+import { formatLocalTimeHHmm, formatShortDate } from '@/utils/dateKey'
 
-const props = defineProps<{
+defineProps<{
   visible: boolean
+  selectedTaskId?: string
 }>()
 
-const emit = defineEmits(['update:visible', 'select'])
+const emit = defineEmits<{
+  (event: 'update:visible', value: boolean): void
+  (event: 'select', task: Task | null): void
+}>()
 
 const taskStore = useTaskStore()
 
-const displayTasks = computed(() => {
-  return taskStore.pendingTasks || []
-})
+const scheduledTasks = computed(() =>
+  taskStore.allTasks
+    .filter(task => !task.is_deleted && task.scheduledAt && task.status !== 'completed')
+    .sort((a, b) => Date.parse(a.scheduledAt || '') - Date.parse(b.scheduledAt || '')),
+)
 
-const close = () => {
+const pendingTasks = computed(() => taskStore.pendingTasks)
+
+function close() {
   emit('update:visible', false)
 }
 
-const selectTask = (task: Task) => {
+function choose(task: Task | null) {
   emit('select', task)
   close()
 }
 </script>
 
 <style scoped>
-.popover-wrapper {
-  position: absolute;
-  top: calc(100% + 18rpx);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  width: 560rpx;
-  max-width: 90vw;
-}
-
-/* 透明背景层，点击任何外部区域自动收起菜单 */
-.popover-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  z-index: 999;
-}
-
-/* 下落气泡菜单面板 */
-.popover-menu {
-  position: relative;
-  z-index: 1000;
-  width: 100%;
-  background: var(--color-bg-elevated, rgba(255, 255, 255, 0.96));
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  border-radius: 36rpx;
-  box-shadow: 0 24rpx 64rpx rgba(0, 0, 0, 0.14), 0 4rpx 16rpx rgba(0, 0, 0, 0.04);
-  padding: 16rpx 0 20rpx;
-  overflow: visible;
-}
-
-/* 指向上方“点击选择任务”按钮的尖角指示器 */
-.popover-arrow {
-  position: absolute;
-  top: -16rpx;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 16rpx solid transparent;
-  border-right: 16rpx solid transparent;
-  border-bottom: 16rpx solid var(--color-bg-elevated, #ffffff);
-  filter: drop-shadow(0 -4rpx 6rpx rgba(0, 0, 0, 0.05));
-}
-
-.popover-anim-enter-active {
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.popover-anim-leave-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.popover-anim-enter-from, .popover-anim-leave-to {
-  opacity: 0;
-  transform: translateY(-24rpx) scale(0.96);
-}
-
-.popover-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20rpx 36rpx 16rpx;
-}
-.pop-title {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 2rpx;
-  opacity: 0.85;
-}
-
-.popover-scroll {
-  max-height: 480rpx;
-  padding: 8rpx 0 12rpx;
-}
-
-.empty-state {
+.sheet-panel {
+  max-height: 72vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 220rpx;
-  opacity: 0.6;
 }
-.empty-icon { font-size: 56rpx; margin-bottom: 16rpx; }
-.empty-text { font-size: 26rpx; color: var(--text-muted); }
 
-.task-item {
+.sheet-header {
   display: flex;
   align-items: center;
-  padding: 24rpx 36rpx;
-  margin: 4rpx 12rpx;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.sheet-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.sheet-close {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-scroll {
+  max-height: 54vh;
+}
+
+.group-section {
+  margin-top: 24rpx;
+}
+
+.group-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  margin-bottom: 12rpx;
+  padding-left: 8rpx;
+}
+
+.task-option {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 24rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
   border-radius: 24rpx;
-  transition: background 0.2s;
+  margin-bottom: 14rpx;
+  transition: all 0.16s ease;
 }
-.task-item:active {
-  background: rgba(0, 0, 0, 0.06);
+
+.task-option.is-selected {
+  border-color: var(--border-accent);
+  background-color: var(--color-sage-bg);
 }
-.t-color-bar {
-  width: 8rpx;
-  height: 52rpx;
-  border-radius: 4rpx;
-  margin-right: 20rpx;
+
+.option-icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 18rpx;
+  background-color: var(--color-bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.t-info {
+
+.option-body {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6rpx;
 }
-.t-name {
-  font-size: 28rpx;
-  font-weight: 600;
+
+.option-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.t-subject {
+
+.option-meta {
   font-size: 22rpx;
   color: var(--text-muted);
 }
-.check-icon {
-  font-size: 26rpx;
-  color: var(--color-zen-stone, #a8a8a5);
-  opacity: 0.6;
+
+.empty-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14rpx;
+  padding: 36rpx 24rpx;
+}
+
+.empty-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
 }
 </style>

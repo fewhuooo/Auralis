@@ -1,10 +1,10 @@
 <template>
-  <view class="study-metrics">
-    <view v-if="error" class="metrics-status">
-      <text>统计数据加载失败</text>
-      <button class="metrics-retry" size="mini" @click="load">重试</button>
+  <view class="study-metrics zen-card">
+    <view v-if="error && !metrics" class="metrics-status">
+      <text class="status-text">统计数据加载失败</text>
+      <view class="metrics-retry" @click="load">重试</view>
     </view>
-    <text v-else-if="loading && !metrics" class="metrics-status">正在加载统计…</text>
+    <text v-else-if="loading && !metrics" class="metrics-status status-text">正在加载统计…</text>
     <view v-if="metrics" class="metrics-grid">
       <view v-for="metric in metrics" :key="metric.label" class="metric">
         <text class="metric-label">{{ metric.label }}</text>
@@ -18,6 +18,7 @@
 import { onScopeDispose, ref, watch } from 'vue'
 import { statsApi } from '@/api/statsApi'
 import { useAuthStore } from '@/store/useAuthStore'
+import { detectLocalTimeZone, getCurrentWeekBounds } from '@/utils/dateKey'
 import { studyMetrics } from '@/utils/studyMetrics'
 
 const auth = useAuthStore()
@@ -37,13 +38,11 @@ async function load() {
   loading.value = true
   error.value = false
   try {
-    const start = new Date()
-    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7))
-    const end = new Date(start)
-    end.setUTCDate(end.getUTCDate() + 6)
+    const bounds = getCurrentWeekBounds()
+    const timeZone = detectLocalTimeZone()
     const [overview, weekly] = await Promise.all([
       statsApi.overview(),
-      statsApi.weekly(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)),
+      statsApi.weekly(bounds.from, bounds.to, timeZone),
     ])
     if (!isCurrent()) return
     metrics.value = studyMetrics(overview, weekly)
@@ -69,10 +68,7 @@ onScopeDispose(() => { requestId++ })
 
 <style scoped>
 .study-metrics {
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 24rpx;
-  padding: 6rpx 26rpx;
+  padding: 8rpx 28rpx;
 }
 
 .metrics-grid {
@@ -87,7 +83,7 @@ onScopeDispose(() => { requestId++ })
   justify-content: space-between;
   gap: 16rpx;
   min-height: 82rpx;
-  font-size: 26rpx;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
 }
 
@@ -96,18 +92,29 @@ onScopeDispose(() => { requestId++ })
 }
 
 .metric-label {
+  color: var(--text-secondary);
   min-width: 0;
 }
 
 .metric-value {
   flex-shrink: 0;
   font-size: 30rpx;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family-mono);
   font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.status-text {
+  color: var(--text-muted);
 }
 
 .metrics-retry {
-  flex-shrink: 0;
-  margin: 0;
+  padding: 10rpx 22rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
 }
 </style>

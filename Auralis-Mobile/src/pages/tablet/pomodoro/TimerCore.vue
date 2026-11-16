@@ -1,164 +1,96 @@
 <template>
   <view class="timer-core">
-    <!-- Time Row -->
     <view class="time-row">
-      <text class="datetime-text">{{ currentDateFormatted }} {{ currentTimeFormatted }}</text>
+      <text class="datetime-text">{{ headerDateText }}</text>
     </view>
 
     <view class="center-block">
-      <!-- Timer Ring -->
-    <view class="timer-wrapper">
+      <view class="preset-row">
+        <view
+          v-for="mins in presets"
+          :key="mins"
+          class="preset-chip"
+          :class="{
+            active: focusStore.focusMinutes === mins,
+            disabled: focusStore.isTaskLocked,
+          }"
+          @click="choosePreset(mins)"
+        >
+          <text>{{ mins }} 分钟</text>
+        </view>
+      </view>
+
       <PomodoroRing
-        :total-seconds="totalSeconds"
-        :remaining-seconds="remainingSeconds"
-        :is-running="isRunning"
-        :color="ringColor"
-        :size="600"
+        size="460rpx"
+        :total-seconds="focusStore.totalSeconds"
+        :remaining-seconds="focusStore.remainingSeconds"
+        :is-running="focusStore.isRunning"
+        :color="focusStore.ringColor"
+        :phase-label="phaseLabel"
         @center-click="$emit('center-click')"
       />
-    </view>
 
-    <!-- Phase Status -->
-    <view class="phase-status">
-      <text :style="{ color: ringColor }">{{ isBreakPhase ? '休息时间' : '专注中' }}</text>
-    </view>
+      <view class="progress-dots">
+        <view
+          v-for="i in 4"
+          :key="i"
+          class="dot"
+          :style="{
+            backgroundColor: (focusStore.cycleCount % 4) >= i || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0)
+              ? focusStore.ringColor
+              : 'rgba(28, 28, 26, 0.14)',
+          }"
+        ></view>
+      </view>
 
-    <!-- Progress Dots -->
-    <view class="progress-dots">
-      <view 
-        v-for="i in 4" 
-        :key="i"
-        class="dot"
-        :style="currentPomodoro >= i ? { backgroundColor: ringColor } : { backgroundColor: ringColor + '30' }"
-      ></view>
-    </view>
-
-      <!-- Controls -->
       <view class="controls">
-        <view class="ctrl-btn secondary" @click="resetTimer">重置</view>
-        <view class="main-btn" @click="toggleTimer">
-          <view class="pause-icon" v-if="isRunning"></view>
-          <view class="play-icon" v-else></view>
+        <view class="ctrl-btn" @click="focusStore.reset()">
+          <LineIcon name="rotate" size="28rpx" color="var(--text-secondary)" />
+          <text>重置</text>
         </view>
-        <view class="ctrl-btn secondary" @click="skipPhase">跳过</view>
+        <view
+          class="main-btn"
+          :style="{ backgroundColor: focusStore.isBreakPhase ? '#C89B6D' : '#8B9A6E' }"
+          @click="focusStore.toggle()"
+        >
+          <LineIcon :name="focusStore.isRunning ? 'pause' : 'play'" size="46rpx" color="#FFFFFF" />
+        </view>
+        <view class="ctrl-btn" @click="focusStore.skip()">
+          <LineIcon name="skip" size="28rpx" color="var(--text-secondary)" />
+          <text>跳过</text>
+        </view>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { computed } from 'vue'
+import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
-import { useTaskStore } from '@/store/useTaskStore'
+import { FOCUS_PRESETS } from '@/services/focusController'
+import { useFocusStore } from '@/store/useFocusStore'
+import { formatDateHeading, toLocalDateKey } from '@/utils/dateKey'
 
-const emit = defineEmits(['center-click'])
+defineEmits(['center-click'])
 
-const taskStore = useTaskStore()
+const focusStore = useFocusStore()
+const presets = FOCUS_PRESETS
+const headerDateText = computed(() => formatDateHeading(toLocalDateKey(new Date())))
 
-const now = ref(new Date())
-let clockTimer: ReturnType<typeof setInterval> | null = null
-
-const currentTimeFormatted = computed(() => {
-  const h = String(now.value.getHours()).padStart(2, '0')
-  const m = String(now.value.getMinutes()).padStart(2, '0')
-  return `${h}:${m}`
+const phaseLabel = computed(() => {
+  if (focusStore.phase === 'shortBreak') return '短休息 · 5 分钟'
+  if (focusStore.phase === 'longBreak') return '长休息 · 15 分钟'
+  return '专注计时'
 })
 
-const currentDateFormatted = computed(() => {
-  const d = now.value
-  const month = d.getMonth() + 1
-  const date = d.getDate()
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  const weekday = weekdays[d.getDay()]
-  return `${month}月${date}日 ${weekday}`
-})
-
-const FOCUS_MINS = 25
-const BREAK_MINS = 5
-const LONG_BREAK_MINS = 15
-
-const isRunning = ref(false)
-const isBreakPhase = ref(false)
-const currentPomodoro = ref(0)
-
-const totalSeconds = computed(() => {
-  if (isBreakPhase.value) {
-    return (currentPomodoro.value === 4 ? LONG_BREAK_MINS : BREAK_MINS) * 60
+function choosePreset(minutes: number) {
+  if (focusStore.isTaskLocked) {
+    uni.showToast({ title: '计时进行中，重置后可调整时长', icon: 'none' })
+    return
   }
-  return FOCUS_MINS * 60
-})
-
-const remainingSeconds = ref(totalSeconds.value)
-let timer: ReturnType<typeof setInterval> | null = null
-
-const ringColor = computed(() => {
-  return isBreakPhase.value ? 'var(--color-pomodoro-break)' : 'var(--color-pomodoro)'
-})
-
-const toggleTimer = () => {
-  if (isRunning.value) {
-    pauseTimer()
-  } else {
-    startTimer()
-  }
+  focusStore.setFocusMinutes(minutes)
 }
-
-const startTimer = () => {
-  if (remainingSeconds.value <= 0) resetTimer()
-  isRunning.value = true
-  timer = setInterval(() => {
-    remainingSeconds.value--
-    if (remainingSeconds.value <= 0) {
-      handlePhaseComplete()
-    }
-  }, 1000)
-}
-
-const pauseTimer = () => {
-  isRunning.value = false
-  if (timer) clearInterval(timer)
-}
-
-const resetTimer = () => {
-  pauseTimer()
-  remainingSeconds.value = totalSeconds.value
-}
-
-const skipPhase = () => {
-  handlePhaseComplete()
-}
-
-const handlePhaseComplete = () => {
-  pauseTimer()
-  uni.vibrateLong()
-  
-  if (!isBreakPhase.value) {
-    currentPomodoro.value++
-    isBreakPhase.value = true
-    taskStore.incrementPomodoro()
-  } else {
-    if (currentPomodoro.value >= 4) {
-      currentPomodoro.value = 0
-    }
-    isBreakPhase.value = false
-  }
-  
-  remainingSeconds.value = totalSeconds.value
-  
-  uni.showToast({
-    title: isBreakPhase.value ? '专注完成！休息一下' : '休息结束，开始专注',
-    icon: 'none'
-  })
-}
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-  if (clockTimer) clearInterval(clockTimer)
-})
-
-clockTimer = setInterval(() => {
-  now.value = new Date()
-}, 1000)
 </script>
 
 <style scoped>
@@ -177,41 +109,54 @@ clockTimer = setInterval(() => {
   top: 0;
   left: 0;
 }
+
 .datetime-text {
-  font-size: 28rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-semibold);
 }
 
 .center-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 32rpx;
 }
 
-.timer-wrapper {
+.preset-row {
   display: flex;
-  justify-content: center;
-  transform: scale(1.25);
+  align-items: center;
+  gap: 14rpx;
 }
 
-.phase-status {
-  text-align: center;
-  margin-top: 40rpx;
-  font-size: 36rpx;
-  font-weight: 800;
-  letter-spacing: 2rpx;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+.preset-chip {
+  padding: 12rpx 24rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.preset-chip.active {
+  background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-bold);
+}
+
+.preset-chip.disabled {
+  opacity: 0.55;
 }
 
 .progress-dots {
   display: flex;
   justify-content: center;
   gap: 16rpx;
-  margin-top: 20rpx;
 }
+
 .dot {
   width: 16rpx;
   height: 16rpx;
@@ -222,52 +167,40 @@ clockTimer = setInterval(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 60rpx;
-  margin-top: 48rpx;
+  gap: 44rpx;
 }
+
 .ctrl-btn {
-  font-size: 28rpx;
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-weight: 600;
-  padding: 18rpx 36rpx;
-  border-radius: 999rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-semibold);
+  padding: 16rpx 30rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
-  transition: all 0.2s;
 }
+
 .ctrl-btn:active {
-  transform: scale(0.96);
-  background: rgba(0, 0, 0, 0.04);
+  background-color: var(--color-gray-100);
 }
+
 .main-btn {
-  width: 180rpx;
-  height: 180rpx;
+  width: 148rpx;
+  height: 148rpx;
   border-radius: 50%;
-  background: var(--color-zen-graphite, #1C1C1A);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.15);
-  transition: transform 0.2s;
+  box-shadow: var(--shadow-md);
   cursor: pointer;
+  transition: transform 0.16s ease;
 }
+
 .main-btn:active {
-  transform: scale(0.95);
-}
-.play-icon {
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 28rpx 0 28rpx 42rpx;
-  border-color: transparent transparent transparent var(--color-zen-white, #FFFFFF);
-  margin-left: 14rpx;
-}
-.pause-icon {
-  width: 28rpx;
-  height: 42rpx;
-  border-left: 10rpx solid var(--color-zen-white, #FFFFFF);
-  border-right: 10rpx solid var(--color-zen-white, #FFFFFF);
-  box-sizing: border-box;
+  transform: scale(0.94);
 }
 </style>

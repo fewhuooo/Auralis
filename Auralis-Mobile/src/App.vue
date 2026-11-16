@@ -1,48 +1,50 @@
 <script setup lang="ts">
-import { onLaunch, onShow, onHide } from "@dcloudio/uni-app";
-import { connectRealtimeSync, disconnectRealtimeSync } from "@/api/sync";
-import { useAuthStore } from "@/store/useAuthStore";
-import { useSyncStore } from "@/store/useSyncStore";
-import { useTaskStore } from "@/store/useTaskStore";
-import { watch } from "vue";
-import { localDb } from "@/services/localDb";
+import { watch } from 'vue'
+import { onHide, onLaunch, onShow } from '@dcloudio/uni-app'
+import { connectRealtimeSync, disconnectRealtimeSync } from '@/api/sync'
+import { localDb } from '@/services/localDb'
+import { useAuthStore } from '@/store/useAuthStore'
+import { useFocusStore } from '@/store/useFocusStore'
+import { useSyncStore } from '@/store/useSyncStore'
 
 async function startAuthenticatedRuntime() {
-  await localDb.init();
-  useTaskStore().loadPomodoroCount();
-  const syncStore = useSyncStore();
-  await syncStore.initE2EE();
-  await syncStore.triggerSync();
-  await connectRealtimeSync();
+  await localDb.init()
+  const focusStore = useFocusStore()
+  focusStore.reconcileNow(false)
+  await focusStore.flushPendingSessions()
+  const syncStore = useSyncStore()
+  await syncStore.triggerSync()
+  await connectRealtimeSync()
 }
 
 onLaunch(async () => {
-  console.log("App Launch");
-
-  const authStore = useAuthStore();
+  const authStore = useAuthStore()
 
   if (authStore.token && await authStore.restoreSession()) {
-    await startAuthenticatedRuntime();
+    await startAuthenticatedRuntime()
   }
 
   watch(() => authStore.token, async (newToken) => {
     if (newToken) {
-      await startAuthenticatedRuntime();
+      await startAuthenticatedRuntime()
     } else {
-      disconnectRealtimeSync();
+      disconnectRealtimeSync()
     }
-  });
-});
+  })
+})
 
 onShow(() => {
-  console.log("App Show");
-  if (useAuthStore().isAuthenticated) void connectRealtimeSync();
-});
+  const focusStore = useFocusStore()
+  focusStore.reconcileNow(true)
+  if (useAuthStore().isAuthenticated) {
+    void focusStore.flushPendingSessions()
+    void connectRealtimeSync()
+  }
+})
 
 onHide(() => {
-  console.log("App Hide");
-  disconnectRealtimeSync();
-});
+  disconnectRealtimeSync()
+})
 </script>
 
 <style>
