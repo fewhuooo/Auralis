@@ -2648,6 +2648,13 @@
             "type" : "string",
             "format" : "date"
           }
+        }, {
+          "name" : "timeZone",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
         } ],
         "responses" : {
           "200" : {
@@ -5040,26 +5047,38 @@
           "missingNode" : {
             "type" : "boolean"
           },
-          "string" : {
+          "bigDecimal" : {
             "type" : "boolean"
           },
-          "int" : {
+          "nodeType" : {
+            "type" : "string",
+            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
+          },
+          "valueNode" : {
             "type" : "boolean"
           },
-          "number" : {
+          "integralNumber" : {
             "type" : "boolean"
           },
-          "textual" : {
-            "type" : "boolean",
-            "deprecated" : true
+          "bigInteger" : {
+            "type" : "boolean"
           },
-          "binary" : {
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
           "pojo" : {
             "type" : "boolean"
           },
+          "string" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "type" : "boolean"
+          },
           "short" : {
+            "type" : "boolean"
+          },
+          "int" : {
             "type" : "boolean"
           },
           "double" : {
@@ -5068,26 +5087,14 @@
           "boolean" : {
             "type" : "boolean"
           },
+          "binary" : {
+            "type" : "boolean"
+          },
+          "textual" : {
+            "type" : "boolean",
+            "deprecated" : true
+          },
           "long" : {
-            "type" : "boolean"
-          },
-          "floatingPointNumber" : {
-            "type" : "boolean"
-          },
-          "bigInteger" : {
-            "type" : "boolean"
-          },
-          "nodeType" : {
-            "type" : "string",
-            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
-          },
-          "integralNumber" : {
-            "type" : "boolean"
-          },
-          "valueNode" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
             "type" : "boolean"
           },
           "embeddedValue" : {

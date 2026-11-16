@@ -42,7 +42,8 @@ public class StatsService {
     }
 
     @Transactional(readOnly = true)
-    public WeeklyStatsView weekly(UUID userId, LocalDate from, LocalDate to) {
+    public WeeklyStatsView weekly(UUID userId, LocalDate from, LocalDate to, String timeZone) {
+        ZoneId zone = timeZone == null ? ZoneOffset.UTC : requireIanaTimeZone(timeZone);
         if (from == null || to == null || to.isBefore(from) || from.plusDays(6).isBefore(to)
                 || to.plusDays(1).isBefore(from)) {
             throw new DomainException("VALIDATION_FAILED", "weekly range must contain at most seven days");
@@ -53,8 +54,8 @@ public class StatsService {
         }
         List<WeeklyStatsView.Day> values = java.util.stream.IntStream.range(0, 7).mapToObj(offset -> {
             LocalDate date = from.plusDays(offset);
-            Instant start = date.atStartOfDay().toInstant(ZoneOffset.UTC);
-            Instant end = date.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+            Instant start = date.atStartOfDay(zone).toInstant();
+            Instant end = date.plusDays(1).atStartOfDay(zone).toInstant();
             return new WeeklyStatsView.Day(date,
                     queryRepository.reviewed(userId, start, end),
                     queryRepository.studySeconds(userId, start, end),

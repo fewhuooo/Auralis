@@ -1923,24 +1923,24 @@ export interface components {
             object?: boolean;
             container?: boolean;
             missingNode?: boolean;
-            string?: boolean;
-            int?: boolean;
-            number?: boolean;
-            /** @deprecated */
-            textual?: boolean;
-            binary?: boolean;
-            pojo?: boolean;
-            short?: boolean;
-            double?: boolean;
-            boolean?: boolean;
-            long?: boolean;
-            floatingPointNumber?: boolean;
-            bigInteger?: boolean;
+            bigDecimal?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            integralNumber?: boolean;
             valueNode?: boolean;
-            bigDecimal?: boolean;
+            integralNumber?: boolean;
+            bigInteger?: boolean;
+            floatingPointNumber?: boolean;
+            pojo?: boolean;
+            string?: boolean;
+            number?: boolean;
+            short?: boolean;
+            int?: boolean;
+            double?: boolean;
+            boolean?: boolean;
+            binary?: boolean;
+            /** @deprecated */
+            textual?: boolean;
+            long?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {
@@ -4270,6 +4270,7 @@ export interface operations {
             query: {
                 from: string;
                 to: string;
+                timeZone?: string;
             };
             header?: never;
             path?: never;

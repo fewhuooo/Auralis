@@ -383,7 +383,7 @@ PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约�
 
 - `GET /api/reviews/states?subjectId=<UUID>&cursor=<opaque>&limit=<1..200>` 使用现行 `{items,nextCursor,hasMore}`，默认 limit 为 50。items 为完整 `ReviewStateView`，包含当前用户、活动学科中活动知识块的到期及未来状态；无状态知识块不注入虚构行。按 knowledgeBlockId 升序 keyset 分页，过滤发生在 limit 前，游标绑定用户与学科范围；跨范围或非法游标返回 `400 VALIDATION_FAILED`，不存在或跨用户学科按未找到处理。
 - `GET /api/stats/subjects/{subjectId}?days=7|30&timeZone=<IANA>` 返回 `SubjectStatsView`。days 仅接受 7 或 30，timeZone 为服务端支持的 IANA 区域 ID（包括 UTC）；非法参数返回 `400 VALIDATION_FAILED`。所有聚合先校验当前用户的活动学科，并以同一可重复读事务读取。
-- 顶层字段为 `subjectId,generatedAt,timeZone,from,to,overview,daily,ratingCounts`；from/to 是包含首尾的本地日期，to 为请求时该时区的今天。每天使用 `[dayStart,nextDayStart)`，按日期升序返回 7 / 30 项并补零；现行用户级 weekly 仍为 UTC 七天，不改语义。
+- 顶层字段为 `subjectId,generatedAt,timeZone,from,to,overview,daily,ratingCounts`；from/to 是包含首尾的本地日期，to 为请求时该时区的今天。每天使用 `[dayStart,nextDayStart)`，按日期升序返回 7 / 30 项并补零。用户级 weekly 的可选时区见下方接口。
 - overview 返回资料、知识块和任务原计数字段，以及 `newLearningCount,dueReviewCount,scheduledReviewCount,pendingLearningCount,reviewingCount,masteredCount`。无state计newLearningCount；reviewing的到期/未来子集分别计dueReviewCount/scheduledReviewCount。当前互斥分区为pendingLearning/reviewing/mastered，三者之和等于活动KB总数；资料总量由三种Source相加。
 - daily 每项包含 `date,nonSkipReviewEventCount,distinctReviewedKnowledgeBlockCount,firstLearningKnowledgeBlockCount,subsequentReviewKnowledgeBlockCount,createdKnowledgeBlockCount,completedTaskCount,learningCompletionCount,distinctStudiedKnowledgeBlockCount`。正式复习组合legacy非SKIP事件与新effectiveRating非空结果，按初选日期计量；legacy首次/后续仍由before_state是否SQL NULL判定，新生命周期有效复习归subsequent，学习完成单独计量。不同KB按日去重，不用baseVersion=0判首次。
 - ratingCounts包含 `againCount,hardCount,goodCount,easyCount`，组合范围内legacy非SKIP事件与新同次最终有效结果，不表示长期掌握率。学习内部循环和成功末尾巩固不增加正式结果；失败可能纠正同次结果为AGAIN，不增加第二次复习。统计不返回专注字段。
@@ -407,7 +407,7 @@ PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约�
 - whole-record baseVersion 冲突拒绝，不做 LWW；独立持久 write receipt 保证 clientWriteId 同载荷回放、异载荷拒绝。回放仍受资料活动状态和当前修订约束。提交后发布 `OVERVIEW_UPDATED`，客户端重新对账。生成进度、错误和失败记录不进入远端产物。
 
 - 旧 `/api/reviews/due`、`/api/reviews/events`、`/api/reviews/history` 接口及 FSRS Lite 动态调度已于 2026-10-11 移除；现行复习接口见上方“复习旧接口移除”和“学科复习生命周期”。
-- `GET /api/stats/overview?at=<RFC3339>` 返回活动知识块、活动任务、到期复习、已完成复习和活动来源的强类型统计；`GET /api/stats/weekly?from=<date>&to=<date>` 只接受连续 7 天，并按 UTC 日期返回复习、学习秒数、完成任务和新增知识块计数。
+- `GET /api/stats/overview?at=<RFC3339>` 返回活动知识块、活动任务、到期复习、已完成复习和活动来源的强类型统计；`GET /api/stats/weekly?from=<date>&to=<date>&timeZone=<IANA>` 接受包含首尾的连续 7 天。省略 timeZone 时使用 UTC；显式传入服务端支持的 IANA ID（如 `Asia/Hong_Kong`），按该时区的 `[dayStart,nextDayStart)` 归日，涵盖夏令时日长变化。空值、非法 ID 或裸偏移返回 `400 VALIDATION_FAILED`。返回结构保持不变，复习、复习耗时、完成任务、新增知识和专注统计共用该日界线。
 - `POST /api/realtime/ticket` 不接受请求体，服务端从 Bearer access JWT 的 `serverDeviceId` 解析并校验当前设备，返回一次性短期 `{ticket,expiresAt,websocketUrl}`；`/ws/events` 仅接受 WebSocket upgrade，不提供 HTTP `GET` 订阅回退。握手通过 query `ticket` 或 `X-Realtime-Ticket` 认证，不能把 Bearer access token 放入 WebSocket URL；领域写入提交后才发布 `SYNC_CHANGED`/`REVIEW_UPDATED` 事件，同用户的进程内订阅者接收通知。ticket 只持久化 hash，不能跨用户、重用或过期使用。
 - 阶段 4 自动测试证明 H2/JPA/MockMvc、参数调度、幂等、用户隔离和进程内事件桥；浏览器 WebSocket、跨实例 broker、真实设备和前端消费仍未执行。
 

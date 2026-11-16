@@ -146,3 +146,5 @@ Realtime 使用 `POST /api/realtime/ticket` 获取一次性 ticket，再连接 `
 手机和平板复用 Task、Review lifecycle、Focus、Source/Asset、Overview 和 Chat 契约。Task 支持无排期及完整 Instant；复习使用状态与生命周期命令；专注记录按稳定 session ID 保存真实秒数。FILE 原文件上传与学科资料登记分别执行，PC Tauri 提交解析结果，平板读取原文件及正式结果。本地手写画布不新增服务端数据域。
 
 Asset 上传重放省略 SHA 时保留已存 SHA；明确提供 SHA 时仍要求一致。该规则修复手机无 SHA 上传经 PC 接手补算后原请求重放被拒，文件名、大小、MIME、用户隔离及对象完成校验保持。其余客户端接入缺口见 Mobile/Tablet 模块，不能以本轮后端验证代替页面可用性。
+
+用户级 `GET /api/stats/weekly` 接受可选 IANA `timeZone`，省略按 UTC；显式时区使用当地日界线，保持连续七天与原返回格式。
