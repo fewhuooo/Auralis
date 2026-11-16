@@ -209,7 +209,7 @@ class AiIngestionWorkerTests {
 
         verify(completionService).complete(
                 eq(IngestionClaim.from(job)), eq(revision), anyList(), anyList(), isNull(), eq(clock.instant()));
-        verify(sourceService, never()).markReady(any(), any());
+        verify(sourceService, never()).markReadyIfRevision(any(), any(), any());
     }
 
     @Test
@@ -232,7 +232,7 @@ class AiIngestionWorkerTests {
 
         assertThat(worker.processNext()).isTrue();
 
-        verify(taskScope, never()).embed(any(), any(), any(), anyList(), any());
+        verify(taskScope, never()).embed(any(), any(), any(), anyList(), any(), any(com.auralis.app.ai.usage.AiCredentialSource.class));
         verify(completionService, never()).stageCheckpoint(any(), any(), anyList(), anyList());
         verify(completionService).complete(eq(IngestionClaim.from(job)), eq(revision), eq(chunks),
                 eq(List.of(checkpointVector)), isNull(), eq(clock.instant()));

@@ -338,28 +338,8 @@ public class SourceService {
     }
 
     @Transactional
-    public SourceView markParsing(UUID userId, UUID id) {
-        return transitionIngestion(userId, id, SourceEntity::markParsing);
-    }
-
-    @Transactional
-    public SourceView markPending(UUID userId, UUID id) {
-        return transitionIngestion(userId, id, SourceEntity::markPending);
-    }
-
-    @Transactional
     public SourceView markIndexing(UUID userId, UUID id) {
         return transitionIngestion(userId, id, SourceEntity::markIndexing);
-    }
-
-    @Transactional
-    public SourceView markReady(UUID userId, UUID id) {
-        return transitionIngestion(userId, id, SourceEntity::markReady);
-    }
-
-    @Transactional
-    public SourceView markFailed(UUID userId, UUID id, String safeErrorCode, String safeErrorDetail) {
-        return transitionIngestion(userId, id, entity -> entity.markFailed(safeErrorCode, safeErrorDetail));
     }
 
     @Transactional
@@ -511,11 +491,6 @@ public class SourceService {
 
     private SourceEntity activeForUpdate(UUID userId, UUID id) {
         return sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(id, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
-    }
-
-    private SourceEntity mutable(UUID userId, UUID id) {
-        return sourceRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
     }
 

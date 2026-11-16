@@ -1,7 +1,6 @@
 package com.auralis.app.ai;
 
 import com.auralis.app.ai.OverviewDtos.OverviewResponse;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.auralis.app.ai.internal.persistence.OverviewResultEntity;
 import com.auralis.app.ai.internal.persistence.OverviewResultRepository;
 import com.auralis.app.ai.internal.persistence.OverviewWriteReceiptEntity;
@@ -55,8 +54,6 @@ public class OverviewResultService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AuralisProperties.OverviewLimits overviewLimits;
-    @Autowired(required = false)
-    private OverviewGenerationService generationService;
 
     public OverviewResultService(OverviewResultRepository resultRepository,
                                  OverviewWriteReceiptRepository receiptRepository,
@@ -154,9 +151,9 @@ public class OverviewResultService {
         identityService.lockUserForScheduling(userId);
         SourceView source = requireReadySource(userId, sourceId, null);
         validateSourceWrite(source, command);
-        OverviewResultEntity existing = resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SOURCE_SCOPE, sourceId).orElse(null);
-        OverviewInputDescriptor input = resolveManualInputDescriptor(userId, SOURCE_SCOPE, sourceId, command,
-                existing, List.of(), source);
+        OverviewInputDescriptor input = new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_REVISION,
+                SOURCE_SCOPE, sourceId, List.of(sourceId),
+                List.of(new OverviewInputDescriptor.SourceRevision(sourceId, source.ingestionRevision())), List.of(), sourceRevisionFingerprint(sourceId, source.ingestionRevision()));
         OverviewResponse validated = validateResult(command);
         String requestHash = payloadHash(SOURCE_SCOPE, sourceId, command, null);
         OverviewResultView replay = replay(userId, SOURCE_SCOPE, sourceId, command, requestHash);
@@ -171,7 +168,6 @@ public class OverviewResultService {
             entity = new OverviewResultEntity(UUID.randomUUID(), userId, SOURCE_SCOPE, sourceId,
                     source.subjectId(), sourceId, source.ingestionRevision());
         }
-        String snapshot = input.origin() == OverviewInputDescriptor.Origin.SOURCE_CONTENT ? writeInputSnapshot(input) : null;
         entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outlineMarkdown()) : null,
                 updateSummary ? writeJson(validated.summaryMarkdown()) : null,
                 null, null,
@@ -179,7 +175,7 @@ public class OverviewResultService {
                 updateSummary ? input.inputFingerprint() : entity.getSummaryInputFingerprint(),
                 generatedAt(command.outlineGeneratedAt(), updateOutline), generatedAt(command.summaryGeneratedAt(), updateSummary),
                 updateOutline, updateSummary, source.ingestionRevision());
-        entity.applyInputDescriptors(input.origin().name(), snapshot, input.origin().name(), snapshot,
+        entity.applyInputDescriptors(input.origin().name(), null, input.origin().name(), null,
                 updateOutline, updateSummary);
         OverviewResultEntity saved = resultRepository.saveAndFlush(entity);
         OverviewResultView response = view(saved, source.subjectId());
@@ -249,9 +245,6 @@ public class OverviewResultService {
     public OverviewResultView putSubject(UUID userId, UUID subjectId, OverviewResultCommand command) {
         identityService.lockUserForScheduling(userId);
         subjectService.requireActiveSubjectForMutation(userId, subjectId);
-        if (command.inputDescriptor() != null) {
-            return putSubjectWithExplicitInput(userId, subjectId, command);
-        }
         List<OverviewSourceManifestEntry> allInputs = currentSubjectManifest(userId, subjectId);
         List<OverviewSourceManifestEntry> requestManifest = projectedManifest(allInputs, command.mode());
         validateSubjectWrite(command, allInputs, requestManifest);
@@ -297,53 +290,6 @@ public class OverviewResultService {
         return response;
     }
 
-    private OverviewResultView putSubjectWithExplicitInput(UUID userId, UUID subjectId, OverviewResultCommand command) {
-        OverviewInputDescriptor input = command.inputDescriptor();
-        OverviewResultEntity existing = resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SUBJECT_SCOPE, subjectId)
-                .orElse(null);
-        if (existing == null) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "An existing native input binding is required");
-        }
-        boolean updateOutline = command.mode() != OverviewMode.SUMMARY;
-        boolean updateSummary = command.mode() != OverviewMode.OUTLINE;
-        if (input.origin() != OverviewInputDescriptor.Origin.SOURCE_CONTENT || !SUBJECT_SCOPE.equals(input.scopeType())
-                || !subjectId.equals(input.scopeId()) || input.sourceIds().isEmpty()
-                || updateOutline && (!isCurrentRawContentPart(userId, existing, true, SUBJECT_SCOPE, subjectId)
-                    || !Objects.equals(input, readInputDescriptor(existing, true)))
-                || updateSummary && (!isCurrentRawContentPart(userId, existing, false, SUBJECT_SCOPE, subjectId)
-                    || !Objects.equals(input, readInputDescriptor(existing, false)))) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Manual edit must retain the current native input binding");
-        }
-        OverviewResponse validated = validateResult(command);
-        String requestHash = payloadHash(SUBJECT_SCOPE, subjectId, command, null);
-        OverviewResultView replay = replay(userId, SUBJECT_SCOPE, subjectId, command, requestHash);
-        if (replay != null) return replay;
-        OverviewResultEntity entity = resultRepository.findForUpdate(userId, SUBJECT_SCOPE, subjectId).orElse(null);
-        boolean current = entity != null && isCurrentSubjectResult(userId, entity, currentSubjectManifest(userId, subjectId));
-        checkBaseVersion(entity, current, command);
-        if (entity == null) {
-            entity = new OverviewResultEntity(UUID.randomUUID(), userId, SUBJECT_SCOPE, subjectId,
-                    subjectId, null, null);
-        }
-        String snapshot = writeInputSnapshot(input);
-        entity.apply(validated.title(), validated.schemaVersion(), updateOutline ? writeJson(validated.outlineMarkdown()) : null,
-                updateSummary ? writeJson(validated.summaryMarkdown()) : null,
-                updateOutline ? null : entity.getOutlineSourceManifest(),
-                updateSummary ? null : entity.getSummarySourceManifest(),
-                updateOutline ? input.inputFingerprint() : entity.getOutlineInputFingerprint(),
-                updateSummary ? input.inputFingerprint() : entity.getSummaryInputFingerprint(),
-                updateOutline ? generatedAt(command.outlineGeneratedAt(), true) : entity.getOutlineGeneratedAt(),
-                updateSummary ? generatedAt(command.summaryGeneratedAt(), true) : entity.getSummaryGeneratedAt(),
-                updateOutline, updateSummary, null);
-        entity.applyInputDescriptors(input.origin().name(), snapshot, input.origin().name(), snapshot, updateOutline, updateSummary);
-        OverviewResultEntity saved = resultRepository.saveAndFlush(entity);
-        OverviewResultView response = view(saved);
-        saveReceipt(userId, SUBJECT_SCOPE, subjectId, command, requestHash, response);
-        eventPublisher.publishEvent(new OverviewResultChangedEvent(userId, SUBJECT_SCOPE, subjectId,
-                response.version(), response.updatedAt()));
-        return response;
-    }
-
     private SourceView requireReadySource(UUID userId, UUID sourceId, UUID expectedRevision) {
         SourceView source = sourceService.requireActiveSourceForMutation(userId, sourceId);
         if (source.ingestionStatus() != SourceIngestionStatus.READY || source.ingestionRevision() == null) {
@@ -364,51 +310,13 @@ public class OverviewResultService {
         }
     }
 
-    private OverviewInputDescriptor resolveManualInputDescriptor(UUID userId, String scopeType, UUID scopeId,
-                                                                 OverviewResultCommand command,
-                                                                 OverviewResultEntity existing,
-                                                                 List<OverviewSourceManifestEntry> allInputs,
-                                                                 SourceView source) {
-        OverviewInputDescriptor supplied = command.inputDescriptor();
-        if (supplied == null) {
-            if (SOURCE_SCOPE.equals(scopeType)) {
-                return new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_REVISION, scopeType, scopeId,
-                        List.of(scopeId), List.of(new OverviewInputDescriptor.SourceRevision(scopeId, source.ingestionRevision())),
-                        List.of(), List.of(), sourceRevisionFingerprint(scopeId, source.ingestionRevision()));
-            }
-            OverviewMode dependencies = command.mode() == OverviewMode.OUTLINE ? OverviewMode.OUTLINE : OverviewMode.SUMMARY;
-            List<OverviewSourceManifestEntry> parts = projectedManifest(allInputs, dependencies);
-            return new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_OVERVIEW_PARTS, scopeType, scopeId,
-                    parts.stream().map(OverviewSourceManifestEntry::sourceId).toList(),
-                    parts.stream().map(entry -> new OverviewInputDescriptor.SourceRevision(entry.sourceId(), entry.ingestionRevision())).toList(),
-                    List.of(), parts, subjectFingerprint(allInputs, dependencies));
-        }
-        if (supplied.origin() != OverviewInputDescriptor.Origin.SOURCE_CONTENT
-                || !scopeType.equals(supplied.scopeType()) || !scopeId.equals(supplied.scopeId())
-                || supplied.sourceIds().isEmpty() || exceeds(overviewLimits.maxSources(), supplied.sourceIds().size())
-                || generationService == null) {
-            throw new DomainException("VALIDATION_FAILED", "Manual input descriptor is unsupported for this scope");
-        }
-        OverviewInputDescriptor authorized = existing == null ? null : readInputDescriptor(existing, true);
-        boolean updateOutline = command.mode() != OverviewMode.SUMMARY;
-        boolean updateSummary = command.mode() != OverviewMode.OUTLINE;
-        OverviewInputDescriptor summaryBinding = existing == null ? null : readInputDescriptor(existing, false);
-        if (authorized == null || updateOutline && (!Objects.equals(supplied, authorized)
-                || !isCurrentRawContentPart(userId, existing, true, scopeType, scopeId))
-                || updateSummary && (!Objects.equals(supplied, summaryBinding)
-                || !isCurrentRawContentPart(userId, existing, false, scopeType, scopeId))) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Manual input descriptor is not a current persisted binding");
-        }
-        return authorized;
-    }
-
     private OverviewInputDescriptor subjectPartDescriptor(UUID subjectId,
                                                            List<OverviewSourceManifestEntry> parts,
                                                            String fingerprint) {
         return new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_OVERVIEW_PARTS,
                 SUBJECT_SCOPE, subjectId, parts.stream().map(OverviewSourceManifestEntry::sourceId).toList(),
                 parts.stream().map(entry -> new OverviewInputDescriptor.SourceRevision(
-                        entry.sourceId(), entry.ingestionRevision())).toList(), List.of(), parts, fingerprint);
+                        entry.sourceId(), entry.ingestionRevision())).toList(), parts, fingerprint);
     }
 
     private void validateSubjectWrite(OverviewResultCommand command, List<OverviewSourceManifestEntry> allInputs,
@@ -521,9 +429,6 @@ public class OverviewResultService {
                     && Objects.equals(entity.getScopeId(), source.id());
             case SOURCE_OVERVIEW_PARTS -> source == null
                     && isCurrentOverviewPart(entity, allInputs, outline ? OverviewMode.OUTLINE : OverviewMode.SUMMARY, outline);
-            case SOURCE_CONTENT -> isCurrentRawContentPart(userId, entity, outline,
-                    source == null ? SUBJECT_SCOPE : SOURCE_SCOPE,
-                    source == null ? entity.getScopeId() : source.id());
         };
     }
 
@@ -536,42 +441,19 @@ public class OverviewResultService {
                 subjectFingerprint(allInputs, mode));
     }
 
-    private boolean isCurrentRawContentPart(UUID userId, OverviewResultEntity entity, boolean outline,
-                                            String scopeType, UUID scopeId) {
-        OverviewInputDescriptor stored = readInputDescriptor(entity, outline);
-        if (stored == null || stored.origin() != OverviewInputDescriptor.Origin.SOURCE_CONTENT
-                || !scopeType.equals(stored.scopeType()) || !scopeId.equals(stored.scopeId())
-                || generationService == null) return false;
-        try {
-            OverviewInputDescriptor current = generationService.currentRawInputDescriptor(userId, scopeType, scopeId,
-                    stored.sourceIds());
-            return stored.equals(current);
-        } catch (RuntimeException stale) {
-            return false;
-        }
-    }
-
     private OverviewInputDescriptor readInputDescriptor(OverviewResultEntity entity, boolean outline) {
         String originValue = outline ? entity.getOutlineInputOrigin() : entity.getSummaryInputOrigin();
         if (originValue == null) return null;
         OverviewInputDescriptor.Origin origin;
         try { origin = OverviewInputDescriptor.Origin.valueOf(originValue); }
         catch (IllegalArgumentException invalid) { return null; }
-        if (origin == OverviewInputDescriptor.Origin.SOURCE_CONTENT) {
-            String json = outline ? entity.getOutlineInputSnapshotJson() : entity.getSummaryInputSnapshotJson();
-            if (json == null || exceeds(overviewLimits.maxInputSnapshotChars(), json.length())) return null;
-            try {
-                OverviewInputDescriptor stored = objectMapper.readValue(json, OverviewInputDescriptor.class);
-                return stored.origin() == origin ? stored : null;
-            } catch (JacksonException invalid) { return null; }
-        }
         String scopeType = entity.getScopeType();
         UUID scopeId = entity.getScopeId();
         if (origin == OverviewInputDescriptor.Origin.SOURCE_REVISION) {
             if (!SOURCE_SCOPE.equals(scopeType) || entity.getIngestionRevision() == null) return null;
             List<OverviewInputDescriptor.SourceRevision> revisions = List.of(
                     new OverviewInputDescriptor.SourceRevision(scopeId, entity.getIngestionRevision()));
-            return new OverviewInputDescriptor(origin, scopeType, scopeId, List.of(scopeId), revisions, List.of(), List.of(),
+            return new OverviewInputDescriptor(origin, scopeType, scopeId, List.of(scopeId), revisions, List.of(),
                     sourceRevisionFingerprint(scopeId, entity.getIngestionRevision()));
         }
         if (!SUBJECT_SCOPE.equals(scopeType)) return null;
@@ -580,7 +462,7 @@ public class OverviewResultService {
         List<UUID> sourceIds = parts.stream().map(OverviewSourceManifestEntry::sourceId).toList();
         List<OverviewInputDescriptor.SourceRevision> revisions = parts.stream()
                 .map(entry -> new OverviewInputDescriptor.SourceRevision(entry.sourceId(), entry.ingestionRevision())).toList();
-        return new OverviewInputDescriptor(origin, scopeType, scopeId, sourceIds, revisions, List.of(), parts,
+        return new OverviewInputDescriptor(origin, scopeType, scopeId, sourceIds, revisions, parts,
                 outline ? entity.getOutlineInputFingerprint() : entity.getSummaryInputFingerprint());
     }
 
@@ -694,8 +576,7 @@ public class OverviewResultService {
         return sha256(writeJson(new ReceiptPayload(scopeType, scopeId, command.baseVersion(), command.clientWriteId(),
                 command.mode(), command.ingestionRevision(), normalizedManifest == null
                 ? sortedManifest(command.sourceManifest()) : normalizedManifest,
-                command.inputFingerprint(), command.outlineGeneratedAt(), command.summaryGeneratedAt(), command.result(),
-                command.inputDescriptor())));
+                command.inputFingerprint(), command.outlineGeneratedAt(), command.summaryGeneratedAt(), command.result())));
     }
 
     private String writeJson(Object value) {
@@ -704,14 +585,6 @@ public class OverviewResultService {
         } catch (JacksonException exception) {
             throw new DomainException("INTERNAL_ERROR", "Overview data could not be encoded", null, exception);
         }
-    }
-
-    private String writeInputSnapshot(OverviewInputDescriptor input) {
-        String json = writeJson(input);
-        if (exceeds(overviewLimits.maxInputSnapshotChars(), json.length())) {
-            throw new DomainException("VALIDATION_FAILED", "Overview raw input snapshot exceeds its configured limit");
-        }
-        return json;
     }
 
     private String writeSourceManifest(List<OverviewSourceManifestEntry> manifest) {
@@ -807,7 +680,6 @@ public class OverviewResultService {
                                   OverviewMode mode, UUID ingestionRevision,
                                   List<OverviewSourceManifestEntry> sourceManifest,
                                   String inputFingerprint, Instant outlineGeneratedAt, Instant summaryGeneratedAt,
-                                  OverviewResponse result,
-                                   @JsonInclude(JsonInclude.Include.NON_NULL) OverviewInputDescriptor inputDescriptor) {
+                                  OverviewResponse result) {
     }
 }

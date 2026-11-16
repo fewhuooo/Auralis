@@ -40,6 +40,7 @@ class SubjectStatsTests {
     @Autowired private IdentityService identityService;
     @Autowired private SubjectService subjectService;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private com.auralis.app.stats.internal.StatsQueryRepository statsQueryRepository;
 
     @Test
     void aggregatesSubjectStatsByLocalDaysWithoutFanoutOrSoftDeleteLoss() throws Exception {
@@ -81,14 +82,14 @@ class SubjectStatsTests {
         insertReviewState(owner.userId(), secondBlock, parameterSetId, capturedNow.plusSeconds(86400));
         insertReviewState(owner.userId(), thirdBlock, parameterSetId, capturedNow.plusSeconds(172800));
 
-        insertReviewEvent(owner.userId(), firstBlock, "AGAIN", firstDayStart, 7, null, parameterSetId);
-        insertReviewEvent(owner.userId(), firstBlock, "HARD", firstDayStart.plusSeconds(60), 0, "{}", parameterSetId);
-        insertReviewEvent(owner.userId(), secondBlock, "GOOD", firstDayStart.plusSeconds(120), 0, null, parameterSetId);
-        insertReviewEvent(owner.userId(), thirdBlock, "EASY", firstDayStart.plusSeconds(180), 0, null, parameterSetId);
-        insertReviewEvent(owner.userId(), fifthBlock, "SKIP", firstDayStart.plusSeconds(240), 0, null, parameterSetId);
-        insertReviewEvent(owner.userId(), firstBlock, "EASY", exclusiveEnd, 1, "{}", parameterSetId);
-        insertReviewEvent(owner.userId(), foreignBlock, "GOOD", firstDayStart.plusSeconds(300), 0, null, parameterSetId);
-        insertReviewEvent(owner.userId(), fourthBlock, "AGAIN", firstDayStart.minusSeconds(1), 0, null, parameterSetId);
+        insertReview(owner.userId(), firstBlock, "AGAIN", firstDayStart);
+        insertReview(owner.userId(), firstBlock, "HARD", firstDayStart.plusSeconds(60));
+        insertReview(owner.userId(), secondBlock, "GOOD", firstDayStart.plusSeconds(120));
+        insertReview(owner.userId(), thirdBlock, "GOOD", firstDayStart.plusSeconds(180));
+        insertReview(owner.userId(), fifthBlock, null, firstDayStart.plusSeconds(240));
+        insertReview(owner.userId(), firstBlock, "GOOD", exclusiveEnd);
+        insertReview(owner.userId(), foreignBlock, "GOOD", firstDayStart.plusSeconds(300));
+        insertReview(owner.userId(), fourthBlock, "AGAIN", firstDayStart.minusSeconds(1));
 
         insertTask(owner.userId(), subjectId, "TODO", false, null);
         insertTask(owner.userId(), subjectId, "TODO", false, firstDayStart.plusSeconds(700));
@@ -123,8 +124,8 @@ class SubjectStatsTests {
         JsonNode firstDay = day(sevenDay, firstDate);
         assertThat(firstDay.path("nonSkipReviewEventCount").intValue()).isEqualTo(4);
         assertThat(firstDay.path("distinctReviewedKnowledgeBlockCount").intValue()).isEqualTo(3);
-        assertThat(firstDay.path("firstLearningKnowledgeBlockCount").intValue()).isEqualTo(3);
-        assertThat(firstDay.path("subsequentReviewKnowledgeBlockCount").intValue()).isEqualTo(1);
+        assertThat(firstDay.path("firstLearningKnowledgeBlockCount").intValue()).isZero();
+        assertThat(firstDay.path("subsequentReviewKnowledgeBlockCount").intValue()).isEqualTo(3);
         assertThat(firstDay.path("createdKnowledgeBlockCount").intValue()).isEqualTo(1);
         assertThat(firstDay.path("completedTaskCount").intValue()).isEqualTo(2);
         assertThat(firstDay.has("focusSeconds")).isFalse();
@@ -135,16 +136,41 @@ class SubjectStatsTests {
         JsonNode ratings = sevenDay.path("ratingCounts");
         assertThat(ratings.path("againCount").intValue()).isEqualTo(1);
         assertThat(ratings.path("hardCount").intValue()).isEqualTo(1);
-        assertThat(ratings.path("goodCount").intValue()).isEqualTo(1);
-        assertThat(ratings.path("easyCount").intValue()).isEqualTo(1);
+        assertThat(ratings.path("goodCount").intValue()).isEqualTo(2);
+        assertThat(ratings.path("easyCount").intValue()).isZero();
 
         JsonNode thirtyDay = stats(owner, subjectId, 30, "America/New_York");
         assertThat(thirtyDay.path("daily").size()).isEqualTo(30);
         assertThat(thirtyDay.path("from").asText()).isEqualTo(today.minusDays(29).toString());
         assertThat(thirtyDay.path("ratingCounts").path("againCount").intValue()).isEqualTo(2);
         assertThat(thirtyDay.path("ratingCounts").path("hardCount").intValue()).isEqualTo(1);
-        assertThat(thirtyDay.path("ratingCounts").path("goodCount").intValue()).isEqualTo(1);
-        assertThat(thirtyDay.path("ratingCounts").path("easyCount").intValue()).isEqualTo(1);
+        assertThat(thirtyDay.path("ratingCounts").path("goodCount").intValue()).isEqualTo(2);
+        assertThat(thirtyDay.path("ratingCounts").path("easyCount").intValue()).isZero();
+    }
+
+    @Test
+    void globalReviewStatsCountOnlyEffectiveLifecycleResultsWithinOwnerAndTimeRange() {
+        Owner owner = owner("global-review-stats");
+        Owner otherOwner = owner("global-review-other");
+        UUID subjectId = subject(owner, "Global stats");
+        UUID otherSubjectId = subject(otherOwner, "Other global stats");
+        UUID blockId = UUID.randomUUID();
+        UUID otherBlockId = UUID.randomUUID();
+        Instant from = Instant.parse("2026-11-01T00:00:00Z");
+        Instant to = from.plusSeconds(86400);
+        insertBlock(owner.userId(), subjectId, blockId, from, false);
+        insertBlock(otherOwner.userId(), otherSubjectId, otherBlockId, from, false);
+        insertReview(owner.userId(), blockId, "AGAIN", from);
+        insertReview(owner.userId(), blockId, "GOOD", from.plusSeconds(60));
+        insertReview(owner.userId(), blockId, null, from.plusSeconds(120));
+        insertReview(owner.userId(), blockId, "HARD", to);
+        insertReview(owner.userId(), blockId, "AGAIN", from.minusSeconds(1));
+        insertReview(otherOwner.userId(), otherBlockId, "GOOD", from.plusSeconds(60));
+
+        assertThat(statsQueryRepository.reviewed(owner.userId(), from, to)).isEqualTo(2);
+        assertThat(statsQueryRepository.studySeconds(owner.userId(), from, to)).isEqualTo(60);
+        assertThat(statsQueryRepository.completedReviews(owner.userId(), to.minusSeconds(1))).isEqualTo(3);
+        assertThat(statsQueryRepository.completedReviews(owner.userId(), to)).isEqualTo(4);
     }
 
     @Test
@@ -243,13 +269,15 @@ class SubjectStatsTests {
                 UUID.randomUUID(), userId, blockId, parameterSetId, dueAt, now, now);
     }
 
-    private void insertReviewEvent(UUID userId, UUID blockId, String rating, Instant reviewedAt, long baseVersion,
-                                   String beforeState, UUID parameterSetId) {
+    private void insertReview(UUID userId, UUID blockId, String rating, Instant reviewedAt) {
+        String effectiveRating = rating;
         jdbcTemplate.update(
-                "insert into review_events(id, user_id, knowledge_block_id, client_event_id, rating, reviewed_at, duration_seconds, base_version, scheduler, scheduler_version, parameter_set_id, before_state, after_state) "
-                        + "values (?, ?, ?, ?, ?, ?, 30, ?, 'FSRS_LITE', 1, ?, ?, '{}')",
-                UUID.randomUUID(), userId, blockId, UUID.randomUUID(), rating, reviewedAt, baseVersion,
-                parameterSetId, beforeState);
+                "insert into review_lifecycle_reviews(review_id, user_id, knowledge_block_id, selected_rating, "
+                        + "effective_rating, selected_at, resolved_at, resolution, duration_seconds, knowledge_block_version, "
+                        + "content_hash, before_state, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, 30, 0, ?, '{}', ?)",
+                UUID.randomUUID(), userId, blockId, effectiveRating == null ? "GOOD" : rating, effectiveRating,
+                reviewedAt, effectiveRating == null ? null : reviewedAt,
+                effectiveRating == null ? "SUPERSEDED" : "CONFIRMED", "a".repeat(64), reviewedAt);
     }
 
     private void insertTask(UUID userId, UUID subjectId, String status, boolean deleted, Instant completedAt) {

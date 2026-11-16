@@ -1206,36 +1206,6 @@ export interface components {
             /** Format: date-time */
             deletedAt?: string;
         };
-        OverviewInputDescriptor: {
-            /** @enum {string} */
-            origin: "SOURCE_REVISION" | "SOURCE_OVERVIEW_PARTS" | "SOURCE_CONTENT";
-            scopeType: string;
-            /** Format: uuid */
-            scopeId: string;
-            sourceIds: string[];
-            sourceRevisions: components["schemas"]["SourceRevision"][];
-            rawUnits: components["schemas"]["OverviewPartInputUnit"][];
-            overviewParts: components["schemas"]["OverviewSourceManifestEntry"][];
-            inputFingerprint: string;
-        };
-        OverviewPartInputUnit: {
-            alias?: string;
-            /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            sourceRevision?: string;
-            /** Format: uuid */
-            chunkId?: string;
-            /** Format: uuid */
-            generation?: string;
-            /** Format: int32 */
-            ordinal?: number;
-            contentHash?: string;
-            /** Format: int32 */
-            charStart?: number;
-            /** Format: int32 */
-            charEnd?: number;
-        };
         OverviewResponse: {
             /** Format: int32 */
             schemaVersion: number;
@@ -1259,7 +1229,6 @@ export interface components {
             /** Format: date-time */
             summaryGeneratedAt?: string;
             result: components["schemas"]["OverviewResponse"];
-            inputDescriptor?: components["schemas"]["OverviewInputDescriptor"];
         };
         OverviewSourceManifestEntry: {
             /** Format: uuid */
@@ -1271,11 +1240,16 @@ export interface components {
             /** Format: int64 */
             summaryVersion?: number;
         };
-        SourceRevision: {
+        OverviewInputDescriptor: {
+            /** @enum {string} */
+            origin: "SOURCE_REVISION" | "SOURCE_OVERVIEW_PARTS";
+            scopeType: string;
             /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            ingestionRevision?: string;
+            scopeId: string;
+            sourceIds: string[];
+            sourceRevisions: components["schemas"]["SourceRevision"][];
+            overviewParts: components["schemas"]["OverviewSourceManifestEntry"][];
+            inputFingerprint: string;
         };
         OverviewResultView: {
             /** Format: uuid */
@@ -1310,6 +1284,12 @@ export interface components {
             updatedAt?: string;
             outlineInputDescriptor: components["schemas"]["OverviewInputDescriptor"];
             summaryInputDescriptor: components["schemas"]["OverviewInputDescriptor"];
+        };
+        SourceRevision: {
+            /** Format: uuid */
+            sourceId?: string;
+            /** Format: uuid */
+            ingestionRevision?: string;
         };
         PasswordChangeRequest: {
             /** Format: int64 */
@@ -1940,27 +1920,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            object?: boolean;
             container?: boolean;
+            object?: boolean;
             missingNode?: boolean;
-            valueNode?: boolean;
-            bigInteger?: boolean;
+            pojo?: boolean;
+            string?: boolean;
+            number?: boolean;
+            short?: boolean;
+            int?: boolean;
+            floatingPointNumber?: boolean;
+            integralNumber?: boolean;
             bigDecimal?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            integralNumber?: boolean;
-            floatingPointNumber?: boolean;
-            short?: boolean;
+            valueNode?: boolean;
+            bigInteger?: boolean;
             long?: boolean;
-            double?: boolean;
-            string?: boolean;
-            pojo?: boolean;
-            number?: boolean;
-            int?: boolean;
             /** @deprecated */
             textual?: boolean;
-            boolean?: boolean;
             binary?: boolean;
+            double?: boolean;
+            boolean?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {

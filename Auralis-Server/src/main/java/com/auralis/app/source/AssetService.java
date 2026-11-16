@@ -208,18 +208,6 @@ public class AssetService {
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found")));
     }
 
-    @Transactional(readOnly = true)
-    public AssetContent openContent(UUID userId, UUID assetId) {
-        AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
-        if (asset.getUploadStatus() != AssetUploadStatus.READY) {
-            throw new DomainException("MUTATION_REJECTED", "Asset is not ready for ingestion");
-        }
-        InputStream stream = assetStorage.openObject(asset.getObjectKey());
-        return new AssetContent(asset.getId(), asset.getObjectKey(), asset.getOriginalName(),
-                asset.getMimeType(), asset.getSizeBytes(), stream);
-    }
-
     /**
      * Computes the hash from the server-side object stream and conditionally
      * fills the nullable legacy Asset checksum. Client declarations are never

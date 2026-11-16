@@ -116,21 +116,6 @@ public class AiProviderDiscoveryService {
         return endpointPolicy.resolve(provider, baseUri);
     }
 
-    private DomainException mapChatTestStatus(ProviderHttpException exception) {
-        int status = exception.status();
-        if (status == 408) {
-            return new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
-        }
-        if (status == 429) {
-            return new DomainException("RATE_LIMITED", "AI provider rate limit reached", null, exception);
-        }
-        if (status >= 500) {
-            return new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
-        }
-        return new DomainException("MODEL_PROVIDER_ERROR",
-                "AI provider rejected the selected chat model or request", null, exception);
-    }
-
     private DomainException mapStatus(ProviderHttpException exception) {
         int status = exception.status();
         if (status == 408) {

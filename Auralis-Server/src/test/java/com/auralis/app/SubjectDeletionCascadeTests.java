@@ -389,7 +389,7 @@ class SubjectDeletionCascadeTests {
         assertThat(relationFailure).isInstanceOf(com.auralis.app.shared.error.DomainException.class)
                 .extracting(failure -> ((com.auralis.app.shared.error.DomainException) failure).code())
                 .isEqualTo("RESOURCE_NOT_FOUND");
-        assertThat(relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.user().id()))
+        assertThat(relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.user().id(), org.springframework.data.domain.PageRequest.of(0, 200)))
                 .isEmpty();
     }
 

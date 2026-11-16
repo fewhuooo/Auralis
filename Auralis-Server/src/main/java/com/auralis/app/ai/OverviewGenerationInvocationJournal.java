@@ -16,14 +16,11 @@ import java.util.Set;
 public class OverviewGenerationInvocationJournal {
     private final OverviewGenerationInvocationRepository repository;
     private final AiUsageQueryService usageQuery;
-    private final OverviewExecutionJournal executionJournal;
 
     public OverviewGenerationInvocationJournal(OverviewGenerationInvocationRepository repository,
-                                               AiUsageQueryService usageQuery,
-                                               OverviewExecutionJournal executionJournal) {
+                                               AiUsageQueryService usageQuery) {
         this.repository = repository;
         this.usageQuery = usageQuery;
-        this.executionJournal = executionJournal;
     }
 
     public AiInvocationBinding binding(OverviewGenerationCoordinator.GenerationLease generation,
@@ -59,9 +56,8 @@ public class OverviewGenerationInvocationJournal {
             java.util.UUID ledgerTaskId = ledgerTaskId(generation);
             if (!generation.userId().equals(call.userId()) || !generation.generationId().equals(call.generationId())
                     || !ledgerTaskId.equals(call.taskId()) || call.generationFence() <= 0
-                    || call.generationOwner() == null || (call.jobFence() != null && call.jobFence() <= 0)) return false;
-            if (!callSafe(call, expected, generation.userId(), ledgerTaskId)
-                    && !executionJournal.permitsTerminalUnknownWriterInvocation(generation, call.reservationId())) {
+                    || call.generationOwner() == null) return false;
+            if (!callSafe(call, expected, generation.userId(), ledgerTaskId)) {
                 return false;
             }
         }

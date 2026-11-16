@@ -35,16 +35,16 @@ public class StatsQueryRepository {
     }
 
     public long completedReviews(UUID userId, Instant at) {
-        return count("select count(*) from review_events where user_id = ? and reviewed_at <= ? and rating <> 'SKIP'", userId, at);
+        return count("select count(*) from review_lifecycle_reviews where user_id = ? and selected_at <= ? and effective_rating is not null", userId, at);
     }
 
     public long reviewed(UUID userId, Instant from, Instant to) {
-        return count("select count(*) from review_events where user_id = ? and reviewed_at >= ? and reviewed_at < ? and rating <> 'SKIP'",
+        return count("select count(*) from review_lifecycle_reviews where user_id = ? and selected_at >= ? and selected_at < ? and effective_rating is not null",
                 userId, from, to);
     }
 
     public long studySeconds(UUID userId, Instant from, Instant to) {
-        return count("select coalesce(sum(duration_seconds), 0) from review_events where user_id = ? and reviewed_at >= ? and reviewed_at < ?",
+        return count("select coalesce(sum(duration_seconds), 0) from review_lifecycle_reviews where user_id = ? and selected_at >= ? and selected_at < ? and effective_rating is not null",
                 userId, from, to);
     }
 

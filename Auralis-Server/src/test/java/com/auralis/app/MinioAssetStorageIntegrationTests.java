@@ -140,8 +140,7 @@ class MinioAssetStorageIntegrationTests {
 
     private AuralisProperties properties(String internalEndpoint, String publicEndpoint) {
         return new AuralisProperties(
-                "test",
-                new AuralisProperties.Api("http://localhost", "http://localhost"),
+                new AuralisProperties.Api("http://localhost"),
                 new AuralisProperties.Upload(
                         1024 * 1024,
                         "minio",
@@ -150,11 +149,11 @@ class MinioAssetStorageIntegrationTests {
                 new AuralisProperties.Ai(
                         false, "test-encryption-key", null,
                         null,
-                        3000, 1000, 120000, 240000, 12000, 8, 1024, 32, 32768,
+                        3000, 1000, 120000, 240000, 12000, 1024, 32, 32768,
                         1000, 1000, 1, 1024 * 1024, List.of(), false, 1000, 1000, 1,
                         new AuralisProperties.Limits(
                                 4, 2, 100_000, 200_000, 2_000_000, 300_000,
-                                10_000, 4096, 2, 32_000, 24, 524_288, 512, 16_777_216)));
+                                10_000, 4096, 32_000, 24, 524_288, 512, 16_777_216)));
     }
 
     private String sha256(byte[] content) throws Exception {

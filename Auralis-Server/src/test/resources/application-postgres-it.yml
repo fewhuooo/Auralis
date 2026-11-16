@@ -11,7 +11,6 @@ spring:
       ddl-auto: validate
 
 auralis:
-  environment: test
   ai:
     enabled: false
     ingestion-worker-enabled: false

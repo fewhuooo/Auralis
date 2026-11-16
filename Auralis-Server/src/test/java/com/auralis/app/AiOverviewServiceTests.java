@@ -935,7 +935,7 @@ class AiOverviewServiceTests {
                 AiCredentialSource.requireKnown(source);
                 assertThat(stage).isIn(AiStage.OVERVIEW_MAP, AiStage.OVERVIEW_REDUCE);
                 assertThat(role).isIn(com.auralis.app.ai.usage.AiOutputRole.INTERMEDIATE,
-                        com.auralis.app.ai.usage.AiOutputRole.FINAL);
+                        com.auralis.app.ai.usage.AiOutputRole.INTERMEDIATE);
                 return new AiInvocationResult<>(registry.require(providerType)
                         .complete(request, credential, timeout, cancellation), usage());
             }

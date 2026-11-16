@@ -329,7 +329,11 @@ class OpenApiArtifactTests {
         assertThat(view.has("summaryMarkdown")).isTrue();
         assertThat(view.has("outlineIdentity")).isFalse();
         assertThat(view.has("outlineProvenance")).isFalse();
-        assertThat(document.at("/components/schemas/OverviewResultCommand/properties/inputDescriptor").isMissingNode()).isFalse();
+        assertThat(document.at("/components/schemas/OverviewResultCommand/properties/inputDescriptor").isMissingNode()).isTrue();
+        JsonNode descriptor = document.at("/components/schemas/OverviewInputDescriptor/properties");
+        assertThat(descriptor.has("rawUnits")).isFalse();
+        assertThat(descriptor.at("/origin/enum").toString())
+                .isEqualTo("[\"SOURCE_REVISION\",\"SOURCE_OVERVIEW_PARTS\"]");
         assertThat(document.at("/paths/~1api~1overview-results~1sources~1{sourceId}~1sections~1{sectionId}").isMissingNode()).isTrue();
     }
 

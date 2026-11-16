@@ -148,13 +148,6 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         public AiPlatformTaskBudgetUsage platformTaskBudgetUsage() {
             return guard.platformTaskBudgetUsage(task);
         }
-
-        @Override
-        public <T> AiInvocationResult<T> metadata(
-                AiStage stage, AiProviderType provider, String model, Supplier<T> operation) {
-            throw new AiPolicyContractException();
-        }
-
         @Override
         public <T> AiInvocationResult<T> metadata(AiStage stage, AiProviderType provider, String model,
                 AiCredentialSource source, Supplier<T> operation) {
@@ -164,13 +157,6 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                     () -> providerIo.execute(status -> operation.get()), ignored -> new AiTokenUsage(0L, 0L),
                     ignored -> AiProviderModelIdentity.missing(), null, "METADATA", 0, null, null);
         }
-
-        @Override
-        public AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
-                AiProviderRequest request, AiCredential credential, long responseTimeoutMillis) {
-            throw new AiPolicyContractException();
-        }
-
         @Override
         public AiInvocationResult<AiProviderResponse> completeChat(AiStage stage, AiProviderType provider,
                 AiProviderRequest request, AiCredential credential, AiCredentialSource source,
@@ -195,14 +181,6 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                     response -> response == null ? AiProviderModelIdentity.missing() : response.modelIdentity(),
                     shadow, "CHAT_AGENT_REQUEST", bounded.messages().size(), null, null);
         }
-
-        @Override
-        public AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
-                AiProviderRequest request, AiCredential credential, long responseTimeoutMillis,
-                OverviewCancellation cancellation) {
-            throw new AiPolicyContractException();
-        }
-
         @Override
         public AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
                 AiProviderRequest request, AiCredential credential, AiCredentialSource source,
@@ -267,14 +245,6 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                     shadow, shadow.textType(), contents.size(), binding, admissionEstimate,
                     cancellation, isOverviewFeature(task.feature()));
         }
-
-        @Override
-        public AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
-                AiProviderRequest request, AiCredential credential,
-                java.util.function.Consumer<AiProviderChunk> sink) {
-            throw new AiPolicyContractException();
-        }
-
         @Override
         public AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
                 AiProviderRequest request, AiCredential credential, AiCredentialSource source,
@@ -322,13 +292,6 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             }, ignored -> rawUsage.get(), ignored -> modelIdentity.get(),
                     shadow, shadow.textType(), contents.size(), null, null);
         }
-
-        @Override
-        public AiInvocationResult<EmbeddingResult> embed(AiStage stage, AiProviderType provider,
-                String model, List<String> texts, AiCredential credential) {
-            throw new AiPolicyContractException();
-        }
-
         @Override
         public AiInvocationResult<EmbeddingResult> embed(AiStage stage, AiProviderType provider,
                 String model, List<String> texts, AiCredential credential, AiCredentialSource source) {
@@ -624,7 +587,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             } else {
                 outputLimit = switch (task.feature()) {
                         case CHAT -> limits.chatMaxOutputTokens();
-                        case SOURCE_OVERVIEW, SUBJECT_OVERVIEW -> role == AiOutputRole.FINAL ? 6_144 : 4_608;
+                        case SOURCE_OVERVIEW, SUBJECT_OVERVIEW -> 4_608;
                         case PROVIDER_SETUP -> limits.chatMaxOutputTokens();
                         case INGESTION -> 1;
                     };

@@ -28,7 +28,6 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     @Query("select task from TaskEntity task where task.id = :id and task.userId = :userId")
     Optional<TaskEntity> findForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
 
-    List<TaskEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     List<TaskEntity> findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNull(UUID userId);
 

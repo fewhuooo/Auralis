@@ -124,7 +124,6 @@ export interface OverviewResultCommand {
   outlineGeneratedAt: string | null
   summaryGeneratedAt: string | null
   result: OverviewResponse
-  inputDescriptor?: OverviewInputDescriptor
 }
 
 /** Current canonical result returned by the independent server Overview API. */

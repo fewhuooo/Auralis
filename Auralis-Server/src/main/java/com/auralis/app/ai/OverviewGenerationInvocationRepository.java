@@ -49,13 +49,12 @@ public class OverviewGenerationInvocationRepository {
 
     @Transactional(readOnly = true)
     public List<InvocationRow> findByGeneration(UUID userId, UUID generationId) {
-        return jdbc.query("select reservation_id,task_id,generation_id,user_id,purpose,stage,owner_id,generation_fence,job_fence "
+        return jdbc.query("select reservation_id,task_id,generation_id,user_id,purpose,stage,owner_id,generation_fence "
                         + "from overview_generation_invocations where user_id=? and generation_id=? order by created_at,id",
                 (rs, row) -> new InvocationRow(rs.getObject("reservation_id", UUID.class),
                         rs.getObject("task_id", UUID.class), rs.getObject("generation_id", UUID.class),
                         rs.getObject("user_id", UUID.class), rs.getString("purpose"), rs.getString("stage"),
-                        rs.getObject("owner_id", UUID.class), rs.getLong("generation_fence"),
-                        rs.getObject("job_fence", Long.class)), userId, generationId);
+                        rs.getObject("owner_id", UUID.class), rs.getLong("generation_fence")), userId, generationId);
     }
 
     private void lockActiveUser(UUID userId) {
@@ -90,5 +89,5 @@ public class OverviewGenerationInvocationRepository {
     }
 
     public record InvocationRow(UUID reservationId, UUID taskId, UUID generationId, UUID userId, String purpose,
-                                String stage, UUID generationOwner, long generationFence, Long jobFence) { }
+                                String stage, UUID generationOwner, long generationFence) { }
 }

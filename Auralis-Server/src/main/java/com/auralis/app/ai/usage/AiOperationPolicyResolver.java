@@ -26,9 +26,6 @@ public final class AiOperationPolicyResolver {
         add(matrix, AiOperationKind.TEXT_GENERATION, AiFeature.CHAT, 1, limits.chatTaskTokens(),
                 Map.of(AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.COMPLETE),
                         roles(), 1, 1)), 1);
-        add(matrix, AiOperationKind.CHAT_TURN, AiFeature.CHAT, limits.chatMaxCalls(), limits.chatTaskTokens(),
-                Map.of(AiStage.RETRIEVAL_EMBEDDING, rule(method(AiInvocationMethod.EMBED), roles(), null, 1),
-                        AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.STREAM, AiInvocationMethod.COMPLETE), roles(), null, 1)));
         add(matrix, AiOperationKind.SOURCE_OVERVIEW, AiFeature.SOURCE_OVERVIEW, limits.overviewMaxCalls(), limits.overviewTaskTokens(), overviewRules(limits.overviewMaxCalls()));
         add(matrix, AiOperationKind.SUBJECT_OVERVIEW, AiFeature.SUBJECT_OVERVIEW, limits.overviewMaxCalls(), limits.overviewTaskTokens(), overviewRules(limits.overviewMaxCalls()));
         add(matrix, AiOperationKind.INGESTION_EMBEDDING, AiFeature.INGESTION, limits.ingestionMaxCalls(), limits.ingestionTaskTokens(),
@@ -36,11 +33,6 @@ public final class AiOperationPolicyResolver {
         add(matrix, AiOperationKind.PROVIDER_SETUP, AiFeature.PROVIDER_SETUP, 2, 8_192,
                 Map.of(AiStage.PROVIDER_METADATA, rule(method(AiInvocationMethod.METADATA), roles(), null, 1),
                         AiStage.PROVIDER_TEST, rule(method(AiInvocationMethod.COMPLETE), roles(), null, 1)));
-        add(matrix, AiOperationKind.LEARNING_TURN, AiFeature.CHAT, Math.min(limits.chatMaxCalls(), 2), limits.chatTaskTokens(),
-                Map.of(AiStage.RETRIEVAL_EMBEDDING, rule(method(AiInvocationMethod.EMBED), roles(), 1, 1),
-                        AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.COMPLETE, AiInvocationMethod.STREAM), roles(), 1, 1)));
-        add(matrix, AiOperationKind.LEARNING_DRAFT, AiFeature.CHAT, 1, limits.chatTaskTokens(),
-                Map.of(AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.COMPLETE), roles(), 1, 1)));
         this.policies = Map.copyOf(matrix);
         if (policies.size() != AiOperationKind.values().length) throw new IllegalStateException("Operation policy matrix is incomplete");
     }
@@ -60,9 +52,9 @@ public final class AiOperationPolicyResolver {
 
     private static Map<AiStage, AiOperationPolicy.StageRule> overviewRules(int maxCalls) {
         return Map.of(AiStage.OVERVIEW_MAP, rule(method(AiInvocationMethod.COMPLETE),
-                        Set.of(AiOutputRole.INTERMEDIATE, AiOutputRole.FINAL), null, maxCalls == 0 ? null : maxCalls),
+                        Set.of(AiOutputRole.INTERMEDIATE), null, maxCalls == 0 ? null : maxCalls),
                 AiStage.OVERVIEW_REDUCE, rule(method(AiInvocationMethod.COMPLETE),
-                        Set.of(AiOutputRole.INTERMEDIATE, AiOutputRole.FINAL), null, maxCalls == 0 ? null : maxCalls));
+                        Set.of(AiOutputRole.INTERMEDIATE), null, maxCalls == 0 ? null : maxCalls));
     }
     private static void add(Map<AiOperationKind, AiOperationPolicy> out, AiOperationKind kind, AiFeature feature,
                             int calls, long tokens, Map<AiStage, AiOperationPolicy.StageRule> stages) {

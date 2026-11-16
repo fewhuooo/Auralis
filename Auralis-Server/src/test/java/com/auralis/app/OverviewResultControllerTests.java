@@ -5,7 +5,6 @@ import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewResultCommand;
 import com.auralis.app.ai.OverviewResultService;
-import com.auralis.app.ai.OverviewInputDescriptor;
 import com.auralis.app.ai.OverviewSourceManifestEntry;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -442,12 +441,6 @@ class OverviewResultControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(staleSourceUpdate)))
                 .andExpect(status().isOk());
-        OverviewInputDescriptor deletedRawInput = new OverviewInputDescriptor(
-                OverviewInputDescriptor.Origin.SOURCE_CONTENT, "SUBJECT", staleSubjectId, List.of(staleSource.getId()),
-                List.of(), List.of(), List.of(), "stale-raw-input-fingerprint");
-        jdbcTemplate.update("update overview_results set outline_input_origin='SOURCE_CONTENT', outline_input_snapshot_json=? "
-                        + "where user_id=? and scope_type='SUBJECT' and scope_id=?",
-                objectMapper.writeValueAsString(deletedRawInput), owner.user().id(), staleSubjectId);
         jdbcTemplate.update("update sources set deleted_at=? where id=?", Instant.now(), staleSource.getId());
         subjectService.delete(owner.user().id(), deletedSubjectId, 0);
 

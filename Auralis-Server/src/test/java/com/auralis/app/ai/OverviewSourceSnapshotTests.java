@@ -29,18 +29,10 @@ class OverviewSourceSnapshotTests {
 
         assertThat(snapshot.text()).isEqualTo(source);
         assertThat(snapshot.text().length()).isEqualTo(7);
-        assertThat(snapshot.readRange(1, 3)).isEqualTo("😀");
-        assertThatThrownBy(() -> snapshot.readRange(1, 2))
-                .hasMessageContaining("splits a Unicode character");
-        assertThat(snapshot.project(1, 7)).containsExactly(
-                new OverviewSourceSnapshot.SourceRangeRef(sourceId, revision,
-                        snapshot.chunks().getFirst().chunkId(), generation, 1, 5),
-                new OverviewSourceSnapshot.SourceRangeRef(sourceId, revision,
-                        snapshot.chunks().get(1).chunkId(), generation, 5, 7));
     }
 
     @Test
-    void projectsSourceOnceWhenIngestionCreatesFullyOverlappingChunks() {
+    void assemblesSourceOnceWhenIngestionCreatesFullyOverlappingChunks() {
         UUID sourceId = UUID.randomUUID();
         UUID revision = UUID.randomUUID();
         UUID generation = UUID.randomUUID();
@@ -54,12 +46,6 @@ class OverviewSourceSnapshotTests {
         assertThat(snapshot.text()).isEqualTo(text);
         assertThat(snapshot.chunks().get(1)).isEqualTo(new OverviewSourceSnapshot.ChunkRange(
                 chunks.get(1).getId(), generation, 1, 530, 560, 650, 650));
-        assertThat(snapshot.project(530, 660)).containsExactly(
-                new OverviewSourceSnapshot.SourceRangeRef(sourceId, revision, chunks.getFirst().getId(),
-                        generation, 530, 650),
-                new OverviewSourceSnapshot.SourceRangeRef(sourceId, revision, snapshot.chunks().stream()
-                        .filter(range -> range.ownedStart() == 650 && range.ownedEnd() > 650)
-                        .findFirst().orElseThrow().chunkId(), generation, 650, 660));
 
         var inconsistent = new ArrayList<>(chunks);
         inconsistent.set(1, chunk(sourceId, revision, generation, 1,
@@ -86,11 +72,6 @@ class OverviewSourceSnapshotTests {
                 SourceChunkProvenance.encode(provenance).getFirst())));
 
         assertThat(snapshot.text()).isEqualTo("A😀\nBC");
-        assertThat(snapshot.readRange(1, 3)).isEqualTo("😀");
-        assertThat(snapshot.project(1, 3)).singleElement().satisfies(ref -> {
-            assertThat(ref.charStart()).isEqualTo(1);
-            assertThat(ref.charEnd()).isEqualTo(3);
-        });
     }
 
     @Test

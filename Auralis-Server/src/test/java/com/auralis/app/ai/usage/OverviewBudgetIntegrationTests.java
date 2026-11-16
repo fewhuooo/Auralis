@@ -171,11 +171,11 @@ class OverviewBudgetIntegrationTests {
         ServiceFixture service(SourceService sources, SubjectService subjects, SourceChunkRepository chunks,
                                AiCredentialSource source, int maxPromptChars) {
             AuralisProperties.Limits limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000,
-                    2_000_000, 60_000, 1_000, 4_096, 2, 32_000, overviewMaxCalls, 524_288, 512, 16_777_216);
+                    2_000_000, 60_000, 1_000, 4_096, 32_000, overviewMaxCalls, 524_288, 512, 16_777_216);
             AuralisProperties.Ai ai = new AuralisProperties.Ai(false, "", new AuralisProperties.GenerationEndpoint(
                     "https://provider.test/v1", "test-model", "test-key", 100_000, 16_384),
                     null, 3_000, 10_000, 120_000, 240_000,
-                    12_000, 8, 5_242_880, 32, 32_768, 3_000, 10_000, 3, 1_048_576,
+                    12_000, 5_242_880, 32, 32_768, 3_000, 10_000, 3, 1_048_576,
                     List.of(), false, 1_000, 60_000, 3, limits, true,
                     List.of(new AuralisProperties.OverviewModelCapacity(
                             AiProviderType.OPENAI_COMPATIBLE.name(), "https://provider.test/v1", "test-model", 100_000, 16_384)),

@@ -324,11 +324,10 @@ class OverviewGenerationCoordinatorTests {
     }
 
     @Test
-    void reusableCacheEvictsOldestResultAndCheckpointsTogetherAtGenerationLimit() {
+    void reusableCacheEvictsOldestResultAtGenerationLimit() {
         OverviewGenerationCoordinator limited = capacityCoordinator(128, 1);
         var firstRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var first = limited.acquire(firstRequest);
-        OverviewHistoricalFixtures.insertCheckpoint(jdbc, first.lease(), "MAP:1", "{\"value\":\"一\"}");
         assertThat(limited.complete(first.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
 
         var second = limited.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
@@ -336,10 +335,8 @@ class OverviewGenerationCoordinatorTests {
 
         assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
                 first.generationId())).isNull();
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, first.generationId())).isZero();
         assertThat(jdbc.queryForObject("select count(*) from overview_generations g where g.status='SUCCESS' and "
-                        + "(g.result_json is not null or exists (select 1 from overview_generation_checkpoints c where c.generation_id=g.id))",
+                        + "g.result_json is not null",
                 Integer.class)).isEqualTo(1);
     }
 
@@ -398,7 +395,7 @@ class OverviewGenerationCoordinatorTests {
             executor.shutdownNow();
         }
         assertThat(jdbc.queryForObject("select count(*) from overview_generations g where g.status='SUCCESS' and "
-                        + "(g.result_json is not null or exists (select 1 from overview_generation_checkpoints c where c.generation_id=g.id))",
+                        + "g.result_json is not null",
                 Integer.class)).isLessThanOrEqualTo(1);
     }
 
@@ -461,29 +458,16 @@ class OverviewGenerationCoordinatorTests {
     }
 
     @Test
-    void cleanupExpiresResultAndOldCheckpointIndependentlyWhileKeepingExecutionAndBudgetLineage() {
+    void cleanupExpiresResultWhileKeepingRequestAndBudgetLineage() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var owner = coordinator.acquire(originalRequest);
-        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:1", "{\"schemaVersion\":1,\"title\":\"private map\"}");
         assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
         jdbc.update("update overview_generations set result_expires_at=? where id=?",
                 Instant.now().minusSeconds(1), owner.generationId());
 
-        UUID planId = UUID.randomUUID();
-        UUID nodeId = UUID.randomUUID();
         UUID reservationId = UUID.randomUUID();
         jdbc.update("insert into ai_usage_reservations(id,user_id,request_dispatched) values (?,?,true)",
                 reservationId, userId);
-        jdbc.update("insert into overview_execution_plans(id,generation_id,input_fingerprint,profile_fingerprint,"
-                        + "algorithm_version,plan_fingerprint,mode,state,payload_json) values (?,?,?,?,?,?,?,?,?)",
-                planId, owner.generationId(), HASH_A, HASH_B, "algorithm-v1", HASH_C, "ALL", "ASSEMBLED", "{}");
-        jdbc.update("insert into overview_execution_nodes(id,plan_id,generation_id,node_ordinal,descriptor_json,"
-                        + "descriptor_sha256,checkpoint_step,state,attempt,checkpoint_sha256) values (?,?,?,?,?,?,?,?,?,?)",
-                nodeId, planId, owner.generationId(), 0, "{}", HASH_A, "MAP:1", "VERIFIED", 1, HASH_C);
-        jdbc.update("insert into overview_execution_calls(id,generation_id,plan_id,node_id,attempt,reservation_id,"
-                        + "task_id,user_id,operation_kind) values (?,?,?,?,?,?,?,?,?)",
-                UUID.randomUUID(), owner.generationId(), planId, nodeId, 1, reservationId, owner.budgetTaskId(),
-                userId, "SUBJECT_OVERVIEW");
 
         assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
         assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
@@ -500,14 +484,6 @@ class OverviewGenerationCoordinatorTests {
                 UUID.class, userId, originalRequest.requestId())).isEqualTo(owner.generationId());
         assertThat(jdbc.queryForObject("select request_dispatched from ai_usage_reservations where id=?",
                 Boolean.class, reservationId)).isTrue();
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_plans where id=?", Integer.class,
-                planId)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_nodes where id=?", Integer.class,
-                nodeId)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where reservation_id=?",
-                Integer.class, reservationId)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, owner.generationId())).isEqualTo(1);
         assertThat(coordinator.cleanupExpiredPayloads()).isZero();
     }
 
@@ -516,78 +492,28 @@ class OverviewGenerationCoordinatorTests {
         for (int index = 0; index < 101; index++) {
             String distinctInput = String.format("%064x", index + 1);
             var owner = coordinator.acquire(request(UUID.randomUUID(), distinctInput, HASH_B, HASH_C));
-            OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:" + index, "{\"schemaVersion\":1}");
-            assertThat(coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usageSummary(), 0, List.of())).isTrue();
-            jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
-                    OffsetDateTime.now().minusDays(15), owner.generationId());
+            assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":2}", usage(), 0, List.of())).isTrue();
+            jdbc.update("update overview_generations set result_expires_at=? where id=?",
+                    OffsetDateTime.now().minusDays(1), owner.generationId());
         }
 
         assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(100);
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations where result_json is not null", Integer.class)).isEqualTo(1);
         assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations where result_json is not null", Integer.class)).isZero();
         assertThat(coordinator.cleanupExpiredPayloads()).isZero();
     }
 
     @Test
-    void cleanupDeletesExpiredCheckpointWithoutClearingUnexpiredSuccessResult() {
-        var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:1", "{\"schemaVersion\":1}");
-        assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
-        jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
-                OffsetDateTime.now().minusDays(15), owner.generationId());
-
-        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
-                owner.generationId())).isEqualTo("{\"schemaVersion\":1}");
-        assertThat(jdbc.queryForObject("select result_sha256 from overview_generations where id=?", String.class,
-                owner.generationId())).isNotNull();
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, owner.generationId())).isZero();
-    }
-
-    @Test
-    void cleanupSkipsLockedGenerationThatIsBeingRecovered() throws Exception {
-        var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
-        OverviewHistoricalFixtures.insertCheckpoint(jdbc, owner.lease(), "MAP:1", "{\"schemaVersion\":1}");
-        assertThat(coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usageSummary(), 0, List.of())).isTrue();
-        heartbeat.shutdownNow();
-
-        CountDownLatch recoveredAndLocked = new CountDownLatch(1);
-        CountDownLatch allowCommit = new CountDownLatch(1);
-        var executor = Executors.newSingleThreadExecutor();
-        try {
-            Future<?> recovery = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-                jdbc.query("select id from overview_generations where id=? for update",
-                        (org.springframework.jdbc.core.ResultSetExtractor<Boolean>) rs -> rs.next(), owner.generationId());
-                jdbc.update("update overview_generations set status='ACTIVE',active_fingerprint=?,owner_id=?,"
-                                + "fence=fence+1,lease_until=? "
-                                + "where id=?",
-                        HASH_D, UUID.randomUUID(), OffsetDateTime.now().plusMinutes(5), owner.generationId());
-                recoveredAndLocked.countDown();
-                try {
-                    if (!allowCommit.await(10, TimeUnit.SECONDS)) {
-                        throw new IllegalStateException("Timed out waiting to commit recovered generation");
-                    }
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("Recovery transaction interrupted", interrupted);
-                }
-            }));
-            boolean lockAcquired = recoveredAndLocked.await(10, TimeUnit.SECONDS);
-            if (!lockAcquired) recovery.get(1, TimeUnit.SECONDS);
-            assertThat(lockAcquired).isTrue();
-            assertThat(coordinator.cleanupExpiredPayloads()).isZero();
-            allowCommit.countDown();
-            recovery.get(10, TimeUnit.SECONDS);
-        } finally {
-            allowCommit.countDown();
-            executor.shutdownNow();
-        }
+    void cleanupPreservesUnexpiredSuccessAndActiveGeneration() {
+        var complete = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.complete(complete.lease(), "{}", usage(), 0, List.of())).isTrue();
+        var active = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
 
         assertThat(coordinator.cleanupExpiredPayloads()).isZero();
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, owner.generationId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?",
+                String.class, complete.generationId())).isEqualTo("{}");
+        assertThat(coordinator.owns(active.lease())).isTrue();
     }
 
     @Test

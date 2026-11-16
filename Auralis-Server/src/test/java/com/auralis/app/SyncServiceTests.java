@@ -273,7 +273,7 @@ class SyncServiceTests {
 
         assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
         assertThat(result.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(taskService.list(auth.user().id())).hasSize(1);
+        assertThat(taskService.list(auth.user().id(), null, 200).items()).hasSize(1);
     }
 
     @Test

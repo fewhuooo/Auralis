@@ -65,7 +65,7 @@ class AiUsageGatewayShadowEstimateTests {
         var observed = AiProviderModelIdentity.fromProviderValue("vendor/actual-model");
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 5L, 2L, null, observed));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
-                fixture.user, AiFeature.CHAT, "model-identity-task"))) {
+                fixture.user, AiFeature.CHAT, "model-identity-task", java.util.UUID.randomUUID()))) {
             task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("requested-model", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "synthetic")), 0.0, 1),
@@ -120,7 +120,7 @@ class AiUsageGatewayShadowEstimateTests {
             Fixture fixture = new Fixture(new AiProviderResponse("unused", 5L, 2L), true, scenarios.get(index));
             List<AiProviderChunk> delivered = new ArrayList<>();
             try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
-                    fixture.user, AiFeature.CHAT, "stream-observation-" + index))) {
+                    fixture.user, AiFeature.CHAT, "stream-observation-" + index, java.util.UUID.randomUUID()))) {
                 task.stream(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                         new AiProviderRequest(requested, List.of(
                                 new AiProviderRequest.Message(AiMessageRole.USER, "synthetic")), 0.0, 1),
@@ -160,7 +160,7 @@ class AiUsageGatewayShadowEstimateTests {
             throws Exception {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 5L, 2L));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
-                fixture.user, AiFeature.CHAT, "prompt-marker-do-not-log"))) {
+                fixture.user, AiFeature.CHAT, "prompt-marker-do-not-log", java.util.UUID.randomUUID()))) {
             task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "abc")), 0.0, 1),
@@ -191,7 +191,7 @@ class AiUsageGatewayShadowEstimateTests {
                 new AiProviderRequest.Message(AiMessageRole.ASSISTANT, ""),
                 new AiProviderRequest.Message(AiMessageRole.USER, "中文"));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
-                fixture.user, AiFeature.CHAT, "multi-message-framing-task"))) {
+                fixture.user, AiFeature.CHAT, "multi-message-framing-task", java.util.UUID.randomUUID()))) {
             task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", messages, 0.0, 1),
                     new AiCredential("https://api.deepseek.com/v1", "synthetic-key"), AiCredentialSource.PLATFORM, 1_000, AiOutputRole.GENERAL);
@@ -228,7 +228,7 @@ class AiUsageGatewayShadowEstimateTests {
             throws Exception {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", (Long) null, (Long) null, null));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
-                fixture.user, AiFeature.CHAT, "unknown-usage-task"))) {
+                fixture.user, AiFeature.CHAT, "unknown-usage-task", java.util.UUID.randomUUID()))) {
             task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "abc")), 0.0, 1),
@@ -251,7 +251,7 @@ class AiUsageGatewayShadowEstimateTests {
     void shadowObservationCanBeDisabledWithoutChangingReservation(CapturedOutput output) throws Exception {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 5L, 2L), false);
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(
-                fixture.user, AiFeature.CHAT, "shadow-disabled-task"))) {
+                fixture.user, AiFeature.CHAT, "shadow-disabled-task", java.util.UUID.randomUUID()))) {
             task.complete(AiStage.CHAT_COMPLETION, AiProviderType.OPENAI_COMPATIBLE,
                     new AiProviderRequest("deepseek-chat", List.of(
                             new AiProviderRequest.Message(AiMessageRole.USER, "abc")), 0.0, 1),
@@ -297,10 +297,10 @@ class AiUsageGatewayShadowEstimateTests {
             jdbc.update("insert into users(id) values (?)", user);
             var transactions = new DataSourceTransactionManager(source);
             var limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000, 2_000_000,
-                    60_000, 1_000, 4096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+                    60_000, 1_000, 4096, 32_000, 24, 524_288, 512, 16_777_216);
             var ai = new AuralisProperties.Ai(false, "", new AuralisProperties.GenerationEndpoint(
                     "https://api.deepseek.com", "deepseek-v4-flash", "synthetic-key", 1_048_576, 393_216), null,
-                    3_000, 10_000, 120_000, 240_000, 12_000, 8, 5_242_880,
+                    3_000, 10_000, 120_000, 240_000, 12_000, 5_242_880,
                     32, 32_768, 3_000, 10_000, 3, 1_048_576, List.of(), false,
                     1_000, 60_000, 3, limits, shadowEnabled, List.of(),
                     AuralisProperties.OverviewLimits.withoutAdditionalCaps());

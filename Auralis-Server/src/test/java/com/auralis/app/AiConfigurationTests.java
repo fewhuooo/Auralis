@@ -50,7 +50,6 @@ class AiConfigurationTests {
     void bindsSafeLocalAiDefaultsAndLimits() {
         assertThat(properties.ai().enabled()).isFalse();
         assertThat(properties.ai().maxPromptChars()).isEqualTo(12_000);
-        assertThat(properties.ai().maxRetrievedChunks()).isEqualTo(8);
         assertThat(properties.ai().providerConnectTimeoutMillis()).isEqualTo(3_000L);
         assertThat(properties.ai().requestTimeoutMillis()).isEqualTo(10_000L);
         assertThat(properties.ai().overviewResponseTimeoutMillis()).isEqualTo(120_000L);
@@ -78,7 +77,6 @@ class AiConfigurationTests {
         assertThat(properties.ai().limits().reservationLeaseMillis()).isEqualTo(300_000L);
         assertThat(properties.ai().limits().heartbeatMillis()).isEqualTo(10_000L);
         assertThat(properties.ai().limits().chatMaxOutputTokens()).isEqualTo(4096);
-        assertThat(properties.ai().limits().chatMaxCalls()).isEqualTo(2);
         assertThat(properties.ai().limits().chatTaskTokens()).isEqualTo(32_000L);
         assertThat(properties.ai().limits().overviewMaxCalls()).isZero();
         assertThat(properties.ai().limits().overviewTaskTokens()).isEqualTo(524_288L);
@@ -256,13 +254,13 @@ class AiConfigurationTests {
         var validator = Validation.buildDefaultValidatorFactory().getValidator();
         var invalidHeartbeat = new AuralisProperties.Limits(
                 4, 2, 100_000, 200_000, 2_000_000, 300_000, 100_001,
-                4096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+                4096, 32_000, 24, 524_288, 512, 16_777_216);
         var invalidQuota = new AuralisProperties.Limits(
                 4, 2, 300_000, 200_000, 2_000_000, 300_000, 10_000,
-                4096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+                4096, 32_000, 24, 524_288, 512, 16_777_216);
         var highOverviewCalls = new AuralisProperties.Limits(
                 4, 2, 100_000, 200_000, 2_000_000, 300_000, 10_000,
-                4096, 2, 32_000, 2_000, 524_288, 512, 16_777_216);
+                4096, 32_000, 2_000, 524_288, 512, 16_777_216);
 
         assertThat(validator.validate(invalidHeartbeat))
                 .anyMatch(error -> error.getPropertyPath().toString().equals("heartbeatWindowSafe"));
@@ -288,12 +286,12 @@ class AiConfigurationTests {
     private AuralisProperties.Ai aiProperties(long overviewTimeoutMillis,
                                               long overviewTaskTimeoutMillis) {
         return new AuralisProperties.Ai(false, "test-key", null, null,
-                3_000L, 10_000L, overviewTimeoutMillis, overviewTaskTimeoutMillis, 12_000, 8, 5_242_880L,
+                3_000L, 10_000L, overviewTimeoutMillis, overviewTaskTimeoutMillis, 12_000, 5_242_880L,
                 32, 32_768L,
                 3_000L, 10_000L, 3, 1_048_576L, java.util.List.of(), false,
                 1_000L, 300_000L, 3, new AuralisProperties.Limits(
                         4, 2, 100_000, 200_000, 2_000_000, 300_000,
-                        10_000, 4096, 2, 32_000, 0, 524_288, 512, 16_777_216),
+                        10_000, 4096, 32_000, 0, 524_288, 512, 16_777_216),
                 true, java.util.List.of(),
                 AuralisProperties.OverviewLimits.withoutAdditionalCaps());
     }

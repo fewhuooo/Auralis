@@ -17,9 +17,4 @@ public interface AiUsageQueryService {
         throw new AiPolicyContractException();
     }
 
-    /** True only when a terminal dispatched failure retained at least its complete conservative reserve. */
-    default boolean isConservativelyChargedTerminalFailure(UUID userId, UUID taskId, UUID reservationId,
-                                                           AiOperationKind operationKind) {
-        return false;
-    }
 }

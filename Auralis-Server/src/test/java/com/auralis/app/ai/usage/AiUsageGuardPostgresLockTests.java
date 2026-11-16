@@ -74,9 +74,9 @@ class AiUsageGuardPostgresLockTests {
         UUID otherUser = createUser();
         AiUsageGuard guard = guard();
         AiUsageGuard.TaskLease deletingTask = guard.beginTask(
-                new AiTaskContext(deletingUser, AiFeature.CHAT, "delete-race-a"));
+                new AiTaskContext(deletingUser, AiFeature.CHAT, "delete-race-a", java.util.UUID.randomUUID()));
         AiUsageGuard.TaskLease otherTask = guard.beginTask(
-                new AiTaskContext(otherUser, AiFeature.CHAT, "delete-race-b"));
+                new AiTaskContext(otherUser, AiFeature.CHAT, "delete-race-b", java.util.UUID.randomUUID()));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try (Connection deletion = dataSource.getConnection()) {
             deletion.setAutoCommit(false);
@@ -134,7 +134,7 @@ class AiUsageGuardPostgresLockTests {
         UUID deletingUser = createUser();
         UUID otherUser = createUser();
         AiUsageGuard guard = guard();
-        AiTaskContext deletingContext = new AiTaskContext(deletingUser, AiFeature.CHAT, "begin-delete-race");
+        AiTaskContext deletingContext = new AiTaskContext(deletingUser, AiFeature.CHAT, "begin-delete-race", java.util.UUID.randomUUID());
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try (Connection deletion = dataSource.getConnection()) {
             deletion.setAutoCommit(false);
@@ -142,7 +142,7 @@ class AiUsageGuardPostgresLockTests {
             Future<AiUsageGuard.TaskLease> waitingTask = executor.submit(() -> guard.beginTask(deletingContext));
             assertThat(awaitLockWait(Duration.ofSeconds(3))).isTrue();
             Future<AiUsageGuard.TaskLease> unrelatedTask = executor.submit(() -> guard.beginTask(
-                    new AiTaskContext(otherUser, AiFeature.CHAT, "begin-delete-race-other")));
+                    new AiTaskContext(otherUser, AiFeature.CHAT, "begin-delete-race-other", java.util.UUID.randomUUID())));
             assertThat(completes(unrelatedTask, Duration.ofSeconds(2)))
                     .as("task admission must not hold the global quota row while waiting on the account row")
                     .isTrue();
@@ -158,7 +158,7 @@ class AiUsageGuardPostgresLockTests {
     void reserveRechecksDisabledStatusAfterWaitingForTheUserRow() throws Exception {
         UUID user = createUser();
         AiUsageGuard guard = guard();
-        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "disable-race"));
+        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "disable-race", java.util.UUID.randomUUID()));
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try (Connection disabling = dataSource.getConnection()) {
             disabling.setAutoCommit(false);
@@ -182,11 +182,11 @@ class AiUsageGuardPostgresLockTests {
         UUID user = createUser();
         UUID otherUser = createUser();
         AiUsageGuard guard = guard();
-        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "dispatch-disable-race"));
+        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "dispatch-disable-race", java.util.UUID.randomUUID()));
         AiUsageGuard.CallReservation call = guard.reserve(
                 task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 10);
         AiUsageGuard.TaskLease otherTask = guard.beginTask(
-                new AiTaskContext(otherUser, AiFeature.CHAT, "dispatch-disable-unrelated"));
+                new AiTaskContext(otherUser, AiFeature.CHAT, "dispatch-disable-unrelated", java.util.UUID.randomUUID()));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try (Connection disabling = dataSource.getConnection()) {
             disabling.setAutoCommit(false);
@@ -219,11 +219,11 @@ class AiUsageGuardPostgresLockTests {
     void chatAndOverviewCannotOversellSharedPlatformHourlyQuota() throws Exception {
         UUID user = createUser();
         AuralisProperties.Limits tightWindow = new AuralisProperties.Limits(4, 2, 100, 200,
-                2_000_000, 300_000, 10_000, 4_096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+                2_000_000, 300_000, 10_000, 4_096, 32_000, 24, 524_288, 512, 16_777_216);
         AiUsageGuard guard = guard(tightWindow);
 
         AiUsageGuard.TaskLease existingTask = guard.beginTask(
-                new AiTaskContext(user, AiFeature.CHAT, "shared-window-existing"));
+                new AiTaskContext(user, AiFeature.CHAT, "shared-window-existing", java.util.UUID.randomUUID()));
         AiUsageGuard.CallReservation existing = guard.reserve(existingTask, AiStage.CHAT_COMPLETION,
                 AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 40, 0);
         guard.markDispatched(existingTask, existing);
@@ -231,7 +231,7 @@ class AiUsageGuardPostgresLockTests {
         guard.closeTask(existingTask);
 
         AiUsageGuard.TaskLease chatTask = guard.beginTask(
-                new AiTaskContext(user, AiFeature.CHAT, "shared-window-chat-contender"));
+                new AiTaskContext(user, AiFeature.CHAT, "shared-window-chat-contender", java.util.UUID.randomUUID()));
         AiUsageGuard.TaskLease overviewTask = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "shared-window-overview-contender"));
         CountDownLatch ready = new CountDownLatch(2);
@@ -347,7 +347,7 @@ class AiUsageGuardPostgresLockTests {
 
     private AiUsageGuard guard() {
         AuralisProperties.Limits limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 4_096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+                300_000, 10_000, 4_096, 32_000, 24, 524_288, 512, 16_777_216);
         return guard(limits);
     }
 

@@ -13,15 +13,11 @@ import com.auralis.app.ai.usage.AiFeature;
 import com.auralis.app.ai.usage.AiInvocationGateway;
 import com.auralis.app.ai.usage.AiInvocationBinding;
 import com.auralis.app.ai.usage.AiCredentialSource;
-import com.auralis.app.ai.usage.AiOperationKind;
 import com.auralis.app.ai.usage.AiOutputRole;
 import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.ai.usage.AiStage;
 import com.auralis.app.ai.usage.AiTaskContext;
 import com.auralis.app.ai.usage.AiTaskScope;
-import com.auralis.app.ai.usage.AiProviderUsage;
-import com.auralis.app.ai.usage.AiPlatformTaskBudgetUsage;
-import com.auralis.app.ai.usage.AiPolicyContractException;
 import com.auralis.app.ai.usage.OverviewTaskUsageSummary;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
@@ -30,22 +26,13 @@ import com.auralis.app.source.SourceService;
 import com.auralis.app.source.SourceType;
 import com.auralis.app.source.SourceView;
 import com.auralis.app.subject.SubjectService;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.StreamReadFeature;
-import tools.jackson.core.TokenStreamLocation;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -55,7 +42,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
-import java.text.Normalizer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -70,7 +56,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.concurrent.Executor;
@@ -95,16 +80,7 @@ public class OverviewGenerationService {
             "AI_HOURLY_QUOTA_EXCEEDED", "AI_DAILY_QUOTA_EXCEEDED", "AI_GLOBAL_QUOTA_EXCEEDED",
             "AI_POLICY_CONTRACT_VIOLATION");
 
-    private static final java.util.regex.Pattern PAGE_NUMBER_NOISE = java.util.regex.Pattern.compile("^\\d+$");
-    private static final java.util.regex.Pattern CHINESE_PAGE_NUMBER_NOISE = java.util.regex.Pattern.compile("^第[0-9一二三四五六七八九十]+页$");
     private static final String DETAILED_ALGORITHM_VERSION = "overview-markdown-v2";
-
-    private record RawInputUnit(String alias, String sourceAlias, String sourceTitle, UUID sourceId,
-                                   UUID sourceRevision, UUID chunkId, UUID generation, int ordinal,
-                                   String contentHash, int charStart, int charEnd, String text,
-                                   boolean writerCapacityPart) { }
-    private record RawInputInventory(List<RawInputUnit> units, Map<String, String> aliases,
-                                     String identityFingerprint) { }
 
     private final SourceService sourceService;
     private final SubjectService subjectService;
@@ -240,7 +216,7 @@ public class OverviewGenerationService {
                 request == null ? null : request.mode(), normalizeRequestId(requestId), UUID.randomUUID().toString(),
                 deadline, null);
         OverviewTraceRun traceRun = safeTrace().start(userId, parseUuid(context.requestId()), null, null);
-        context.recoveryTracker().traceRun(traceRun);
+        context.generationTrace().traceRun(traceRun);
         traceEvent(context, "REQUEST", "OVERVIEW", "STARTED", Map.of("scope", "SOURCE"), null);
         logStart(context);
         try {
@@ -366,53 +342,6 @@ public class OverviewGenerationService {
             return;
         }
         if (chunks.isEmpty()) throw new DomainException("MUTATION_REJECTED", "Source has no active chunks for overview generation");
-    }
-
-    /** Rebuilds the current raw-source identity without resolving credentials, profile, or Provider state. */
-    public OverviewInputDescriptor currentRawInputDescriptor(UUID userId, String scope,
-                                                             UUID scopeId, List<UUID> orderedSourceIds) {
-        if (!"SOURCE".equals(scope) && !"SUBJECT".equals(scope)
-                || scopeId == null || orderedSourceIds == null || orderedSourceIds.isEmpty()
-                || exceeded(orderedSourceIds.size(), overviewLimits().maxSources())
-                || orderedSourceIds.stream().anyMatch(Objects::isNull)
-                || orderedSourceIds.stream().distinct().count() != orderedSourceIds.size()) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Stored raw Overview input scope is invalid");
-        }
-        List<SourceView> sources = new ArrayList<>(orderedSourceIds.size());
-        Map<UUID, String> sourceAliases = new LinkedHashMap<>();
-        if ("SOURCE".equals(scope)) {
-            if (orderedSourceIds.size() != 1 || !scopeId.equals(orderedSourceIds.getFirst())) {
-                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Stored raw Overview source scope changed");
-            }
-            SourceView source = sourceService.requireActiveSource(userId, scopeId);
-            if (source.ingestionStatus() != SourceIngestionStatus.READY || source.ingestionRevision() == null) {
-                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Stored raw Overview source is no longer READY");
-            }
-            sources.add(source);
-            sourceAliases.put(source.id(), "source-1");
-        } else {
-            subjectService.requireActiveSubject(userId, scopeId);
-            for (int index = 0; index < orderedSourceIds.size(); index++) {
-                SourceView source = sourceService.requireActiveSource(userId, orderedSourceIds.get(index));
-                if (!scopeId.equals(source.subjectId()) || source.ingestionStatus() != SourceIngestionStatus.READY
-                        || source.ingestionRevision() == null) {
-                    throw new DomainException("RESOURCE_VERSION_CONFLICT", "Stored raw Overview source scope changed");
-                }
-                sources.add(source);
-                sourceAliases.put(source.id(), "source-" + (index + 1));
-            }
-        }
-        RawInputInventory inventory = loadRawInputInventory(userId, sources, sourceAliases);
-        List<OverviewInputDescriptor.SourceRevision> revisions = sources.stream()
-                .map(source -> new OverviewInputDescriptor.SourceRevision(source.id(), source.ingestionRevision())).toList();
-        List<OverviewInputDescriptor.OverviewPartInputUnit> units = inventory.units().stream()
-                .map(unit -> new OverviewInputDescriptor.OverviewPartInputUnit(unit.alias(), unit.sourceId(),
-                        unit.sourceRevision(), unit.chunkId(), unit.generation(), unit.ordinal(), unit.contentHash(),
-                        unit.charStart(), unit.charEnd())).toList();
-        String fingerprint = sha256(write(List.of("AURALIS-OVERVIEW-SOURCE-CONTENT-V1", scope, scopeId,
-                orderedSourceIds, revisions, units, inventory.identityFingerprint())));
-        return new OverviewInputDescriptor(OverviewInputDescriptor.Origin.SOURCE_CONTENT, scope, scopeId,
-                orderedSourceIds, revisions, units, List.of(), fingerprint);
     }
 
     private OverviewResponse generateSourceOverview(GenerationContext context, SourceOverviewRequest request,
@@ -686,7 +615,7 @@ public class OverviewGenerationService {
                                                            OverviewResponse> ownerOperation,
                                                    Map<String, String> replayAliases) {
         OverviewGenerationCoordinator.Acquisition acquisition = initial;
-            context.recoveryTracker().generationId(acquisition.generationId());
+            context.generationTrace().generationId(acquisition.generationId());
             traceEvent(context, "GENERATION_ACQUISITION", "DURABLE_GENERATION", acquisition.state().name(),
                     traceMetadata(context, Map.of("generationId", Objects.toString(acquisition.generationId(), ""),
                             "budgetTaskId", acquisition.budgetTaskId() == null ? "" : acquisition.budgetTaskId().toString())), null);
@@ -739,7 +668,7 @@ public class OverviewGenerationService {
                         invocationGateway.overviewTaskUsage(new AiTaskContext(context.userId(), context.sourceId() == null
                                 ? AiFeature.SUBJECT_OVERVIEW : AiFeature.SOURCE_OVERVIEW,
                                 acquisition.generationId().toString(), acquisition.budgetTaskId())),
-                        context.recoveryTracker().count(), context.recoveryTracker().actions());
+                        0, List.of());
                 throw new DomainException("OVERVIEW_RECOVERY_EXHAUSTED",
                         "An earlier Overview provider call has unresolved dispatch usage and requires recovery");
             }
@@ -763,7 +692,7 @@ public class OverviewGenerationService {
                                 ? AiFeature.SUBJECT_OVERVIEW : AiFeature.SOURCE_OVERVIEW,
                                 acquisition.generationId().toString(), acquisition.budgetTaskId()));
                 if (!generationCoordinator.complete(lease, resultJson, usage,
-                        context.recoveryTracker().count(), context.recoveryTracker().actions())) {
+                        0, List.of())) {
                     throw new DomainException("MODEL_TIMEOUT", "Overview generation ownership expired before completion");
                 }
                 logBudgetRootEventBestEffort(context, acquisition, "COMPLETE", null, usage);
@@ -783,7 +712,7 @@ public class OverviewGenerationService {
                     logBudgetRootEventBestEffort(context, acquisition, "STOP", errorCode, usage);
                 }
                 generationCoordinator.fail(lease, errorCode, failureDetails, usage,
-                        context.recoveryTracker().count(), context.recoveryTracker().actions());
+                        0, List.of());
                 throw failure;
             } finally {
                 try { heartbeat.close(); } catch (Exception ignored) { }
@@ -854,7 +783,7 @@ public class OverviewGenerationService {
                 request == null ? null : request.mode(), normalizeRequestId(requestId), UUID.randomUUID().toString(),
                 deadline, null);
         OverviewTraceRun traceRun = safeTrace().start(userId, parseUuid(baseContext.requestId()), null, null);
-        baseContext.recoveryTracker().traceRun(traceRun);
+        baseContext.generationTrace().traceRun(traceRun);
         traceEvent(baseContext, "REQUEST", "OVERVIEW", "STARTED", Map.of("scope", "SUBJECT"), null);
         OverviewCancellation.Registration requestRegistration = requestCancellation == null ? () -> { }
                 : requestCancellation.onCancel(() -> baseContext.deadline().cancellation().cancel(
@@ -967,85 +896,6 @@ public class OverviewGenerationService {
         }
     }
 
-    private RawInputInventory loadRawInputInventory(UUID userId, List<SourceView> sources,
-                                                     Map<UUID, String> sourceAliases) {
-        List<List<SourceChunkEntity>> chunksBySource = new ArrayList<>();
-        for (SourceView source : sources) {
-            if (sourceAliases.get(source.id()) == null || source.ingestionRevision() == null
-                    || source.ingestionStatus() != SourceIngestionStatus.READY) {
-                throw new DomainException("MUTATION_REJECTED", "Subject source identity is unavailable");
-            }
-            List<SourceChunkEntity> chunks = new ArrayList<>();
-            int page = 0;
-            List<SourceChunkEntity> batch;
-            do {
-                batch = chunkRepository.findActiveForRawOverviewInput(
-                        userId, source.id(), PageRequest.of(page++, 500));
-                chunks.addAll(batch);
-            } while (batch.size() == 500);
-            chunksBySource.add(chunks);
-        }
-
-        List<RawInputUnit> units = new ArrayList<>();
-        List<Object> identity = new ArrayList<>();
-        Map<String, String> aliases = new LinkedHashMap<>();
-        sourceAliases.forEach((sourceId, alias) -> aliases.put(alias, sourceId.toString()));
-        int unitIndex = 0;
-        long snapshotChars = 0;
-        long maxSnapshotChars = overviewLimits().maxInputSnapshotChars();
-        for (int sourceIndex = 0; sourceIndex < sources.size(); sourceIndex++) {
-            SourceView source = sources.get(sourceIndex);
-            String sourceAlias = sourceAliases.get(source.id());
-            List<SourceChunkEntity> chunks = chunksBySource.get(sourceIndex);
-            int sourceUnitCount = units.size();
-            List<Object> sourceIdentity = new ArrayList<>();
-            sourceIdentity.add(List.of(userId, source.id(), Objects.toString(source.subjectId(), ""),
-                    source.ingestionRevision(), Objects.toString(source.title(), "")));
-            sourceIdentity.add(source.ingestionRevision());
-            SourceChunkEntity previousChunk = null;
-            String previousContent = null;
-            for (SourceChunkEntity chunk : chunks) {
-                String content = Objects.toString(chunk.getContent(), "");
-                snapshotChars = saturatedAdd(snapshotChars, content.length());
-                if (maxSnapshotChars > 0 && snapshotChars > maxSnapshotChars) {
-                    throw sourceManifestCapacityFailure("configured source snapshot size");
-                }
-                sourceIdentity.add(List.of(chunk.getId(), chunk.getGeneration(), chunk.getOrdinal(),
-                        Objects.toString(chunk.getContentHash(), ""), sha256(content),
-                        chunk.getCharStart(), chunk.getCharEnd(), chunk.isActive()));
-                int charStart = chunk.getCharStart();
-                if (previousChunk != null && previousChunk.getOrdinal() + 1 == chunk.getOrdinal()
-                        && Objects.equals(previousChunk.getGeneration(), chunk.getGeneration())) {
-                    int overlap = previousChunk.getCharEnd() - charStart;
-                    if (overlap > 0 && overlap <= previousContent.length() && overlap <= content.length()
-                            && content.startsWith(previousContent.substring(previousContent.length() - overlap))) {
-                        content = content.substring(overlap);
-                        charStart += overlap;
-                    }
-                }
-                previousChunk = chunk;
-                previousContent = Objects.toString(chunk.getContent(), "");
-                String trimmed = content.trim();
-                if (trimmed.isEmpty() || PAGE_NUMBER_NOISE.matcher(trimmed).matches()
-                        || CHINESE_PAGE_NUMBER_NOISE.matcher(trimmed).matches()) continue;
-                unitIndex++;
-                String alias = "unit" + String.format(Locale.ROOT, "%06d", unitIndex);
-                aliases.put(alias, source.id().toString());
-                units.add(new RawInputUnit(alias, sourceAlias, source.title(), source.id(),
-                        source.ingestionRevision(), chunk.getId(), chunk.getGeneration(), chunk.getOrdinal(),
-                        Objects.toString(chunk.getContentHash(), ""), charStart, chunk.getCharEnd(), content, false));
-            }
-            if (units.size() == sourceUnitCount) {
-                throw new DomainException("MUTATION_REJECTED",
-                        "A selected ready source has no usable original text for overview generation");
-            }
-            identity.add(List.copyOf(sourceIdentity));
-        }
-        if (units.isEmpty()) throw new DomainException("MUTATION_REJECTED", "Selected ready sources have no usable original text");
-        return new RawInputInventory(List.copyOf(units), Collections.unmodifiableMap(new LinkedHashMap<>(aliases)),
-                sha256(write(identity)));
-    }
-
     private void logBudgetRootEventFromDiagnostic(GenerationContext context,
                                                    OverviewGenerationCoordinator.Acquisition acquisition,
                                                    String outcome) {
@@ -1084,11 +934,6 @@ public class OverviewGenerationService {
         } catch (RuntimeException ignored) {
             // Optional diagnostics must never affect generation or owner lifecycle.
         }
-    }
-
-    private long saturatedAdd(long left, long right) {
-        if (left < 0 || right < 0 || left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
-        return left + right;
     }
 
     private long utf8Length(String value) {
@@ -1167,12 +1012,6 @@ public class OverviewGenerationService {
         }
     }
 
-    private void checkText(String value, String field, long max, boolean required) {
-        if (value == null || (required && value.isBlank()) || exceeded(value == null ? 0 : value.codePointCount(0, value.length()), max)) {
-            throw invalidInput(field + " is invalid or exceeds its limit");
-        }
-    }
-
     private DomainException invalidInput(String detail) { return new DomainException("VALIDATION_FAILED", "Invalid subject overview input: " + detail); }
     private void validateInstruction(String instruction) {
         if (instruction != null && instruction.codePointCount(0, instruction.length()) > 2_000) {
@@ -1218,12 +1057,6 @@ public class OverviewGenerationService {
                                                     AiCredentialSource source) {
         return OverviewModelBudget.resolve(provider, endpoint, model, source,
                 properties == null ? null : properties.ai());
-    }
-
-    private int overviewMaxCalls() {
-        AuralisProperties.Ai ai = properties == null ? null : properties.ai();
-        AuralisProperties.Limits limits = ai == null ? null : ai.limits();
-        return limits == null ? 0 : limits.overviewMaxCalls();
     }
 
     private long overviewTaskTokens() {
@@ -1349,25 +1182,6 @@ public class OverviewGenerationService {
                 Objects.toString(request.instruction(), ""), ordered)));
     }
 
-    private String sourceJobPayloadFingerprint(SourceView source, SourceOverviewRequest request,
-                                                    String rawIdentityFingerprint) {
-        return sha256(write(List.of(DETAILED_ALGORITHM_VERSION, "SOURCE", source.id(), source.ingestionRevision(),
-                source.title(), request.mode(), Objects.toString(request.instruction(), ""), rawIdentityFingerprint)));
-    }
-
-    private String subjectJobPayloadFingerprint(String subjectRequestFingerprint, String rawIdentityFingerprint) {
-        return sha256(write(List.of(DETAILED_ALGORITHM_VERSION, "SUBJECT", subjectRequestFingerprint,
-                rawIdentityFingerprint)));
-    }
-
-
-    private void requireDetailedGenerationReady(OverviewMode mode) {
-        if (mode != null && mode != OverviewMode.SUMMARY) {
-            throw new DomainException("MODEL_UNAVAILABLE",
-                    "Detailed Overview generation is not available in this build");
-        }
-    }
-
     private String profileFingerprint(AiSettingsService.ResolvedSettings settings, OverviewModelBudget capacity) {
         String endpoint = settings.credential() == null ? "" : settings.credential().baseUrl();
         String normalizedEndpoint;
@@ -1403,8 +1217,6 @@ public class OverviewGenerationService {
     }
 
     private void requireRequest(UUID userId, Object request) { if (userId == null || request == null) throw new DomainException("VALIDATION_FAILED", "Overview request is required"); }
-    private long maximumPromptChars() { return overviewLimits().maxPromptChars(); }
-
     private long overviewResponseTimeoutMillis() {
         long value = properties == null || properties.ai() == null ? 0 : properties.ai().overviewResponseTimeoutMillis();
         return value > 0 ? value : 120_000;
@@ -1440,12 +1252,12 @@ public class OverviewGenerationService {
 
     private void traceEvent(GenerationContext context, String type, String step, Integer attempt, String outcome,
                            Map<String, String> metadata, java.util.function.Supplier<Map<String, String>> content) {
-        safeTrace().event(context.recoveryTracker().traceRun(), type, step, attempt, outcome, metadata, content);
+        safeTrace().event(context.generationTrace().traceRun(), type, step, attempt, outcome, metadata, content);
     }
 
     private Map<String, String> traceMetadata(GenerationContext context, Map<String, String> values) {
         Map<String, String> result = new LinkedHashMap<>(values);
-        UUID generationId = context.acquisition() == null ? context.recoveryTracker().generationId()
+        UUID generationId = context.acquisition() == null ? context.generationTrace().generationId()
                 : context.acquisition().generationId();
         if (generationId != null) result.put("generationId", generationId.toString());
         if (context.sourceId() != null) result.put("sourceId", context.sourceId().toString());
@@ -1600,81 +1412,63 @@ public class OverviewGenerationService {
                                      String payloadFingerprint,
                                      String instruction,
                                      SubjectOverviewRequest subjectRequest,
-                                     RecoveryTracker recoveryTracker,
+                                     GenerationTrace generationTrace,
                                      SourceGenerationKey localFlightKey,
                                      SourceGenerationFlight localFlight) {
         private GenerationContext(UUID userId, UUID sourceId, UUID revision, OverviewMode mode,
                                   String requestId, String generationId, OverviewTaskDeadline deadline,
                                   OverviewCancellation cancellation) {
             this(userId, sourceId, revision, mode, requestId, generationId, deadline, cancellation,
-                    null, null, new AtomicInteger(), null, null, null, null, null, new RecoveryTracker(), null, null);
+                    null, null, new AtomicInteger(), null, null, null, null, null, new GenerationTrace(), null, null);
         }
         private GenerationContext withSource(UUID sourceId, UUID revision) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, generationTrace, localFlightKey, localFlight);
         }
         private GenerationContext withCancellation(OverviewCancellation cancellation) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, generationTrace, localFlightKey, localFlight);
         }
         private GenerationContext withSettings(AiSettingsService.ResolvedSettings settings,
                                                OverviewModelBudget modelBudget) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, generationTrace, localFlightKey, localFlight);
         }
         private GenerationContext withSourceRequest(OverviewGenerationCoordinator.Request request,
                                                     String payloadFingerprint, String instruction) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted, request,
-                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+                    acquisition, payloadFingerprint, instruction, subjectRequest, generationTrace, localFlightKey, localFlight);
         }
         private GenerationContext withAcquisition(OverviewGenerationCoordinator.Acquisition acquisition) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId,
                     acquisition == null ? generationId : acquisition.generationId().toString(), deadline,
                     cancellation, settings, modelBudget, callsStarted,
-                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, generationTrace, localFlightKey, localFlight);
         }
         private GenerationContext withSubjectRequest(OverviewGenerationCoordinator.Request request,
                                                     String payloadFingerprint, SubjectOverviewRequest subjectRequest) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted, request,
-                    acquisition, payloadFingerprint, subjectRequest.instruction(), subjectRequest, recoveryTracker, localFlightKey, localFlight);
+                    acquisition, payloadFingerprint, subjectRequest.instruction(), subjectRequest, generationTrace, localFlightKey, localFlight);
         }
         private GenerationContext withLocalFlight(SourceGenerationKey key, SourceGenerationFlight flight) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
                     cancellation, settings, modelBudget, callsStarted, coordinatorRequest,
-                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, key, flight);
+                    acquisition, payloadFingerprint, instruction, subjectRequest, generationTrace, key, flight);
         }
     }
 
-    private static final class RecoveryTracker {
-        private final AtomicInteger count = new AtomicInteger();
-        private final java.util.concurrent.CopyOnWriteArrayList<String> actions = new java.util.concurrent.CopyOnWriteArrayList<>();
-        private final Set<String> recordedOnce = ConcurrentHashMap.newKeySet();
+    private static final class GenerationTrace {
         private volatile OverviewTraceRun traceRun = OverviewTraceRun.NOOP;
         private volatile UUID generationId;
         void traceRun(OverviewTraceRun value) { traceRun = value == null ? OverviewTraceRun.NOOP : value; }
         OverviewTraceRun traceRun() { return traceRun; }
         void generationId(UUID value) { if (value != null) generationId = value; }
         UUID generationId() { return generationId; }
-        void record(String action) {
-            count.incrementAndGet();
-            if (actions.size() < 64) actions.add(action);
-        }
-        boolean recordOnce(String key, String action) {
-            if (!recordedOnce.add(key)) return false;
-            count.incrementAndGet();
-            if (actions.size() < 64) actions.addIfAbsent(action);
-            return true;
-        }
-        boolean recordOnce(String action) {
-            return recordOnce(action, action);
-        }
-        int count() { return count.get(); }
-        List<String> actions() { return List.copyOf(actions); }
     }
 
     static final class SourceGenerationFlight {

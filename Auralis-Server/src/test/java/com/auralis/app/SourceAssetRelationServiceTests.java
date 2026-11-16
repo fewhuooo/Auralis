@@ -456,7 +456,7 @@ class SourceAssetRelationServiceTests {
                 .isEqualTo("MUTATION_REJECTED");
 
         subjectService.delete(owner.user().id(), first.id(), first.version());
-        assertThat(relationService.list(owner.user().id())).isEmpty();
+        assertThat(relationService.list(owner.user().id(), null, 200).items()).isEmpty();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

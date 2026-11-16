@@ -84,7 +84,6 @@ class OverviewResultReadPathPostgresIntegrationTests {
     @Autowired private SubjectService subjects;
     @Autowired private SourceRepository sources;
     @Autowired private SourceChunkRepository chunks;
-    @Autowired private OverviewGenerationService generation;
     @Autowired private OverviewResultService overviews;
 
     @BeforeEach
@@ -104,7 +103,6 @@ class OverviewResultReadPathPostgresIntegrationTests {
         SourceEntity source = source(userId, subjectId, "Source with current raw content");
         addChunk(userId, source);
         saveFormalSourceOverview(userId, source);
-        persistCurrentRawContentBinding(userId, source);
 
         assertThat(overviews.currentSourceOverviewIds(userId,
                 Map.of(source.getId(), source.getIngestionRevision()))).containsExactly(source.getId());
@@ -149,14 +147,4 @@ class OverviewResultReadPathPostgresIntegrationTests {
                 OverviewMode.ALL, source.getIngestionRevision(), null, null, null, null, result));
     }
 
-    private void persistCurrentRawContentBinding(UUID userId, SourceEntity source) throws Exception {
-        var descriptor = generation.currentRawInputDescriptor(userId, "SOURCE",
-                source.getId(), List.of(source.getId()));
-        assertThat(descriptor.origin()).isEqualTo(OverviewInputDescriptor.Origin.SOURCE_CONTENT);
-        String snapshot = objectMapper.writeValueAsString(descriptor);
-        assertThat(jdbc.update("update overview_results set outline_input_origin='SOURCE_CONTENT', "
-                        + "outline_input_snapshot_json=?, summary_input_origin='SOURCE_CONTENT', "
-                        + "summary_input_snapshot_json=? where user_id=? and scope_type='SOURCE' and scope_id=?",
-                snapshot, snapshot, userId, source.getId())).isEqualTo(1);
-    }
 }

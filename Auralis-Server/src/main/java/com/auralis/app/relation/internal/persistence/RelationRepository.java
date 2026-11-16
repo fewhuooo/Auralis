@@ -32,7 +32,6 @@ public interface RelationRepository extends JpaRepository<RelationEntity, UUID> 
     @Query("select relation from RelationEntity relation where relation.id = :id and relation.userId = :userId")
     Optional<RelationEntity> findForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
 
-    List<RelationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select relation from RelationEntity relation where relation.userId = :userId "

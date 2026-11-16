@@ -3234,90 +3234,6 @@
           }
         }
       },
-      "OverviewInputDescriptor" : {
-        "type" : "object",
-        "properties" : {
-          "origin" : {
-            "type" : "string",
-            "enum" : [ "SOURCE_REVISION", "SOURCE_OVERVIEW_PARTS", "SOURCE_CONTENT" ]
-          },
-          "scopeType" : {
-            "type" : "string"
-          },
-          "scopeId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "sourceIds" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string",
-              "format" : "uuid"
-            }
-          },
-          "sourceRevisions" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/SourceRevision"
-            }
-          },
-          "rawUnits" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/OverviewPartInputUnit"
-            }
-          },
-          "overviewParts" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/OverviewSourceManifestEntry"
-            }
-          },
-          "inputFingerprint" : {
-            "type" : "string"
-          }
-        },
-        "required" : [ "inputFingerprint", "origin", "overviewParts", "rawUnits", "scopeId", "scopeType", "sourceIds", "sourceRevisions" ]
-      },
-      "OverviewPartInputUnit" : {
-        "type" : "object",
-        "properties" : {
-          "alias" : {
-            "type" : "string"
-          },
-          "sourceId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "sourceRevision" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "chunkId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "generation" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "ordinal" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "contentHash" : {
-            "type" : "string"
-          },
-          "charStart" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "charEnd" : {
-            "type" : "integer",
-            "format" : "int32"
-          }
-        }
-      },
       "OverviewResponse" : {
         "type" : "object",
         "properties" : {
@@ -3375,10 +3291,6 @@
           },
           "result" : {
             "$ref" : "#/components/schemas/OverviewResponse"
-          },
-          "inputDescriptor" : {
-            "type" : [ "object", "null" ],
-            "$ref" : "#/components/schemas/OverviewInputDescriptor"
           }
         },
         "required" : [ "baseVersion", "clientWriteId", "mode", "result" ]
@@ -3405,18 +3317,44 @@
         },
         "required" : [ "ingestionRevision", "sourceId" ]
       },
-      "SourceRevision" : {
+      "OverviewInputDescriptor" : {
         "type" : "object",
         "properties" : {
-          "sourceId" : {
+          "origin" : {
+            "type" : "string",
+            "enum" : [ "SOURCE_REVISION", "SOURCE_OVERVIEW_PARTS" ]
+          },
+          "scopeType" : {
+            "type" : "string"
+          },
+          "scopeId" : {
             "type" : "string",
             "format" : "uuid"
           },
-          "ingestionRevision" : {
-            "type" : "string",
-            "format" : "uuid"
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            }
+          },
+          "sourceRevisions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SourceRevision"
+            }
+          },
+          "overviewParts" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSourceManifestEntry"
+            }
+          },
+          "inputFingerprint" : {
+            "type" : "string"
           }
-        }
+        },
+        "required" : [ "inputFingerprint", "origin", "overviewParts", "scopeId", "scopeType", "sourceIds", "sourceRevisions" ]
       },
       "OverviewResultView" : {
         "type" : "object",
@@ -3505,6 +3443,19 @@
           }
         },
         "required" : [ "outlineInputDescriptor", "outlineMarkdown", "summaryInputDescriptor", "summaryMarkdown" ]
+      },
+      "SourceRevision" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }
       },
       "PasswordChangeRequest" : {
         "type" : "object",
@@ -5080,19 +5031,34 @@
           "float" : {
             "type" : "boolean"
           },
-          "object" : {
+          "container" : {
             "type" : "boolean"
           },
-          "container" : {
+          "object" : {
             "type" : "boolean"
           },
           "missingNode" : {
             "type" : "boolean"
           },
-          "valueNode" : {
+          "pojo" : {
             "type" : "boolean"
           },
-          "bigInteger" : {
+          "string" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "type" : "boolean"
+          },
+          "short" : {
+            "type" : "boolean"
+          },
+          "int" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
+            "type" : "boolean"
+          },
+          "integralNumber" : {
             "type" : "boolean"
           },
           "bigDecimal" : {
@@ -5102,41 +5068,26 @@
             "type" : "string",
             "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
           },
-          "integralNumber" : {
+          "valueNode" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
-            "type" : "boolean"
-          },
-          "short" : {
+          "bigInteger" : {
             "type" : "boolean"
           },
           "long" : {
-            "type" : "boolean"
-          },
-          "double" : {
-            "type" : "boolean"
-          },
-          "string" : {
-            "type" : "boolean"
-          },
-          "pojo" : {
-            "type" : "boolean"
-          },
-          "number" : {
-            "type" : "boolean"
-          },
-          "int" : {
             "type" : "boolean"
           },
           "textual" : {
             "type" : "boolean",
             "deprecated" : true
           },
-          "boolean" : {
+          "binary" : {
             "type" : "boolean"
           },
-          "binary" : {
+          "double" : {
+            "type" : "boolean"
+          },
+          "boolean" : {
             "type" : "boolean"
           },
           "embeddedValue" : {

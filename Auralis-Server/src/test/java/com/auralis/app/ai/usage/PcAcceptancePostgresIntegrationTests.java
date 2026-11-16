@@ -126,7 +126,7 @@ class PcAcceptancePostgresIntegrationTests {
         UUID user = user();
         var first = guard.beginTask(new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "parallel-source"));
         var second = guard.beginTask(new AiTaskContext(user, AiFeature.SUBJECT_OVERVIEW, "parallel-subject"));
-        var chat = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "parallel-chat"));
+        var chat = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "parallel-chat", java.util.UUID.randomUUID()));
         CyclicBarrier barrier = new CyclicBarrier(2);
         try (var executor = Executors.newFixedThreadPool(2)) {
             Future<Boolean> a;

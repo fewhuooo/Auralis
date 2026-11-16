@@ -44,7 +44,6 @@ import java.util.regex.Pattern;
 public class OverviewGenerationCoordinator {
 
     private static final int MAX_METADATA_CHARS = 8_192;
-    private static final int CHECKPOINT_RETENTION_DAYS = 14;
     private static final int CLEANUP_BATCH_SIZE = 100;
     private static final int RESULT_RETENTION_DAYS = 14;
     private static final int CACHE_EVICTION_BATCH_SIZE = 100;
@@ -217,11 +216,6 @@ public class OverviewGenerationCoordinator {
     private GenerationRow retrySuccessor(UUID parentGenerationId) {
         return firstGeneration("select " + GENERATION_COLUMNS + " from overview_generations "
                 + "where retry_of_generation_id=? for update", parentGenerationId);
-    }
-
-    private boolean hasRetrySuccessor(UUID parentGenerationId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject("select count(*)>0 from overview_generations "
-                + "where retry_of_generation_id=?", Boolean.class, parentGenerationId));
     }
 
     private Acquisition directMappedGeneration(GenerationRow generation, Instant now) {
@@ -622,11 +616,7 @@ public class OverviewGenerationCoordinator {
             RecoveryMetadata combinedMetadata = combinedRecoveryMetadata(lease, metadata, now);
             if (combinedMetadata == null) return false;
             long resultBytes = utf8Bytes(payload);
-            long checkpointBytes = generationCheckpointBytes(lease.generationId());
-            boolean retain = admitReusablePayload(lease.generationId(), resultBytes, checkpointBytes);
-            if (!retain) {
-                jdbc.update("delete from overview_generation_checkpoints where generation_id=?", lease.generationId());
-            }
+            boolean retain = admitReusablePayload(resultBytes);
             int changed = jdbc.update("update overview_generations set status='SUCCESS',active_fingerprint=null,"
                             + "owner_id=null,lease_until=null,result_json=?,result_sha256=?,result_expires_at=?,"
                             + "estimated_input_tokens=?,reserved_output_tokens=?,actual_input_tokens=?,actual_output_tokens=?,"
@@ -652,22 +642,14 @@ public class OverviewGenerationCoordinator {
         if (locked == null) throw new IllegalStateException("Overview cache capacity guard is not initialized");
     }
 
-    private long generationCheckpointBytes(UUID generationId) {
-        Long bytes = jdbc.queryForObject("select coalesce(sum(octet_length(payload_json)),0) "
-                + "from overview_generation_checkpoints where generation_id=?", Long.class, generationId);
-        return bytes == null ? 0 : bytes;
-    }
-
-    private boolean admitReusablePayload(UUID generationId, long resultBytes, long checkpointBytes) {
-        long currentBytes = Math.addExact(resultBytes, checkpointBytes);
+    private boolean admitReusablePayload(long currentBytes) {
         if (currentBytes > cacheMaxBytes) return false;
 
         long totalBytes = reusableCacheBytes();
         long totalGenerations = reusableCacheGenerations();
         if (totalBytes + currentBytes <= cacheMaxBytes && totalGenerations + 1 <= cacheMaxGenerations) return true;
         List<UUID> candidates = jdbc.query("select g.id from overview_generations g where g.status='SUCCESS' "
-                        + "and (g.result_json is not null or exists (select 1 from overview_generation_checkpoints c "
-                        + "where c.generation_id=g.id)) "
+                        + "and g.result_json is not null "
                         + "order by g.completed_at nulls first,g.id limit ? for update of g skip locked",
                 (rs, rowNum) -> rs.getObject(1, UUID.class), CACHE_EVICTION_BATCH_SIZE);
         List<UUID> victims = new ArrayList<>();
@@ -683,31 +665,25 @@ public class OverviewGenerationCoordinator {
         for (UUID victim : victims) {
             jdbc.update("update overview_generations set result_json=null,result_sha256=null,result_expires_at=null "
                     + "where id=? and status='SUCCESS'", victim);
-            jdbc.update("delete from overview_generation_checkpoints where generation_id=?", victim);
         }
         return true;
     }
 
     private long reusableCacheBytes() {
-        Long bytes = jdbc.queryForObject("select "
-                + "(select coalesce(sum(octet_length(g.result_json)),0) from overview_generations g "
-                + "where g.status='SUCCESS' and g.result_json is not null) + "
-                + "(select coalesce(sum(octet_length(c.payload_json)),0) from overview_generation_checkpoints c "
-                + "join overview_generations g on g.id=c.generation_id where g.status='SUCCESS')", Long.class);
+        Long bytes = jdbc.queryForObject("select coalesce(sum(octet_length(result_json)),0) from overview_generations "
+                + "where status='SUCCESS' and result_json is not null", Long.class);
         return bytes == null ? 0 : bytes;
     }
 
     private long reusableCacheGenerations() {
         Long count = jdbc.queryForObject("select count(*) from overview_generations g where g.status='SUCCESS' "
-                + "and (g.result_json is not null or exists (select 1 from overview_generation_checkpoints c "
-                + "where c.generation_id=g.id))", Long.class);
+                + "and g.result_json is not null", Long.class);
         return count == null ? 0 : count;
     }
 
     private long generationReusableBytes(UUID generationId) {
-        Long bytes = jdbc.queryForObject("select coalesce(octet_length(result_json),0) + "
-                + "(select coalesce(sum(octet_length(c.payload_json)),0) from overview_generation_checkpoints c "
-                + "where c.generation_id=g.id) from overview_generations g where g.id=?", Long.class, generationId);
+        Long bytes = jdbc.queryForObject("select coalesce(octet_length(result_json),0) "
+                + "from overview_generations where id=?", Long.class, generationId);
         return bytes == null ? 0 : bytes;
     }
 
@@ -841,16 +817,11 @@ public class OverviewGenerationCoordinator {
     public int cleanupExpiredPayloads() {
         return transactions.execute(status -> {
             Instant now = clock.instant();
-            Instant checkpointCutoff = now.minus(Duration.ofDays(CHECKPOINT_RETENTION_DAYS));
-            List<UUID> candidates = jdbc.query("select g.id from overview_generations g "
-                            + "where g.status<>'ACTIVE' and ((g.status='SUCCESS' and g.result_json is not null "
-                            + "and g.result_expires_at<=?) or exists (select 1 from overview_generation_checkpoints c "
-                            + "where c.generation_id=g.id and c.created_at<=?)) "
-                            + "order by g.id limit ? for update skip locked",
-                    (rs, rowNum) -> rs.getObject("id", UUID.class), sqlTimestamp(now),
-                    sqlTimestamp(checkpointCutoff), CLEANUP_BATCH_SIZE);
+            List<UUID> candidates = jdbc.query("select id from overview_generations "
+                            + "where status='SUCCESS' and result_json is not null and result_expires_at<=? "
+                            + "order by id limit ? for update skip locked",
+                    (rs, rowNum) -> rs.getObject("id", UUID.class), sqlTimestamp(now), CLEANUP_BATCH_SIZE);
             int results = 0;
-            int checkpoints = 0;
             for (UUID generationId : candidates) {
                 CleanupCandidate candidate = jdbc.query("select status,result_expires_at,result_json from "
                                 + "overview_generations where id=? for update",
@@ -865,12 +836,8 @@ public class OverviewGenerationCoordinator {
                                     + "and result_expires_at<=?",
                             generationId, sqlTimestamp(now));
                 }
-                checkpoints += jdbc.update("delete from overview_generation_checkpoints where generation_id=? "
-                                + "and created_at<=? and exists (select 1 from overview_generations g "
-                                + "where g.id=? and g.status<>'ACTIVE')",
-                        generationId, sqlTimestamp(checkpointCutoff), generationId);
             }
-            return results + checkpoints;
+            return results;
         });
     }
 

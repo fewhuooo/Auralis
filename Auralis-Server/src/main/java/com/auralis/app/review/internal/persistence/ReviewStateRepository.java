@@ -19,10 +19,6 @@ public interface ReviewStateRepository extends JpaRepository<ReviewStateEntity, 
             + "and state.knowledgeBlockId = :knowledgeBlockId")
     Optional<ReviewStateEntity> findForUpdateByUserIdAndKnowledgeBlockId(
             @Param("userId") UUID userId, @Param("knowledgeBlockId") UUID knowledgeBlockId);
-    List<ReviewStateEntity> findTop200ByUserIdAndDueAtLessThanEqualOrderByDueAtAscIdAsc(UUID userId, Instant at);
-    List<ReviewStateEntity> findTop200ByUserIdAndNeedsLearningFalseAndMasteredFalseAndDueAtLessThanEqualOrderByDueAtAscIdAsc(
-            UUID userId, Instant at);
-    long countByUserIdAndDueAtLessThanEqual(UUID userId, Instant at);
 
     @Query(value = "select rs.* from review_states rs "
             + "join knowledge_blocks kb on kb.id = rs.knowledge_block_id and kb.user_id = rs.user_id "

@@ -52,10 +52,10 @@ class CoreDomainRepositoryTests {
         assertThat(subjectRepository.findAllByUserIdAndDeletedAtIsNullOrderBySortKeyAscUpdatedAtDescIdAsc(owner.getId()))
                 .extracting(SubjectEntity::getId)
                 .containsExactly(activeSubject.getId());
-        assertThat(knowledgeBlockRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.getId()))
+        assertThat(knowledgeBlockRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.getId(), org.springframework.data.domain.PageRequest.of(0, 200)))
                 .extracting(KnowledgeBlockEntity::getId)
                 .containsExactly(activeBlock.getId());
-        assertThat(taskRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.getId()))
+        assertThat(taskRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.getId(), org.springframework.data.domain.PageRequest.of(0, 200)))
                 .extracting(TaskEntity::getId)
                 .containsExactly(activeTask.getId());
     }
@@ -82,7 +82,6 @@ class CoreDomainRepositoryTests {
                 id.toString(),
                 "{bcrypt}hash",
                 "User",
-                null,
                 UserStatus.ACTIVE));
     }
 
