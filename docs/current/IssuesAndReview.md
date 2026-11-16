@@ -28,11 +28,9 @@
 - 影响：学科直接入口已修并有成功记录，但持久后台作业仍可能在生成前失败；两条入口不能合并验收。
 - 动作与关闭条件：按现行 Markdown 输入契约补齐后台作业资料读取，验证 SUBJECT job 的准入、执行、取消与保存；不恢复已退役 Writer/preview/publication。
 
-### P1-Mobile-Review-Type-Drift：Review 生成类型漂移
+### P1-Mobile-Review-Type-Drift：4 项类型错误已修复
 
-- 证据：`Auralis-Mobile/src/api/reviewApi.ts` 仍引用 `components['schemas']['EventRequest'/'EventResponse']`；10-12 最近类型检查记录因此 exit 2。
-- 影响：H5 打包通过不能代替类型门禁，也不能证明 Review 已接现行契约。
-- 动作与关闭条件：对照现行 Review API 更新请求、响应及消费者，相关协议/类型门禁通过后再进行真机验收。
+手机和平板独立复习页已使用现行生命周期。平板创建知识块时先生成 ID，保存成功后按该 ID 选中条目。移动端类型检查及自动回归通过。独立复习真机走查及平板工作区内嵌复习仍开放。
 
 ### P1-Test-Baseline：全量门禁尚未统一全绿
 
@@ -90,7 +88,7 @@
 
 ### Mobile、Tablet 与发布基础设施
 
-- **Mobile/Tablet（P1/P2）**：H5/微信构建历史通过不证明 AppID、合法域名、WSS/PUT/SSE、前后台切换、弱网、双设备 reset、真机/横屏/触控/手写可用。当前 Chat 范围/UNKNOWN 与 Review 契约逐端核对；local-only 能力必须如实标明。
+- **Mobile/Tablet（P1/P2）**：H5/微信构建历史通过不证明 AppID、合法域名、WSS/PUT/SSE、前后台切换、弱网、双设备 reset、真机/横屏/触控/手写可用。Chat 范围/UNKNOWN、独立复习和本机重试待逐端走查，平板内嵌复习待接入；local-only 能力必须如实标明。
 - **环境旧项（P2，待核实）**：旧 Mobile localhost、页面未接 API、Sass/import 警告需对现行 runtime 和页面 API 映射复核；不直接把旧问题句子当当前事实，也不默认关闭。
 - **服务端收敛（P1）**：Source/job 事务与 revision/lease 栅栏有自动证据；真实进程崩溃、stale worker、长 Provider 请求、提交后 WebSocket、遗漏事件重连和跨设备最终状态仍需场景验收。
 - **定时清理（P1）**：SyncRetentionService 事务错误有修复回归；至少一次生产形态 scheduled run 日志无相应异常的证据仍待核实。

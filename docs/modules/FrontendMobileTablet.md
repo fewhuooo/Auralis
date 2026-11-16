@@ -14,7 +14,7 @@
 
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
 
-共享的鉴权、请求、Sync/Realtime、AI、Asset 和 Stats 使用生成契约。Review 调用仍未迁移到服务端现行生命周期接口，不能由共享 SDK 已更新推断页面可用。当前验收与测试状态见[当前状态](../current/Status.md)和[问题登记](../current/IssuesAndReview.md)。
+共享的鉴权、请求、Sync/Realtime、AI、Asset 和 Stats 使用生成契约。手机和平板的独立复习页使用现行到期队列和复习生命周期。当前验收与测试状态见[当前状态](../current/Status.md)和[问题登记](../current/IssuesAndReview.md)。
 
 Task 契约不包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Store、同步映射、本地存储、新建任务入口和页面展示不再读写 `cognitiveLoad`、`load` 或 `loadText`。
 
@@ -24,7 +24,7 @@ Task 契约不包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Sto
 - 两端 Profile 共用 `useAiUsage`，展示认证额度接口的已结算、预留、剩余及当地重置时间。切换账号/离页/新请求使旧响应失效，加载和失败不伪造零额度；预算错误只提示显式重试，不自动补发。
 - KnowledgeBlock 同步使用 `content`，本地完整 `preview` 与之映射，不向 Server 发送旧 `summary/tags`。端侧标签存储仍保留，未据此新增专注历史或 Overview 展示。
 - Asset upload-intent 使用 `clientImportId`，每次操作生成 ID，调用方可提供稳定 ID 重试；未新增持久队列。
-- 共享 SDK 包含任务 schedule insertion、复习生命周期与 Overview 类型，但 Mobile 没有因此获得对应运行入口或 PC 的离线复习补传机制。实际页面调用以[页面 API 映射](../contracts/MobilePagesAPIMap.md)为准。
+- 共享 SDK 提供任务 schedule insertion、复习生命周期与 Overview 类型。实际页面调用以[页面 API 映射](../contracts/MobilePagesAPIMap.md)为准。
 
 ## 当前技术栈
 
@@ -113,7 +113,7 @@ Auralis-Mobile/src/
 - `api/request.ts`、`requestCore.ts`：环境基址、Bearer、Problem Details 和共享单次 refresh。
 - `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation 和 `/api/ai/messages/stream`。
 - `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset 和 `/ws/events` 一次性 ticket。
-- `api/assetApi.ts`、`reviewApi.ts`、`statsApi.ts`、`aiApi.ts`：预签名上传、复习事件、强类型统计和 Conversation 列表/详情/删除。
+- `api/assetApi.ts`、`reviewApi.ts`、`statsApi.ts`、`aiApi.ts`：预签名上传、到期复习与正式命令、强类型统计和 Conversation 列表/详情/删除。
 - `api/device.ts`：设备相关能力。
 - `api/e2ee.ts`：加密辅助。
 - `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。
@@ -156,7 +156,7 @@ Auralis-Mobile/src/
 - workspace 默认文件面板，总结栏通过 CSS 折叠联动。
 - AI 浮窗通过 modal 插槽脱离 transform 堆叠上下文。
 - 手机统计页和平板仪表盘共用 `StudyMetrics.vue`，展示知识块、本周完成任务、累计专注、完成番茄、本周新增知识块。两端使用与 PC 相同的 UTC 周一到周日周期，完成任务使用周统计的完成数，累计专注和完成番茄使用概览中的实际专注时长与自然完成轮次。平板复习页只显示本轮复习进度。手机和平板的个人资料页集中展示账号与设置。
-- Tablet Review 的旧 due/event 调用仍存在，尚未迁移到生命周期契约，当前不能作为可用业务入口；右滑手势不应被解释为撤销服务端事件。
+- 独立复习页上滑“认识”在翻面后提交，收到有效确认后计数。下滑“不熟”提交后进入待学习状态，左滑跳过本轮，右滑取消手势。未确认的请求按用户和设备保存在本机，可重新进入页面按原命令 ID 重试。缺少正文哈希的旧卡片可跳过。
 
 设计目标和页面布局见 [前端设计](../design/Frontend.md)。
 
@@ -191,7 +191,7 @@ node scripts\check-tablet-sidebar-transition.mjs
 - H5/微信命令行构建不能替代微信开发者工具和真机。
 - 过往 H5/微信构建记录保存在整理前原文；本次整理未重跑，不能据旧记录声明当前构建通过。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
-- Mobile 将 TypeScript 固定为 5.3.3 以匹配 `vue-tsc@1.8.27`。`reviewApi.ts` 仍引用生成契约中已移除的 `EventRequest/EventResponse` 和旧路由；后续迁移需同时核对页面与接口，不能只修类型断言。
+- Mobile 将 TypeScript 固定为 5.3.3 以匹配 vue-tsc 1.8.27。
 - Tablet 复杂交互需要真实触控屏。
 - 图片上传已实现客户端 intent/PUT/complete，但请求/upload/download 合法域名、MinIO、AI、双设备 reset 和弱网恢复仍需真实环境联调。
 
