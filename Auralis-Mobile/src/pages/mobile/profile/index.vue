@@ -1,645 +1,952 @@
 <template>
   <AppPageLayout anim-origin="slide-right">
-    <view class="profile-page" :class="{ 'dark': darkMode }">
-      <!-- 通用极简禅意顶栏（带左上角返回按钮） -->
-      <AppHeader title="个人空间" :showBackButton="true" />
+    <view class="profile-page">
+      <AppHeader title="我的" />
 
-      <!-- Main Scroll Container -->
-      <scroll-view 
-        scroll-y 
-        :show-scrollbar="false"
-        class="content-area" 
-        @scroll="onScroll"
-        scroll-with-animation
-      >
-        <!-- iOS Large Title -->
-        <view class="large-title-row" :style="{ opacity: largeTitleOpacity }">
-          <text class="large-title">个人空间</text>
-        </view>
-
-        <!-- Account identity -->
-        <view class="profile-hero-card">
-          <!-- Left Column: Avatar & Name -->
-          <view class="hero-left">
-            <view class="account-avatar">
-              <text class="avatar-text">SC</text>
+      <scroll-view scroll-y :show-scrollbar="false" class="content-scroll">
+        <view class="profile-body">
+          <view class="user-card zen-card">
+            <view class="avatar-badge">
+              <text class="avatar-initial">{{ avatarInitial }}</text>
             </view>
-            <view class="user-info">
-              <text class="account-name">{{ username }}</text>
-              <text class="account-sub">{{ accountMeta }}</text>
+            <view class="user-meta">
+              <text class="user-display">{{ displayName }}</text>
+              <text class="user-handle">@{{ authStore.username || 'auralis' }}</text>
+            </view>
+            <view class="edit-name-btn" @click="openNameEditor">
+              <LineIcon name="edit" size="30rpx" color="var(--color-zen-sage)" />
             </view>
           </view>
-        </view>
 
-        <!-- Group 1: 通用偏好 -->
-        <view class="profile-group">
-          <text class="group-title">通用设置</text>
-          <view class="menu-list">
-            <view class="menu-item">
-              <view class="item-left">
-                <LineIcon name="theme" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">深色模式</text>
-              </view>
-              <view class="item-right">
-                <switch :checked="darkMode" color="#34c759" @change="toggleDarkMode" class="ios-switch" />
-              </view>
-            </view>
-            <view class="menu-item" @click="changeLanguage">
-              <view class="item-left">
-                <LineIcon name="language" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">语言 / Language</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text">{{ language === 'zh-CN' ? '简体中文' : 'English' }}</text>
-                <text class="arrow">›</text>
-              </view>
-            </view>
-            <view class="menu-item">
-              <view class="item-left">
-                <LineIcon name="bell" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">学习提醒</text>
-              </view>
-              <view class="item-right">
-                <switch :checked="remindersEnabled" color="#34c759" @change="remindersEnabled = !remindersEnabled" class="ios-switch" />
-              </view>
-            </view>
-            <view class="menu-item" @click="changeFontSize">
-              <view class="item-left">
-                <LineIcon name="aa" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">字体大小</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text">标准</text>
-                <text class="arrow">›</text>
-              </view>
-            </view>
+          <view class="section-block">
+            <text class="section-label">学习总览</text>
+            <StudyMetrics />
           </view>
-        </view>
 
-        <!-- Group 2.5: AI 使用额度 -->
-        <view class="profile-group">
-          <text class="group-title">AI 使用额度</text>
-          <view class="menu-list" style="padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--list-bg);">
-            <view v-if="loadingAiUsage" style="color: var(--text-secondary); font-size: 13px;">加载中...</view>
-            <view v-else-if="aiUsageError" style="color: #ff3b30; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
-              <text>{{ aiUsageError }}</text>
-              <view @click="fetchAiUsage" style="color: var(--primary); padding: 4px 8px;">重试</view>
-            </view>
-            <view v-else-if="aiUsage" style="display: flex; flex-direction: column; gap: 16px;">
-              <view style="background: var(--page-bg); padding: 12px; border-radius: 8px;">
-                <view style="display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-primary);">
-                  <text>每小时额度 (Hourly)</text>
-                  <text style="color: var(--text-secondary); font-weight: normal; font-size: 12px;">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleString('zh-CN') }}</text>
+          <view class="section-block">
+            <text class="section-label">跨端同步</text>
+            <view class="menu-card zen-card">
+              <view class="menu-row" @click="triggerManualSync">
+                <view class="row-left">
+                  <LineIcon name="sync" size="34rpx" color="var(--color-zen-sage)" />
+                  <view class="row-texts">
+                    <text class="row-title">立即同步学习数据</text>
+                    <text class="row-sub">
+                      {{ syncStore.lastError ? `上次异常：${syncStore.lastError}` : syncTimeLabel }}
+                    </text>
+                  </view>
                 </view>
-                <view style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-secondary);">
-                  <text>总额度：{{ aiUsage.hourly.limitTokens }} token</text>
-                  <text>剩余额度：{{ aiUsage.hourly.remainingTokens }} token</text>
-                  <text title="缺少实际 usage 时按保守估算">已结算（可能为保守估算）：{{ aiUsage.hourly.chargedTokens }} token</text>
-                  <text title="在途预留为估算值，不代表最终实际用量">在途预留（估算）：{{ aiUsage.hourly.reservedTokens }} token</text>
+                <view class="row-pill">
+                  <text>{{ syncStore.isSyncing ? '同步中' : '同步' }}</text>
                 </view>
               </view>
-              <view style="background: var(--page-bg); padding: 12px; border-radius: 8px;">
-                <view style="display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-primary);">
-                  <text>每日额度 (Daily)</text>
-                  <text style="color: var(--text-secondary); font-weight: normal; font-size: 12px;">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString('zh-CN') }}</text>
+            </view>
+          </view>
+
+          <view class="section-block">
+            <view class="section-head-row">
+              <text class="section-label">AI 使用额度</text>
+              <text class="section-action" @click="fetchAiUsage">刷新</text>
+            </view>
+            <view class="quota-card zen-card">
+              <view v-if="loadingAiUsage && !aiUsage" class="quota-status">正在加载 AI 额度…</view>
+              <view v-else-if="aiUsageError" class="quota-error">
+                <text>{{ aiUsageError }}</text>
+                <text class="section-action" @click="fetchAiUsage">重试</text>
+              </view>
+              <view v-else-if="aiUsage" class="quota-list">
+                <view class="quota-item">
+                  <view class="quota-top">
+                    <text class="quota-name">每小时额度</text>
+                    <text class="quota-nums">剩余 {{ aiUsage.hourly.remainingTokens }} / {{ aiUsage.hourly.limitTokens }}</text>
+                  </view>
+                  <view class="quota-track">
+                    <view class="quota-fill" :style="{ width: usagePercent(aiUsage.hourly.chargedTokens, aiUsage.hourly.limitTokens) }"></view>
+                  </view>
+                  <text class="quota-reset">重置于 {{ formatResetTime(aiUsage.hourly.resetAt) }}</text>
                 </view>
-                <view style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-secondary);">
-                  <text>总额度：{{ aiUsage.daily.limitTokens }} token</text>
-                  <text>剩余额度：{{ aiUsage.daily.remainingTokens }} token</text>
-                  <text title="缺少实际 usage 时按保守估算">已结算（可能为保守估算）：{{ aiUsage.daily.chargedTokens }} token</text>
-                  <text title="在途预留为估算值，不代表最终实际用量">在途预留（估算）：{{ aiUsage.daily.reservedTokens }} token</text>
+
+                <view class="quota-item">
+                  <view class="quota-top">
+                    <text class="quota-name">每日额度</text>
+                    <text class="quota-nums">剩余 {{ aiUsage.daily.remainingTokens }} / {{ aiUsage.daily.limitTokens }}</text>
+                  </view>
+                  <view class="quota-track">
+                    <view class="quota-fill" :style="{ width: usagePercent(aiUsage.daily.chargedTokens, aiUsage.daily.limitTokens) }"></view>
+                  </view>
+                  <text class="quota-reset">重置于 {{ formatResetTime(aiUsage.daily.resetAt) }}</text>
                 </view>
               </view>
-              <view style="display: flex; justify-content: flex-end;">
-                <view @click="fetchAiUsage" style="color: var(--primary); padding: 4px 8px; font-size: 13px;">刷新</view>
+            </view>
+          </view>
+
+          <view class="section-block">
+            <text class="section-label">账户与安全</text>
+            <view class="menu-card zen-card">
+              <view class="menu-row" @click="openAiConfigSheet">
+                <view class="row-left">
+                  <LineIcon name="key" size="34rpx" color="var(--text-secondary)" />
+                  <view class="row-texts">
+                    <text class="row-title">模型服务与 BYOK</text>
+                    <text class="row-sub">{{ aiSummaryLabel }}</text>
+                  </view>
+                </view>
+                <LineIcon name="chevron-right" size="28rpx" color="var(--text-muted)" />
+              </view>
+
+              <view class="menu-divider"></view>
+
+              <view class="menu-row" @click="openPasswordSheet">
+                <view class="row-left">
+                  <LineIcon name="lock" size="34rpx" color="var(--text-secondary)" />
+                  <view class="row-texts">
+                    <text class="row-title">修改登录密码</text>
+                    <text class="row-sub">更新密码并保持当前设备登录</text>
+                  </view>
+                </view>
+                <LineIcon name="chevron-right" size="28rpx" color="var(--text-muted)" />
+              </view>
+
+              <view class="menu-divider"></view>
+
+              <view class="menu-row" @click="openSessionsSheet">
+                <view class="row-left">
+                  <LineIcon name="device" size="34rpx" color="var(--text-secondary)" />
+                  <view class="row-texts">
+                    <text class="row-title">登录设备管理</text>
+                    <text class="row-sub">查看或下线其他已登录设备</text>
+                  </view>
+                </view>
+                <LineIcon name="chevron-right" size="28rpx" color="var(--text-muted)" />
               </view>
             </view>
           </view>
-        </view>
-        <!-- Group 2: AI 设置 -->
-        <view class="profile-group">
-          <text class="group-title">AI 设置</text>
-          <view class="menu-list">
-            <view class="menu-item" @click="configureAiEngine">
-              <view class="item-left">
-                <LineIcon name="ai" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">AI 引擎</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text">Auralis AI</text>
-                <text class="arrow">›</text>
-              </view>
-            </view>
-            <view class="menu-item" @click="configureApiKey">
-              <view class="item-left">
-                <LineIcon name="key" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">API Key</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text">已配置</text>
-                <text class="arrow">›</text>
-              </view>
-            </view>
+
+          <view class="logout-btn zen-card" @click="handleLogout">
+            <LineIcon name="logout" size="32rpx" color="var(--color-danger)" />
+            <text class="logout-text">退出当前账号</text>
           </view>
         </view>
-
-        <!-- Group 3: 数据与同步 -->
-        <view class="profile-group">
-          <text class="group-title">数据与同步</text>
-          <view class="menu-list">
-            <view class="menu-item" @click="triggerSync">
-              <view class="item-left">
-                <LineIcon name="sync" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">跨端数据同步</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text" v-if="!isSyncing">最后同步: 刚刚</text>
-                <LineIcon name="sync" size="30rpx" color="var(--text-secondary)" class="sync-spinner-icon" v-else />
-              </view>
-            </view>
-            <view class="menu-item" @click="clearCache">
-              <view class="item-left">
-                <LineIcon name="trash" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">清除本地缓存</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text">12.4 MB</text>
-                <text class="arrow">›</text>
-              </view>
-            </view>
-            <view class="menu-item" @click="exportData">
-              <view class="item-left">
-                <LineIcon name="export" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">导出学习数据</text>
-              </view>
-              <view class="item-right">
-                <text class="arrow">›</text>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <!-- Group 4: 关于与帮助 -->
-        <view class="profile-group">
-          <text class="group-title">系统与关于</text>
-          <view class="menu-list">
-            <view class="menu-item" @click="showFeatureUnderDevelopment('帮助与反馈')">
-              <view class="item-left">
-                <LineIcon name="info" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">帮助与反馈</text>
-              </view>
-              <view class="item-right">
-                <text class="arrow">›</text>
-              </view>
-            </view>
-            <view class="menu-item" @click="openPrivacyPolicy">
-              <view class="item-left">
-                <LineIcon name="shield" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">隐私政策</text>
-              </view>
-              <view class="item-right">
-                <text class="arrow">›</text>
-              </view>
-            </view>
-            <view class="menu-item" @click="openOpenSourceLicenses">
-              <view class="item-left">
-                <LineIcon name="license" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">开源许可</text>
-              </view>
-              <view class="item-right">
-                <text class="arrow">›</text>
-              </view>
-            </view>
-            <view class="menu-item">
-              <view class="item-left">
-                <LineIcon name="info" size="36rpx" color="var(--text-secondary)" class="menu-item-icon" />
-                <text class="menu-label">当前版本</text>
-              </view>
-              <view class="item-right">
-                <text class="menu-value-text">v2.1.0</text>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <!-- Group 5: 退出当前账号 -->
-        <view class="profile-group logout-group">
-          <view class="menu-list">
-            <view class="menu-item logout-cell" @click="handleLogout">
-              <text class="logout-text">退出当前账号</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- Footer -->
-        <view class="footer-info">
-          <text class="footer-text">Auralis Mobile v2.1.0 · 个人空间</text>
-        </view>
-
-        <view class="bottom-spacer"></view>
       </scroll-view>
+
+      <view v-if="showNameSheet" class="zen-sheet-mask" @click="showNameSheet = false">
+        <view class="zen-sheet-body" @click.stop>
+          <view class="sheet-header">
+            <text class="sheet-title">修改显示名称</text>
+            <view class="sheet-close" @click="showNameSheet = false">
+              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            </view>
+          </view>
+          <view class="sheet-form">
+            <input class="zen-input" v-model="nameDraft" maxlength="64" placeholder="输入新显示名称" />
+            <button class="sheet-submit-btn" :loading="savingName" :disabled="savingName" @click="submitDisplayName">
+              保存名称
+            </button>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="showAiConfigSheet" class="zen-sheet-mask" @click="showAiConfigSheet = false">
+        <view class="zen-sheet-body" @click.stop>
+          <view class="sheet-header">
+            <text class="sheet-title">模型服务配置</text>
+            <view class="sheet-close" @click="showAiConfigSheet = false">
+              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <view class="sheet-form">
+            <view class="chips-row">
+              <view
+                v-for="p in providers"
+                :key="p.id"
+                class="chip-item"
+                :class="{ active: aiForm.provider === p.id }"
+                @click="selectProvider(p.id)"
+              >
+                <text>{{ p.label }}</text>
+              </view>
+            </view>
+
+            <input
+              class="zen-input"
+              v-model="aiForm.baseUrl"
+              placeholder="API Base URL（可选）"
+              :disabled="savingAi"
+            />
+            <input
+              class="zen-input"
+              v-model="aiForm.apiKey"
+              password
+              :placeholder="aiForm.hasApiKey ? '已配置密钥（留空则保留原密钥）' : '输入 API Key'"
+              :disabled="savingAi"
+            />
+            <input
+              class="zen-input"
+              v-model="aiForm.model"
+              placeholder="对话模型名称"
+              :disabled="savingAi"
+            />
+
+            <view v-if="availableModels.length > 0" class="chips-row">
+              <view
+                v-for="m in availableModels.slice(0, 8)"
+                :key="m"
+                class="chip-item"
+                :class="{ active: aiForm.model === m }"
+                @click="aiForm.model = m"
+              >
+                <text>{{ m }}</text>
+              </view>
+            </view>
+
+            <view class="dual-actions">
+              <view class="secondary-pill-btn" @click="fetchModelsForProvider">拉取模型</view>
+              <view class="secondary-pill-btn" @click="testProviderConnection">测试连接</view>
+            </view>
+
+            <button class="sheet-submit-btn" :loading="savingAi" :disabled="savingAi" @click="saveAiSettings">
+              保存模型配置
+            </button>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="showPasswordSheet" class="zen-sheet-mask" @click="showPasswordSheet = false">
+        <view class="zen-sheet-body" @click.stop>
+          <view class="sheet-header">
+            <text class="sheet-title">修改登录密码</text>
+            <view class="sheet-close" @click="showPasswordSheet = false">
+              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            </view>
+          </view>
+          <view class="sheet-form">
+            <input class="zen-input" v-model="pwdForm.currentPassword" password placeholder="当前密码" :disabled="savingPwd" />
+            <input class="zen-input" v-model="pwdForm.newPassword" password placeholder="新密码（至少 8 位含大小写和符号）" :disabled="savingPwd" />
+            <input class="zen-input" v-model="pwdForm.confirmPassword" password placeholder="确认新密码" :disabled="savingPwd" />
+            <text v-if="pwdError" class="pwd-error">{{ pwdError }}</text>
+            <button class="sheet-submit-btn" :loading="savingPwd" :disabled="savingPwd" @click="submitPasswordChange">
+              确认修改密码
+            </button>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="showSessionsSheet" class="zen-sheet-mask" @click="showSessionsSheet = false">
+        <view class="zen-sheet-body" @click.stop>
+          <view class="sheet-header">
+            <text class="sheet-title">登录设备管理</text>
+            <view class="sheet-close" @click="showSessionsSheet = false">
+              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <view v-if="loadingSessions" class="quota-status">正在加载设备列表…</view>
+          <view v-else class="sessions-list">
+            <view v-for="s in sessionsList" :key="s.id" class="session-row">
+              <view class="row-texts">
+                <text class="row-title">
+                  {{ s.deviceName || '未知设备' }} ({{ s.platform || 'UNKNOWN' }})
+                </text>
+                <text class="row-sub">
+                  {{ s.current ? '当前设备' : `最近活跃：${formatResetTime(s.lastUsedAt || s.createdAt || '')}` }}
+                </text>
+              </view>
+              <view
+                v-if="!s.current && s.id"
+                class="revoke-btn"
+                @click="revokeDevice(s.id)"
+              >
+                <text>下线</text>
+              </view>
+            </view>
+            <view
+              v-if="sessionsList.some(item => !item.current)"
+              class="revoke-all-btn"
+              @click="revokeAllOthers"
+            >
+              <text>下线所有其他设备</text>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useSettingsStore } from '@/store/useSettingsStore'
-import { useSyncStore } from '@/store/useSyncStore'
-import { useAiUsage } from '@/utils/useAiUsage'
-import { useAuthStore } from '@/store/useAuthStore'
-import LineIcon from '@/components/LineIcon.vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { aiApi, type AiProviderType, type AiSettingsView } from '@/api/aiApi'
+import { refreshAiConfig, setAiConfig } from '@/api/aiClient'
+import type { components } from '@/api/generated/schema'
+import { useAuthApi } from '@/api/useAuthApi'
 import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
+import LineIcon from '@/components/LineIcon.vue'
+import StudyMetrics from '@/components/StudyMetrics.vue'
+import { useAuthStore } from '@/store/useAuthStore'
+import { useSyncStore } from '@/store/useSyncStore'
+import { useAiUsage } from '@/utils/useAiUsage'
+import { validatePasswordStrength } from '@/utils/passwordValidation'
 
-const settingsStore = useSettingsStore()
-const syncStore = useSyncStore()
+type SessionResponse = components['schemas']['SessionResponse']
+
 const authStore = useAuthStore()
-
+const syncStore = useSyncStore()
 const { aiUsage, loadingAiUsage, aiUsageError, fetchAiUsage } = useAiUsage()
 
+const displayName = computed(() => authStore.user?.displayName || authStore.username || 'Auralis 同学')
+const avatarInitial = computed(() => displayName.value.trim().slice(0, 1).toUpperCase() || 'A')
 
-
-
-
-
-const { darkMode, language } = storeToRefs(settingsStore)
-
-const isSyncing = ref(false)
-const scrollTop = ref(0)
-const remindersEnabled = ref(true)
-
-const username = computed(() => authStore.username || 'Auralis 同学')
-const accountMeta = computed(() => '跨端同步与账户')
-
-const toggleDarkMode = () => {
-  settingsStore.toggleDarkMode()
-}
-
-const changeLanguage = () => {
-  uni.showActionSheet({
-    itemList: ['简体中文', 'English'],
-    success: (res) => {
-      settingsStore.language = res.tapIndex === 0 ? 'zh-CN' : 'en-US'
-    }
-  })
-}
-
-const changeFontSize = () => {
-  uni.showActionSheet({
-    itemList: ['小', '标准', '大', '超大'],
-    success: () => {
-      uni.showToast({ title: '设置成功', icon: 'success' })
-    }
-  })
-}
-
-const configureAiEngine = () => {
-  uni.showActionSheet({
-    itemList: ['Auralis AI (推荐)', 'OpenAI GPT-4o', 'Claude 3.5 Sonnet'],
-    success: () => {
-      uni.showToast({ title: '已切换引擎', icon: 'success' })
-    }
-  })
-}
-
-const configureApiKey = () => {
-  uni.showModal({
-    title: '配置 API Key',
-    placeholderText: '请输入您的 API Key',
-    success: (res) => {
-      if (res.confirm) {
-        uni.showToast({ title: '保存成功', icon: 'success' })
-      }
-    }
-  })
-}
-
-const clearCache = () => {
-  uni.showModal({
-    title: '清除缓存',
-    content: '此操作不会删除您的学习数据，仅清除图片等缓存资源。',
-    success: (res) => {
-      if (res.confirm) {
-        uni.showToast({ title: '已清除', icon: 'success' })
-      }
-    }
-  })
-}
-
-const exportData = () => {
-  uni.showToast({ title: '数据导出成功，已发送至您的邮箱', icon: 'none' })
-}
-
-const openPrivacyPolicy = () => {
-  uni.showModal({
-    title: '隐私政策',
-    content: 'Auralis 致力于保护您的隐私，您的数据在本地进行加密存储。',
-    showCancel: false
-  })
-}
-
-const openOpenSourceLicenses = () => {
-  uni.showModal({
-    title: '开源许可',
-    content: '本项目基于 MIT 开源协议构建。包含 Vue, Uni-app, Pinia, SQLite.',
-    showCancel: false
-  })
-}
-
-const handleLogout = () => {
-  uni.showModal({
-    title: '退出登录',
-    content: '确定要退出当前账号吗？',
-    success: (res) => {
-      if (res.confirm) {
-        authStore.logout()
-        uni.reLaunch({ url: '/pages/mobile/login/index' })
-      }
-    }
-  })
-}
-
-const onScroll = (e: any) => {
-  scrollTop.value = e.detail.scrollTop
-}
-
-const largeTitleOpacity = computed(() => {
-  const thresholdEnd = 40
-  if (scrollTop.value >= thresholdEnd) return 0
-  return 1 - scrollTop.value / thresholdEnd
+const syncTimeLabel = computed(() => {
+  if (!syncStore.lastSyncedAt) return '将本地记录与云端双向合并'
+  return `上次同步：${formatResetTime(syncStore.lastSyncedAt)}`
 })
 
-const triggerSync = async () => {
-  if (isSyncing.value) return
-  isSyncing.value = true
-  uni.showLoading({ title: '正在同步...' })
+function formatResetTime(iso: string): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function usagePercent(charged: number, limit: number): string {
+  if (!limit || limit <= 0) return '0%'
+  const pct = Math.min(100, Math.max(0, Math.round((charged / limit) * 100)))
+  return `${pct}%`
+}
+
+async function triggerManualSync() {
+  if (syncStore.isSyncing) return
+  await syncStore.triggerSync()
+  uni.showToast({
+    title: syncStore.lastError ? '同步未完成，请稍后重试' : '数据同步完成',
+    icon: 'none',
+  })
+}
+
+// Display Name Editing
+const showNameSheet = ref(false)
+const nameDraft = ref('')
+const savingName = ref(false)
+
+function openNameEditor() {
+  nameDraft.value = authStore.user?.displayName || authStore.username || ''
+  showNameSheet.value = true
+}
+
+async function submitDisplayName() {
+  if (savingName.value) return
+  const trimmed = nameDraft.value.trim()
+  if (!trimmed) {
+    uni.showToast({ title: '请输入显示名称', icon: 'none' })
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  savingName.value = true
   try {
-    await syncStore.triggerSync()
-    uni.hideLoading()
-    uni.showToast({ title: '同步成功', icon: 'success' })
-  } catch (e) {
-    uni.hideLoading()
-    uni.showToast({ title: '同步失败', icon: 'none' })
+    await useAuthApi.updateProfile({
+      baseVersion: Number(authStore.user?.version ?? 0),
+      displayName: trimmed,
+    })
+    await authStore.restoreSession()
+    if (generation !== authStore.getLoginGeneration()) return
+    showNameSheet.value = false
+    uni.showToast({ title: '名称已更新', icon: 'none' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '名称更新失败', icon: 'none' })
   } finally {
-    isSyncing.value = false
+    savingName.value = false
   }
 }
 
-const showFeatureUnderDevelopment = (name: string) => {
-  uni.showToast({ title: `${name} 功能开发中`, icon: 'none' })
+// BYOK AI Configuration
+const providers: Array<{ id: AiProviderType; label: string }> = [
+  { id: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容' },
+  { id: 'DEEPSEEK', label: 'DeepSeek' },
+  { id: 'SILICONFLOW', label: '硅基流动' },
+]
+
+const showAiConfigSheet = ref(false)
+const savingAi = ref(false)
+const allAiSettings = ref<AiSettingsView[]>([])
+const availableModels = ref<string[]>([])
+const aiForm = reactive({
+  provider: 'OPENAI_COMPATIBLE' as AiProviderType,
+  baseUrl: '',
+  apiKey: '',
+  model: '',
+  hasApiKey: false,
+})
+
+const aiSummaryLabel = computed(() => {
+  const configured = allAiSettings.value.find(item => item.hasApiKey)
+  if (!configured) return '配置自有密钥与默认对话模型'
+  return `${configured.provider || 'AI'} · ${configured.chatModel || '已配置密钥'}`
+})
+
+function applyProviderDraft(provider: AiProviderType) {
+  const match = allAiSettings.value.find(item => item.provider === provider)
+  aiForm.provider = provider
+  aiForm.baseUrl = match?.baseUrl || ''
+  aiForm.model = match?.chatModel || ''
+  aiForm.hasApiKey = Boolean(match?.hasApiKey)
+  aiForm.apiKey = ''
+  availableModels.value = []
 }
+
+async function loadAiSettings() {
+  const generation = authStore.getLoginGeneration()
+  try {
+    const list = await aiApi.getSettings()
+    if (generation !== authStore.getLoginGeneration()) return
+    allAiSettings.value = list
+    const preferred = list.find(item => item.hasApiKey)?.provider || list[0]?.provider || 'OPENAI_COMPATIBLE'
+    applyProviderDraft(preferred)
+  } catch {
+    // Keep silent if AI settings endpoint unavailable offline
+  }
+}
+
+function selectProvider(provider: AiProviderType) {
+  if (savingAi.value) return
+  applyProviderDraft(provider)
+}
+
+async function openAiConfigSheet() {
+  await loadAiSettings()
+  showAiConfigSheet.value = true
+}
+
+async function fetchModelsForProvider() {
+  try {
+    const res = await aiApi.listModels(aiForm.provider)
+    availableModels.value = res.models || []
+    if (availableModels.value.length === 0) {
+      uni.showToast({ title: '未拉取到可用模型，请先保存密钥和 Base URL', icon: 'none' })
+    }
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '拉取模型失败', icon: 'none' })
+  }
+}
+
+async function testProviderConnection() {
+  try {
+    const res = await aiApi.testConnection(aiForm.provider)
+    uni.showToast({
+      title: res.reachable ? `连接正常 (${res.chatModel || aiForm.provider})` : '连接不可达，请检查配置',
+      icon: 'none',
+    })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '连接测试失败', icon: 'none' })
+  }
+}
+
+async function saveAiSettings() {
+  if (savingAi.value) return
+  const generation = authStore.getLoginGeneration()
+  savingAi.value = true
+  try {
+    await setAiConfig({
+      provider: aiForm.provider,
+      baseUrl: aiForm.baseUrl.trim(),
+      model: aiForm.model.trim(),
+      apiKey: aiForm.apiKey.trim(),
+    })
+    await refreshAiConfig()
+    await loadAiSettings()
+    if (generation !== authStore.getLoginGeneration()) return
+    showAiConfigSheet.value = false
+    uni.showToast({ title: '模型配置已保存', icon: 'none' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+  } finally {
+    savingAi.value = false
+  }
+}
+
+// Change Password
+const showPasswordSheet = ref(false)
+const savingPwd = ref(false)
+const pwdError = ref('')
+const pwdForm = reactive({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+
+function openPasswordSheet() {
+  pwdForm.currentPassword = ''
+  pwdForm.newPassword = ''
+  pwdForm.confirmPassword = ''
+  pwdError.value = ''
+  showPasswordSheet.value = true
+}
+
+async function submitPasswordChange() {
+  if (savingPwd.value) return
+  pwdError.value = ''
+  if (!pwdForm.currentPassword) {
+    pwdError.value = '请输入当前密码。'
+    return
+  }
+  const strengthErr = validatePasswordStrength(pwdForm.newPassword)
+  if (strengthErr) {
+    pwdError.value = strengthErr
+    return
+  }
+  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+    pwdError.value = '两次输入的新密码不一致。'
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  savingPwd.value = true
+  try {
+    await useAuthApi.changePassword({
+      baseVersion: Number(authStore.user?.version ?? 0),
+      currentPassword: pwdForm.currentPassword,
+      newPassword: pwdForm.newPassword,
+    })
+    await authStore.restoreSession()
+    if (generation !== authStore.getLoginGeneration()) return
+    showPasswordSheet.value = false
+    uni.showToast({ title: '密码已修改', icon: 'none' })
+  } catch (err) {
+    pwdError.value = err instanceof Error ? err.message : '修改密码失败，请检查当前密码'
+  } finally {
+    savingPwd.value = false
+  }
+}
+
+// Device Sessions
+const showSessionsSheet = ref(false)
+const loadingSessions = ref(false)
+const sessionsList = ref<SessionResponse[]>([])
+
+async function openSessionsSheet() {
+  showSessionsSheet.value = true
+  loadingSessions.value = true
+  const generation = authStore.getLoginGeneration()
+  try {
+    const res = await useAuthApi.sessions()
+    if (generation !== authStore.getLoginGeneration()) return
+    sessionsList.value = (res.items || []).filter(item => !item.revokedAt)
+  } catch {
+    uni.showToast({ title: '加载设备列表失败', icon: 'none' })
+  } finally {
+    loadingSessions.value = false
+  }
+}
+
+async function revokeDevice(sessionId: string) {
+  try {
+    await useAuthApi.revokeSession(sessionId)
+    sessionsList.value = sessionsList.value.filter(item => item.id !== sessionId)
+    uni.showToast({ title: '设备已下线', icon: 'none' })
+  } catch {
+    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+  }
+}
+
+async function revokeAllOthers() {
+  try {
+    await useAuthApi.revokeOtherSessions()
+    sessionsList.value = sessionsList.value.filter(item => item.current)
+    uni.showToast({ title: '已下线其他全部设备', icon: 'none' })
+  } catch {
+    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+  }
+}
+
+function handleLogout() {
+  uni.showModal({
+    title: '退出登录',
+    content: '确定要退出当前账号吗？',
+    success: async (res) => {
+      if (res.confirm) {
+        await authStore.logout()
+        uni.reLaunch({ url: '/pages/mobile/login/index' })
+      }
+    },
+  })
+}
+
+onMounted(() => {
+  void loadAiSettings()
+})
 </script>
 
 <style scoped>
-/* Profile Page Root with CSS Variables for Theme Adaptation */
 .profile-page {
-  --page-bg: var(--color-zen-ivory);
-  --card-bg: var(--color-zen-white);
-  --text-main: var(--color-zen-graphite);
-  --text-secondary: var(--color-zen-stone);
-  --text-sub: var(--color-zen-stone);
-  --divider-color: var(--color-zen-hairline);
-  --item-active-bg: rgba(0, 0, 0, 0.04);
-  --arrow-color: var(--color-zen-stone);
-  --logout-color: #ff3b30;
-  
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background-color: var(--page-bg);
-  transition: background-color 0.3s;
+  background-color: var(--color-bg-primary);
 }
 
-.profile-page.dark {
-  --page-bg: #121212;
-  --card-bg: #1E1E1E;
-  --text-main: #FFFFFF;
-  --text-secondary: #AAAAAA;
-  --text-sub: #888888;
-  --divider-color: #2A2A2A;
-  --item-active-bg: rgba(255, 255, 255, 0.08);
-  --arrow-color: #555555;
-  --logout-color: #ff453a;
-}
-
-.content-area {
+.content-scroll {
   flex: 1;
-  height: 0;
   min-height: 0;
+}
+
+.profile-body {
+  padding: 20rpx 32rpx 48rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
   box-sizing: border-box;
 }
 
-/* iOS Large Title Row */
-.large-title-row {
-  padding: 20rpx 36rpx 36rpx;
-}
-
-.large-title {
-  font-size: 64rpx;
-  font-weight: 800;
-  color: var(--text-main);
-  letter-spacing: -1.5rpx;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-  transition: color 0.3s;
-}
-
-.profile-hero-card {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  margin: 10rpx 24rpx 32rpx;
+.user-card {
   padding: 32rpx 28rpx;
-  background: var(--card-bg);
-  border: 1px solid var(--divider-color);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.02);
-  transition: background-color 0.3s, border-color 0.3s;
-  gap: 20rpx;
-}
-
-.hero-left {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  flex: 1;
+  align-items: center;
+  gap: 24rpx;
 }
 
-.account-avatar {
-  width: 132rpx;
-  height: 132rpx;
+.avatar-badge {
+  width: 96rpx;
+  height: 96rpx;
   border-radius: 50%;
-  background: var(--color-zen-graphite);
+  background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20rpx;
-  box-shadow: 0 10rpx 24rpx rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
 }
 
-.profile-page.dark .account-avatar {
-  background: var(--color-zen-sage);
+.avatar-initial {
+  font-size: 40rpx;
+  font-weight: var(--font-weight-bold);
+  color: #FFFFFF;
 }
 
-.avatar-text {
-  font-size: 52rpx;
-  font-weight: 700;
-  color: var(--color-zen-white);
-}
-
-.user-info {
+.user-meta {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6rpx;
 }
 
-.account-name {
-  font-size: 38rpx;
-  font-weight: 700;
-  color: var(--text-main);
-  transition: color 0.3s;
+.user-display {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
 }
 
-.account-sub {
-  font-size: 24rpx;
-  color: var(--text-sub);
-  font-weight: 400;
-  transition: color 0.3s;
+.user-handle {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
 }
 
-/* Group sections & lists (Tighter, narrower, slightly left-aligned) */
-.profile-group {
-  margin: 0 24rpx 28rpx;
-}
-
-.group-title {
-  font-size: 22rpx;
-  color: var(--text-sub);
-  padding: 0 12rpx 10rpx;
-  font-weight: 600;
-  display: block;
-  transition: color 0.3s;
-}
-
-.menu-list {
-  background: var(--card-bg);
-  border: 1px solid var(--divider-color);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  transition: background-color 0.3s;
-}
-
-.menu-item {
+.edit-name-btn {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20rpx 24rpx;
-  background: var(--card-bg);
-  transition: background-color 0.2s;
-  position: relative;
+  justify-content: center;
 }
 
-.menu-item:active {
-  background-color: var(--item-active-bg);
-}
-
-.item-left {
+.section-block {
   display: flex;
-  align-items: center;
-  gap: 18rpx;
-}
-
-.item-right {
-  display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12rpx;
 }
 
-.menu-item-icon {
-  flex-shrink: 0;
-}
-
-.menu-item + .menu-item::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 76rpx;
-  right: 0;
-  height: 1px;
-  background-color: var(--divider-color);
-  transition: background-color 0.3s;
-}
-
-.menu-label {
-  font-size: 27rpx;
-  color: var(--text-main);
-  font-weight: 400;
-  transition: color 0.3s;
-}
-
-.menu-value-text {
-  font-size: 24rpx;
-  color: var(--text-sub);
-  transition: color 0.3s;
-}
-
-.sync-spinner-icon {
-  animation: spin 1.2s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.arrow {
-  font-size: 30rpx;
-  color: var(--arrow-color);
-  line-height: 1;
-  transition: color 0.3s;
-}
-
-.ios-switch {
-  transform: scale(0.8);
-  transform-origin: right center;
-  margin-right: -4rpx;
-}
-
-/* Logout Group Cell */
-.logout-group {
-  margin-top: 10rpx;
-  margin-bottom: 48rpx;
-}
-
-.logout-cell {
-  justify-content: center;
-}
-
-.logout-text {
-  font-size: 30rpx;
-  color: var(--logout-color);
-  font-weight: 500;
-  transition: color 0.3s;
-}
-
-/* Footer Section */
-.footer-info {
+.section-head-row {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  padding-left: 8rpx;
+}
+
+.section-action {
+  font-size: var(--font-size-xs);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-semibold);
+  padding: 4rpx 8rpx;
+}
+
+.menu-card {
+  padding: 8rpx 24rpx;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
   padding: 24rpx 0;
 }
 
-.footer-text {
-  font-size: 22rpx;
-  color: var(--text-sub);
-  transition: color 0.3s;
+.row-left {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  flex: 1;
+  min-width: 0;
 }
 
-.bottom-spacer {
-  height: calc(180rpx + env(safe-area-inset-bottom));
+.row-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.row-sub {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-pill {
+  padding: 8rpx 20rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-size: 22rpx;
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+.menu-divider {
+  height: 1px;
+  background-color: var(--border-subtle);
+}
+
+.quota-card {
+  padding: 24rpx 28rpx;
+}
+
+.quota-status {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  padding: 12rpx 0;
+}
+
+.quota-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+.quota-list {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.quota-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.quota-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quota-name {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.quota-nums {
+  font-size: 22rpx;
+  font-family: var(--font-family-mono);
+  color: var(--text-muted);
+}
+
+.quota-track {
+  height: 12rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.quota-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+}
+
+.quota-reset {
+  font-size: 20rpx;
+  color: var(--text-muted);
+}
+
+.logout-btn {
+  padding: 26rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+}
+
+.logout-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-danger);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.sheet-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.sheet-close {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.zen-input {
+  height: 84rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20rpx;
+  padding: 0 24rpx;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.chip-item {
+  padding: 10rpx 20rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.chip-item.active {
+  background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-bold);
+}
+
+.dual-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.secondary-pill-btn {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: 20rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.sheet-submit-btn {
+  width: 100%;
+  height: 86rpx;
+  line-height: 86rpx;
+  border-radius: 22rpx;
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  border: none;
+}
+
+.sheet-submit-btn::after {
+  border: none;
+}
+
+.pwd-error {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 22rpx;
+  background-color: var(--color-bg-primary);
+  border-radius: 20rpx;
+}
+
+.revoke-btn {
+  padding: 8rpx 20rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 22rpx;
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+.revoke-all-btn {
+  margin-top: 8rpx;
+  text-align: center;
+  padding: 20rpx;
+  border-radius: 20rpx;
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
 }
 </style>
-

@@ -197,3 +197,48 @@ test('workspace recovers a previous subject confirmation before loading without 
   assert.equal(review.completedCount.value, 0)
   assert.equal(storage.has(key), false)
 })
+
+test('mobile review switches cleanly between specific subject and all-subjects queue', async (context) => {
+  useStorageFixture(context)
+  const selectedSubjectId = ref('alpha')
+  const calls = []
+  const api = {
+    async queue(_at, _cursor, subject) {
+      calls.push(subject ?? 'ALL')
+      return { items: [{ knowledgeBlockId: subject ? 'block-alpha' : 'block-all', knowledgeBlockVersion: 2 }] }
+    },
+    async block(id) {
+      return {
+        id,
+        title: id,
+        subjectId: id === 'block-alpha' ? 'alpha' : 'beta',
+        version: 2,
+        content: `content:${id}`,
+      }
+    },
+  }
+
+  const renderer = createRenderer({ createComment: () => ({}), insert() {}, remove() {} })
+  let review
+  const app = renderer.createApp({
+    setup() {
+      review = useDueReview(api, {
+        subjectId: () => selectedSubjectId.value,
+        enabled: () => true,
+        allowAllSubjects: true,
+      })
+      return () => null
+    },
+  })
+  app.mount({})
+  context.after(() => app.unmount())
+
+  await setImmediate()
+  assert.deepEqual(calls, ['alpha'])
+  assert.equal(review.activeCard.value.title, 'block-alpha')
+
+  selectedSubjectId.value = undefined
+  await setImmediate()
+  assert.deepEqual(calls, ['alpha', 'ALL'])
+  assert.equal(review.activeCard.value.title, 'block-all')
+})

@@ -59,7 +59,7 @@ export const useTaskStore = defineStore('task', () => {
   const totalFocusHours = computed(() => {
     const mins = allTasks.value
       .filter(t => !t.is_deleted && t.status === 'completed')
-      .reduce((sum, t) => sum + (t.duration || 0) * 60, 0)
+      .reduce((sum, t) => sum + (t.duration || 0), 0)
     return `${(mins / 60).toFixed(1)}h`
   })
 

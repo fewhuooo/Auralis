@@ -40,7 +40,7 @@
               <text class="option-title">{{ task.name }}</text>
               <text class="option-meta">
                 {{ formatShortDate(task.scheduledAt) }} {{ formatLocalTimeHHmm(task.scheduledAt) }}
-                · {{ task.subject || '通用' }} · {{ Math.round((task.duration || 0.5) * 60) }} 分钟
+                · {{ task.subject || '通用' }} · {{ task.duration || 30 }} 分钟
               </text>
             </view>
             <LineIcon v-if="selectedTaskId === task.id" name="check" size="32rpx" color="var(--color-zen-sage)" />
@@ -62,7 +62,7 @@
             <view class="option-body">
               <text class="option-title">{{ task.name }}</text>
               <text class="option-meta">
-                {{ task.subject || '通用' }} · {{ Math.round((task.duration || 0.5) * 60) }} 分钟
+                {{ task.subject || '通用' }} · {{ task.duration || 30 }} 分钟
               </text>
             </view>
             <LineIcon v-if="selectedTaskId === task.id" name="check" size="32rpx" color="var(--color-zen-sage)" />

@@ -1,200 +1,379 @@
 <template>
-  <AppPageLayout custom-bg>
+  <AppPageLayout>
     <view class="home-page">
-      <!-- 极简通用顶栏：左侧页面标题居左，右侧用户头像与用户名 -->
-      <AppHeader title="日程" />
+      <AppHeader title="今日" :subtitle="selectedDateHeading" />
 
-      <!-- 核心主体区域 -->
-      <view class="main-body">
-        <!-- 上方区域：问候语 + 周日期条 + 统计胶囊 -->
-        <view class="top-section">
-          <!-- 问候语主标题 + 添加按钮 -->
+      <scroll-view scroll-y :show-scrollbar="false" class="home-scroll">
+        <view class="home-content">
           <view class="greeting-row">
-            <text class="greeting-title">{{ greetingText }}，{{ username }}</text>
-            <view class="add-circle-btn" :class="{ 'is-active': showQuickAdd }" @click="showQuickAdd = !showQuickAdd">
-              <LineIcon :name="showQuickAdd ? 'close' : 'plus'" size="40rpx" color="var(--color-zen-graphite)" />
+            <view class="greeting-left">
+              <text class="greeting-title">{{ greetingText }}，{{ displayName }}</text>
+              <text v-if="syncStore.isSyncing" class="sync-pill">同步中…</text>
+              <text v-else-if="selectedDateKey !== todayKey" class="back-today-pill" @click="jumpToToday">回到今天</text>
+            </view>
+            <view class="add-fab-btn" @click="openCaptureSheet('task')">
+              <LineIcon name="plus" size="38rpx" color="#FFFFFF" />
             </view>
           </view>
 
-          <!-- 悬浮最顶层的遮罩层 -->
-          <view v-if="showQuickAdd" class="quick-add-mask" @click="showQuickAdd = false"></view>
-
-          <!-- +号触发的快速创建输入框（覆盖在最顶层） -->
-          <view v-if="showQuickAdd" class="quick-add-container">
-            <view class="quick-input-row">
-              <input 
-                class="quick-input" 
-                v-model="quickTaskName" 
-                placeholder="输入日程内容，按回车添加..." 
-                confirm-type="done"
-                :focus="showQuickAdd"
-                @confirm="submitQuickAdd"
-              />
-              <view class="quick-submit-btn" :class="{ disabled: !quickTaskName.trim() }" @click="submitQuickAdd">
-                <LineIcon name="check" size="32rpx" color="#FFFFFF" />
+          <view class="week-card zen-card">
+            <view class="week-nav-row">
+              <view class="week-arrow" @click="shiftWeek(-7)">
+                <LineIcon name="chevron-left" size="28rpx" color="var(--text-muted)" />
+              </view>
+              <text class="week-range-label">{{ weekRangeLabel }}</text>
+              <view class="week-arrow" @click="shiftWeek(7)">
+                <LineIcon name="chevron-right" size="28rpx" color="var(--text-muted)" />
               </view>
             </view>
 
-            <!-- 学科选择：带箭头的单行触发器 -->
-            <view class="quick-select-row">
-              <text class="quick-label">学科：</text>
-              <view class="subject-dropdown-btn" @click="showSubjectList = !showSubjectList">
-                <view class="sub-dot"></view>
-                <text class="dropdown-text">{{ quickSubject?.name || '选择学科...' }}</text>
-                <LineIcon :name="showSubjectList ? 'chevron-up' : 'chevron-down'" size="32rpx" color="var(--color-zen-stone)" />
+            <view class="week-strip">
+              <view
+                v-for="day in weekDays"
+                :key="day.dateKey"
+                class="w-day"
+                :class="{
+                  active: selectedDateKey === day.dateKey,
+                  'is-today': day.isToday,
+                }"
+                @click="selectedDateKey = day.dateKey"
+              >
+                <text class="w-week">{{ day.weekdayLabel }}</text>
+                <text class="w-num">{{ day.dayNumber }}</text>
+                <view
+                  class="w-dot"
+                  :class="{ visible: hasScheduledOnDate(day.dateKey) }"
+                ></view>
               </view>
             </view>
+          </view>
 
-            <!-- 点击箭头后弹出的竖直排列学科列表 -->
-            <view v-if="showSubjectList" class="subject-vertical-popup">
-              <scroll-view scroll-y class="subject-vertical-scroll" :show-scrollbar="false">
-                <view class="subject-vertical-list">
-                  <view 
-                    v-for="sub in displaySubjects" 
-                    :key="sub.id || sub.name"
-                    class="subject-vertical-item"
-                    :class="{ active: quickSubject?.name === sub.name }"
-                    @click="selectSubject(sub)"
+          <view class="section-block">
+            <view class="section-header">
+              <text class="section-title">当日日程</text>
+              <text class="section-count">{{ scheduledForSelectedDay.length }} 项</text>
+            </view>
+
+            <view v-if="scheduledForSelectedDay.length === 0" class="empty-card zen-card">
+              <LineIcon name="calendar" size="48rpx" color="var(--text-muted)" />
+              <text class="empty-title">{{ selectedDateHeading }} 暂无已排期日程</text>
+              <text class="empty-sub">点击右上角 + 创建任务，或从下方待办排入今日</text>
+            </view>
+
+            <view v-else class="card-list">
+              <view
+                v-for="item in scheduledForSelectedDay"
+                :key="item.id"
+                class="task-card zen-card"
+                :class="{ 'is-completed': item.status === 'completed' }"
+              >
+                <view
+                  class="check-circle"
+                  :class="{
+                    checked: item.status === 'completed',
+                    locked: item.id ? taskStore.updatingTaskIds.includes(item.id) : false,
+                  }"
+                  @click="item.id && toggleComplete(item.id)"
+                >
+                  <LineIcon v-if="item.status === 'completed'" name="check" size="22rpx" color="#FFFFFF" />
+                </view>
+
+                <view class="task-main" @click="item.id && toggleComplete(item.id)">
+                  <view class="task-top-row">
+                    <text class="task-time">{{ formatLocalTimeHHmm(item.scheduledAt) || '全天' }}</text>
+                    <text v-if="item.subject" class="task-subject">{{ item.subject }}</text>
+                    <text v-if="item.dueAt" class="task-ddl">截止 {{ formatShortDate(item.dueAt) }}</text>
+                  </view>
+                  <text class="task-title" :class="{ strike: item.status === 'completed' }">{{ item.name }}</text>
+                </view>
+
+                <view class="task-actions">
+                  <text class="dur-badge">{{ item.duration || 30 }}m</text>
+                  <view
+                    v-if="item.id && item.status !== 'completed'"
+                    class="unschedule-btn"
+                    @click.stop="unschedule(item.id)"
                   >
-                    <view class="sub-dot"></view>
-                    <text class="sub-item-name">{{ sub.name }}</text>
-                    <LineIcon v-if="quickSubject?.name === sub.name" name="check" size="32rpx" color="#7D9372" />
+                    <text>移回待办</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+
+          <view class="section-block">
+            <view class="section-header">
+              <text class="section-title">待办清单</text>
+              <text class="section-count">{{ taskStore.pendingTasks.length }} 项</text>
+            </view>
+
+            <view v-if="taskStore.pendingTasks.length === 0" class="empty-card zen-card">
+              <LineIcon name="inbox" size="48rpx" color="var(--text-muted)" />
+              <text class="empty-title">待办清单已清空</text>
+              <text class="empty-sub">随时通过 + 记录新的学习待办</text>
+            </view>
+
+            <view v-else class="card-list">
+              <view v-for="todo in taskStore.pendingTasks" :key="todo.id" class="task-card zen-card">
+                <view
+                  class="check-circle"
+                  :class="{ locked: todo.id ? taskStore.updatingTaskIds.includes(todo.id) : false }"
+                  @click="todo.id && toggleComplete(todo.id)"
+                ></view>
+
+                <view class="task-main">
+                  <view class="task-top-row">
+                    <text v-if="todo.subject" class="task-subject">{{ todo.subject }}</text>
+                    <text v-if="todo.dueAt" class="task-ddl">截止 {{ formatShortDate(todo.dueAt) }}</text>
+                  </view>
+                  <text class="task-title">{{ todo.name }}</text>
+                </view>
+
+                <view class="task-actions">
+                  <picker
+                    v-if="todo.id"
+                    mode="time"
+                    value="09:00"
+                    @change="onSchedulePending(todo.id, $event)"
+                  >
+                    <view class="schedule-pill">
+                      <text>排入该日</text>
+                    </view>
+                  </picker>
+                  <view v-if="todo.id" class="delete-icon-btn" @click="confirmDeleteTask(todo.id, todo.name)">
+                    <LineIcon name="trash" size="26rpx" color="var(--text-muted)" />
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view v-if="showCaptureSheet" class="zen-sheet-mask" @click="closeCaptureSheet">
+        <view class="zen-sheet-body" @click.stop>
+          <view class="sheet-header">
+            <view class="mode-tabs">
+              <view
+                v-for="tab in captureTabs"
+                :key="tab.id"
+                class="mode-tab"
+                :class="{ active: captureMode === tab.id }"
+                @click="switchCaptureMode(tab.id)"
+              >
+                <text>{{ tab.label }}</text>
+              </view>
+            </view>
+            <view class="sheet-close" @click="closeCaptureSheet">
+              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <view v-if="subjectStore.subjects.length === 0" class="no-subject-tip">
+            <text>当前暂无学科，请先在平板或 PC 端创建学科后再添加任务、知识块或文件。</text>
+          </view>
+
+          <view v-if="captureMode === 'task'" class="form-stack">
+            <view class="field-group">
+              <text class="field-label">任务内容</text>
+              <input
+                class="zen-input"
+                v-model="taskForm.name"
+                placeholder="例如：整理高数第三章错题"
+                :disabled="submittingCapture"
+              />
+            </view>
+
+            <view class="field-group">
+              <text class="field-label">所属学科</text>
+              <scroll-view scroll-x :show-scrollbar="false" class="subject-chips-scroll">
+                <view class="chips-row">
+                  <view
+                    v-for="sub in subjectStore.subjects"
+                    :key="sub.id"
+                    class="chip-item"
+                    :class="{ active: taskForm.subjectId === sub.id }"
+                    @click="taskForm.subjectId = sub.id"
+                  >
+                    <text>{{ sub.name }}</text>
                   </view>
                 </view>
               </scroll-view>
             </view>
 
-            <!-- 整半小时时长选择（0-2小时每半小时一档，四段连在一起的可拖动选择器） -->
-            <view class="quick-select-row">
-              <text class="quick-label">时长：</text>
-              <view 
-                class="segmented-track"
-                id="durTrack"
-                @touchstart="onDurTouchStart"
-                @touchmove="onDurTouchMove"
-              >
-                <!-- 滑动高亮滑块 -->
-                <view 
-                  class="segmented-thumb" 
-                  :style="{ transform: `translateX(${durSelectedIndex * 100}%)` }"
-                ></view>
-
-                <!-- 4个连在一起的选项 -->
-                <view 
-                  v-for="item in durationOptions" 
-                  :key="item.val"
-                  class="segmented-item"
-                  :class="{ active: quickDuration === item.val }"
-                  @click="quickDuration = item.val"
+            <view class="field-group">
+              <text class="field-label">预计时长</text>
+              <view class="chips-row">
+                <view
+                  v-for="mins in [30, 60, 90, 120]"
+                  :key="mins"
+                  class="chip-item"
+                  :class="{ active: taskForm.duration === mins }"
+                  @click="taskForm.duration = mins"
                 >
-                  <text>{{ item.label }}</text>
+                  <text>{{ mins }} 分钟</text>
                 </view>
               </view>
             </view>
+
+            <view class="switch-row">
+              <view class="switch-left">
+                <text class="field-label">排入 {{ selectedDateHeading }}</text>
+                <text class="field-hint">{{ taskForm.scheduled ? '将出现在当日日程时间轴' : '保存为未排期待办任务' }}</text>
+              </view>
+              <switch :checked="taskForm.scheduled" color="#8B9A6E" @change="onTaskScheduledToggle" />
+            </view>
+
+            <view class="dual-pickers">
+              <view v-if="taskForm.scheduled" class="picker-col">
+                <text class="field-label">开始时间</text>
+                <picker mode="time" :value="taskForm.timeHHmm" @change="onTaskTimeChange">
+                  <view class="picker-box">{{ taskForm.timeHHmm }}</view>
+                </picker>
+              </view>
+              <view class="picker-col">
+                <text class="field-label">截止日期（可选）</text>
+                <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onTaskDueDateChange">
+                  <view class="picker-box">{{ taskForm.dueDateKey || '不设置 DDL' }}</view>
+                </picker>
+              </view>
+            </view>
+
+            <button class="sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitTask">
+              保存任务
+            </button>
           </view>
 
-          <!-- 周日期条 (Weekly Strip) -->
-          <view class="week-strip">
-            <view 
-              class="w-day" 
-              v-for="(day, index) in weekDays" 
-              :key="day.dateStr"
-              :class="{ active: swiperCurrent === index }"
-              @click="swiperCurrent = index"
-            >
-              <text class="w-week">{{ day.weekdayShort }}</text>
-              <text class="w-num">{{ day.day }}</text>
+          <view v-else-if="captureMode === 'block'" class="form-stack">
+            <view class="field-group">
+              <text class="field-label">所属学科</text>
+              <scroll-view scroll-x :show-scrollbar="false" class="subject-chips-scroll">
+                <view class="chips-row">
+                  <view
+                    v-for="sub in subjectStore.subjects"
+                    :key="sub.id"
+                    class="chip-item"
+                    :class="{ active: blockForm.subjectId === sub.id }"
+                    @click="blockForm.subjectId = sub.id"
+                  >
+                    <text>{{ sub.name }}</text>
+                  </view>
+                </view>
+              </scroll-view>
             </view>
+
+            <view class="field-group">
+              <text class="field-label">知识块标题 / 提问正面</text>
+              <input
+                class="zen-input"
+                v-model="blockForm.title"
+                placeholder="输入核心概念或记忆提问…"
+                :disabled="submittingCapture"
+              />
+            </view>
+
+            <view class="field-group">
+              <text class="field-label">内容 / 答案解析（支持 Markdown）</text>
+              <textarea
+                class="zen-textarea"
+                v-model="blockForm.content"
+                placeholder="记下关键结论、公式或理解要点…"
+                :disabled="submittingCapture"
+              />
+            </view>
+
+            <button class="sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitQuickBlock">
+              保存知识块
+            </button>
           </view>
 
-          <!-- 两个胶囊统计面板 (Focus Stats) -->
-          <view class="focus-stats">
-            <view class="stat-capsule">
-              <text class="stat-label">专注时长</text>
-              <text class="stat-value">{{ focusDurationDisplay }}</text>
+          <view v-else class="form-stack">
+            <view class="field-group">
+              <text class="field-label">归入学科</text>
+              <scroll-view scroll-x :show-scrollbar="false" class="subject-chips-scroll">
+                <view class="chips-row">
+                  <view
+                    v-for="sub in subjectStore.subjects"
+                    :key="sub.id"
+                    class="chip-item"
+                    :class="{ active: uploadForm.subjectId === sub.id }"
+                    @click="uploadForm.subjectId = sub.id"
+                  >
+                    <text>{{ sub.name }}</text>
+                  </view>
+                </view>
+              </scroll-view>
             </view>
-            <view class="stat-capsule">
-              <text class="stat-label">已完成任务</text>
-              <text class="stat-value">{{ completedCountDisplay }}</text>
-            </view>
-          </view>
 
-          <!-- 今日日程 标题栏 -->
-          <view class="section-header">
-            <text class="section-title">今日日程</text>
+            <view class="file-drop-box" @click="chooseFileToUpload">
+              <LineIcon name="upload" size="42rpx" color="var(--color-zen-sage)" />
+              <text class="file-drop-name">
+                {{ uploadForm.file ? uploadForm.file.name : '点击选择本地文件 / 聊天文件' }}
+              </text>
+              <text class="file-drop-hint">
+                {{ uploadForm.file ? formatFileSize(uploadForm.file.size) : '支持 PDF、Word、PPT、TXT、Markdown 等学习资料' }}
+              </text>
+            </view>
+
+            <view class="field-group">
+              <text class="field-label">资料名称</text>
+              <input
+                class="zen-input"
+                v-model="uploadForm.title"
+                placeholder="自动带出文件名，可自定义"
+                :disabled="submittingCapture"
+              />
+            </view>
+
+            <button class="sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitFileUpload">
+              上传归档
+            </button>
           </view>
         </view>
-
-        <!-- 下方左右滑动区域 Swiper（恢复左右滑切换日期逻辑） -->
-        <swiper 
-          class="day-swiper"
-          :current="swiperCurrent"
-          @change="onSwiperChange"
-        >
-          <swiper-item v-for="(day, index) in weekDays" :key="day.dateStr" class="swiper-item">
-            <scroll-view scroll-y class="task-scroll-view" :show-scrollbar="false">
-              <view class="task-list">
-                <view v-if="dayTasksMap[day.dateStr]?.length === 0" class="empty-state">
-                  <text class="empty-icon">🍃</text>
-                  <text class="empty-text">本日无日程安排</text>
-                  <text class="empty-sub">点击上方 + 创建专注任务</text>
-                </view>
-
-                <view 
-                  v-else
-                  v-for="task in dayTasksMap[day.dateStr]" 
-                  :key="task.id"
-                  class="zen-pill-task"
-                  :class="{ 'is-completed': task.completed }"
-                  @click="toggleTaskStatus(task)"
-                >
-                  <view class="pill-left">
-                    <view class="checkbox-ring" :class="{ checked: task.completed }">
-                      <LineIcon v-if="task.completed" name="check" size="24rpx" color="#FFFFFF" />
-                    </view>
-                    <text class="task-name">{{ task.name }}</text>
-                  </view>
-                  <view class="pill-right">
-                    <text class="task-time" v-if="task.timeLabel">{{ task.timeLabel }}</text>
-                    <view class="task-dur-badge" v-if="task.duration">
-                      <text class="dur-num">{{ task.duration }}</text>
-                      <text class="dur-unit">m</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
-              <!-- 底部留白以防遮挡 -->
-              <view class="bottom-spacer"></view>
-            </scroll-view>
-          </swiper-item>
-        </swiper>
       </view>
-
-      <!-- 新建任务弹窗 -->
-      <AddTaskSheet v-model:visible="showAddSheet" :subjects="subjects" @submit="handleAddTask" />
     </view>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
-import LineIcon from '@/components/LineIcon.vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
-import AddTaskSheet from '@/components/AddTaskSheet.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
+import LineIcon from '@/components/LineIcon.vue'
+import type { LocalUploadFile } from '@/services/assetUpload'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useTaskStore } from '@/store/useTaskStore'
+import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { useSyncStore } from '@/store/useSyncStore'
+import { useTaskStore } from '@/store/useTaskStore'
+import {
+  combineLocalDateAndTime,
+  endOfLocalDateIso,
+  formatDateHeading,
+  formatLocalTimeHHmm,
+  formatShortDate,
+  getWeekDays,
+  shiftDateKey,
+  toLocalDateKey,
+} from '@/utils/dateKey'
+import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
 
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
 const subjectStore = useSubjectStore()
-const { timeSlots } = storeToRefs(taskStore)
-const { subjects } = storeToRefs(subjectStore)
+const blockStore = useBlockStore()
+const syncStore = useSyncStore()
 
-const username = computed(() => authStore.username || 'Alex')
+const todayKey = ref(toLocalDateKey(new Date()))
+const selectedDateKey = ref(todayKey.value)
+const weekDays = computed(() => getWeekDays(selectedDateKey.value, todayKey.value))
+const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
+const weekRangeLabel = computed(() => {
+  const days = weekDays.value
+  return `${formatShortDate(days[0].dateKey)} - ${formatShortDate(days[6].dateKey)}`
+})
 
+const displayName = computed(() => authStore.user?.displayName || authStore.username || '同学')
 const greetingText = computed(() => {
   const hour = new Date().getHours()
   if (hour < 12) return '早安'
@@ -202,692 +381,779 @@ const greetingText = computed(() => {
   return '晚安'
 })
 
-// 生成最近7天的周视图
-const weekDays = computed(() => {
-  const days = []
-  const today = new Date()
-  const currentDay = today.getDay()
-  const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1
-  
-  const monday = new Date(today)
-  monday.setDate(today.getDate() - distanceToMonday)
-  
-  const weekdaysShort = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    days.push({
-      dateStr: `${yyyy}-${mm}-${dd}`,
-      day: dd,
-      weekdayShort: weekdaysShort[d.getDay()],
-      isToday: d.toDateString() === today.toDateString()
-    })
-  }
-  return days
+const scheduledForSelectedDay = computed(() => taskStore.getScheduledTasksForDate(selectedDateKey.value))
+
+function hasScheduledOnDate(dateKey: string): boolean {
+  return taskStore.allTasks.some(task => !task.is_deleted && task.scheduledAt && toLocalDateKey(task.scheduledAt) === dateKey)
+}
+
+function shiftWeek(deltaDays: number) {
+  selectedDateKey.value = shiftDateKey(selectedDateKey.value, deltaDays)
+}
+
+function jumpToToday() {
+  todayKey.value = toLocalDateKey(new Date())
+  selectedDateKey.value = todayKey.value
+}
+
+async function toggleComplete(id: string) {
+  await taskStore.toggleTaskComplete(id)
+}
+
+async function unschedule(id: string) {
+  await taskStore.unscheduleTask(id)
+  uni.showToast({ title: '已移回待办', icon: 'none' })
+}
+
+async function onSchedulePending(taskId: string, event: { detail?: { value?: string } }) {
+  const hhmm = event?.detail?.value
+  if (!hhmm) return
+  await taskStore.scheduleTask(taskId, combineLocalDateAndTime(selectedDateKey.value, hhmm))
+  uni.showToast({ title: `已排入 ${selectedDateHeading.value} ${hhmm}`, icon: 'none' })
+}
+
+function confirmDeleteTask(id: string, title: string) {
+  uni.showModal({
+    title: '删除待办',
+    content: `确定要删除「${title}」吗？`,
+    success: (res) => {
+      if (res.confirm) void taskStore.removeTask(id)
+    },
+  })
+}
+
+type CaptureMode = 'task' | 'block' | 'upload'
+const captureTabs: Array<{ id: CaptureMode; label: string }> = [
+  { id: 'task', label: '新建任务' },
+  { id: 'block', label: '记知识块' },
+  { id: 'upload', label: '上传文件' },
+]
+
+const showCaptureSheet = ref(false)
+const captureMode = ref<CaptureMode>('task')
+const submittingCapture = ref(false)
+
+const taskForm = reactive({
+  name: '',
+  subjectId: '',
+  duration: 60,
+  scheduled: true,
+  timeHHmm: '09:00',
+  dueDateKey: '',
 })
 
-const todayStr = () => {
-  const d = new Date()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${mm}-${dd}`
+const blockForm = reactive({
+  subjectId: '',
+  title: '',
+  content: '',
+})
+
+const uploadForm = reactive<{
+  subjectId: string
+  file: LocalUploadFile | null
+  title: string
+}>({
+  subjectId: '',
+  file: null,
+  title: '',
+})
+
+function defaultSubjectId(): string {
+  return subjectStore.subjects[0]?.id || ''
 }
 
-const getInitialTodayIndex = () => {
-  const tStr = todayStr()
-  const idx = weekDays.value.findIndex(d => d.dateStr === tStr)
-  return idx !== -1 ? idx : 0
+function openCaptureSheet(mode: CaptureMode) {
+  captureMode.value = mode
+  const fallbackSubId = defaultSubjectId()
+  if (!taskForm.subjectId) taskForm.subjectId = fallbackSubId
+  if (!blockForm.subjectId) blockForm.subjectId = fallbackSubId
+  if (!uploadForm.subjectId) uploadForm.subjectId = fallbackSubId
+  showCaptureSheet.value = true
 }
 
-const swiperCurrent = ref(getInitialTodayIndex())
+function switchCaptureMode(mode: CaptureMode) {
+  if (submittingCapture.value) return
+  captureMode.value = mode
+}
 
-const onSwiperChange = (e: any) => {
-  swiperCurrent.value = e.detail.current
+function closeCaptureSheet() {
+  if (submittingCapture.value) return
+  showCaptureSheet.value = false
+}
+
+function onTaskScheduledToggle(event: Event) {
+  const detail = (event as Event & { detail?: { value?: boolean } }).detail
+  taskForm.scheduled = Boolean(detail?.value)
+}
+
+function onTaskTimeChange(event: { detail?: { value?: string } }) {
+  if (event?.detail?.value) taskForm.timeHHmm = event.detail.value
+}
+
+function onTaskDueDateChange(event: { detail?: { value?: string } }) {
+  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
+}
+
+async function submitTask() {
+  if (submittingCapture.value) return
+  const title = taskForm.name.trim()
+  if (!title) {
+    uni.showToast({ title: '请输入任务内容', icon: 'none' })
+    return
+  }
+  const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
+  if (!subject) {
+    uni.showToast({ title: '请选择所属学科', icon: 'none' })
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  submittingCapture.value = true
+  try {
+    const scheduledAt = taskForm.scheduled
+      ? combineLocalDateAndTime(selectedDateKey.value, taskForm.timeHHmm)
+      : undefined
+    const dueAt = taskForm.dueDateKey ? endOfLocalDateIso(taskForm.dueDateKey) : undefined
+    await taskStore.addTask({
+      name: title,
+      subject: subject.name,
+      subjectId: subject.id,
+      duration: taskForm.duration,
+      status: scheduledAt ? 'scheduled' : 'pending',
+      scheduledAt,
+      dueAt,
+    })
+    if (generation !== authStore.getLoginGeneration()) return
+    taskForm.name = ''
+    taskForm.dueDateKey = ''
+    showCaptureSheet.value = false
+    uni.showToast({ title: scheduledAt ? '已加入当日日程' : '已加入待办清单', icon: 'none' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '任务保存失败', icon: 'none' })
+  } finally {
+    submittingCapture.value = false
+  }
+}
+
+async function submitQuickBlock() {
+  if (submittingCapture.value) return
+  const title = blockForm.title.trim()
+  const content = blockForm.content.trim()
+  const subject = subjectStore.subjects.find(item => item.id === blockForm.subjectId)
+  if (!subject) {
+    uni.showToast({ title: '请选择所属学科', icon: 'none' })
+    return
+  }
+  if (!title || !content) {
+    uni.showToast({ title: '请填写标题和内容', icon: 'none' })
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  submittingCapture.value = true
+  try {
+    await blockStore.addBlock({
+      subjectId: subject.id,
+      subject: subject.name,
+      title,
+      preview: content,
+      source: '手机速记',
+      color: '#8B9A6E',
+    })
+    if (generation !== authStore.getLoginGeneration()) return
+    blockForm.title = ''
+    blockForm.content = ''
+    showCaptureSheet.value = false
+    uni.showToast({ title: '知识块已保存', icon: 'none' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '知识块保存失败', icon: 'none' })
+  } finally {
+    submittingCapture.value = false
+  }
+}
+
+async function chooseFileToUpload() {
+  if (submittingCapture.value) return
+  try {
+    const file = await pickLocalDocument()
+    if (!file) return
+    uploadForm.file = file
+    if (!uploadForm.title.trim()) uploadForm.title = file.name
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '选择文件失败', icon: 'none' })
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '大小未知'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+async function submitFileUpload() {
+  if (submittingCapture.value) return
+  const subject = subjectStore.subjects.find(item => item.id === uploadForm.subjectId)
+  if (!subject) {
+    uni.showToast({ title: '请选择要归入的学科', icon: 'none' })
+    return
+  }
+  if (!uploadForm.file) {
+    uni.showToast({ title: '请先选择要上传的文件', icon: 'none' })
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  submittingCapture.value = true
+  try {
+    await uploadSubjectFile({
+      subjectId: subject.id,
+      file: uploadForm.file,
+      title: uploadForm.title,
+    })
+    if (generation !== authStore.getLoginGeneration()) return
+    uploadForm.file = null
+    uploadForm.title = ''
+    showCaptureSheet.value = false
+    uni.showToast({ title: `已归入「${subject.name}」，等待 PC 解析`, icon: 'none' })
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '文件上传失败', icon: 'none' })
+  } finally {
+    submittingCapture.value = false
+  }
 }
 
 onMounted(async () => {
   await subjectStore.loadSubjects()
   await taskStore.fetchTasks()
 })
-
-const dayTasksMap = computed(() => {
-  const map: Record<string, any[]> = {}
-  weekDays.value.forEach(d => {
-    map[d.dateStr] = []
-  })
-  
-  const today = todayStr()
-  const realTasks: any[] = []
-  timeSlots.value.forEach(slot => {
-    if (slot.task) {
-      realTasks.push({
-        ...slot.task,
-        completed: slot.task.status === 'completed',
-        timeLabel: slot.task.startTime || slot.time || '',
-        duration: slot.task.duration || 30
-      })
-    }
-  })
-
-  if (map[today]) map[today] = realTasks
-
-  return map
-})
-
-const currentDayTasks = computed(() => {
-  const selectedDate = weekDays.value[swiperCurrent.value]?.dateStr
-  return dayTasksMap.value[selectedDate] || []
-})
-
-const focusDurationDisplay = computed(() => {
-  let totalMin = 0
-  currentDayTasks.value.forEach(t => {
-    if (t.completed) totalMin += (t.duration || 30)
-  })
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  return `${h}h ${m}m`
-})
-
-const completedCountDisplay = computed(() => {
-  return currentDayTasks.value.filter(t => t.completed).length.toString()
-})
-
-const toggleTaskStatus = (task: any) => {
-  const newCompleted = !task.completed
-  task.completed = newCompleted
-  taskStore.updateTask({
-    ...task,
-    status: newCompleted ? 'completed' : 'scheduled'
-  })
-}
-
-const showAddSheet = ref(false)
-const showQuickAdd = ref(false)
-const quickTaskName = ref('')
-const quickDuration = ref(30)
-const quickSubject = ref<any>(null)
-const showSubjectList = ref(false)
-
-const selectSubject = (sub: any) => {
-  quickSubject.value = sub
-  showSubjectList.value = false
-}
-
-const durationOptions = [
-  { label: '0.5h', val: 30 },
-  { label: '1h', val: 60 },
-  { label: '1.5h', val: 90 },
-  { label: '2h', val: 120 }
-]
-
-const durSelectedIndex = computed(() => {
-  const idx = durationOptions.findIndex(item => item.val === quickDuration.value)
-  return idx !== -1 ? idx : 0
-})
-
-const durTrackRect = ref<any>(null)
-const getDurTrackRect = () => {
-  return new Promise((resolve) => {
-    if (durTrackRect.value) {
-      resolve(durTrackRect.value)
-      return
-    }
-    const query = uni.createSelectorQuery()
-    query.select('#durTrack').boundingClientRect((data: any) => {
-      if (data) {
-        durTrackRect.value = data
-        resolve(data)
-      }
-    }).exec()
-  })
-}
-
-const handleDurTouch = async (e: any) => {
-  const touch = e.touches && e.touches[0]
-  if (!touch) return
-  const rect: any = await getDurTrackRect()
-  if (!rect || !rect.width) return
-
-  const clientX = touch.clientX
-  let ratio = (clientX - rect.left) / rect.width
-  if (ratio < 0) ratio = 0
-  if (ratio > 0.999) ratio = 0.999
-
-  const index = Math.floor(ratio * 4)
-  if (durationOptions[index] && quickDuration.value !== durationOptions[index].val) {
-    quickDuration.value = durationOptions[index].val
-  }
-}
-
-const onDurTouchStart = (e: any) => {
-  handleDurTouch(e)
-}
-const onDurTouchMove = (e: any) => {
-  handleDurTouch(e)
-}
-
-const displaySubjects = computed(() => {
-  return subjects.value || []
-})
-
-const submitQuickAdd = async () => {
-  const name = quickTaskName.value.trim()
-  if (!name) return
-
-  const selectedSub = quickSubject.value || displaySubjects.value[0]
-  if (!selectedSub) {
-    uni.showToast({ title: '请先同步或创建学科', icon: 'none' })
-    return
-  }
-  const now = new Date()
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-  
-  await taskStore.addTask({
-    name,
-    subject: selectedSub.name,
-    subjectId: selectedSub.id,
-    duration: quickDuration.value,
-
-    status: 'scheduled',
-    startTime: timeStr
-  })
-
-  quickTaskName.value = ''
-  showQuickAdd.value = false
-  uni.showToast({ title: '已添加日程', icon: 'none' })
-}
-
-const handleAddTask = async (taskData: any) => {
-  await taskStore.addTask({
-    ...taskData,
-    status: 'pending'
-  })
-}
 </script>
 
 <style scoped>
 .home-page {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--color-zen-ivory);
-}
-
-.main-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 0;
+  background-color: var(--color-bg-primary);
 }
 
-.top-section {
-  padding: 24rpx 40rpx 16rpx;
+.home-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.home-content {
+  padding: 20rpx 32rpx 40rpx;
   display: flex;
   flex-direction: column;
-  gap: 36rpx;
-  flex-shrink: 0;
-  position: relative;
+  gap: 28rpx;
+  box-sizing: border-box;
 }
 
-/* 问候语与新建按钮行 */
 .greeting-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  position: relative;
-  z-index: 10000;
-}
-.greeting-title {
-  font-size: 44rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite);
-  font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
-  letter-spacing: -1rpx;
-}
-.add-circle-btn {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 50%;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.03);
-}
-.add-circle-btn:active {
-  transform: scale(0.92);
-  background-color: var(--color-zen-surface);
-}
-.add-circle-btn.is-active {
-  transform: rotate(90deg);
-  background-color: var(--color-zen-white);
-  border-color: #7D9372;
-  box-shadow: 0 4rpx 16rpx rgba(125, 147, 114, 0.2);
-}
-.add-circle-btn.is-active :deep(.line-icon text) {
-  color: #7D9372 !important;
-}
-
-/* 悬浮最顶层的半透明遮罩 */
-.quick-add-mask {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 9990;
-  background-color: rgba(0, 0, 0, 0.15);
-  animation: fadeIn 0.2s;
-}
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* +号下拉展开输入框（绝对定位覆盖在最顶层，不推挤下方元素） */
-.quick-add-container {
-  position: absolute;
-  top: 110rpx;
-  left: 40rpx;
-  right: 40rpx;
-  z-index: 9999;
-  padding: 28rpx 32rpx;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-stone);
-  border-radius: 28rpx;
-  box-shadow: 0 24rpx 60rpx rgba(0, 0, 0, 0.14);
-  animation: quickSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes quickSlideDown {
-  from { opacity: 0; transform: translateY(-12rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.quick-input-row {
-  display: flex;
-  align-items: center;
   gap: 16rpx;
 }
-.quick-input {
+
+.greeting-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  min-width: 0;
   flex: 1;
-  height: 72rpx;
-  font-size: 28rpx;
-  color: var(--color-zen-graphite);
 }
-.quick-submit-btn {
-  width: 64rpx;
-  height: 64rpx;
+
+.greeting-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.sync-pill,
+.back-today-pill {
+  font-size: 22rpx;
+  padding: 6rpx 16rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-semibold);
+}
+
+.add-fab-btn {
+  width: 76rpx;
+  height: 76rpx;
   border-radius: 50%;
-  background-color: #7D9372;
+  background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.2s;
-}
-.quick-submit-btn:active {
-  transform: scale(0.92);
-}
-.quick-submit-btn.disabled {
-  opacity: 0.3;
-}
-.quick-select-row {
-  display: flex;
-  align-items: center;
-  margin-top: 20rpx;
-  padding-top: 16rpx;
-  border-top: 1px dashed var(--color-zen-hairline);
-}
-.quick-label {
-  font-size: 24rpx;
-  color: var(--color-zen-stone);
+  box-shadow: 0 8rpx 20rpx rgba(139, 154, 110, 0.28);
   flex-shrink: 0;
-  width: 80rpx;
-}
-.quick-scroll {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-}
-/* 单行选择触发器（带箭头） */
-.subject-dropdown-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  padding: 14rpx 24rpx;
-  background-color: var(--color-zen-ivory);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 999rpx;
-  transition: all 0.2s;
-}
-.subject-dropdown-btn:active {
-  background-color: var(--color-zen-surface);
-  border-color: #7D9372;
-}
-.dropdown-text {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite);
 }
 
-/* 弹出的竖直排列学科列表 */
-.subject-vertical-popup {
-  margin: 12rpx 0 6rpx;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 24rpx;
-  box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  animation: dropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes dropdownSlide {
-  from { opacity: 0; transform: translateY(-10rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.subject-vertical-scroll {
-  width: 100%;
-  max-height: 360rpx;
-}
-.subject-vertical-list {
+.week-card {
+  padding: 20rpx 18rpx;
   display: flex;
   flex-direction: column;
-  padding: 12rpx;
-  gap: 8rpx;
-}
-.subject-vertical-item {
-  display: flex;
-  align-items: center;
   gap: 16rpx;
-  padding: 20rpx 24rpx;
-  border-radius: 16rpx;
-  background-color: var(--color-zen-ivory);
-  border: 1px solid transparent;
-  transition: all 0.2s;
-}
-.subject-vertical-item.active {
-  background-color: rgba(125, 147, 114, 0.12);
-  border-color: #7D9372;
-}
-.sub-item-name {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite);
 }
 
-/* 连在一起的 0-2 小时可拖动分段选择器 */
-.segmented-track {
-  flex: 1;
-  height: 68rpx;
-  background-color: var(--color-zen-ivory);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 999rpx;
-  padding: 6rpx;
+.week-nav-row {
   display: flex;
-  position: relative;
-  overflow: hidden;
-  user-select: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8rpx;
 }
-.segmented-thumb {
-  position: absolute;
-  top: 6rpx;
-  left: 6rpx;
-  bottom: 6rpx;
-  width: calc((100% - 12rpx) / 4);
-  background-color: var(--color-zen-white);
-  border-radius: 999rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(125, 147, 114, 0.35);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 1;
-}
-.segmented-item {
-  flex: 1;
+
+.week-arrow {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24rpx;
-  font-weight: 500;
-  color: var(--color-zen-stone);
-  position: relative;
-  z-index: 2;
-  transition: color 0.2s;
-}
-.segmented-item.active {
-  color: #7D9372;
-  font-weight: 700;
 }
 
-/* 日期条 */
+.week-range-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
 .week-strip {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  gap: 8rpx;
 }
+
 .w-day {
-  width: 86rpx;
-  height: 124rpx;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 999rpx;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.w-week {
-  font-size: 22rpx;
-  font-weight: 500;
-  color: var(--color-zen-stone);
-  margin-bottom: 8rpx;
-}
-.w-num {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite);
-}
-.w-day.active {
-  background-color: var(--color-zen-sage);
-  border-color: var(--color-zen-sage);
-  transform: scale(1.05);
-  box-shadow: 0 8rpx 20rpx rgba(163, 177, 155, 0.3);
-}
-.w-day.active .w-week,
-.w-day.active .w-num {
-  color: var(--color-zen-white);
+  gap: 8rpx;
+  padding: 14rpx 0;
+  border-radius: 22rpx;
+  background-color: transparent;
 }
 
-/* 两个胶囊统计面板 (Focus Stats - 并排胶囊) */
-.focus-stats {
-  display: flex;
-  gap: 24rpx;
-  width: 100%;
+.w-day.active {
+  background: var(--accent-gradient);
 }
-.stat-capsule {
-  flex: 1;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 999rpx;
-  height: 116rpx;
-  padding: 0 36rpx;
+
+.w-week {
+  font-size: 22rpx;
+  color: var(--text-muted);
+}
+
+.w-num {
+  font-size: 28rpx;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.w-day.is-today:not(.active) .w-num {
+  color: var(--color-zen-sage);
+}
+
+.w-day.active .w-week,
+.w-day.active .w-num {
+  color: #FFFFFF;
+}
+
+.w-dot {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background-color: transparent;
+}
+
+.w-dot.visible {
+  background-color: var(--color-zen-sage);
+}
+
+.w-day.active .w-dot.visible {
+  background-color: #FFFFFF;
+}
+
+.section-block {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: all 0.2s;
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.02);
-}
-.stat-capsule:active {
-  transform: scale(0.97);
-  background-color: var(--color-zen-surface);
-}
-.stat-label {
-  font-size: 24rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone);
-}
-.stat-value {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite);
-  font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  padding: 0 4rpx;
 }
 
-/* 今日日程 标题 */
-.section-header {
-  margin-top: 8rpx;
-}
 .section-title {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite);
-  font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
 }
 
-/* 左右滑动 Swiper 与日程卡片 */
-.day-swiper {
+.section-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.empty-card {
+  padding: 40rpx 28rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.empty-sub {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.task-card {
+  padding: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.task-card.is-completed {
+  opacity: 0.65;
+}
+
+.check-circle {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.check-circle.checked {
+  background-color: var(--color-zen-sage);
+  border-color: var(--color-zen-sage);
+}
+
+.check-circle.locked {
+  opacity: 0.45;
+}
+
+.task-main {
   flex: 1;
-  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
 }
-.swiper-item {
-  width: 100%;
-  height: 100%;
+
+.task-top-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10rpx;
 }
-.task-scroll-view {
-  width: 100%;
-  height: 100%;
-  padding: 0 40rpx;
-  box-sizing: border-box;
+
+.task-time {
+  font-size: 22rpx;
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-zen-sage);
 }
-.task-list {
+
+.task-subject {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-primary);
+  color: var(--text-muted);
+}
+
+.task-ddl {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: var(--radius-full);
+  background-color: rgba(200, 155, 109, 0.16);
+  color: #8C6235;
+}
+
+.task-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.task-title.strike {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.dur-badge {
+  font-size: 22rpx;
+  font-family: var(--font-family-mono);
+  color: var(--text-muted);
+}
+
+.unschedule-btn,
+.schedule-pill {
+  padding: 8rpx 16rpx;
+  border-radius: var(--radius-full);
+  font-size: 22rpx;
+  font-weight: var(--font-weight-semibold);
+}
+
+.unschedule-btn {
+  background-color: var(--color-bg-primary);
+  color: var(--text-muted);
+}
+
+.schedule-pill {
+  background-color: var(--color-sage-bg);
+  color: var(--color-zen-sage);
+}
+
+.delete-icon-btn {
+  padding: 8rpx;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 8rpx;
+  background-color: var(--color-bg-primary);
+  padding: 6rpx;
+  border-radius: 20rpx;
+  flex: 1;
+}
+
+.mode-tab {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 8rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+}
+
+.mode-tab.active {
+  background-color: var(--color-bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.sheet-close {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.no-subject-tip {
+  padding: 16rpx 20rpx;
+  border-radius: 18rpx;
+  background-color: rgba(200, 155, 109, 0.14);
+  color: #8C6235;
+  font-size: var(--font-size-xs);
+  margin-bottom: 18rpx;
+}
+
+.form-stack {
   display: flex;
   flex-direction: column;
   gap: 20rpx;
-  padding-bottom: 40rpx;
 }
-.zen-pill-task {
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.field-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.field-hint {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  margin-top: 4rpx;
+}
+
+.zen-input {
+  height: 84rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20rpx;
+  padding: 0 24rpx;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.zen-textarea {
+  width: 100%;
+  min-height: 200rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20rpx;
+  padding: 20rpx 24rpx;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.subject-chips-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.chips-row {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.subject-chips-scroll .chips-row {
+  flex-wrap: nowrap;
+}
+
+.chip-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 12rpx 22rpx;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.chip-item.active {
+  background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
+  color: var(--color-zen-sage);
+  font-weight: var(--font-weight-bold);
+}
+
+.switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 32rpx 40rpx;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 999rpx;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.zen-pill-task:active {
-  transform: scale(0.98);
-  background-color: var(--color-zen-surface);
-}
-.zen-pill-task.is-completed {
-  opacity: 0.6;
-  background-color: rgba(249, 249, 247, 0.6);
-}
-.pill-left {
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-  flex: 1;
-  overflow: hidden;
-}
-.checkbox-ring {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 50%;
-  border: 3rpx solid var(--color-zen-stone);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.2s;
-}
-.checkbox-ring.checked {
-  background-color: #7D9372;
-  border-color: #7D9372;
-}
-.task-name {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.zen-pill-task.is-completed .task-name {
-  text-decoration: line-through;
-  color: var(--color-zen-stone);
-}
-.pill-right {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin-left: 20rpx;
-  flex-shrink: 0;
-}
-.task-time {
-  font-size: 24rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone);
-  font-family: 'DM Sans', -apple-system, sans-serif;
-  letter-spacing: 0.5rpx;
-}
-.task-dur-badge {
-  display: flex;
-  align-items: baseline;
-  padding: 4rpx 14rpx;
-  background-color: var(--color-zen-surface);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 999rpx;
-}
-.dur-num {
-  font-size: 22rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite);
-  font-family: 'DM Sans', -apple-system, sans-serif;
-}
-.dur-unit {
-  font-size: 18rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone);
-  margin-left: 2rpx;
-}
-.zen-pill-task.is-completed .task-dur-badge {
-  background-color: transparent;
-  border-color: transparent;
-  opacity: 0.7;
-}
-.zen-pill-task.is-completed .dur-num {
-  color: var(--color-zen-stone);
+  padding: 16rpx 20rpx;
+  background-color: var(--color-bg-primary);
+  border-radius: 20rpx;
 }
 
-/* 空状态与留白 */
-.empty-state {
-  padding: 80rpx 0;
+.switch-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.dual-pickers {
+  display: flex;
+  gap: 16rpx;
+}
+
+.picker-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.picker-box {
+  height: 78rpx;
+  line-height: 78rpx;
+  padding: 0 22rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18rpx;
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+}
+
+.file-drop-box {
+  padding: 36rpx 24rpx;
+  border-radius: 24rpx;
+  background-color: var(--color-bg-primary);
+  border: 1px dashed var(--border-accent);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 12rpx;
+  gap: 10rpx;
+  text-align: center;
 }
-.empty-icon {
-  font-size: 64rpx;
+
+.file-drop-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  word-break: break-all;
 }
-.empty-text {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite);
+
+.file-drop-hint {
+  font-size: 22rpx;
+  color: var(--text-muted);
 }
-.empty-sub {
-  font-size: 24rpx;
-  color: var(--color-zen-stone);
+
+.sheet-submit-btn {
+  margin-top: 8rpx;
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  border-radius: 24rpx;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  border: none;
 }
-.bottom-spacer {
-  height: calc(env(safe-area-inset-bottom) + 180rpx);
+
+.sheet-submit-btn::after {
+  border: none;
 }
 </style>

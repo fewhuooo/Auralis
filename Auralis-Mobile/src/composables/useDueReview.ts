@@ -10,6 +10,7 @@ type PendingReview = { attempt: ReviewAttemptRequest; confirmation?: ReviewResol
 interface DueReviewScope {
   subjectId: () => string | undefined
   enabled: () => boolean
+  allowAllSubjects?: boolean
 }
 
 export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
@@ -27,7 +28,7 @@ export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
   const activeCard = ref<{ title: string; preview: string; subject?: string; subjectId?: string } | null>(null)
   const remainingCount = computed(() => sessionQueue.value.length - currentIndex.value)
   const subjectId = computed(() => options?.subjectId())
-  const enabled = computed(() => !options || Boolean(options.enabled() && subjectId.value))
+  const enabled = computed(() => !options || Boolean(options.enabled() && (options.allowAllSubjects || subjectId.value)))
   let revision = 0
   let cardStartedAt = 0
   let pending: PendingReview | null = null

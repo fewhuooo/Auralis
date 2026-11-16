@@ -90,16 +90,18 @@ export async function refreshAiConfig(): Promise<AiConfig> {
 
 export async function setAiConfig(config: Partial<AiConfig>): Promise<void> {
   const provider = config.provider || cachedConfig.provider
+  const baseUrl = config.baseUrl !== undefined ? (config.baseUrl || undefined) : (cachedConfig.baseUrl || undefined)
+  const chatModel = config.model !== undefined ? (config.model || undefined) : (cachedConfig.model || undefined)
   const updated = await aiApi.updateSettings({
     provider,
-    baseUrl: config.baseUrl || cachedConfig.baseUrl || undefined,
-    chatModel: config.model || cachedConfig.model || undefined,
+    baseUrl,
+    chatModel,
     apiKey: config.apiKey || undefined,
   })
   cachedConfig = {
     provider: updated.provider || provider,
-    baseUrl: updated.baseUrl || config.baseUrl || cachedConfig.baseUrl,
-    model: updated.chatModel || config.model || cachedConfig.model,
+    baseUrl: updated.baseUrl ?? config.baseUrl ?? '',
+    model: updated.chatModel ?? config.model ?? '',
     apiKey: '',
     hasApiKey: Boolean(updated.hasApiKey),
   }
@@ -111,11 +113,26 @@ function decodeChunk(value: unknown, decoder: TextDecoder): string {
   return ''
 }
 
+export type ReadingContext = components['schemas']['ReadingContext']
+
+export interface ChatToolEvent {
+  phase: 'started' | 'completed' | 'error'
+  name: string
+  safeErrorCode?: string
+}
+
+export interface ChatWithAiOptions {
+  readingContext?: ReadingContext
+  selectionText?: string
+  onToolEvent?: (event: ChatToolEvent) => void
+}
+
 async function streamMessage(
   body: Protocol1MessageCommand,
   onMessage: (content: string) => void,
   retried = false,
   expectedGeneration?: symbol,
+  onToolEvent?: (event: ChatToolEvent) => void,
 ): Promise<string> {
   const auth = useAuthStore()
   const generation = expectedGeneration ?? auth.getLoginGeneration()
@@ -143,6 +160,15 @@ async function streamMessage(
         if (typeof delta === 'string' && delta) {
           content += delta
           onMessage(delta)
+        }
+        if (event.event === 'tool.started' || event.event === 'tool.completed' || event.event === 'tool.error') {
+          const toolName = typeof envelope.payload.name === 'string' ? envelope.payload.name : ''
+          const safeErrorCode = typeof envelope.payload.safeErrorCode === 'string' ? envelope.payload.safeErrorCode : undefined
+          onToolEvent?.({
+            phase: event.event === 'tool.started' ? 'started' : event.event === 'tool.completed' ? 'completed' : 'error',
+            name: toolName,
+            safeErrorCode,
+          })
         }
       }
       if (event.event === 'run.failed' && !settled) {
@@ -180,7 +206,7 @@ async function streamMessage(
             if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
             if (refreshed) {
               settled = true
-              resolve(await streamMessage(body, onMessage, true, generation))
+              resolve(await streamMessage(body, onMessage, true, generation, onToolEvent))
               return
             }
             auth.expireSession(generation)
@@ -261,6 +287,7 @@ export async function chatWithAI(
   _history: unknown[],
   onMessage: (content: string) => void,
   conversationId: string,
+  options?: ChatWithAiOptions,
 ): Promise<void> {
   if (!conversationId) throw new Error('A conversationId is required for chat')
   await streamMessage({
@@ -269,7 +296,9 @@ export async function chatWithAI(
     conversationId,
     requestId: uuidv7(),
     content: text,
-  }, onMessage)
+    ...(options?.readingContext ? { readingContext: options.readingContext } : {}),
+    ...(options?.selectionText ? { selectionText: options.selectionText } : {}),
+  }, onMessage, false, undefined, options?.onToolEvent)
 }
 
 
