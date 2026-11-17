@@ -8,9 +8,7 @@
 
         <view class="right-column">
           <view class="panel-card zen-card">
-            <view class="card-header">
-              <text class="card-title">当前专注任务</text>
-            </view>
+            <text class="card-title">关联任务</text>
             <view
               class="task-box"
               :class="{ 'is-locked': focusStore.isTaskLocked }"
@@ -18,41 +16,38 @@
             >
               <LineIcon
                 :name="focusStore.isTaskLocked ? 'lock' : 'calendar'"
-                size="32rpx"
-                color="var(--color-zen-sage)"
+                size="16px"
+                color="var(--color-sage-dark)"
               />
-              <text class="task-name" :class="{ placeholder: !focusStore.selectedTaskTitle }">
-                {{ focusStore.selectedTaskTitle || '自由学习（点击选择关联任务）' }}
+              <text class="task-name">
+                {{ focusStore.selectedTaskTitle || '自由专注' }}
               </text>
-              <LineIcon name="chevron-down" size="30rpx" color="var(--text-muted)" />
+              <LineIcon name="chevron-down" size="15px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view v-if="focusStore.lastCompletedTask" class="panel-card zen-card prompt-card">
-            <text class="card-title">本轮专注已完成</text>
-            <text class="prompt-desc">是否将「{{ focusStore.lastCompletedTask.title }}」标记为已完成？</text>
+            <text class="prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
             <view class="prompt-actions">
-              <view class="prompt-btn ghost" @click="focusStore.dismissCompletedTaskPrompt()">暂不</view>
-              <view class="prompt-btn primary" @click="completeBoundTask">标记完成</view>
+              <view class="ui-btn ui-btn-secondary prompt-btn" @click="focusStore.dismissCompletedTaskPrompt()">暂不</view>
+              <view class="ui-btn ui-btn-primary prompt-btn" @click="completeBoundTask">标记完成</view>
             </view>
           </view>
 
           <view class="panel-card zen-card">
-            <view class="card-header">
-              <text class="card-title">今日专注统计</text>
-            </view>
+            <text class="card-title">今日专注</text>
             <view class="stats-container">
               <view class="stat-col">
-                <text class="stat-val">{{ focusStore.todayRounds }}</text>
-                <text class="stat-label">完成轮次</text>
+                <text class="stat-val num-tabular">{{ focusStore.todayRounds }}</text>
+                <text class="stat-label">轮次</text>
               </view>
               <view class="stat-divider"></view>
               <view class="stat-col">
                 <view class="val-wrapper">
-                  <text class="stat-val">{{ focusStore.todayFocusMinutes }}</text>
+                  <text class="stat-val num-tabular">{{ focusStore.todayFocusMinutes }}</text>
                   <text class="stat-unit">m</text>
                 </view>
-                <text class="stat-label">专注时长</text>
+                <text class="stat-label">分钟</text>
               </view>
             </view>
           </view>
@@ -95,7 +90,7 @@ onShow(syncFocusState)
 
 function openTaskPicker() {
   if (focusStore.isTaskLocked) {
-    uni.showToast({ title: '计时进行中或已暂停，重置后可切换任务', icon: 'none' })
+    uni.showToast({ title: '重置后可切换任务', icon: 'none' })
     return
   }
   showTaskSelect.value = true
@@ -111,7 +106,7 @@ async function completeBoundTask() {
   const existing = taskStore.allTasks.find(item => item.id === target.id)
   if (existing && existing.status !== 'completed') {
     await taskStore.toggleTaskComplete(target.id)
-    uni.showToast({ title: '任务已标记完成', icon: 'none' })
+    uni.showToast({ title: '已标记完成', icon: 'none' })
   }
   focusStore.dismissCompletedTaskPrompt()
 }
@@ -128,14 +123,15 @@ async function completeBoundTask() {
 
 .main-content {
   width: 100%;
-  max-width: 1600rpx;
+  max-width: 1020px;
   margin: 0 auto;
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 56rpx 60rpx;
-  gap: 72rpx;
+  padding: 28px 32px;
+  gap: 36px;
   box-sizing: border-box;
+  align-items: center;
 }
 
 .left-column {
@@ -143,104 +139,80 @@ async function completeBoundTask() {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
 }
 
 .right-column {
   flex: 4.5;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 28rpx;
-  height: 100%;
   justify-content: center;
+  gap: 16px;
 }
 
 .panel-card {
-  padding: 36rpx;
-}
-
-.card-header {
-  margin-bottom: 24rpx;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .card-title {
-  font-size: var(--font-size-base);
+  font-size: 14px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
 
 .task-box {
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 24rpx;
-  padding: 22rpx 26rpx;
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
 }
 
 .task-box.is-locked {
-  opacity: 0.78;
+  opacity: 0.7;
 }
 
 .task-name {
   flex: 1;
   min-width: 0;
-  font-size: var(--font-size-sm);
+  font-size: 14px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.task-name.placeholder {
-  color: var(--text-muted);
-  font-weight: var(--font-weight-regular);
+  white-space: nowrap;
 }
 
 .prompt-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
+  border-color: var(--border-accent);
 }
 
-.prompt-desc {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
+.prompt-title {
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 .prompt-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 14rpx;
-  margin-top: 6rpx;
+  gap: 10px;
 }
 
 .prompt-btn {
-  padding: 12rpx 24rpx;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-}
-
-.prompt-btn.ghost {
-  background-color: var(--color-bg-primary);
-  color: var(--text-muted);
-}
-
-.prompt-btn.primary {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
+  flex: 1;
+  height: 36px;
 }
 
 .stats-container {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  padding: 12rpx 0;
 }
 
 .stat-col {
@@ -248,37 +220,52 @@ async function completeBoundTask() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10rpx;
-}
-
-.stat-divider {
-  width: 1px;
-  height: 72rpx;
-  background-color: var(--border-subtle);
+  gap: 4px;
+  padding: 6px 0;
 }
 
 .val-wrapper {
   display: flex;
   align-items: baseline;
+  gap: 2px;
 }
 
 .stat-val {
-  font-size: 56rpx;
+  font-size: 32px;
   font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
   font-family: var(--font-family-mono);
-  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
   line-height: 1;
 }
 
 .stat-unit {
-  font-size: 26rpx;
+  font-size: 14px;
   color: var(--text-muted);
-  margin-left: 6rpx;
 }
 
 .stat-label {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
+}
+
+.stat-divider {
+  width: 1px;
+  height: 38px;
+  background-color: var(--border-subtle);
+}
+
+@media (max-width: 900px) {
+  .main-content {
+    flex-direction: column;
+    overflow-y: auto;
+    gap: 24px;
+  }
+
+  .left-column,
+  .right-column {
+    flex: none;
+    width: 100%;
+    height: auto;
+  }
 }
 </style>

@@ -2,36 +2,31 @@
   <view class="ai-panel zen-card">
     <view class="ai-header">
       <view class="ai-title-row">
-        <LineIcon name="sparkles" size="26rpx" color="var(--color-zen-sage)" />
+        <LineIcon name="sparkles" size="15px" color="var(--color-zen-sage)" />
         <text class="ai-title">AI 伴读</text>
+        <text class="ui-tag sage scope-pill">{{ scopeBadgeText }}</text>
       </view>
       <view class="ai-header-actions">
-        <view class="mini-pill" @click="toggleHistory">
-          <LineIcon name="history" size="22rpx" color="var(--text-secondary)" />
-          <text>历史</text>
+        <view class="ui-icon-btn sm" @click="toggleHistory">
+          <LineIcon name="history" size="14px" color="var(--text-secondary)" />
         </view>
-        <view class="mini-pill" @click="resetConversation">
-          <LineIcon name="plus" size="22rpx" color="var(--text-secondary)" />
-          <text>新对话</text>
+        <view class="ui-icon-btn sm" @click="resetConversation">
+          <LineIcon name="plus" size="14px" color="var(--text-secondary)" />
         </view>
       </view>
-    </view>
-
-    <view class="scope-bar">
-      <text class="scope-label">{{ scopeBadgeText }}</text>
     </view>
 
     <view v-if="showHistory" class="history-drawer">
       <view class="history-head">
-        <text class="history-head-title">当前范围历史对话</text>
-        <view class="history-close" @click="showHistory = false">
-          <LineIcon name="close" size="22rpx" color="var(--text-muted)" />
+        <text class="history-head-title">历史对话</text>
+        <view class="ui-icon-btn sm" @click="showHistory = false">
+          <LineIcon name="close" size="13px" color="var(--text-muted)" />
         </view>
       </view>
 
       <scroll-view scroll-y :show-scrollbar="false" class="history-list">
-        <view v-if="loadingSessions" class="history-empty">正在加载对话...</view>
-        <view v-else-if="scopedConversations.length === 0" class="history-empty">当前范围暂无历史对话</view>
+        <view v-if="loadingSessions" class="history-empty">加载中...</view>
+        <view v-else-if="scopedConversations.length === 0" class="history-empty">暂无历史对话</view>
 
         <view
           v-for="item in scopedConversations"
@@ -42,14 +37,14 @@
         >
           <view class="history-row-main">
             <text class="history-row-title">{{ item.title || '新对话' }}</text>
-            <text class="history-row-time">{{ formatShortDateTime(item.updatedAt || item.createdAt) }}</text>
+            <text class="history-row-time num-tabular">{{ formatShortDateTime(item.updatedAt || item.createdAt) }}</text>
           </view>
           <view
             v-if="item.id"
             class="history-row-del"
             @click.stop="deleteScopedConversation(item.id, item.version ?? 0)"
           >
-            <LineIcon name="trash" size="20rpx" color="var(--text-muted)" />
+            <LineIcon name="trash" size="13px" color="var(--text-muted)" />
           </view>
         </view>
       </scroll-view>
@@ -63,14 +58,6 @@
       :scroll-into-view="scrollTargetId"
     >
       <view v-if="messages.length === 0" class="chat-welcome">
-        <text class="welcome-heading">围绕{{ isSourceScoped ? '当前资料' : '当前学科' }}提问</text>
-        <text class="welcome-sub">
-          {{
-            isSourceScoped
-              ? `优先围绕《${selectedSource?.title || '当前资料'}》展开分析与检索`
-              : `在《${subjectName}》全科范围内检索已就绪资料并回答`
-          }}
-        </text>
         <view class="quick-prompts">
           <view
             v-for="prompt in quickPrompts"
@@ -96,11 +83,11 @@
 
           <view v-else class="assistant-bubble">
             <MarkdownText v-if="msg.content" :content="msg.content" />
-            <text v-else class="typing-placeholder">{{ toolStatus || '正在思考...' }}</text>
+            <text v-else class="typing-placeholder">{{ toolStatus || '思考中...' }}</text>
 
             <view v-if="msg.content && !(isTyping && index === messages.length - 1)" class="bubble-actions">
               <view class="copy-btn" @click="copyText(msg.content)">
-                <LineIcon name="copy" size="22rpx" color="var(--text-muted)" />
+                <LineIcon name="copy" size="12px" color="var(--text-muted)" />
                 <text>复制</text>
               </view>
             </view>
@@ -120,7 +107,7 @@
         class="composer-input"
         :maxlength="2000"
         auto-height
-        placeholder="输入问题开始伴读..."
+        placeholder="提问"
         @confirm="sendMessage"
       />
       <button
@@ -128,7 +115,7 @@
         :disabled="isTyping || !query.trim() || !subjectId"
         @click="sendMessage"
       >
-        <LineIcon name="arrow-up" size="26rpx" color="#FFFFFF" />
+        <LineIcon name="arrow-up" size="15px" color="#FFFFFF" />
       </button>
     </view>
   </view>
@@ -186,12 +173,9 @@ const scopeKey = computed(() => {
 
 const scopeBadgeText = computed(() => {
   if (isSourceScoped.value && props.selectedSource) {
-    return `单资料检索 · ${props.selectedSource.title || '当前资料'}`
+    return props.selectedSource.title || '当前资料'
   }
-  if (props.selectedSource) {
-    return `学科全科检索（当前资料尚未就绪，未绑定单文件）`
-  }
-  return `学科全科检索 · ${props.subjectName}`
+  return '全科'
 })
 
 const scopedConversations = computed(() => {
@@ -390,12 +374,10 @@ async function sendMessage() {
 
 <style scoped>
 .ai-panel {
-  width: 380rpx;
+  width: 320px;
   height: 100%;
   flex-shrink: 0;
-  background: var(--bg-card);
-  border-radius: 28rpx;
-  border: 1rpx solid var(--border-subtle);
+  border-radius: var(--radius-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -403,117 +385,89 @@ async function sendMessage() {
 }
 
 .ai-header {
-  padding: 20rpx 22rpx 14rpx;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10rpx;
+  gap: 8px;
 }
 
 .ai-title-row {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  gap: 7px;
 }
 
 .ai-title {
-  font-size: 27rpx;
+  font-size: var(--text-base);
   font-weight: 700;
   color: var(--text-primary);
+  flex-shrink: 0;
 }
 
-.ai-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.mini-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6rpx;
-  padding: 8rpx 14rpx;
-  border-radius: 12rpx;
-  background: var(--bg-primary);
-  font-size: 21rpx;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.scope-bar {
-  margin: 0 22rpx 14rpx;
-  padding: 10rpx 14rpx;
-  border-radius: 12rpx;
-  background: var(--color-sage-bg);
-}
-
-.scope-label {
-  font-size: 21rpx;
-  color: var(--color-sage-dark);
-  font-weight: 600;
-  display: block;
+.scope-pill {
+  max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.ai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .history-drawer {
   flex: 1;
   min-height: 0;
-  border-top: 1rpx solid var(--border-subtle);
   display: flex;
   flex-direction: column;
 }
 
 .history-head {
-  padding: 16rpx 22rpx;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .history-head-title {
-  font-size: 23rpx;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-secondary);
-}
-
-.history-close {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 12rpx;
-  background: var(--bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
 .history-list {
   flex: 1;
   min-height: 0;
-  padding: 0 18rpx 18rpx;
+  padding: 0 10px 10px;
   box-sizing: border-box;
 }
 
 .history-empty {
-  padding: 48rpx 16rpx;
+  padding: 36px 12px;
   text-align: center;
-  font-size: 23rpx;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
 .history-row {
-  padding: 16rpx;
-  border-radius: 16rpx;
+  padding: 10px 11px;
+  border-radius: 12px;
   background: var(--bg-primary);
-  margin-bottom: 10rpx;
+  margin-bottom: 6px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10rpx;
-  border: 1rpx solid transparent;
+  gap: 8px;
+  border: 1px solid transparent;
   cursor: pointer;
+  transition: background-color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
 }
 
 .history-row.active {
@@ -526,11 +480,11 @@ async function sendMessage() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
+  gap: 3px;
 }
 
 .history-row-title {
-  font-size: 24rpx;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
@@ -539,14 +493,14 @@ async function sendMessage() {
 }
 
 .history-row-time {
-  font-size: 20rpx;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
 .history-row-del {
-  width: 40rpx;
-  height: 40rpx;
-  border-radius: 10rpx;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -556,51 +510,46 @@ async function sendMessage() {
 .chat-scroll {
   flex: 1;
   min-height: 0;
-  padding: 12rpx 20rpx;
+  padding: 14px;
   box-sizing: border-box;
-  border-top: 1rpx solid var(--border-subtle);
 }
 
 .chat-welcome {
-  padding: 40rpx 12rpx;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
-}
-
-.welcome-heading {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.welcome-sub {
-  font-size: 23rpx;
-  color: var(--text-muted);
-  line-height: 1.5;
+  justify-content: flex-end;
+  padding: 16px 0;
 }
 
 .quick-prompts {
   display: flex;
   flex-direction: column;
-  gap: 10rpx;
-  margin-top: 10rpx;
+  gap: 8px;
 }
 
 .prompt-pill {
-  padding: 14rpx 18rpx;
-  border-radius: 16rpx;
+  padding: 10px 13px;
+  border-radius: 12px;
   background: var(--bg-primary);
-  border: 1rpx solid var(--border-subtle);
-  font-size: 23rpx;
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
+  transition: border-color 0.14s var(--ease-out), color 0.14s var(--ease-out), transform 0.14s var(--ease-out);
+}
+
+.prompt-pill:hover {
+  border-color: var(--border-accent);
+  color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .chat-messages {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 12px;
 }
 
 .msg-row {
@@ -618,34 +567,34 @@ async function sendMessage() {
 
 .user-bubble {
   max-width: 86%;
-  padding: 16rpx 20rpx;
-  border-radius: 20rpx 20rpx 6rpx 20rpx;
+  padding: 10px 13px;
+  border-radius: 14px 14px 4px 14px;
   background: var(--accent-gradient);
   color: #FFFFFF;
-  font-size: 24rpx;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
 .assistant-bubble {
   width: 100%;
-  padding: 18rpx 20rpx;
-  border-radius: 20rpx;
+  padding: 12px 14px;
+  border-radius: 14px;
   background: var(--bg-primary);
   box-sizing: border-box;
-  font-size: 24rpx;
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--text-primary);
 }
 
 .typing-placeholder {
   color: var(--text-muted);
-  font-size: 23rpx;
+  font-size: var(--text-xs);
 }
 
 .bubble-actions {
-  margin-top: 12rpx;
-  padding-top: 10rpx;
-  border-top: 1rpx solid var(--border-subtle);
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   justify-content: flex-end;
 }
@@ -653,49 +602,59 @@ async function sendMessage() {
 .copy-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6rpx;
-  font-size: 21rpx;
+  gap: 4px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   cursor: pointer;
 }
 
+.copy-btn:hover {
+  color: var(--text-primary);
+}
+
 .tool-status-bar {
-  padding: 8rpx 14rpx;
-  border-radius: 12rpx;
+  padding: 6px 10px;
+  border-radius: 8px;
   background: var(--color-sage-bg);
   color: var(--color-sage-dark);
-  font-size: 21rpx;
+  font-size: var(--text-2xs);
+  font-weight: 500;
 }
 
 .scroll-anchor {
-  height: 4rpx;
+  height: 2px;
 }
 
 .composer-box {
-  padding: 16rpx 20rpx;
-  border-top: 1rpx solid var(--border-subtle);
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   align-items: flex-end;
-  gap: 12rpx;
+  gap: 8px;
   background: var(--bg-card);
 }
 
 .composer-input {
   flex: 1;
-  min-height: 64rpx;
-  max-height: 160rpx;
-  padding: 14rpx 18rpx;
-  border-radius: 18rpx;
+  min-height: 36px;
+  max-height: 112px;
+  padding: 8px 12px;
+  border-radius: 12px;
   background: var(--bg-primary);
-  font-size: 24rpx;
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
   color: var(--text-primary);
   box-sizing: border-box;
 }
 
+.composer-input:focus {
+  border-color: var(--color-zen-sage);
+}
+
 .send-btn {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 18rpx;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
@@ -703,13 +662,27 @@ async function sendMessage() {
   padding: 0;
   margin: 0;
   flex-shrink: 0;
+  transition: transform 0.14s var(--ease-out), opacity 0.14s var(--ease-out);
 }
 
-.send-btn::after {
-  border: none;
+.send-btn:active {
+  transform: scale(0.95);
 }
 
 .send-btn[disabled] {
-  opacity: 0.45;
+  opacity: 0.4;
+}
+
+@media (max-width: 1180px) {
+  .ai-panel {
+    width: 288px;
+  }
+}
+
+@media (max-width: 900px) {
+  .ai-panel {
+    width: 100%;
+    height: 320px;
+  }
 }
 </style>

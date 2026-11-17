@@ -2,25 +2,25 @@
   <view class="center-card zen-card">
     <view class="center-header">
       <view class="context-heading">
-        <text class="context-title">{{ selectedSource ? selectedSource.title || '未命名资料' : `${subjectName} · 学科总览` }}</text>
+        <text class="context-title">{{ selectedSource ? selectedSource.title || '未命名资料' : subjectName }}</text>
         <text
           v-if="selectedSource"
-          class="status-pill"
+          class="ui-tag"
           :class="`tone-${getSourceStatusMeta(selectedSource.ingestionStatus).tone}`"
         >{{ getSourceStatusMeta(selectedSource.ingestionStatus).label }}</text>
       </view>
 
       <view class="header-right">
-        <view class="tab-bar">
+        <view class="ui-segmented compact-seg">
           <view
-            v-for="tab in tabs"
+            v-for="tab in visibleTabs"
             :key="tab.key"
-            class="tab-pill"
+            class="ui-seg-item compact-seg-item"
             :class="{ active: activeTab === tab.key }"
             @click="emit('update:activeTab', tab.key)"
           >
             <text>{{ tab.label }}</text>
-            <text v-if="tab.key === 'blocks'" class="tab-badge">{{ subjectBlocks.length }}</text>
+            <text v-if="tab.key === 'blocks'" class="tab-badge num-tabular">{{ subjectBlocks.length }}</text>
           </view>
         </view>
 
@@ -29,78 +29,48 @@
           :class="{ active: aiPanelVisible }"
           @click="emit('toggle-ai-panel')"
         >
-          <LineIcon name="sparkles" size="24rpx" :color="aiPanelVisible ? '#FFFFFF' : '#8B9A6E'" />
+          <LineIcon name="sparkles" size="14px" :color="aiPanelVisible ? '#FFFFFF' : 'var(--color-zen-sage)'" />
           <text>AI 伴读</text>
         </view>
       </view>
     </view>
 
-    <!-- Tab 1: 资料预览 -->
-    <scroll-view v-if="activeTab === 'preview'" scroll-y :show-scrollbar="false" class="tab-body">
-      <view v-if="!selectedSource" class="overview-summary-box">
-        <view class="summary-hero">
-          <view class="summary-hero-icon">
-            <LineIcon name="layers" size="42rpx" color="var(--color-zen-sage)" />
-          </view>
-          <view class="summary-hero-text">
-            <text class="hero-title">{{ subjectName }} 工作台</text>
-            <text class="hero-desc">选择左侧资料进行预览与针对性提问，或在全科视角浏览大纲、知识块与复习卡片</text>
-          </view>
-        </view>
-
-        <view class="metric-grid">
-          <view class="metric-tile">
-            <text class="metric-value">{{ sources.length }}</text>
-            <text class="metric-label">参考资料</text>
-          </view>
-          <view class="metric-tile">
-            <text class="metric-value">{{ readySourceCount }}</text>
-            <text class="metric-label">已完成解析</text>
-          </view>
-          <view class="metric-tile">
-            <text class="metric-value">{{ subjectBlocks.length }}</text>
-            <text class="metric-label">知识块总数</text>
-          </view>
-        </view>
-
-        <view class="quick-actions-row">
-          <button class="zen-primary-btn" @click="emit('update:activeTab', 'overview')">查看大纲与总结</button>
-          <button class="zen-secondary-btn" @click="emit('update:activeTab', 'review')">进入学科复习</button>
-          <button v-if="tabletHandwritingNotesEnabled" class="zen-secondary-btn" @click="openHandwritingNotebook">打开手写笔记</button>
-        </view>
-      </view>
-
-      <view v-else class="source-preview-box">
+    <!-- Tab 1: 资料预览 (仅选中具体资料时可用) -->
+    <scroll-view v-if="activeTab === 'preview' && selectedSource" scroll-y :show-scrollbar="false" class="tab-body">
+      <view class="source-preview-box">
         <view
           v-if="selectedSource.ingestionStatus !== 'READY'"
           class="status-notice"
           :class="`tone-${getSourceStatusMeta(selectedSource.ingestionStatus).tone}`"
         >
-          <LineIcon name="info" size="26rpx" color="currentColor" />
+          <LineIcon name="info" size="14px" color="currentColor" />
           <text class="notice-text">
             {{
               selectedSource.ingestionStatus === 'FAILED'
-                ? (selectedSource.safeErrorDetail || '后台解析失败，建议检查文件后重新上传。')
+                ? (selectedSource.safeErrorDetail || '解析失败，建议重新上传')
                 : selectedSource.ingestionStatus === 'PARSING' || selectedSource.ingestionStatus === 'INDEXING'
-                  ? '资料正在解析构建索引，完成后将开放单文件 AI 深度检索与大纲查看。'
-                  : '等待 PC 端完成解析入库；若附件已上传，你仍可直接打开原文件浏览。'
+                  ? '正在解析构建索引'
+                  : '等待 PC 端解析'
             }}
           </text>
         </view>
 
-        <view v-if="previewLoading" class="empty-state">
-          <text class="state-title">正在获取预览地址...</text>
+        <view v-if="previewLoading" class="preview-skeletons">
+          <view class="preview-skeleton-hero ui-shimmer" />
+          <view class="preview-skeleton-line ui-shimmer" />
         </view>
 
         <view v-else-if="previewError" class="empty-state">
           <text class="state-title error">{{ previewError }}</text>
-          <button class="zen-secondary-btn" @click="emit('retry-preview')">重试获取预览</button>
+          <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">重试</button>
         </view>
 
         <view v-else-if="!selectedSource.assetId" class="doc-meta-card">
-          <LineIcon name="file-text" size="48rpx" color="var(--color-zen-sage)" />
-          <text class="doc-name">{{ selectedSource.title || '文本或链接资料' }}</text>
-          <text class="doc-meta">资料类型：{{ selectedSource.type }} · 暂无二进制附件下载链接</text>
+          <view class="doc-icon-circle">
+            <LineIcon name="file-text" size="22px" color="var(--color-zen-sage)" />
+          </view>
+          <text class="doc-name">{{ selectedSource.title || '文本资料' }}</text>
+          <text class="doc-meta">{{ selectedSource.type }}</text>
         </view>
 
         <view
@@ -115,29 +85,29 @@
           />
           <view class="preview-footer">
             <text class="doc-meta">{{ previewOriginalName || selectedSource.title }}</text>
-            <button class="zen-secondary-btn compact" @click="previewImageUrl(previewUrl)">全屏查看</button>
+            <button class="ui-btn ui-btn-secondary sm" @click="previewImageUrl(previewUrl)">全屏</button>
           </view>
         </view>
 
         <view v-else-if="previewUrl" class="doc-meta-card">
           <view class="doc-icon-circle">
-            <LineIcon name="file-text" size="44rpx" color="var(--color-zen-sage)" />
+            <LineIcon name="file-text" size="22px" color="var(--color-zen-sage)" />
           </view>
           <text class="doc-name">{{ previewOriginalName || selectedSource.title }}</text>
-          <text class="doc-meta">
-            {{ isPdfMedia(previewMimeType, previewOriginalName || selectedSource.title) ? 'PDF 文档' : (previewMimeType || '参考文件') }}
+          <text class="doc-meta num-tabular">
+            {{ isPdfMedia(previewMimeType, previewOriginalName || selectedSource.title) ? 'PDF' : (previewMimeType || '文件') }}
             {{ formatBytes(selectedSource.assetSizeBytes) ? ` · ${formatBytes(selectedSource.assetSizeBytes)}` : '' }}
           </text>
           <view class="quick-actions-row">
-            <button class="zen-primary-btn" @click="openDocument(previewUrl)">打开原文件</button>
-            <button class="zen-secondary-btn" @click="copyText(previewUrl, '已复制临时访问链接')">复制链接</button>
-            <button v-if="tabletHandwritingNotesEnabled" class="zen-secondary-btn" @click="openHandwritingNotebook">手写笔记</button>
+            <button class="ui-btn ui-btn-primary sm" @click="openDocument(previewUrl)">打开原文件</button>
+            <button class="ui-btn ui-btn-secondary sm" @click="copyText(previewUrl, '已复制链接')">复制链接</button>
+            <button v-if="tabletHandwritingNotesEnabled" class="ui-btn ui-btn-secondary sm" @click="openHandwritingNotebook">手写笔记</button>
           </view>
         </view>
 
         <view v-else class="empty-state">
-          <text class="state-title">暂无可用附件预览</text>
-          <button class="zen-secondary-btn" @click="emit('retry-preview')">获取预览</button>
+          <text class="state-title">暂无预览</text>
+          <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">获取预览</button>
         </view>
       </view>
     </scroll-view>
@@ -145,62 +115,61 @@
     <!-- Tab 2: 大纲与总结 -->
     <view v-else-if="activeTab === 'overview'" class="overview-tab">
       <view class="sub-toolbar">
-        <view class="segment-group">
+        <view class="ui-segmented compact-seg">
           <view
-            class="segment-pill"
+            class="ui-seg-item compact-seg-item"
             :class="{ active: overviewMode === 'outline' }"
             @click="overviewMode = 'outline'"
           >结构大纲</view>
           <view
-            class="segment-pill"
+            class="ui-seg-item compact-seg-item"
             :class="{ active: overviewMode === 'summary' }"
             @click="overviewMode = 'summary'"
           >精炼总结</view>
         </view>
 
         <view class="toolbar-actions">
-          <text v-if="overview?.updatedAt" class="meta-timestamp">
-            更新于 {{ formatShortDateTime(overview.updatedAt) }}
+          <text v-if="overview?.updatedAt" class="meta-timestamp num-tabular">
+            {{ formatShortDateTime(overview.updatedAt) }}
           </text>
-          <view class="icon-pill-btn" @click="emit('refresh-overview')">
-            <LineIcon name="refresh" size="24rpx" color="var(--text-secondary)" />
-            <text>刷新</text>
+          <view class="ui-icon-btn sm" @click="emit('refresh-overview')">
+            <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
           </view>
           <view
             v-if="activeOverviewMarkdown"
-            class="icon-pill-btn"
-            @click="copyText(activeOverviewMarkdown, '已复制 Markdown')"
+            class="ui-icon-btn sm"
+            @click="copyText(activeOverviewMarkdown, '已复制')"
           >
-            <LineIcon name="copy" size="24rpx" color="var(--text-secondary)" />
-            <text>复制</text>
+            <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
           </view>
         </view>
       </view>
 
       <scroll-view scroll-y :show-scrollbar="false" class="overview-scroll">
-        <view v-if="overviewLoading" class="empty-state">
-          <text class="state-title">正在加载大纲与总结...</text>
+        <view v-if="overviewLoading" class="paper-skeletons">
+          <view class="paper-skeleton-title ui-shimmer" />
+          <view class="paper-skeleton-line ui-shimmer" />
+          <view class="paper-skeleton-line mid ui-shimmer" />
+          <view class="paper-skeleton-line ui-shimmer" />
         </view>
 
         <view v-else-if="overviewError" class="empty-state">
           <text class="state-title error">{{ overviewError }}</text>
-          <button class="zen-secondary-btn" @click="emit('refresh-overview')">重试</button>
+          <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh-overview')">重试</button>
         </view>
 
         <view v-else-if="!overview" class="empty-state">
-          <text class="state-title">当前范围尚无已生成的大纲与总结</text>
-          <text class="state-desc">
+          <text class="state-title">
             {{
               selectedSource && selectedSource.ingestionStatus !== 'READY'
-                ? `当前资料状态为“${getSourceStatusMeta(selectedSource.ingestionStatus).label}”，需在 PC 端完成解析与生成后自动同步。`
-                : '可在 PC 端生成并保存结构化大纲与总结，也可直接在右侧 AI 伴读中即时提问。'
+                ? getSourceStatusMeta(selectedSource.ingestionStatus).label
+                : '暂无大纲与总结'
             }}
           </text>
         </view>
 
         <view v-else-if="!activeOverviewMarkdown" class="empty-state">
-          <text class="state-title">当前{{ overviewMode === 'outline' ? '结构大纲' : '精炼总结' }}为空</text>
-          <text class="state-desc">可切换上方“{{ overviewMode === 'outline' ? '精炼总结' : '结构大纲' }}”查看已生成的内容。</text>
+          <text class="state-title">{{ overviewMode === 'outline' ? '暂无大纲' : '暂无总结' }}</text>
         </view>
 
         <view v-else class="markdown-paper">
@@ -213,20 +182,19 @@
     <!-- Tab 3: 知识块 -->
     <view v-else-if="activeTab === 'blocks'" class="blocks-tab">
       <view class="sub-toolbar">
-        <view class="search-input-wrap">
-          <LineIcon name="search" size="24rpx" color="var(--text-muted)" />
+        <view class="search-wrap">
+          <LineIcon name="search" size="14px" color="var(--text-muted)" />
           <input
             v-model="blockSearch"
             class="search-input"
-            placeholder="筛选标题、正文或来源..."
+            placeholder="搜索知识块"
           />
         </view>
-        <button class="zen-primary-btn compact" @click="emit('create-block')">+ 新建知识块</button>
+        <button class="ui-btn ui-btn-primary sm" @click="emit('create-block')">+ 新建</button>
       </view>
 
       <view v-if="filteredBlocks.length === 0" class="empty-state">
-        <text class="state-title">{{ blockSearch.trim() ? '未找到匹配的知识块' : '本学科暂无知识块' }}</text>
-        <text class="state-desc">点击右上角“+ 新建知识块”随时沉淀核心概念或公式</text>
+        <text class="state-title">{{ blockSearch.trim() ? '无匹配结果' : '暂无知识块' }}</text>
       </view>
 
       <view v-else class="blocks-split">
@@ -240,7 +208,7 @@
           >
             <text class="block-item-title">{{ block.title }}</text>
             <text class="block-item-preview">{{ block.preview }}</text>
-            <text class="block-item-meta">{{ block.source || '自主整理' }} · {{ formatShortDateTime(block.time) }}</text>
+            <text class="block-item-meta num-tabular">{{ block.source || '自主整理' }} · {{ formatShortDateTime(block.time) }}</text>
           </view>
         </scroll-view>
 
@@ -249,11 +217,11 @@
             <view class="detail-head">
               <view class="detail-title-group">
                 <text class="detail-title">{{ activeBlock.title }}</text>
-                <text class="detail-meta">来源：{{ activeBlock.source || '自主整理' }} · {{ formatShortDateTime(activeBlock.time) }}</text>
+                <text class="detail-meta num-tabular">{{ activeBlock.source || '自主整理' }} · {{ formatShortDateTime(activeBlock.time) }}</text>
               </view>
               <view class="detail-actions">
-                <button class="zen-secondary-btn compact" @click="emit('edit-block', activeBlock)">编辑</button>
-                <button class="zen-danger-btn compact" @click="emit('delete-block', activeBlock)">删除</button>
+                <button class="ui-btn ui-btn-secondary sm" @click="emit('edit-block', activeBlock)">编辑</button>
+                <button class="ui-btn ui-btn-danger sm" @click="emit('delete-block', activeBlock)">删除</button>
               </view>
             </view>
 
@@ -265,32 +233,30 @@
       </view>
     </view>
 
-    <!-- Tab 4: 学科复习 -->
+    <!-- Tab 4: 复习 -->
     <view v-else class="review-tab">
       <view class="sub-toolbar">
-        <text class="review-counter">待复习 {{ remainingCount }} · 本轮已完成 {{ completedCount }}</text>
-        <view class="icon-pill-btn" @click="loadReview">
-          <LineIcon name="refresh" size="24rpx" color="var(--text-secondary)" />
-          <text>刷新队列</text>
+        <text class="review-counter num-tabular">{{ remainingCount }} 待复习 · {{ completedCount }} 完成</text>
+        <view class="ui-icon-btn sm" @click="loadReview">
+          <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
         </view>
       </view>
 
-      <view v-if="reviewLoading && !activeCard" class="empty-state">
-        <text class="state-title">正在同步待复习卡片...</text>
+      <view v-if="reviewLoading && !activeCard" class="paper-skeletons">
+        <view class="review-skeleton-card ui-shimmer" />
       </view>
 
       <view v-else-if="reviewLoadError" class="empty-state">
         <text class="state-title error">{{ reviewLoadError }}</text>
-        <button class="zen-secondary-btn" @click="loadReview">重新加载</button>
+        <button class="ui-btn ui-btn-secondary sm" @click="loadReview">重试</button>
       </view>
 
       <view v-else-if="!activeCard" class="empty-state">
         <view class="done-badge">
-          <LineIcon name="check" size="42rpx" color="var(--color-zen-sage)" />
+          <LineIcon name="check" size="22px" color="var(--color-zen-sage)" />
         </view>
         <text class="state-title">{{ reviewEmptyLabel }}</text>
-        <text class="state-desc">新创建的知识块将在同步并排程后加入复习队列</text>
-        <button class="zen-secondary-btn" @click="loadReview">再次检查</button>
+        <button class="ui-btn ui-btn-secondary sm" @click="loadReview">刷新</button>
       </view>
 
       <view v-else class="review-stage">
@@ -306,19 +272,19 @@
         <view v-if="reviewSaveError" class="review-save-banner">
           <text>{{ reviewSaveError }}</text>
           <button
-            class="zen-secondary-btn compact"
+            class="ui-btn ui-btn-secondary sm"
             @click="refreshRequired ? loadReview() : retrySave()"
-          >{{ refreshRequired ? '刷新队列' : '重试保存' }}</button>
+          >{{ refreshRequired ? '刷新' : '重试' }}</button>
         </view>
 
         <view class="review-controls">
           <template v-if="!isFlipped">
-            <button class="rate-btn skip" :disabled="reviewSaving" @click="skipCard">跳过</button>
-            <button class="rate-btn good" :disabled="reviewSaving" @click="isFlipped = true">显示答案</button>
+            <button class="ui-btn ui-btn-secondary rate-btn" :disabled="reviewSaving" @click="skipCard">跳过</button>
+            <button class="ui-btn ui-btn-primary rate-btn" :disabled="reviewSaving" @click="isFlipped = true">显示答案</button>
           </template>
           <template v-else>
-            <button class="rate-btn again" :disabled="reviewSaving" @click="rateCard('AGAIN')">需要巩固</button>
-            <button class="rate-btn good" :disabled="reviewSaving" @click="rateCard('GOOD')">已掌握</button>
+            <button class="ui-btn ui-btn-danger rate-btn" :disabled="reviewSaving" @click="rateCard('AGAIN')">需要巩固</button>
+            <button class="ui-btn ui-btn-primary rate-btn" :disabled="reviewSaving" @click="rateCard('GOOD')">已掌握</button>
           </template>
         </view>
       </view>
@@ -375,18 +341,24 @@ const emit = defineEmits<{
   (event: 'delete-block', block: KnowledgeBlock): void
 }>()
 
-const tabs: Array<{ key: WorkspaceTabKey; label: string }> = [
-  { key: 'preview', label: '资料预览' },
-  { key: 'overview', label: '大纲与总结' },
-  { key: 'blocks', label: '知识块' },
-  { key: 'review', label: '学科复习' },
-]
+const visibleTabs = computed<Array<{ key: WorkspaceTabKey; label: string }>>(() => (
+  props.selectedSource
+    ? [
+        { key: 'preview', label: '预览' },
+        { key: 'overview', label: '大纲与总结' },
+        { key: 'blocks', label: '知识块' },
+        { key: 'review', label: '复习' },
+      ]
+    : [
+        { key: 'overview', label: '大纲与总结' },
+        { key: 'blocks', label: '知识块' },
+        { key: 'review', label: '复习' },
+      ]
+))
 
 const overviewMode = ref<'outline' | 'summary'>('outline')
 const blockSearch = ref('')
 const selectedBlockId = ref<string>('')
-
-const readySourceCount = computed(() => props.sources.filter(s => s.ingestionStatus === 'READY').length)
 
 const activeOverviewMarkdown = computed(() => {
   if (!props.overview) return ''
@@ -438,8 +410,8 @@ const {
 
 const reviewEmptyLabel = computed(() => (
   currentIndex.value > 0 || completedCount.value > 0
-    ? '本轮学科复习已完成'
-    : '当前学科暂无到期复习卡片'
+    ? '本轮已完成'
+    : '暂无待复习'
 ))
 
 function copyText(text: string, toastTitle: string) {
@@ -467,13 +439,13 @@ function openDocument(url: string) {
         uni.openDocument({
           filePath: res.tempFilePath,
           showMenu: true,
-          fail: () => copyText(url, '当前环境不支持内置预览，已复制访问链接'),
+          fail: () => copyText(url, '已复制链接'),
         })
         return
       }
-      copyText(url, '已复制文件访问链接')
+      copyText(url, '已复制链接')
     },
-    fail: () => copyText(url, '已复制文件访问链接'),
+    fail: () => copyText(url, '已复制链接'),
   })
 }
 
@@ -487,9 +459,7 @@ function openHandwritingNotebook() {
   flex: 1;
   min-width: 0;
   height: 100%;
-  background: var(--bg-card);
-  border-radius: 28rpx;
-  border: 1rpx solid var(--border-subtle);
+  border-radius: var(--radius-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -497,56 +467,49 @@ function openHandwritingNotebook() {
 }
 
 .center-header {
-  padding: 20rpx 26rpx;
-  border-bottom: 1rpx solid var(--border-subtle);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .context-heading {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 8px;
   min-width: 0;
   flex: 1;
 }
 
 .context-title {
-  font-size: 28rpx;
+  font-size: var(--text-md);
   font-weight: 700;
+  letter-spacing: -0.015em;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.status-pill {
-  font-size: 20rpx;
-  padding: 4rpx 12rpx;
-  border-radius: 999rpx;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.status-pill.tone-ready {
-  background: rgba(139, 154, 110, 0.16);
+.ui-tag.tone-ready {
+  background: var(--color-sage-bg);
   color: var(--color-sage-dark);
 }
 
-.status-pill.tone-parsing {
+.ui-tag.tone-parsing {
   background: rgba(200, 155, 109, 0.16);
   color: #9A6B3B;
 }
 
-.status-pill.tone-pending {
-  background: var(--bg-secondary);
+.ui-tag.tone-pending {
+  background: var(--bg-primary);
   color: var(--text-muted);
 }
 
-.status-pill.tone-failed {
+.ui-tag.tone-failed {
   background: var(--color-danger-bg);
   color: var(--color-danger);
 }
@@ -554,167 +517,82 @@ function openHandwritingNotebook() {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 8px;
 }
 
-.tab-bar {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  background: var(--bg-primary);
-  padding: 6rpx;
-  border-radius: 18rpx;
-  border: 1rpx solid var(--border-subtle);
+.compact-seg {
+  padding: 3px;
+  border-radius: 10px;
 }
 
-.tab-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6rpx;
-  padding: 10rpx 18rpx;
-  border-radius: 14rpx;
-  font-size: 23rpx;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.tab-pill.active {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-weight: 700;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+.compact-seg-item {
+  height: 28px;
+  padding: 0 11px;
+  font-size: var(--text-xs);
+  border-radius: 8px;
+  gap: 5px;
 }
 
 .tab-badge {
-  font-size: 19rpx;
-  font-family: var(--font-family-mono);
-  padding: 1rpx 8rpx;
-  border-radius: 999rpx;
-  background: var(--bg-secondary);
-  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  opacity: 0.72;
 }
 
 .ai-toggle-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8rpx;
-  padding: 12rpx 18rpx;
-  border-radius: 16rpx;
-  border: 1rpx solid var(--border-accent);
-  background: var(--color-sage-bg);
-  color: var(--color-sage-dark);
-  font-size: 23rpx;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
   font-weight: 600;
+  color: var(--text-primary);
   cursor: pointer;
+  transition: background-color 0.16s var(--ease-out), border-color 0.16s var(--ease-out), color 0.16s var(--ease-out);
+}
+
+.ai-toggle-btn:hover {
+  border-color: var(--border-accent);
 }
 
 .ai-toggle-btn.active {
   background: var(--accent-gradient);
-  border-color: transparent;
   color: #FFFFFF;
+  border-color: transparent;
 }
 
-.tab-body,
-.overview-scroll {
+.tab-body {
   flex: 1;
   min-height: 0;
-  padding: 26rpx;
+  padding: 20px 24px;
   box-sizing: border-box;
 }
 
-.overview-summary-box,
 .source-preview-box {
+  max-width: 760px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
-}
-
-.summary-hero {
-  background: var(--bg-primary);
-  border-radius: 22rpx;
-  padding: 28rpx;
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-}
-
-.summary-hero-icon {
-  width: 80rpx;
-  height: 80rpx;
-  border-radius: 22rpx;
-  background: var(--color-sage-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.summary-hero-text {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.hero-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.hero-desc {
-  font-size: 24rpx;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16rpx;
-}
-
-.metric-tile {
-  background: var(--bg-primary);
-  border-radius: 20rpx;
-  padding: 24rpx 20rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.metric-value {
-  font-size: 40rpx;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-family: var(--font-family-mono);
-}
-
-.metric-label {
-  font-size: 22rpx;
-  color: var(--text-muted);
-}
-
-.quick-actions-row {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .status-notice {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 12rpx;
-  padding: 18rpx 22rpx;
-  border-radius: 18rpx;
-  font-size: 23rpx;
-  line-height: 1.5;
+  align-self: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 
 .status-notice.tone-parsing {
   background: rgba(200, 155, 109, 0.14);
-  color: #8A5D31;
+  color: #9A6B3B;
 }
 
 .status-notice.tone-pending {
@@ -727,61 +605,90 @@ function openHandwritingNotebook() {
   color: var(--color-danger);
 }
 
-.notice-text {
-  flex: 1;
+.preview-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-skeleton-hero {
+  height: 220px;
+  border-radius: 14px;
+}
+
+.preview-skeleton-line {
+  height: 18px;
+  width: 48%;
+  border-radius: 8px;
 }
 
 .image-preview-frame {
   background: var(--bg-primary);
-  border-radius: 22rpx;
-  padding: 20rpx;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 12px;
 }
 
 .preview-image {
   width: 100%;
-  border-radius: 14rpx;
+  border-radius: 10px;
 }
 
 .preview-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12rpx;
+  gap: 12px;
 }
 
 .doc-meta-card {
+  max-width: 440px;
+  width: 100%;
+  margin: 32px auto;
   background: var(--bg-primary);
-  border-radius: 24rpx;
-  padding: 48rpx 32rpx;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  padding: 32px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 16rpx;
+  gap: 10px;
+  box-sizing: border-box;
 }
 
 .doc-icon-circle {
-  width: 96rpx;
-  height: 96rpx;
-  border-radius: 28rpx;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   background: var(--color-sage-bg);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 4px;
 }
 
 .doc-name {
-  font-size: 30rpx;
+  font-size: var(--text-md);
   font-weight: 700;
   color: var(--text-primary);
+  word-break: break-all;
 }
 
 .doc-meta {
-  font-size: 23rpx;
+  font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+.quick-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .overview-tab,
@@ -794,89 +701,91 @@ function openHandwritingNotebook() {
 }
 
 .sub-toolbar {
-  padding: 18rpx 26rpx;
-  border-bottom: 1rpx solid var(--border-subtle);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14rpx;
-}
-
-.segment-group {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.segment-pill {
-  padding: 10rpx 20rpx;
-  border-radius: 14rpx;
-  font-size: 23rpx;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
-  cursor: pointer;
-}
-
-.segment-pill.active {
-  background: var(--color-sage-bg);
-  color: var(--color-sage-dark);
-  font-weight: 700;
+  gap: 12px;
 }
 
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 6px;
 }
 
 .meta-timestamp {
-  font-size: 21rpx;
+  font-size: var(--text-xs);
   color: var(--text-muted);
+  margin-right: 4px;
 }
 
-.icon-pill-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6rpx;
-  padding: 8rpx 16rpx;
-  border-radius: 12rpx;
-  background: var(--bg-primary);
-  font-size: 22rpx;
-  color: var(--text-secondary);
-  cursor: pointer;
+.overview-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 28px;
+  box-sizing: border-box;
+}
+
+.paper-skeletons {
+  max-width: 680px;
+  margin: 24px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.paper-skeleton-title {
+  width: 42%;
+  height: 28px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.paper-skeleton-line {
+  width: 100%;
+  height: 16px;
+  border-radius: 6px;
+}
+
+.paper-skeleton-line.mid {
+  width: 78%;
 }
 
 .markdown-paper {
-  background: var(--bg-primary);
-  border-radius: 22rpx;
-  padding: 28rpx;
+  max-width: 720px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 16px;
 }
 
 .overview-doc-title {
-  font-size: 30rpx;
+  font-size: var(--text-2xl);
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-  padding-bottom: 14rpx;
-  border-bottom: 1rpx solid var(--border-subtle);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.search-input-wrap {
+.search-wrap {
   flex: 1;
-  height: 64rpx;
+  max-width: 300px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
   background: var(--bg-primary);
-  border-radius: 16rpx;
-  padding: 0 18rpx;
+  border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  gap: 8px;
 }
 
 .search-input {
   flex: 1;
-  font-size: 24rpx;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
@@ -887,24 +796,29 @@ function openHandwritingNotebook() {
 }
 
 .blocks-list-col {
-  width: 300rpx;
-  height: 100%;
-  border-right: 1rpx solid var(--border-subtle);
-  padding: 16rpx;
-  box-sizing: border-box;
+  width: 248px;
   flex-shrink: 0;
+  height: 100%;
+  border-right: 1px solid var(--border-subtle);
+  padding: 10px;
+  box-sizing: border-box;
 }
 
 .block-list-item {
-  padding: 18rpx 16rpx;
-  border-radius: 16rpx;
-  margin-bottom: 10rpx;
-  background: var(--bg-primary);
-  border: 1rpx solid transparent;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: transparent;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 4px;
   cursor: pointer;
+  transition: background-color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+
+.block-list-item:hover {
+  background: var(--bg-primary);
 }
 
 .block-list-item.active {
@@ -913,22 +827,26 @@ function openHandwritingNotebook() {
 }
 
 .block-item-title {
-  font-size: 25rpx;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .block-item-preview {
-  font-size: 22rpx;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-height: 1.45;
 }
 
 .block-item-meta {
-  font-size: 20rpx;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
@@ -936,23 +854,25 @@ function openHandwritingNotebook() {
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 24rpx;
+  padding: 22px 26px;
   box-sizing: border-box;
 }
 
 .block-detail-paper {
+  max-width: 680px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 18px;
 }
 
 .detail-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16rpx;
-  padding-bottom: 18rpx;
-  border-bottom: 1rpx solid var(--border-subtle);
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .detail-title-group {
@@ -960,171 +880,96 @@ function openHandwritingNotebook() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8rpx;
+  gap: 5px;
 }
 
 .detail-title {
-  font-size: 32rpx;
+  font-size: var(--text-xl);
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .detail-meta {
-  font-size: 22rpx;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
 .detail-actions {
   display: flex;
-  align-items: center;
-  gap: 10rpx;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.detail-markdown {
-  background: var(--bg-primary);
-  border-radius: 20rpx;
-  padding: 24rpx;
-}
-
 .review-counter {
-  font-size: 24rpx;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.review-skeleton-card {
+  height: 300px;
+  max-width: 540px;
+  width: 100%;
+  margin: 0 auto;
+  border-radius: 22px;
 }
 
 .review-stage {
   flex: 1;
   min-height: 0;
-  padding: 26rpx;
+  padding: 24px 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
+  justify-content: center;
+  gap: 18px;
 }
 
 .review-card-box {
   width: 100%;
-  max-width: 720rpx;
-  flex: 1;
-  min-height: 440rpx;
+  max-width: 560px;
 }
 
 .review-save-banner {
   width: 100%;
-  max-width: 720rpx;
-  padding: 14rpx 20rpx;
-  border-radius: 16rpx;
+  max-width: 560px;
+  padding: 10px 14px;
+  border-radius: 12px;
   background: var(--color-danger-bg);
   color: var(--color-danger);
+  font-size: var(--text-xs);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 23rpx;
+  gap: 10px;
+  box-sizing: border-box;
 }
 
 .review-controls {
   display: flex;
-  align-items: center;
-  gap: 16rpx;
+  gap: 10px;
+  width: 100%;
+  max-width: 560px;
 }
 
 .rate-btn {
-  min-width: 168rpx;
-  height: 76rpx;
-  line-height: 76rpx;
-  margin: 0;
-  padding: 0 28rpx;
-  border-radius: 18rpx;
-  font-size: 25rpx;
-  font-weight: 600;
-}
-
-.rate-btn::after {
-  border: none;
-}
-
-.rate-btn.again {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-.rate-btn.skip {
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-}
-
-.rate-btn.good {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-}
-
-.zen-primary-btn {
-  height: 72rpx;
-  line-height: 72rpx;
-  margin: 0;
-  padding: 0 28rpx;
-  border-radius: 18rpx;
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: 24rpx;
-  font-weight: 600;
-}
-
-.zen-secondary-btn {
-  height: 72rpx;
-  line-height: 72rpx;
-  margin: 0;
-  padding: 0 24rpx;
-  border-radius: 18rpx;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 24rpx;
-  font-weight: 600;
-  border: 1rpx solid var(--border-subtle);
-}
-
-.zen-danger-btn {
-  height: 72rpx;
-  line-height: 72rpx;
-  margin: 0;
-  padding: 0 24rpx;
-  border-radius: 18rpx;
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-size: 24rpx;
-  font-weight: 600;
-}
-
-.zen-primary-btn.compact,
-.zen-secondary-btn.compact,
-.zen-danger-btn.compact {
-  height: 58rpx;
-  line-height: 58rpx;
-  padding: 0 20rpx;
-  font-size: 22rpx;
-  border-radius: 14rpx;
-}
-
-.zen-primary-btn::after,
-.zen-secondary-btn::after,
-.zen-danger-btn::after {
-  border: none;
+  flex: 1;
+  height: 44px;
 }
 
 .empty-state {
-  padding: 80rpx 36rpx;
+  padding: 64px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 16rpx;
+  gap: 12px;
 }
 
 .done-badge {
-  width: 84rpx;
-  height: 84rpx;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: var(--color-sage-bg);
   display: flex;
@@ -1133,7 +978,7 @@ function openHandwritingNotebook() {
 }
 
 .state-title {
-  font-size: 28rpx;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -1142,10 +987,17 @@ function openHandwritingNotebook() {
   color: var(--color-danger);
 }
 
-.state-desc {
-  font-size: 23rpx;
-  color: var(--text-muted);
-  max-width: 520rpx;
-  line-height: 1.5;
+@media (max-width: 900px) {
+  .blocks-split {
+    flex-direction: column;
+  }
+
+  .blocks-list-col {
+    width: 100%;
+    height: auto;
+    max-height: 180px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
 }
 </style>

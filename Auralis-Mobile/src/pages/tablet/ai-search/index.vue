@@ -3,17 +3,15 @@
     <view class="t-ai-layout">
       <view class="history-card zen-card">
         <view class="history-header">
-          <view class="new-chat-btn" @click="startNewChat">
-            <LineIcon name="plus" size="26rpx" color="#FFFFFF" />
-            <text>开启新对话</text>
+          <view class="ui-btn ui-btn-primary new-chat-btn" @click="startNewChat">
+            <LineIcon name="plus" size="15px" color="#FFFFFF" />
+            <text>新对话</text>
           </view>
         </view>
 
-        <text class="history-label">历史会话</text>
-
         <scroll-view scroll-y :show-scrollbar="false" class="history-scroll">
-          <view v-if="loadingSessions" class="history-empty">正在加载会话…</view>
-          <view v-else-if="conversations.length === 0" class="history-empty">暂无历史会话</view>
+          <view v-if="loadingSessions" class="history-empty">加载中…</view>
+          <view v-else-if="conversations.length === 0" class="history-empty">暂无历史</view>
 
           <view
             v-for="item in conversations"
@@ -22,21 +20,16 @@
             :class="{ active: currentConversationId === item.id }"
             @click="item.id && switchConversation(item.id)"
           >
-            <LineIcon
-              name="ai"
-              size="28rpx"
-              :color="currentConversationId === item.id ? '#8B9A6E' : '#7A7A75'"
-            />
             <view class="history-info">
               <text class="history-title">{{ item.title || '新对话' }}</text>
-              <text class="history-time">{{ formatConvDate(item.updatedAt || item.createdAt) }}</text>
+              <text class="history-time num-tabular">{{ formatConvDate(item.updatedAt || item.createdAt) }}</text>
             </view>
             <view
               v-if="item.id"
               class="history-del"
               @click.stop="deleteConversation(item.id, item.version ?? 0)"
             >
-              <LineIcon name="close" size="22rpx" color="var(--text-muted)" />
+              <LineIcon name="close" size="13px" color="var(--text-muted)" />
             </view>
           </view>
         </scroll-view>
@@ -44,11 +37,7 @@
 
       <view class="chat-card zen-card">
         <view class="chat-header">
-          <view class="header-title-row">
-            <LineIcon name="sparkles" size="30rpx" color="var(--color-zen-sage)" />
-            <text class="chat-title">AI 学习助手</text>
-          </view>
-          <text class="chat-scope-note">{{ currentConversationTitle }}</text>
+          <text class="chat-title">{{ currentConversationTitle }}</text>
         </view>
 
         <scroll-view
@@ -58,12 +47,7 @@
           :scroll-into-view="scrollTargetId"
         >
           <view v-if="messages.length === 0" class="welcome-box">
-            <view class="welcome-icon">
-              <LineIcon name="sparkles" size="60rpx" color="var(--color-zen-sage)" />
-            </view>
-            <text class="welcome-title">{{ displayName }}，今天想探讨什么问题？</text>
-            <text class="welcome-sub">支持跨学科检索已解析学习资料与结构化解答</text>
-
+            <BrandLogo size="44px" />
             <view class="prompt-chips">
               <view
                 v-for="prompt in quickPrompts"
@@ -88,22 +72,16 @@
               </view>
 
               <view v-else class="assistant-bubble">
-                <view class="assistant-head">
-                  <LineIcon name="sparkles" size="24rpx" color="var(--color-zen-sage)" />
-                  <text class="assistant-label">Auralis AI</text>
-                </view>
-
                 <view v-if="msg.toolHint" class="tool-pill">
                   <text>{{ msg.toolHint }}</text>
                 </view>
 
                 <MarkdownText v-if="msg.content" :content="msg.content" />
-                <text v-else-if="isTyping" class="typing-hint">正在检索与思考…</text>
+                <text v-else-if="isTyping" class="typing-dot">···</text>
 
                 <view v-if="msg.content && !(isTyping && index === messages.length - 1)" class="bubble-actions">
                   <view class="copy-btn" @click="copyText(msg.content)">
-                    <LineIcon name="copy" size="22rpx" color="var(--text-muted)" />
-                    <text>复制</text>
+                    <LineIcon name="copy" size="14px" color="var(--text-muted)" />
                   </view>
                 </view>
               </view>
@@ -118,7 +96,7 @@
             <input
               class="chat-input"
               v-model="query"
-              placeholder="输入问题，问问 Auralis AI…"
+              placeholder="输入问题…"
               confirm-type="send"
               :disabled="isTyping"
               @confirm="sendMessage"
@@ -128,7 +106,7 @@
               :class="{ disabled: !query.trim() || isTyping }"
               @click="sendMessage"
             >
-              <LineIcon name="arrow-up" size="34rpx" color="#FFFFFF" />
+              <LineIcon name="arrow-up" size="16px" color="#FFFFFF" />
             </view>
           </view>
         </view>
@@ -138,9 +116,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import { chatWithAI } from '@/api/aiClient'
+import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
@@ -154,7 +133,6 @@ interface ChatBubbleItem {
 }
 
 const authStore = useAuthStore()
-const displayName = computed(() => authStore.user?.displayName || authStore.username || '同学')
 
 const conversations = ref<ConversationView[]>([])
 const loadingSessions = ref(false)
@@ -169,9 +147,9 @@ const anchorId = 'tablet-chat-anchor'
 let activeStreamToken = 0
 
 const quickPrompts = [
-  '帮我梳理本周重点待复习知识块',
-  '对比几种常见机器学习正则化方法',
-  '用清晰框架总结一个复杂的数学定理',
+  '梳理本周重点待复习知识块',
+  '对比几种常见正则化方法',
+  '用清晰结构总结一个核心定理',
 ]
 
 function scrollToBottom() {
@@ -198,7 +176,7 @@ async function loadHistory() {
     if (generation !== authStore.getLoginGeneration()) return
     conversations.value = list.filter(item => !item.deletedAt)
   } catch {
-    // Keep silent if offline
+    // Keep silent offline
   } finally {
     loadingSessions.value = false
   }
@@ -221,7 +199,7 @@ async function switchConversation(conversationId: string) {
     if (generation !== authStore.getLoginGeneration()) return
     activeStreamToken++
     currentConversationId.value = detail.id || conversationId
-    currentConversationTitle.value = detail.title || '历史对话'
+    currentConversationTitle.value = detail.title || '新对话'
     messages.value = (detail.messages || [])
       .filter(m => m.role === 'USER' || m.role === 'ASSISTANT')
       .map(m => ({
@@ -230,7 +208,7 @@ async function switchConversation(conversationId: string) {
       }))
     scrollToBottom()
   } catch {
-    uni.showToast({ title: '加载对话失败', icon: 'none' })
+    uni.showToast({ title: '加载失败', icon: 'none' })
   }
 }
 
@@ -244,10 +222,10 @@ async function deleteConversation(conversationId: string, baseVersion: number) {
     if (currentConversationId.value === conversationId) {
       startNewChat()
     }
-    uni.showToast({ title: '已删除会话', icon: 'none' })
+    uni.showToast({ title: '已删除', icon: 'none' })
   } catch {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '删除失败，请刷新重试', icon: 'none' })
+    uni.showToast({ title: '删除失败', icon: 'none' })
   }
 }
 
@@ -259,11 +237,11 @@ async function ensureConversation(seedTitle: string, generation: symbol): Promis
     clientRequestId: uuidv7(),
   })
   if (generation !== authStore.getLoginGeneration()) {
-    throw new Error('登录状态已变化，请重试。')
+    throw new Error('登录状态已变化，请重试')
   }
-  if (!created.id) throw new Error('创建对话失败')
+  if (!created.id) throw new Error('创建失败')
   currentConversationId.value = created.id
-  currentConversationTitle.value = created.title || seedTitle.slice(0, 24) || 'AI 问答'
+  currentConversationTitle.value = created.title || seedTitle.slice(0, 24) || '新对话'
   conversations.value = [created, ...conversations.value.filter(item => item.id !== created.id)]
   return created.id
 }
@@ -301,10 +279,10 @@ async function sendMessage() {
       onToolEvent: (ev) => {
         if (!isCurrent()) return
         messages.value[aiIndex].toolHint = ev.phase === 'started'
-          ? `正在调用 ${ev.name || '资料工具'}…`
+          ? `检索 ${ev.name || '资料'}…`
           : ev.phase === 'completed'
             ? ''
-            : '工具调用未完成'
+            : '检索未完成'
       },
     })
   } catch (err) {
@@ -313,7 +291,7 @@ async function sendMessage() {
       query.value = text
     }
     if (!messages.value[aiIndex].content) {
-      messages.value[aiIndex].content = err instanceof Error ? err.message : '网络请求失败，请稍后重试。'
+      messages.value[aiIndex].content = err instanceof Error ? err.message : '请求失败'
     }
   } finally {
     if (isCurrent()) {
@@ -334,43 +312,31 @@ onMounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 28rpx;
-  gap: 24rpx;
+  padding: 16px;
+  gap: 14px;
   background-color: var(--color-bg-primary);
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .history-card {
-  width: 380rpx;
+  width: 248px;
   flex-shrink: 0;
-  padding: 24rpx;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 12px;
   height: 100%;
   box-sizing: border-box;
 }
 
-.new-chat-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10rpx;
-  padding: 18rpx 20rpx;
-  border-radius: 22rpx;
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
+.history-header {
+  flex-shrink: 0;
 }
 
-.history-label {
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
-  padding-left: 6rpx;
+.new-chat-btn {
+  width: 100%;
+  height: 40px;
 }
 
 .history-scroll {
@@ -379,7 +345,7 @@ onMounted(() => {
 }
 
 .history-empty {
-  padding: 36rpx 12rpx;
+  padding: 28px 0;
   text-align: center;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
@@ -388,18 +354,20 @@ onMounted(() => {
 .history-item {
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  padding: 18rpx 16rpx;
-  margin-bottom: 10rpx;
-  border-radius: 20rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid transparent;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  margin-bottom: 4px;
   cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+
+.history-item:hover {
+  background-color: var(--color-bg-primary);
 }
 
 .history-item.active {
   background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
 }
 
 .history-info {
@@ -407,26 +375,32 @@ onMounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
+  gap: 2px;
 }
 
 .history-title {
-  font-size: var(--font-size-xs);
+  font-size: 13px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-time {
-  font-size: 20rpx;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .history-del {
-  padding: 6rpx;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  opacity: 0.65;
 }
 
 .chat-card {
@@ -439,92 +413,70 @@ onMounted(() => {
 }
 
 .chat-header {
-  padding: 24rpx 32rpx;
+  height: 52px;
+  padding: 0 22px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-shrink: 0;
 }
 
-.header-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
 .chat-title {
-  font-size: var(--font-size-lg);
+  font-size: 15px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-}
-
-.chat-scope-note {
-  font-size: 22rpx;
-  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-scroll {
   flex: 1;
   min-height: 0;
-  padding: 24rpx 36rpx;
-  box-sizing: border-box;
 }
 
 .welcome-box {
-  min-height: 54vh;
+  min-height: 100%;
+  padding: 40px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16rpx;
-  text-align: center;
-}
-
-.welcome-icon {
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 32rpx;
-  background-color: var(--color-sage-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.welcome-title {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.welcome-sub {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  gap: 24px;
+  box-sizing: border-box;
 }
 
 .prompt-chips {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 12rpx;
-  margin-top: 12rpx;
-  max-width: 820rpx;
+  gap: 10px;
+  max-width: 560px;
 }
 
 .prompt-chip {
-  padding: 12rpx 24rpx;
+  padding: 10px 16px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  font-size: 13px;
+  color: var(--text-primary);
   cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.prompt-chip:hover {
+  border-color: var(--border-accent);
+  background-color: var(--color-sage-bg);
 }
 
 .chat-stream {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 18px;
 }
 
 .chat-row {
@@ -542,106 +494,95 @@ onMounted(() => {
 
 .user-bubble {
   max-width: 72%;
-  padding: 18rpx 26rpx;
-  border-radius: 24rpx 24rpx 8rpx 24rpx;
-  background: var(--accent-gradient);
+  padding: 10px 16px;
+  background-color: var(--color-zen-graphite);
   color: #FFFFFF;
+  border-radius: 16px 16px 4px 16px;
 }
 
 .user-text {
-  font-size: var(--font-size-sm);
+  font-size: 14.5px;
   line-height: 1.55;
-  word-break: break-word;
+  color: #FFFFFF;
 }
 
 .assistant-bubble {
-  max-width: 86%;
-  padding: 24rpx 28rpx;
-  border-radius: 26rpx;
+  width: 100%;
+  padding: 16px 20px;
+  border-radius: 16px;
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 12rpx;
   box-sizing: border-box;
 }
 
-.assistant-head {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.assistant-label {
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-zen-sage);
-}
-
 .tool-pill {
-  align-self: flex-start;
-  padding: 6rpx 16rpx;
+  display: inline-block;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: 22rpx;
+  color: var(--color-sage-ink);
+  font-size: var(--text-2xs);
+  margin-bottom: 8px;
 }
 
-.typing-hint {
-  font-size: var(--font-size-xs);
+.typing-dot {
+  font-size: 18px;
   color: var(--text-muted);
+  letter-spacing: 3px;
 }
 
 .bubble-actions {
   display: flex;
   justify-content: flex-end;
-  padding-top: 8rpx;
-  border-top: 1px solid var(--border-subtle);
+  margin-top: 8px;
 }
 
 .copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 8rpx 18rpx;
-  border-radius: var(--radius-full);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background-color: var(--color-bg-card);
-  color: var(--text-muted);
-  font-size: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
 .bottom-anchor {
-  height: 24rpx;
+  height: 8px;
 }
 
 .input-dock {
-  padding: 20rpx 32rpx 24rpx;
-  border-top: 1px solid var(--border-subtle);
+  padding: 12px 24px 18px;
+  display: flex;
+  justify-content: center;
   flex-shrink: 0;
 }
 
 .input-capsule {
+  width: 100%;
+  max-width: 760px;
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 10px;
+  padding: 6px 6px 6px 16px;
+  border-radius: var(--radius-full);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  padding: 10rpx 12rpx 10rpx 28rpx;
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-input {
   flex: 1;
   min-width: 0;
-  height: 72rpx;
-  font-size: var(--font-size-sm);
+  height: 36px;
+  font-size: 14.5px;
   color: var(--text-primary);
 }
 
 .send-btn {
-  width: 72rpx;
-  height: 72rpx;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--accent-gradient);
   display: flex;
@@ -652,6 +593,12 @@ onMounted(() => {
 }
 
 .send-btn.disabled {
-  opacity: 0.45;
+  opacity: 0.4;
+}
+
+@media (max-width: 820px) {
+  .history-card {
+    width: 196px;
+  }
 }
 </style>

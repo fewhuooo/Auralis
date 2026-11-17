@@ -2,26 +2,21 @@
   <TabletLayout>
     <view class="t-subject-hall">
       <view class="hall-header">
-        <view class="header-left">
-          <view class="title-row">
-            <text class="page-title">学科空间</text>
-            <view v-if="subjects.length > 0" class="count-pill">
-              <text>共 {{ subjects.length }} 个</text>
-            </view>
-          </view>
-          <text class="page-sub">按学科分类管理学习资料、知识点与复习进度</text>
+        <view class="title-row">
+          <text class="page-title">学科</text>
+          <text v-if="subjects.length > 0" class="count-pill num-tabular">{{ subjects.length }}</text>
         </view>
 
         <view class="header-actions">
           <view class="search-box zen-card">
-            <LineIcon name="search" size="28rpx" color="var(--text-muted)" />
-            <input class="search-input" v-model="searchQuery" placeholder="搜索学科名称或简介…" />
+            <LineIcon name="search" size="15px" color="var(--text-muted)" />
+            <input class="search-input" v-model="searchQuery" placeholder="搜索学科…" />
             <view v-if="searchQuery" class="search-clear" @click="searchQuery = ''">
-              <LineIcon name="close" size="24rpx" color="var(--text-muted)" />
+              <LineIcon name="close" size="14px" color="var(--text-muted)" />
             </view>
           </view>
-          <view class="create-btn" @click="openCreateModal">
-            <LineIcon name="plus" size="28rpx" color="#FFFFFF" />
+          <view class="ui-btn ui-btn-primary create-btn" @click="openCreateModal">
+            <LineIcon name="plus" size="15px" color="#FFFFFF" />
             <text>新建学科</text>
           </view>
         </view>
@@ -29,17 +24,17 @@
 
       <scroll-view scroll-y :show-scrollbar="false" class="content-scroll">
         <view v-if="subjects.length === 0" class="empty-hall zen-card">
-          <view class="empty-badge">
-            <LineIcon name="book" size="56rpx" color="var(--color-zen-sage)" />
+          <LineIcon name="book" size="30px" color="var(--color-sage-dark)" />
+          <text class="empty-title">暂无学科</text>
+          <view class="ui-btn ui-btn-primary" @click="openCreateModal">
+            <LineIcon name="plus" size="15px" color="#FFFFFF" />
+            <text>新建学科</text>
           </view>
-          <text class="empty-title">还没有学科空间</text>
-          <text class="empty-hint">点击右上角「新建学科」开始整理你的资料与知识块</text>
         </view>
 
         <view v-else-if="filteredSubjects.length === 0" class="empty-hall zen-card">
-          <LineIcon name="search" size="52rpx" color="var(--text-muted)" />
-          <text class="empty-title">未找到匹配的学科</text>
-          <view class="clear-search-btn" @click="searchQuery = ''">清空筛选条件</view>
+          <text class="empty-title">无匹配结果</text>
+          <view class="ui-btn ui-btn-secondary" @click="searchQuery = ''">清空搜索</view>
         </view>
 
         <view v-else class="grid">
@@ -53,36 +48,32 @@
               <view class="s-icon">
                 <LineIcon
                   :name="`subj-${isSubjectIconKey(subj.icon) ? subj.icon : 'book'}`"
-                  size="36rpx"
-                  color="var(--color-zen-sage)"
+                  size="20px"
+                  color="var(--color-sage-dark)"
                 />
               </view>
               <view class="card-actions" @click.stop>
                 <view class="icon-action-btn" @click="openEditModal(subj)">
-                  <LineIcon name="edit" size="24rpx" color="var(--text-muted)" />
+                  <LineIcon name="edit" size="14px" color="var(--text-muted)" />
                 </view>
                 <view class="icon-action-btn danger" @click="handleDeleteSubject(subj)">
-                  <LineIcon name="close" size="24rpx" color="var(--color-danger)" />
+                  <LineIcon name="close" size="14px" color="var(--color-danger)" />
                 </view>
               </view>
             </view>
 
             <text class="s-name">{{ subj.name }}</text>
-            <text class="s-desc">{{ subj.description || '点击进入学科工作区查看资料与知识' }}</text>
+            <text v-if="subj.description" class="s-desc">{{ subj.description }}</text>
 
-            <view class="s-meta">
-              <text class="meta-item">资料 {{ subj.fileCount || 0 }}</text>
-              <text class="meta-dot">·</text>
-              <text class="meta-item">知识块 {{ subj.blockCount || 0 }}</text>
+            <view class="s-footer">
+              <text class="s-stats num-tabular">资料 {{ subj.fileCount || 0 }} · 知识 {{ subj.blockCount || 0 }}</text>
+              <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view class="subject-card add-card" @click="openCreateModal">
-            <view class="add-circle">
-              <LineIcon name="plus" size="34rpx" color="var(--color-zen-sage)" />
-            </view>
-            <text class="add-label">创建新学科</text>
-            <text class="add-sub">整理新的学习领域</text>
+            <LineIcon name="plus" size="22px" color="var(--color-sage-dark)" />
+            <text class="add-label">新建学科</text>
           </view>
         </view>
       </scroll-view>
@@ -92,51 +83,42 @@
       <view v-if="showModal" class="zen-modal-mask" @click="closeModal">
         <view class="zen-modal-body subject-modal" @click.stop>
           <view class="modal-header">
-            <text class="modal-title">{{ isEditing ? '编辑学科空间' : '新建学科空间' }}</text>
-            <view class="modal-close" @click="closeModal">
-              <LineIcon name="close" size="26rpx" color="var(--text-muted)" />
+            <text class="modal-title">{{ isEditing ? '编辑学科' : '新建学科' }}</text>
+            <view class="ui-icon-btn" @click="closeModal">
+              <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view class="modal-form">
-            <view class="form-group">
-              <text class="form-label">学科名称</text>
-              <input
-                class="zen-input"
-                v-model="formData.name"
-                maxlength="64"
-                placeholder="例如：高等数学、现代物理…"
-                :disabled="savingSubject"
-              />
-            </view>
+            <input
+              class="ui-input"
+              v-model="formData.name"
+              maxlength="64"
+              placeholder="学科名称"
+              :disabled="savingSubject"
+            />
 
-            <view class="form-group">
-              <text class="form-label">学科简介（可选）</text>
-              <input
-                class="zen-input"
-                v-model="formData.description"
-                maxlength="200"
-                placeholder="简要描述研究或复习范围…"
-                :disabled="savingSubject"
-              />
-            </view>
+            <input
+              class="ui-input"
+              v-model="formData.description"
+              maxlength="200"
+              placeholder="简介（可选）"
+              :disabled="savingSubject"
+            />
 
-            <view class="form-group">
-              <text class="form-label">学科图标</text>
-              <view class="icon-grid">
-                <view
-                  v-for="option in subjectIconOptions"
-                  :key="option.key"
-                  class="icon-option"
-                  :class="{ selected: formData.icon === option.key }"
-                  @click="!savingSubject && (formData.icon = option.key)"
-                >
-                  <LineIcon
-                    :name="`subj-${option.key}`"
-                    size="36rpx"
-                    :color="formData.icon === option.key ? '#8B9A6E' : '#7A7A75'"
-                  />
-                </view>
+            <view class="icon-grid">
+              <view
+                v-for="option in subjectIconOptions"
+                :key="option.key"
+                class="icon-option"
+                :class="{ selected: formData.icon === option.key }"
+                @click="!savingSubject && (formData.icon = option.key)"
+              >
+                <LineIcon
+                  :name="`subj-${option.key}`"
+                  size="18px"
+                  :color="formData.icon === option.key ? '#6D7D51' : '#76756F'"
+                />
               </view>
             </view>
 
@@ -144,9 +126,9 @@
           </view>
 
           <view class="modal-footer">
-            <view class="btn ghost-btn" @click="closeModal">取消</view>
-            <view class="btn save-btn" :class="{ disabled: savingSubject }" @click="handleSave">
-              {{ savingSubject ? '保存中…' : isEditing ? '保存修改' : '立即创建' }}
+            <view class="ui-btn ui-btn-ghost" @click="closeModal">取消</view>
+            <view class="ui-btn ui-btn-primary" :class="{ 'is-disabled': savingSubject }" @click="handleSave">
+              {{ savingSubject ? '保存中…' : isEditing ? '保存' : '创建' }}
             </view>
           </view>
         </view>
@@ -231,7 +213,7 @@ async function handleSave() {
     item.id !== editingId.value && item.name.trim().toLowerCase() === normalizedName,
   )
   if (duplicate) {
-    modalError.value = '已存在同名学科，请使用其他名称'
+    modalError.value = '已存在同名学科'
     return
   }
 
@@ -249,17 +231,17 @@ async function handleSave() {
       })
       if (generation !== authStore.getLoginGeneration()) return
       showModal.value = false
-      uni.showToast({ title: '学科已更新', icon: 'none' })
+      uni.showToast({ title: '已更新', icon: 'none' })
       return
     }
 
     const newId = await subjectStore.addSubject(trimmedName, formData.description.trim(), formData.icon)
     if (generation !== authStore.getLoginGeneration()) return
     showModal.value = false
-    uni.showToast({ title: '学科已创建', icon: 'none' })
+    uni.showToast({ title: '已创建', icon: 'none' })
     enterWorkspace(newId)
   } catch (err) {
-    modalError.value = err instanceof Error ? err.message : '保存失败，请稍后重试'
+    modalError.value = err instanceof Error ? err.message : '保存失败'
   } finally {
     savingSubject.value = false
   }
@@ -267,12 +249,13 @@ async function handleSave() {
 
 function handleDeleteSubject(subj: Subject) {
   uni.showModal({
-    title: '删除学科空间',
-    content: `确定删除「${subj.name}」吗？该操作会同步移除所属资料关联。`,
+    title: '删除学科',
+    content: `确定删除「${subj.name}」吗？`,
+    confirmColor: '#C93B3B',
     success: async (res) => {
       if (res.confirm) {
         await subjectStore.deleteSubject(subj.id)
-        uni.showToast({ title: '学科已删除', icon: 'none' })
+        uni.showToast({ title: '已删除', icon: 'none' })
       }
     },
   })
@@ -294,7 +277,7 @@ onMounted(async () => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 40rpx 44rpx;
+  padding: 24px 26px;
   box-sizing: border-box;
   background-color: var(--color-bg-primary);
 }
@@ -303,83 +286,69 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 24rpx;
-  margin-bottom: 32rpx;
+  gap: 16px;
+  margin-bottom: 20px;
   flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
+  flex-wrap: wrap;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: 14rpx;
+  gap: 10px;
 }
 
 .page-title {
-  font-size: var(--font-size-2xl);
+  font-size: var(--text-display);
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.03em;
 }
 
 .count-pill {
-  padding: 4rpx 16rpx;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-}
-
-.page-sub {
+  color: var(--color-sage-dark);
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-semibold);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 10px;
 }
 
 .search-box {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  padding: 12rpx 24rpx;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
   border-radius: var(--radius-full);
-  width: 380rpx;
+  width: 220px;
   box-sizing: border-box;
 }
 
 .search-input {
   flex: 1;
   min-width: 0;
-  font-size: var(--font-size-xs);
+  font-size: 13px;
   color: var(--text-primary);
 }
 
 .search-clear {
   cursor: pointer;
-  padding: 4rpx;
+  display: flex;
+  align-items: center;
 }
 
 .create-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10rpx;
-  padding: 16rpx 28rpx;
+  height: 38px;
+  padding: 0 16px;
   border-radius: var(--radius-full);
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  box-shadow: 0 8rpx 20rpx rgba(139, 154, 110, 0.24);
-  cursor: pointer;
 }
 
 .content-scroll {
@@ -388,65 +357,41 @@ onMounted(async () => {
 }
 
 .empty-hall {
-  padding: 80rpx 40rpx;
+  padding: 56px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16rpx;
-  text-align: center;
-}
-
-.empty-badge {
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 32rpx;
-  background-color: var(--color-sage-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 14px;
 }
 
 .empty-title {
-  font-size: var(--font-size-lg);
+  font-size: 16px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
 
-.empty-hint {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
-
-.clear-search-btn {
-  padding: 12rpx 24rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-}
-
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24rpx;
-  padding-bottom: 32rpx;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 16px;
+  padding-bottom: 20px;
 }
 
 .subject-card {
-  padding: 28rpx;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
-  min-height: 260rpx;
-  box-sizing: border-box;
+  gap: 12px;
+  min-height: 156px;
   cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  box-sizing: border-box;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.subject-card:active {
-  transform: scale(0.98);
+.subject-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-accent);
 }
 
 .card-top {
@@ -456,9 +401,9 @@ onMounted(async () => {
 }
 
 .s-icon {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 20rpx;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
@@ -467,13 +412,14 @@ onMounted(async () => {
 
 .card-actions {
   display: flex;
-  gap: 8rpx;
+  align-items: center;
+  gap: 6px;
 }
 
 .icon-action-btn {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background-color: var(--color-bg-primary);
   display: flex;
   align-items: center;
@@ -481,135 +427,93 @@ onMounted(async () => {
   cursor: pointer;
 }
 
-.icon-action-btn.danger {
-  background-color: var(--color-danger-bg);
-}
-
 .s-name {
-  font-size: var(--font-size-lg);
+  font-size: 17px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
 .s-desc {
-  font-size: var(--font-size-xs);
+  font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
-  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.s-meta {
+.s-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
-  gap: 10rpx;
-  padding-top: 12rpx;
-  border-top: 1px solid var(--border-subtle);
+  justify-content: space-between;
 }
 
-.meta-item,
-.meta-dot {
-  font-size: 22rpx;
+.s-stats {
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
 .add-card {
-  border: 1px dashed var(--border-accent);
-  background-color: var(--color-bg-primary);
+  border: 1.5px dashed var(--border-default);
   border-radius: var(--radius-lg);
   align-items: center;
   justify-content: center;
-  text-align: center;
+  background-color: transparent;
+  box-shadow: none;
+  gap: 8px;
 }
 
-.add-circle {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 50%;
+.add-card:hover {
+  border-color: var(--border-accent);
   background-color: var(--color-sage-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .add-label {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.add-sub {
-  font-size: 22rpx;
-  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-dark);
 }
 
 .subject-modal {
-  max-width: 760rpx;
-  padding: 36rpx;
+  max-width: 440px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24rpx;
 }
 
 .modal-title {
-  font-size: var(--font-size-lg);
+  font-size: 18px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-}
-
-.modal-close {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
 .modal-form {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-}
-
-.form-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.zen-input {
-  height: 82rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20rpx;
-  padding: 0 22rpx;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  box-sizing: border-box;
+  gap: 12px;
 }
 
 .icon-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .icon-option {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 20rpx;
+  height: 38px;
+  border-radius: 10px;
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
   display: flex;
@@ -631,29 +535,6 @@ onMounted(async () => {
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 16rpx;
-  margin-top: 28rpx;
-}
-
-.btn {
-  padding: 16rpx 32rpx;
-  border-radius: 20rpx;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-}
-
-.ghost-btn {
-  background-color: var(--color-bg-primary);
-  color: var(--text-secondary);
-}
-
-.save-btn {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-}
-
-.save-btn.disabled {
-  opacity: 0.55;
+  gap: 8px;
 }
 </style>

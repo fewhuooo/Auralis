@@ -1,34 +1,27 @@
 <template>
   <view class="rail-card zen-card">
     <view class="rail-top">
-      <view class="back-btn" @click="emit('back')">
-        <LineIcon name="chevron-left" size="26rpx" color="var(--text-primary)" />
-        <text>学科大厅</text>
-      </view>
-
-      <view class="subject-banner">
+      <view class="rail-header-row">
+        <view class="ui-icon-btn sm" @click="emit('back')">
+          <LineIcon name="chevron-left" size="15px" color="var(--text-primary)" />
+        </view>
         <view class="subject-badge">
-          <LineIcon :name="`subj-${safeIcon}`" size="30rpx" color="var(--color-zen-sage)" />
+          <LineIcon :name="`subj-${safeIcon}`" size="15px" color="var(--color-zen-sage)" />
         </view>
-        <view class="subject-meta">
-          <text class="subject-title">{{ subjectName || '学科工作台' }}</text>
-          <text class="subject-sub">{{ sources.length }} 份资料 · {{ readyCount }} 份已就绪</text>
+        <text class="subject-title">{{ subjectName || '学科工作台' }}</text>
+        <view class="ui-icon-btn sm" @click="emit('refresh')">
+          <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
         </view>
       </view>
 
-      <view class="rail-actions">
-        <button
-          class="upload-btn"
-          :disabled="uploading"
-          @click="emit('upload')"
-        >
-          <LineIcon name="upload" size="24rpx" color="#FFFFFF" />
-          <text>{{ uploading ? '上传中...' : '+ 上传文件' }}</text>
-        </button>
-        <view class="refresh-btn" @click="emit('refresh')">
-          <LineIcon name="refresh" size="26rpx" color="var(--text-secondary)" />
-        </view>
-      </view>
+      <button
+        class="ui-btn ui-btn-primary sm upload-full"
+        :disabled="uploading"
+        @click="emit('upload')"
+      >
+        <LineIcon name="upload" size="14px" color="#FFFFFF" />
+        <text>{{ uploading ? '上传中...' : '上传资料' }}</text>
+      </button>
     </view>
 
     <scroll-view scroll-y :show-scrollbar="false" class="rail-scroll">
@@ -40,23 +33,20 @@
         <view class="item-icon-box" :class="{ active: selectedSourceId === null }">
           <LineIcon
             name="layers"
-            size="26rpx"
-            :color="selectedSourceId === null ? '#FFFFFF' : '#8B9A6E'"
+            size="15px"
+            :color="selectedSourceId === null ? '#FFFFFF' : 'var(--color-zen-sage)'"
           />
         </view>
-        <view class="item-body">
-          <text class="item-title">学科总览</text>
-          <text class="item-sub">全科视角 · 大纲、知识块与复习</text>
-        </view>
+        <text class="overview-title">学科总览</text>
       </view>
 
       <view class="section-caption">
-        <text>参考资料</text>
-        <text class="count-num">{{ sources.length }}</text>
+        <text>资料</text>
+        <text class="count-num num-tabular">{{ sources.length }}</text>
       </view>
 
-      <view v-if="loadingSources" class="rail-state">
-        <text>正在同步资料列表...</text>
+      <view v-if="loadingSources" class="rail-skeletons">
+        <view v-for="n in 3" :key="n" class="rail-skeleton ui-shimmer" />
       </view>
 
       <view v-else-if="sourcesError" class="rail-state error">
@@ -64,8 +54,7 @@
       </view>
 
       <view v-else-if="sources.length === 0" class="rail-state">
-        <text>暂无上传资料</text>
-        <text class="state-hint">支持 PDF、文档与图片资料</text>
+        <text>暂无资料</text>
       </view>
 
       <view v-else class="source-list">
@@ -79,29 +68,30 @@
           <view class="item-icon-box" :class="{ active: src.id === selectedSourceId }">
             <LineIcon
               :name="isImageMedia(undefined, src.title) ? 'file' : 'file-text'"
-              size="24rpx"
-              :color="src.id === selectedSourceId ? '#FFFFFF' : '#7A7A75'"
+              size="14px"
+              :color="src.id === selectedSourceId ? '#FFFFFF' : 'var(--text-secondary)'"
             />
           </view>
 
           <view class="item-body">
             <text class="item-title">{{ src.title || '未命名资料' }}</text>
             <view class="item-meta-row">
+              <view
+                class="status-dot"
+                :class="`tone-${getSourceStatusMeta(src.ingestionStatus).tone}`"
+              />
               <text
-                class="status-pill"
+                class="status-label"
                 :class="`tone-${getSourceStatusMeta(src.ingestionStatus).tone}`"
               >{{ getSourceStatusMeta(src.ingestionStatus).label }}</text>
-              <text v-if="formatBytes(src.assetSizeBytes)" class="size-label">
-                {{ formatBytes(src.assetSizeBytes) }}
+              <text v-if="formatBytes(src.assetSizeBytes)" class="size-label num-tabular">
+                · {{ formatBytes(src.assetSizeBytes) }}
               </text>
             </view>
           </view>
 
-          <view
-            class="item-delete"
-            @click.stop="emit('delete-source', src)"
-          >
-            <LineIcon name="trash" size="22rpx" color="var(--text-muted)" />
+          <view class="item-delete" @click.stop="emit('delete-source', src)">
+            <LineIcon name="trash" size="13px" color="var(--text-muted)" />
           </view>
         </view>
       </view>
@@ -141,17 +131,14 @@ const emit = defineEmits<{
 }>()
 
 const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(props.subjectIcon) ? props.subjectIcon : 'book'))
-const readyCount = computed(() => props.sources.filter(item => item.ingestionStatus === 'READY').length)
 </script>
 
 <style scoped>
 .rail-card {
-  width: 300rpx;
+  width: 244px;
   height: 100%;
   flex-shrink: 0;
-  background: var(--bg-card);
-  border-radius: 28rpx;
-  border: 1rpx solid var(--border-subtle);
+  border-radius: var(--radius-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -159,33 +146,23 @@ const readyCount = computed(() => props.sources.filter(item => item.ingestionSta
 }
 
 .rail-top {
-  padding: 22rpx 20rpx 16rpx;
-  border-bottom: 1rpx solid var(--border-subtle);
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 10px;
 }
 
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8rpx;
-  font-size: 24rpx;
-  color: var(--text-secondary);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.subject-banner {
+.rail-header-row {
   display: flex;
   align-items: center;
-  gap: 14rpx;
+  gap: 8px;
 }
 
 .subject-badge {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 16rpx;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background: var(--color-sage-bg);
   display: flex;
   align-items: center;
@@ -193,111 +170,47 @@ const readyCount = computed(() => props.sources.filter(item => item.ingestionSta
   flex-shrink: 0;
 }
 
-.subject-meta {
+.subject-title {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4rpx;
-}
-
-.subject-title {
-  font-size: 28rpx;
+  font-size: var(--text-md);
   font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.subject-sub {
-  font-size: 21rpx;
-  color: var(--text-muted);
-}
-
-.rail-actions {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-}
-
-.upload-btn {
-  flex: 1;
-  height: 62rpx;
-  line-height: 62rpx;
-  margin: 0;
-  padding: 0 18rpx;
-  border-radius: 16rpx;
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: 23rpx;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-}
-
-.upload-btn::after {
-  border: none;
-}
-
-.upload-btn[disabled] {
-  opacity: 0.6;
-}
-
-.refresh-btn {
-  width: 62rpx;
-  height: 62rpx;
-  border-radius: 16rpx;
-  background: var(--bg-primary);
-  border: 1rpx solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+.upload-full {
+  width: 100%;
+  height: 36px;
 }
 
 .rail-scroll {
   flex: 1;
   min-height: 0;
-  padding: 16rpx;
+  padding: 10px;
   box-sizing: border-box;
-}
-
-.section-caption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18rpx 8rpx 10rpx;
-  font-size: 21rpx;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.count-num {
-  font-family: var(--font-family-mono);
-}
-
-.source-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
 }
 
 .rail-item {
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  padding: 16rpx 14rpx;
-  border-radius: 18rpx;
-  border: 1rpx solid transparent;
-  background: transparent;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease;
+  transition: background-color 0.16s var(--ease-out), border-color 0.16s var(--ease-out);
+  margin-bottom: 4px;
 }
 
 .rail-item.overview-item {
+  margin-bottom: 2px;
+}
+
+.rail-item:hover {
   background: var(--bg-primary);
 }
 
@@ -307,18 +220,68 @@ const readyCount = computed(() => props.sources.filter(item => item.ingestionSta
 }
 
 .item-icon-box {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 14rpx;
-  background: var(--bg-secondary);
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: background-color 0.16s var(--ease-out);
 }
 
 .item-icon-box.active {
   background: var(--color-zen-sage);
+}
+
+.overview-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.section-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px 6px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.count-num {
+  font-family: var(--font-family-mono);
+}
+
+.rail-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px;
+}
+
+.rail-skeleton {
+  height: 48px;
+  border-radius: 12px;
+}
+
+.rail-state {
+  padding: 28px 10px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.rail-state.error {
+  color: var(--color-danger);
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .item-body {
@@ -326,21 +289,13 @@ const readyCount = computed(() => props.sources.filter(item => item.ingestionSta
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 2px;
 }
 
 .item-title {
-  font-size: 24rpx;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.item-sub {
-  font-size: 20rpx;
-  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -349,70 +304,86 @@ const readyCount = computed(() => props.sources.filter(item => item.ingestionSta
 .item-meta-row {
   display: flex;
   align-items: center;
-  gap: 8rpx;
-  flex-wrap: wrap;
+  gap: 5px;
 }
 
-.status-pill {
-  font-size: 19rpx;
-  padding: 2rpx 10rpx;
-  border-radius: 999rpx;
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.tone-ready {
+  background: var(--color-zen-sage);
+}
+
+.status-dot.tone-parsing {
+  background: #C89B6D;
+}
+
+.status-dot.tone-pending {
+  background: var(--text-muted);
+}
+
+.status-dot.tone-failed {
+  background: var(--color-danger);
+}
+
+.status-label {
+  font-size: var(--text-2xs);
   font-weight: 600;
 }
 
-.status-pill.tone-ready {
-  background: rgba(139, 154, 110, 0.16);
+.status-label.tone-ready {
   color: var(--color-sage-dark);
 }
 
-.status-pill.tone-parsing {
-  background: rgba(200, 155, 109, 0.16);
+.status-label.tone-parsing {
   color: #9A6B3B;
 }
 
-.status-pill.tone-pending {
-  background: var(--bg-secondary);
+.status-label.tone-pending {
   color: var(--text-muted);
 }
 
-.status-pill.tone-failed {
-  background: var(--color-danger-bg);
+.status-label.tone-failed {
   color: var(--color-danger);
 }
 
 .size-label {
-  font-size: 19rpx;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
-  font-family: var(--font-family-mono);
 }
 
 .item-delete {
-  width: 40rpx;
-  height: 40rpx;
-  border-radius: 10rpx;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.7;
   flex-shrink: 0;
+  opacity: 0.72;
+  transition: opacity 0.14s var(--ease-out), background-color 0.14s var(--ease-out);
 }
 
-.rail-state {
-  padding: 40rpx 16rpx;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  font-size: 23rpx;
-  color: var(--text-muted);
+.item-delete:hover {
+  opacity: 1;
+  background: var(--color-danger-bg);
 }
 
-.rail-state.error {
-  color: var(--color-danger);
+@media (max-width: 1100px) {
+  .rail-card {
+    width: 212px;
+  }
 }
 
-.state-hint {
-  font-size: 20rpx;
-  color: var(--text-muted);
+@media (max-width: 900px) {
+  .rail-card {
+    width: 100%;
+    height: auto;
+    max-height: 220px;
+  }
 }
 </style>

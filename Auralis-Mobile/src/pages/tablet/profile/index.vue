@@ -3,8 +3,8 @@
     <view class="t-profile">
       <view class="profile-header">
         <text class="page-title">个人中心</text>
-        <view class="logout-pill" @click="handleLogout">
-          <LineIcon name="logout" size="26rpx" color="var(--color-danger)" />
+        <view class="ui-btn ui-btn-danger logout-pill" @click="handleLogout">
+          <LineIcon name="logout" size="15px" color="var(--color-danger)" />
           <text>退出登录</text>
         </view>
       </view>
@@ -13,11 +13,6 @@
         <view class="columns-grid">
           <view class="column-stack">
             <view class="panel-card zen-card">
-              <view class="card-head">
-                <LineIcon name="avatar" size="30rpx" color="var(--color-zen-sage)" />
-                <text class="card-title">个人资料与同步</text>
-              </view>
-
               <view class="user-banner">
                 <view class="avatar-circle">
                   <text class="avatar-letter">{{ avatarLetter }}</text>
@@ -26,45 +21,35 @@
                   <text class="user-display">{{ displayName }}</text>
                   <text class="user-handle">@{{ authStore.username || 'auralis' }}</text>
                 </view>
+                <view class="ui-btn ui-btn-secondary sync-btn" @click="triggerManualSync">
+                  <LineIcon name="sync" size="14px" color="var(--color-sage-dark)" />
+                  <text>{{ syncStore.isSyncing ? '同步中' : '同步' }}</text>
+                </view>
               </view>
 
               <view class="inline-field">
                 <input
-                  class="zen-input"
+                  class="ui-input"
                   v-model="nameDraft"
                   maxlength="64"
                   placeholder="显示名称"
                   :disabled="savingName"
                 />
-                <view class="pill-action" :class="{ disabled: savingName }" @click="saveDisplayName">
-                  <text>{{ savingName ? '保存中' : '更新名称' }}</text>
-                </view>
-              </view>
-
-              <view class="sync-row">
-                <view>
-                  <text class="sub-heading">云端数据同步</text>
-                  <text class="sub-hint">{{ syncStore.lastError || syncTimeLabel }}</text>
-                </view>
-                <view class="pill-action" @click="triggerManualSync">
-                  <LineIcon name="sync" size="24rpx" color="var(--color-zen-sage)" />
-                  <text>{{ syncStore.isSyncing ? '同步中' : '立即同步' }}</text>
+                <view class="ui-btn ui-btn-secondary save-inline-btn" :class="{ 'is-disabled': savingName }" @click="saveDisplayName">
+                  <text>{{ savingName ? '保存中' : '更新' }}</text>
                 </view>
               </view>
             </view>
 
             <view class="panel-card zen-card">
-              <view class="card-head">
-                <LineIcon name="lock" size="30rpx" color="var(--color-zen-sage)" />
-                <text class="card-title">修改登录密码</text>
-              </view>
+              <text class="card-title">修改密码</text>
 
               <view class="form-stack">
-                <input class="zen-input" v-model="pwdForm.currentPassword" password placeholder="当前密码" :disabled="savingPwd" />
-                <input class="zen-input" v-model="pwdForm.newPassword" password placeholder="新密码（至少 8 位含大小写和符号）" :disabled="savingPwd" />
-                <input class="zen-input" v-model="pwdForm.confirmPassword" password placeholder="确认新密码" :disabled="savingPwd" />
+                <input class="ui-input" v-model="pwdForm.currentPassword" password placeholder="当前密码" :disabled="savingPwd" />
+                <input class="ui-input" v-model="pwdForm.newPassword" password placeholder="新密码（8+位含大小写及符号）" :disabled="savingPwd" />
+                <input class="ui-input" v-model="pwdForm.confirmPassword" password placeholder="确认新密码" :disabled="savingPwd" />
                 <text v-if="pwdError" class="error-text">{{ pwdError }}</text>
-                <view class="primary-btn" :class="{ disabled: savingPwd }" @click="submitPasswordChange">
+                <view class="ui-btn ui-btn-primary full-btn" :class="{ 'is-disabled': savingPwd }" @click="submitPasswordChange">
                   <text>{{ savingPwd ? '提交中…' : '更新密码' }}</text>
                 </view>
               </view>
@@ -72,28 +57,27 @@
 
             <view class="panel-card zen-card">
               <view class="card-head-between">
-                <view class="card-head">
-                  <LineIcon name="device" size="30rpx" color="var(--color-zen-sage)" />
-                  <text class="card-title">已登录设备</text>
+                <text class="card-title">登录设备</text>
+                <view class="ui-icon-btn mini-btn" @click="loadSessions">
+                  <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
                 </view>
-                <text class="link-action" @click="loadSessions">刷新</text>
               </view>
 
-              <view v-if="loadingSessions" class="empty-hint">正在加载设备列表…</view>
-              <view v-else-if="sessionsList.length === 0" class="empty-hint">暂无设备记录</view>
+              <view v-if="loadingSessions" class="empty-hint">加载中…</view>
+              <view v-else-if="sessionsList.length === 0" class="empty-hint">暂无设备</view>
               <view v-else class="sessions-list">
                 <view v-for="s in sessionsList" :key="s.id" class="session-row">
                   <view class="session-info">
                     <text class="session-name">{{ s.deviceName || '未知设备' }} · {{ s.platform || 'UNKNOWN' }}</text>
-                    <text class="session-sub">
-                      {{ s.current ? '当前正在使用' : `最近活跃：${formatTime(s.lastUsedAt || s.createdAt)}` }}
+                    <text class="session-sub num-tabular">
+                      {{ s.current ? '当前设备' : formatTime(s.lastUsedAt || s.createdAt) }}
                     </text>
                   </view>
-                  <view v-if="!s.current && s.id" class="revoke-pill" @click="revokeDevice(s.id)">下线</view>
+                  <view v-if="!s.current && s.id" class="ui-btn ui-btn-danger revoke-pill" @click="revokeDevice(s.id)">下线</view>
                 </view>
                 <view
                   v-if="sessionsList.some(item => !item.current)"
-                  class="revoke-all-btn"
+                  class="ui-btn ui-btn-danger full-btn"
                   @click="revokeOtherDevices"
                 >
                   <text>下线全部其他设备</text>
@@ -105,54 +89,51 @@
           <view class="column-stack">
             <view class="panel-card zen-card">
               <view class="card-head-between">
-                <view class="card-head">
-                  <LineIcon name="chart" size="30rpx" color="var(--color-zen-sage)" />
-                  <text class="card-title">AI 使用额度</text>
+                <text class="card-title">AI 额度</text>
+                <view class="ui-icon-btn mini-btn" @click="fetchAiUsage">
+                  <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
                 </view>
-                <text class="link-action" @click="fetchAiUsage">刷新</text>
               </view>
 
-              <view v-if="loadingAiUsage && !aiUsage" class="empty-hint">正在加载额度信息…</view>
+              <view v-if="loadingAiUsage && !aiUsage" class="quota-stack">
+                <view class="ui-shimmer shimmer-line"></view>
+                <view class="ui-shimmer shimmer-line"></view>
+              </view>
               <view v-else-if="aiUsageError" class="error-row">
                 <text class="error-text">{{ aiUsageError }}</text>
-                <text class="link-action" @click="fetchAiUsage">重试</text>
+                <view class="ui-btn ui-btn-secondary retry-small" @click="fetchAiUsage">重试</view>
               </view>
               <view v-else-if="aiUsage" class="quota-stack">
                 <view class="quota-block">
                   <view class="quota-top">
-                    <text class="quota-title">每小时额度</text>
-                    <text class="quota-nums">剩余 {{ aiUsage.hourly.remainingTokens }} / {{ aiUsage.hourly.limitTokens }}</text>
+                    <text class="quota-title">每小时</text>
+                    <text class="quota-nums num-tabular">{{ aiUsage.hourly.remainingTokens }} / {{ aiUsage.hourly.limitTokens }}</text>
                   </view>
                   <view class="quota-track">
                     <view class="quota-fill" :style="{ width: usagePercent(aiUsage.hourly.chargedTokens, aiUsage.hourly.limitTokens) }"></view>
                   </view>
-                  <text class="quota-reset">重置时间：{{ formatTime(aiUsage.hourly.resetAt) }}</text>
                 </view>
 
                 <view class="quota-block">
                   <view class="quota-top">
-                    <text class="quota-title">每日额度</text>
-                    <text class="quota-nums">剩余 {{ aiUsage.daily.remainingTokens }} / {{ aiUsage.daily.limitTokens }}</text>
+                    <text class="quota-title">每日</text>
+                    <text class="quota-nums num-tabular">{{ aiUsage.daily.remainingTokens }} / {{ aiUsage.daily.limitTokens }}</text>
                   </view>
                   <view class="quota-track">
                     <view class="quota-fill" :style="{ width: usagePercent(aiUsage.daily.chargedTokens, aiUsage.daily.limitTokens) }"></view>
                   </view>
-                  <text class="quota-reset">重置时间：{{ formatTime(aiUsage.daily.resetAt) }}</text>
                 </view>
               </view>
             </view>
 
             <view class="panel-card zen-card">
-              <view class="card-head">
-                <LineIcon name="key" size="30rpx" color="var(--color-zen-sage)" />
-                <text class="card-title">模型服务与 BYOK</text>
-              </view>
+              <text class="card-title">模型服务</text>
 
-              <view class="chips-row">
+              <view class="ui-segmented">
                 <view
                   v-for="p in providers"
                   :key="p.id"
-                  class="chip-item"
+                  class="ui-seg-item"
                   :class="{ active: aiForm.provider === p.id }"
                   @click="selectProvider(p.id)"
                 >
@@ -162,22 +143,22 @@
 
               <view class="form-stack">
                 <input
-                  class="zen-input"
+                  class="ui-input"
                   v-model="aiForm.baseUrl"
-                  placeholder="API Base URL（可选，默认使用供应商官方地址）"
+                  placeholder="Base URL（可选）"
                   :disabled="savingAi"
                 />
                 <input
-                  class="zen-input"
+                  class="ui-input"
                   v-model="aiForm.apiKey"
                   password
-                  :placeholder="aiForm.hasApiKey ? '已配置密钥（留空则保留现有密钥）' : '输入 API Key'"
+                  :placeholder="aiForm.hasApiKey ? '已配置密钥（留空保留）' : 'API Key'"
                   :disabled="savingAi"
                 />
                 <input
-                  class="zen-input"
+                  class="ui-input"
                   v-model="aiForm.model"
-                  placeholder="对话模型名称（如 deepseek-chat / gpt-4o-mini）"
+                  placeholder="模型名称"
                   :disabled="savingAi"
                 />
 
@@ -194,12 +175,12 @@
                 </view>
 
                 <view class="btn-row">
-                  <view class="secondary-btn" @click="fetchModels">拉取模型列表</view>
-                  <view class="secondary-btn" @click="testConnection">测试连接</view>
+                  <view class="ui-btn ui-btn-secondary half-btn" @click="fetchModels">拉取模型</view>
+                  <view class="ui-btn ui-btn-secondary half-btn" @click="testConnection">测试连接</view>
                 </view>
 
-                <view class="primary-btn" :class="{ disabled: savingAi }" @click="saveAiSettings">
-                  <text>{{ savingAi ? '保存中…' : '保存模型配置' }}</text>
+                <view class="ui-btn ui-btn-primary full-btn" :class="{ 'is-disabled': savingAi }" @click="saveAiSettings">
+                  <text>{{ savingAi ? '保存中…' : '保存配置' }}</text>
                 </view>
               </view>
             </view>
@@ -235,11 +216,6 @@ const avatarLetter = computed(() => displayName.value.trim().slice(0, 1).toUpper
 const nameDraft = ref(authStore.user?.displayName || authStore.username || '')
 const savingName = ref(false)
 
-const syncTimeLabel = computed(() => {
-  if (!syncStore.lastSyncedAt) return '同步日程、待办、知识块与学科结构'
-  return `上次同步：${formatTime(syncStore.lastSyncedAt)}`
-})
-
 function formatTime(iso?: string): string {
   if (!iso) return '—'
   const date = new Date(iso)
@@ -256,7 +232,7 @@ async function saveDisplayName() {
   if (savingName.value) return
   const trimmed = nameDraft.value.trim()
   if (!trimmed) {
-    uni.showToast({ title: '请输入显示名称', icon: 'none' })
+    uni.showToast({ title: '请输入名称', icon: 'none' })
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -268,9 +244,9 @@ async function saveDisplayName() {
     })
     await authStore.restoreSession()
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '显示名称已更新', icon: 'none' })
+    uni.showToast({ title: '已更新', icon: 'none' })
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '名称更新失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '更新失败', icon: 'none' })
   } finally {
     savingName.value = false
   }
@@ -279,10 +255,9 @@ async function saveDisplayName() {
 async function triggerManualSync() {
   if (syncStore.isSyncing) return
   await syncStore.triggerSync()
-  uni.showToast({ title: syncStore.lastError ? '同步未完成，请重试' : '数据同步完成', icon: 'none' })
+  uni.showToast({ title: syncStore.lastError ? '同步未完成' : '同步完成', icon: 'none' })
 }
 
-// Password Change
 const savingPwd = ref(false)
 const pwdError = ref('')
 const pwdForm = reactive({
@@ -295,7 +270,7 @@ async function submitPasswordChange() {
   if (savingPwd.value) return
   pwdError.value = ''
   if (!pwdForm.currentPassword) {
-    pwdError.value = '请输入当前密码。'
+    pwdError.value = '请输入当前密码'
     return
   }
   const strengthErr = validatePasswordStrength(pwdForm.newPassword)
@@ -304,7 +279,7 @@ async function submitPasswordChange() {
     return
   }
   if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-    pwdError.value = '两次输入的新密码不一致。'
+    pwdError.value = '两次输入的新密码不一致'
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -322,13 +297,12 @@ async function submitPasswordChange() {
     pwdForm.confirmPassword = ''
     uni.showToast({ title: '密码已更新', icon: 'none' })
   } catch (err) {
-    pwdError.value = err instanceof Error ? err.message : '密码修改失败，请检查当前密码'
+    pwdError.value = err instanceof Error ? err.message : '修改失败'
   } finally {
     savingPwd.value = false
   }
 }
 
-// Device Sessions
 const loadingSessions = ref(false)
 const sessionsList = ref<SessionResponse[]>([])
 
@@ -340,7 +314,7 @@ async function loadSessions() {
     if (generation !== authStore.getLoginGeneration()) return
     sessionsList.value = (res.items || []).filter(item => !item.revokedAt)
   } catch {
-    // Keep silent if offline
+    // Keep silent offline
   } finally {
     loadingSessions.value = false
   }
@@ -352,7 +326,7 @@ async function revokeDevice(sessionId: string) {
     sessionsList.value = sessionsList.value.filter(item => item.id !== sessionId)
     uni.showToast({ title: '设备已下线', icon: 'none' })
   } catch {
-    uni.showToast({ title: '下线失败，请重试', icon: 'none' })
+    uni.showToast({ title: '下线失败', icon: 'none' })
   }
 }
 
@@ -360,15 +334,14 @@ async function revokeOtherDevices() {
   try {
     await useAuthApi.revokeOtherSessions()
     sessionsList.value = sessionsList.value.filter(item => item.current)
-    uni.showToast({ title: '已下线其他全部设备', icon: 'none' })
+    uni.showToast({ title: '已下线其他设备', icon: 'none' })
   } catch {
-    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+    uni.showToast({ title: '操作失败', icon: 'none' })
   }
 }
 
-// AI BYOK Settings
 const providers: Array<{ id: AiProviderType; label: string }> = [
-  { id: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容' },
+  { id: 'OPENAI_COMPATIBLE', label: 'OpenAI' },
   { id: 'DEEPSEEK', label: 'DeepSeek' },
   { id: 'SILICONFLOW', label: '硅基流动' },
 ]
@@ -417,10 +390,10 @@ async function fetchModels() {
     const res = await aiApi.listModels(aiForm.provider)
     availableModels.value = res.models || []
     if (availableModels.value.length === 0) {
-      uni.showToast({ title: '未拉取到可用模型，请先保存有效密钥', icon: 'none' })
+      uni.showToast({ title: '未拉取到可用模型', icon: 'none' })
     }
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '模型列表拉取失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '拉取失败', icon: 'none' })
   }
 }
 
@@ -428,11 +401,11 @@ async function testConnection() {
   try {
     const res = await aiApi.testConnection(aiForm.provider)
     uni.showToast({
-      title: res.reachable ? `连接正常 (${res.chatModel || aiForm.provider})` : '连接不可达，请检查配置',
+      title: res.reachable ? `连接正常 (${res.chatModel || aiForm.provider})` : '连接不可达',
       icon: 'none',
     })
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '连接测试失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '连接失败', icon: 'none' })
   }
 }
 
@@ -450,7 +423,7 @@ async function saveAiSettings() {
     await refreshAiConfig()
     await loadAiSettings()
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '模型服务配置已保存', icon: 'none' })
+    uni.showToast({ title: '已保存', icon: 'none' })
   } catch (err) {
     uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
@@ -461,7 +434,8 @@ async function saveAiSettings() {
 function handleLogout() {
   uni.showModal({
     title: '退出登录',
-    content: '确定退出当前账号并返回登录页吗？',
+    content: '确定退出当前账号吗？',
+    confirmColor: '#C93B3B',
     success: async (res) => {
       if (res.confirm) {
         await authStore.logout()
@@ -483,7 +457,7 @@ onMounted(() => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 40rpx 44rpx;
+  padding: 24px 26px;
   box-sizing: border-box;
   background-color: var(--color-bg-primary);
 }
@@ -492,27 +466,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 28rpx;
+  margin-bottom: 18px;
   flex-shrink: 0;
 }
 
 .page-title {
-  font-size: var(--font-size-2xl);
+  font-size: var(--text-display);
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.03em;
 }
 
 .logout-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 12rpx 24rpx;
+  height: 36px;
+  padding: 0 14px;
   border-radius: var(--radius-full);
-  background-color: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
 }
 
 .profile-scroll {
@@ -523,27 +491,28 @@ onMounted(() => {
 .columns-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 28rpx;
-  padding-bottom: 32rpx;
+  gap: 18px;
+  max-width: 1040px;
+  padding-bottom: 24px;
 }
 
 .column-stack {
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 16px;
 }
 
 .panel-card {
-  padding: 30rpx;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 14px;
 }
 
-.card-head {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
+.card-title {
+  font-size: 15px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
 }
 
 .card-head-between {
@@ -552,28 +521,20 @@ onMounted(() => {
   justify-content: space-between;
 }
 
-.card-title {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.link-action {
-  font-size: var(--font-size-xs);
-  color: var(--color-zen-sage);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
+.mini-btn {
+  width: 30px;
+  height: 30px;
 }
 
 .user-banner {
   display: flex;
   align-items: center;
-  gap: 20rpx;
+  gap: 12px;
 }
 
 .avatar-circle {
-  width: 84rpx;
-  height: 84rpx;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: var(--accent-gradient);
   display: flex;
@@ -583,19 +544,21 @@ onMounted(() => {
 }
 
 .avatar-letter {
-  font-size: 36rpx;
+  font-size: 20px;
   font-weight: var(--font-weight-bold);
   color: #FFFFFF;
 }
 
 .user-meta {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
+  gap: 2px;
 }
 
 .user-display {
-  font-size: var(--font-size-lg);
+  font-size: 16px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
@@ -605,166 +568,84 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
+.sync-btn {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+}
+
 .inline-field {
   display: flex;
   align-items: center;
-  gap: 14rpx;
+  gap: 8px;
 }
 
-.inline-field .zen-input {
-  flex: 1;
-}
-
-.zen-input {
-  height: 78rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 18rpx;
-  padding: 0 22rpx;
-  font-size: var(--font-size-xs);
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.pill-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 16rpx 24rpx;
-  border-radius: 18rpx;
-  background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+.save-inline-btn {
+  height: 44px;
+  padding: 0 16px;
   flex-shrink: 0;
-  cursor: pointer;
-}
-
-.pill-action.disabled {
-  opacity: 0.55;
-}
-
-.sync-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  padding-top: 14rpx;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.sub-heading {
-  display: block;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-}
-
-.sub-hint,
-.empty-hint {
-  display: block;
-  font-size: 22rpx;
-  color: var(--text-muted);
-  margin-top: 4rpx;
 }
 
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
+  gap: 10px;
 }
 
-.error-row {
+.full-btn {
+  width: 100%;
+  height: 42px;
+}
+
+.btn-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 10px;
 }
 
-.error-text {
-  font-size: var(--font-size-xs);
-  color: var(--color-danger);
+.half-btn {
+  flex: 1;
+  height: 38px;
 }
 
-.primary-btn {
-  text-align: center;
-  padding: 18rpx 24rpx;
-  border-radius: 20rpx;
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-}
-
-.primary-btn.disabled {
-  opacity: 0.55;
-}
-
-.sessions-list {
+.chips-row {
   display: flex;
-  flex-direction: column;
-  gap: 12rpx;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.session-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14rpx;
-  padding: 16rpx 20rpx;
-  background-color: var(--color-bg-primary);
-  border-radius: 18rpx;
-}
-
-.session-name {
-  display: block;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-}
-
-.session-sub {
-  display: block;
-  font-size: 20rpx;
-  color: var(--text-muted);
-  margin-top: 4rpx;
-}
-
-.revoke-pill {
-  padding: 8rpx 18rpx;
+.chip-item {
+  padding: 5px 11px;
   border-radius: var(--radius-full);
-  background-color: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
   cursor: pointer;
-  flex-shrink: 0;
 }
 
-.revoke-all-btn {
-  text-align: center;
-  padding: 16rpx;
-  border-radius: 18rpx;
-  background-color: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
+.chip-item.active {
+  background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
+  color: var(--color-sage-ink);
+  font-weight: var(--font-weight-bold);
 }
 
 .quota-stack {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 12px;
+}
+
+.shimmer-line {
+  width: 100%;
+  height: 16px;
 }
 
 .quota-block {
   display: flex;
   flex-direction: column;
-  gap: 8rpx;
-  padding: 18rpx 20rpx;
-  background-color: var(--color-bg-primary);
-  border-radius: 20rpx;
+  gap: 6px;
 }
 
 .quota-top {
@@ -774,72 +655,97 @@ onMounted(() => {
 }
 
 .quota-title {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .quota-nums {
-  font-size: 22rpx;
+  font-size: var(--font-size-xs);
   font-family: var(--font-family-mono);
   color: var(--text-muted);
 }
 
 .quota-track {
-  height: 10rpx;
+  height: 6px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-card);
+  background-color: var(--color-bg-secondary);
   overflow: hidden;
 }
 
 .quota-fill {
   height: 100%;
+  border-radius: var(--radius-full);
   background: var(--accent-gradient);
 }
 
-.quota-reset {
-  font-size: 20rpx;
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background-color: var(--color-bg-primary);
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.session-name {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.session-sub {
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 
-.chips-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10rpx;
+.revoke-pill {
+  height: 28px;
+  padding: 0 11px;
+  font-size: var(--text-2xs);
+  flex-shrink: 0;
 }
 
-.chip-item {
-  padding: 10rpx 20rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  font-size: 22rpx;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.chip-item.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
-  color: var(--color-zen-sage);
-  font-weight: var(--font-weight-bold);
-}
-
-.btn-row {
-  display: flex;
-  gap: 14rpx;
-}
-
-.secondary-btn {
-  flex: 1;
-  text-align: center;
-  padding: 16rpx 20rpx;
-  border-radius: 18rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
+.empty-hint {
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.error-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.retry-small {
+  height: 30px;
+  padding: 0 12px;
+  font-size: var(--font-size-xs);
+}
+
+.error-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+@media (max-width: 900px) {
+  .columns-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

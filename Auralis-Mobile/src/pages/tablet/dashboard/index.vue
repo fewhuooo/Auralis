@@ -6,12 +6,12 @@
           <view class="greeting-meta">
             <text class="greeting-title">{{ greeting }}，{{ displayName }}</text>
             <view class="date-row">
-              <text class="date-subtitle">{{ selectedDateHeading }}</text>
-              <text v-if="selectedDateKey !== todayKey" class="back-today" @click="jumpToToday">回到今天</text>
+              <text class="date-subtitle num-tabular">{{ selectedDateHeading }}</text>
+              <text v-if="selectedDateKey !== todayKey" class="back-today" @click="jumpToToday">今天</text>
             </view>
           </view>
-          <view class="primary-create-btn" @click="openCreateModal">
-            <LineIcon name="plus" size="28rpx" color="#FFFFFF" />
+          <view class="ui-btn ui-btn-primary create-task-btn" @click="openCreateModal">
+            <LineIcon name="plus" size="15px" color="#FFFFFF" />
             <text>新建任务</text>
           </view>
         </view>
@@ -19,11 +19,11 @@
         <view class="week-card zen-card">
           <view class="week-nav">
             <view class="week-arrow" @click="shiftWeek(-7)">
-              <LineIcon name="chevron-left" size="26rpx" color="var(--text-muted)" />
+              <LineIcon name="chevron-left" size="15px" color="var(--text-muted)" />
             </view>
-            <text class="week-range">{{ weekRangeLabel }}</text>
+            <text class="week-range num-tabular">{{ weekRangeLabel }}</text>
             <view class="week-arrow" @click="shiftWeek(7)">
-              <LineIcon name="chevron-right" size="26rpx" color="var(--text-muted)" />
+              <LineIcon name="chevron-right" size="15px" color="var(--text-muted)" />
             </view>
           </view>
 
@@ -36,7 +36,7 @@
               @click="selectedDateKey = day.dateKey"
             >
               <text class="w-label">{{ day.weekdayLabel }}</text>
-              <text class="w-num">{{ day.dayNumber }}</text>
+              <text class="w-num num-tabular">{{ day.dayNumber }}</text>
               <view class="w-dot" :class="{ visible: hasScheduledOnDate(day.dateKey) }"></view>
             </view>
           </view>
@@ -45,12 +45,12 @@
         <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
           <view class="task-section">
             <view class="section-header">
-              <text class="section-title">当日日程</text>
-              <text class="section-count">{{ scheduledForDay.length }} 项</text>
+              <text class="section-title">日程</text>
+              <text class="section-count num-tabular">{{ scheduledForDay.length }}</text>
             </view>
 
-            <view v-if="scheduledForDay.length === 0" class="empty-box zen-card">
-              <text class="empty-text">{{ selectedDateHeading }} 暂无已排期任务</text>
+            <view v-if="scheduledForDay.length === 0" class="empty-slot">
+              <text class="empty-text">暂无日程</text>
             </view>
 
             <view v-else class="card-stack">
@@ -68,27 +68,27 @@
                   }"
                   @click="item.id && taskStore.toggleTaskComplete(item.id)"
                 >
-                  <LineIcon v-if="item.status === 'completed'" name="check" size="20rpx" color="#FFFFFF" />
+                  <LineIcon v-if="item.status === 'completed'" name="check" size="12px" color="#FFFFFF" />
                 </view>
 
                 <view class="row-info" @click="item.id && taskStore.toggleTaskComplete(item.id)">
-                  <view class="row-badges">
-                    <text class="time-badge">{{ formatLocalTimeHHmm(item.scheduledAt) || '全天' }}</text>
-                    <text v-if="item.subject" class="subject-tag">{{ item.subject }}</text>
-                    <text v-if="item.dueAt" class="ddl-tag">截止 {{ formatShortDate(item.dueAt) }}</text>
-                  </view>
                   <text class="row-title" :class="{ strike: item.status === 'completed' }">{{ item.name }}</text>
+                  <view class="row-badges">
+                    <text class="time-badge num-tabular">{{ formatLocalTimeHHmm(item.scheduledAt) || '全天' }}</text>
+                    <text v-if="item.subject" class="ui-tag">{{ item.subject }}</text>
+                    <text v-if="item.dueAt" class="ddl-tag num-tabular">截止 {{ formatShortDate(item.dueAt) }}</text>
+                  </view>
                 </view>
 
-                <text class="dur-text">{{ item.duration || 30 }} 分钟</text>
+                <text class="dur-text num-tabular">{{ item.duration || 30 }}m</text>
 
                 <view
                   v-if="item.id && item.status !== 'completed'"
                   class="row-icon-btn"
-                  title="移回待办清单"
+                  title="移回待办"
                   @click.stop="unscheduleTaskItem(item.id)"
                 >
-                  <LineIcon name="close" size="24rpx" color="var(--text-muted)" />
+                  <LineIcon name="close" size="14px" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
@@ -96,12 +96,12 @@
 
           <view class="task-section">
             <view class="section-header">
-              <text class="section-title">待办清单</text>
-              <text class="section-count">{{ taskStore.pendingTasks.length }} 项</text>
+              <text class="section-title">待办</text>
+              <text class="section-count num-tabular">{{ taskStore.pendingTasks.length }}</text>
             </view>
 
-            <view v-if="taskStore.pendingTasks.length === 0" class="empty-box zen-card">
-              <text class="empty-text">暂无待办任务</text>
+            <view v-if="taskStore.pendingTasks.length === 0" class="empty-slot">
+              <text class="empty-text">暂无待办</text>
             </view>
 
             <view v-else class="card-stack">
@@ -112,12 +112,12 @@
                   @click="todo.id && taskStore.toggleTaskComplete(todo.id)"
                 ></view>
 
-                <view class="row-info">
-                  <view class="row-badges">
-                    <text v-if="todo.subject" class="subject-tag">{{ todo.subject }}</text>
-                    <text v-if="todo.dueAt" class="ddl-tag">截止 {{ formatShortDate(todo.dueAt) }}</text>
-                  </view>
+                <view class="row-info" @click="todo.id && taskStore.toggleTaskComplete(todo.id)">
                   <text class="row-title">{{ todo.name }}</text>
+                  <view v-if="todo.subject || todo.dueAt" class="row-badges">
+                    <text v-if="todo.subject" class="ui-tag">{{ todo.subject }}</text>
+                    <text v-if="todo.dueAt" class="ddl-tag num-tabular">截止 {{ formatShortDate(todo.dueAt) }}</text>
+                  </view>
                 </view>
 
                 <picker
@@ -127,7 +127,7 @@
                   @change="onSchedulePending(todo.id, $event)"
                 >
                   <view class="schedule-chip">
-                    <text>排入该日</text>
+                    <text>排入</text>
                   </view>
                 </picker>
 
@@ -136,7 +136,7 @@
                   class="row-icon-btn"
                   @click="confirmDeleteTodo(todo.id, todo.name)"
                 >
-                  <LineIcon name="trash" size="24rpx" color="var(--text-muted)" />
+                  <LineIcon name="trash" size="14px" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
@@ -147,15 +147,14 @@
       <view class="right-column">
         <view class="review-card zen-card">
           <view class="panel-header">
-            <text class="panel-title">学科待复习</text>
-            <view class="refresh-pill" @click="loadDueCounts">
-              <LineIcon name="refresh" size="24rpx" color="var(--color-zen-sage)" />
-              <text>{{ loadingDueCounts ? '加载中' : '刷新' }}</text>
+            <text class="panel-title">待复习</text>
+            <view class="ui-icon-btn refresh-btn" @click="loadDueCounts">
+              <LineIcon name="refresh" size="14px" color="var(--color-sage-dark)" />
             </view>
           </view>
 
           <view v-if="subjectStore.subjects.length === 0" class="review-empty">
-            <text class="empty-text">请先在「学科大厅」创建学科空间</text>
+            <text class="empty-text">暂无学科</text>
           </view>
 
           <scroll-view v-else scroll-y :show-scrollbar="false" class="due-subjects-scroll">
@@ -170,27 +169,24 @@
                   <view class="sub-icon-badge">
                     <LineIcon
                       :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
-                      size="30rpx"
-                      color="var(--color-zen-sage)"
+                      size="16px"
+                      color="var(--color-sage-dark)"
                     />
                   </view>
                   <text class="sub-name">{{ sub.name }}</text>
                 </view>
                 <view class="due-sub-right">
-                  <text class="due-badge" :class="{ active: (dueCounts[sub.id] ?? 0) > 0 }">
+                  <text class="due-badge num-tabular" :class="{ active: (dueCounts[sub.id] ?? 0) > 0 }">
                     {{ dueCountText(sub.id) }}
                   </text>
-                  <LineIcon name="chevron-right" size="24rpx" color="var(--text-muted)" />
+                  <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
           </scroll-view>
         </view>
 
-        <view class="metrics-wrap">
-          <text class="panel-caption">全局学习指标</text>
-          <StudyMetrics />
-        </view>
+        <StudyMetrics />
       </view>
     </view>
 
@@ -198,82 +194,68 @@
       <view v-if="showCreateModal" class="zen-modal-mask" @click="closeCreateModal">
         <view class="zen-modal-body create-modal" @click.stop>
           <view class="modal-header">
-            <text class="modal-title">新建学习任务</text>
-            <view class="modal-close" @click="closeCreateModal">
-              <LineIcon name="close" size="28rpx" color="var(--text-muted)" />
+            <text class="modal-title">新建任务</text>
+            <view class="ui-icon-btn" @click="closeCreateModal">
+              <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view class="modal-form">
-            <view class="field-group">
-              <text class="field-label">任务名称</text>
-              <input
-                class="zen-input"
-                v-model="taskForm.name"
-                placeholder="输入具体学习内容…"
-                :disabled="savingTask"
-              />
-            </view>
+            <input
+              class="ui-input"
+              v-model="taskForm.name"
+              placeholder="任务名称"
+              :disabled="savingTask"
+            />
 
-            <view class="field-group">
-              <text class="field-label">所属学科</text>
-              <view v-if="subjectStore.subjects.length === 0" class="empty-text">暂无可选学科，请先创建学科</view>
-              <view v-else class="chips-row">
-                <view
-                  v-for="sub in subjectStore.subjects"
-                  :key="sub.id"
-                  class="chip-item"
-                  :class="{ active: taskForm.subjectId === sub.id }"
-                  @click="taskForm.subjectId = sub.id"
-                >
-                  <text>{{ sub.name }}</text>
-                </view>
+            <view v-if="subjectStore.subjects.length === 0" class="empty-text">暂无学科</view>
+            <view v-else class="chips-row">
+              <view
+                v-for="sub in subjectStore.subjects"
+                :key="sub.id"
+                class="chip-item"
+                :class="{ active: taskForm.subjectId === sub.id }"
+                @click="taskForm.subjectId = sub.id"
+              >
+                <text>{{ sub.name }}</text>
               </view>
             </view>
 
-            <view class="field-group">
-              <text class="field-label">预计时长</text>
-              <view class="chips-row">
-                <view
-                  v-for="mins in [30, 60, 90, 120]"
-                  :key="mins"
-                  class="chip-item"
-                  :class="{ active: taskForm.duration === mins }"
-                  @click="taskForm.duration = mins"
-                >
-                  <text>{{ mins }} 分钟</text>
-                </view>
+            <view class="chips-row">
+              <view
+                v-for="mins in [30, 60, 90, 120]"
+                :key="mins"
+                class="chip-item num-tabular"
+                :class="{ active: taskForm.duration === mins }"
+                @click="taskForm.duration = mins"
+              >
+                <text>{{ mins }}m</text>
               </view>
             </view>
 
             <view class="switch-row">
-              <view>
-                <text class="field-label">排入 {{ selectedDateHeading }}</text>
-                <text class="switch-sub">{{ taskForm.scheduled ? '创建后直接展示在当日日程' : '创建为未排期待办' }}</text>
-              </view>
+              <text class="field-label">排入 {{ selectedDateHeading }}</text>
               <switch :checked="taskForm.scheduled" color="#8B9A6E" @change="onScheduledSwitch" />
             </view>
 
             <view class="dual-row">
               <view v-if="taskForm.scheduled" class="picker-col">
-                <text class="field-label">开始时间</text>
                 <picker mode="time" :value="taskForm.timeHHmm" @change="onModalTimeChange">
-                  <view class="picker-box">{{ taskForm.timeHHmm }}</view>
+                  <view class="picker-box num-tabular">{{ taskForm.timeHHmm }}</view>
                 </picker>
               </view>
               <view class="picker-col">
-                <text class="field-label">截止日期（可选）</text>
                 <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onModalDueDateChange">
-                  <view class="picker-box">{{ taskForm.dueDateKey || '不设置 DDL' }}</view>
+                  <view class="picker-box num-tabular">{{ taskForm.dueDateKey || '截止日期' }}</view>
                 </picker>
               </view>
             </view>
           </view>
 
           <view class="modal-footer">
-            <view class="btn ghost-btn" @click="closeCreateModal">取消</view>
-            <view class="btn save-btn" :class="{ disabled: savingTask }" @click="submitCreateTask">
-              {{ savingTask ? '保存中…' : '保存任务' }}
+            <view class="ui-btn ui-btn-ghost" @click="closeCreateModal">取消</view>
+            <view class="ui-btn ui-btn-primary" :class="{ 'is-disabled': savingTask }" @click="submitCreateTask">
+              {{ savingTask ? '保存中…' : '保存' }}
             </view>
           </view>
         </view>
@@ -311,7 +293,7 @@ const displayName = computed(() => authStore.user?.displayName || authStore.user
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour < 12) return '早安'
-  if (hour < 18) return '午后'
+  if (hour < 18) return '午安'
   return '晚安'
 })
 
@@ -321,7 +303,7 @@ const weekDays = computed(() => getWeekDays(selectedDateKey.value, todayKey.valu
 const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
 const weekRangeLabel = computed(() => {
   const days = weekDays.value
-  return `${formatShortDate(days[0].dateKey)} - ${formatShortDate(days[6].dateKey)}`
+  return `${formatShortDate(days[0].dateKey)} – ${formatShortDate(days[6].dateKey)}`
 })
 
 const scheduledForDay = computed(() => taskStore.getScheduledTasksForDate(selectedDateKey.value))
@@ -341,27 +323,27 @@ function jumpToToday() {
 
 async function unscheduleTaskItem(id: string) {
   await taskStore.unscheduleTask(id)
-  uni.showToast({ title: '已移回待办清单', icon: 'none' })
+  uni.showToast({ title: '已移回待办', icon: 'none' })
 }
 
 async function onSchedulePending(taskId: string, event: { detail?: { value?: string } }) {
   const hhmm = event?.detail?.value
   if (!hhmm) return
   await taskStore.scheduleTask(taskId, combineLocalDateAndTime(selectedDateKey.value, hhmm))
-  uni.showToast({ title: `已排入 ${selectedDateHeading.value} ${hhmm}`, icon: 'none' })
+  uni.showToast({ title: `已排入 ${hhmm}`, icon: 'none' })
 }
 
 function confirmDeleteTodo(id: string, title: string) {
   uni.showModal({
     title: '删除待办',
-    content: `确定要删除「${title}」吗？`,
+    content: `确定删除「${title}」？`,
+    confirmColor: '#C93B3B',
     success: (res) => {
       if (res.confirm) void taskStore.removeTask(id)
     },
   })
 }
 
-// Create Task Modal
 const showCreateModal = ref(false)
 const savingTask = ref(false)
 const taskForm = reactive({
@@ -403,11 +385,11 @@ async function submitCreateTask() {
   const title = taskForm.name.trim()
   const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
   if (!title) {
-    uni.showToast({ title: '请输入任务名称', icon: 'none' })
+    uni.showToast({ title: '请输入名称', icon: 'none' })
     return
   }
   if (!subject) {
-    uni.showToast({ title: '请选择所属学科', icon: 'none' })
+    uni.showToast({ title: '请选择学科', icon: 'none' })
     return
   }
 
@@ -431,15 +413,14 @@ async function submitCreateTask() {
     taskForm.name = ''
     taskForm.dueDateKey = ''
     showCreateModal.value = false
-    uni.showToast({ title: scheduledAt ? '已加入当日日程' : '已加入待办清单', icon: 'none' })
+    uni.showToast({ title: scheduledAt ? '已加入日程' : '已加入待办', icon: 'none' })
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '任务保存失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
     savingTask.value = false
   }
 }
 
-// Per-subject Due Review Shortcuts
 const dueCounts = ref<Record<string, number>>({})
 const dueHasMore = ref<Record<string, boolean>>({})
 const loadingDueCounts = ref(false)
@@ -447,9 +428,9 @@ let dueCountRequestId = 0
 
 function dueCountText(subjectId: string): string {
   const count = dueCounts.value[subjectId]
-  if (count === undefined) return '点击复习'
-  if (count === 0) return '暂无到期'
-  return dueHasMore.value[subjectId] ? `${count}+ 张待复习` : `${count} 张待复习`
+  if (count === undefined) return '复习'
+  if (count === 0) return '0'
+  return dueHasMore.value[subjectId] ? `${count}+` : `${count}`
 }
 
 async function loadDueCounts() {
@@ -521,8 +502,8 @@ onMounted(async () => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 40rpx 44rpx;
-  gap: 32rpx;
+  padding: 24px 26px;
+  gap: 20px;
   background-color: var(--color-bg-primary);
   box-sizing: border-box;
   overflow: hidden;
@@ -533,7 +514,7 @@ onMounted(async () => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 16px;
   height: 100%;
 }
 
@@ -542,7 +523,7 @@ onMounted(async () => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 16px;
   height: 100%;
 }
 
@@ -550,26 +531,29 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
+  gap: 14px;
   flex-shrink: 0;
 }
 
 .greeting-meta {
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 4px;
+  min-width: 0;
 }
 
 .greeting-title {
-  font-size: var(--font-size-2xl);
+  font-size: var(--text-display);
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
 .date-row {
   display: flex;
   align-items: center;
-  gap: 14rpx;
+  gap: 10px;
 }
 
 .date-subtitle {
@@ -578,35 +562,27 @@ onMounted(async () => {
 }
 
 .back-today {
-  font-size: 22rpx;
-  padding: 4rpx 14rpx;
+  font-size: var(--text-2xs);
+  padding: 3px 9px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
 }
 
-.primary-create-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10rpx;
-  padding: 16rpx 28rpx;
+.create-task-btn {
+  height: 38px;
+  padding: 0 16px;
   border-radius: var(--radius-full);
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  box-shadow: 0 8rpx 20rpx rgba(139, 154, 110, 0.24);
-  cursor: pointer;
   flex-shrink: 0;
 }
 
 .week-card {
-  padding: 18rpx 20rpx;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -617,9 +593,9 @@ onMounted(async () => {
 }
 
 .week-arrow {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background-color: var(--color-bg-primary);
   display: flex;
   align-items: center;
@@ -628,46 +604,50 @@ onMounted(async () => {
 }
 
 .week-range {
-  font-size: 22rpx;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-medium);
 }
 
 .week-strip {
-  display: flex;
-  justify-content: space-between;
-  gap: 8rpx;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .week-day {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6rpx;
-  padding: 12rpx 0;
-  border-radius: 20rpx;
+  gap: 3px;
+  padding: 6px 0;
+  border-radius: 12px;
   cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+
+.week-day:hover:not(.active) {
+  background-color: var(--color-bg-primary);
 }
 
 .week-day.active {
   background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
 }
 
 .w-label {
-  font-size: 20rpx;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .w-num {
-  font-size: 26rpx;
+  font-size: 15px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
 }
 
 .week-day.is-today:not(.active) .w-num {
-  color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
 }
 
 .week-day.active .w-label,
@@ -676,14 +656,15 @@ onMounted(async () => {
 }
 
 .w-dot {
-  width: 8rpx;
-  height: 8rpx;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background-color: transparent;
+  background-color: var(--color-zen-sage);
+  opacity: 0;
 }
 
 .w-dot.visible {
-  background-color: var(--color-zen-sage);
+  opacity: 1;
 }
 
 .week-day.active .w-dot.visible {
@@ -698,30 +679,35 @@ onMounted(async () => {
 .task-section {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
-  margin-bottom: 24rpx;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .section-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
 }
 
 .section-title {
-  font-size: var(--font-size-base);
+  font-size: 14px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
 
 .section-count {
-  font-size: 22rpx;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
   color: var(--text-muted);
 }
 
-.empty-box {
-  padding: 28rpx;
-  text-align: center;
+.empty-slot {
+  height: 44px;
+  border-radius: 14px;
+  border: 1px dashed var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-text {
@@ -732,25 +718,27 @@ onMounted(async () => {
 .card-stack {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 8px;
 }
 
 .task-row {
-  padding: 20rpx 24rpx;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 12px;
+  border-radius: 14px;
+  transition: transform 0.16s var(--ease-out);
 }
 
 .task-row.is-completed {
-  opacity: 0.62;
+  opacity: 0.56;
 }
 
 .check-circle {
-  width: 34rpx;
-  height: 34rpx;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid var(--border-strong);
+  border: 1.5px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -764,7 +752,7 @@ onMounted(async () => {
 }
 
 .check-circle.locked {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .row-info {
@@ -772,41 +760,12 @@ onMounted(async () => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
-}
-
-.row-badges {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8rpx;
-}
-
-.time-badge {
-  font-size: 22rpx;
-  font-family: var(--font-family-mono);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-zen-sage);
-}
-
-.subject-tag {
-  font-size: 20rpx;
-  padding: 2rpx 12rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
-  color: var(--text-muted);
-}
-
-.ddl-tag {
-  font-size: 20rpx;
-  padding: 2rpx 12rpx;
-  border-radius: var(--radius-full);
-  background-color: rgba(200, 155, 109, 0.16);
-  color: #8C6235;
+  gap: 4px;
+  cursor: pointer;
 }
 
 .row-title {
-  font-size: var(--font-size-sm);
+  font-size: 14.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
@@ -816,27 +775,47 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 
-.dur-text {
-  font-size: 22rpx;
-  color: var(--text-muted);
+.row-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.time-badge {
+  font-size: 11.5px;
+  font-weight: var(--font-weight-bold);
   font-family: var(--font-family-mono);
+  color: var(--color-sage-dark);
+}
+
+.ddl-tag {
+  font-size: 11px;
+  color: var(--color-warning);
+  font-weight: var(--font-weight-semibold);
+}
+
+.dur-text {
+  font-size: 11.5px;
+  font-family: var(--font-family-mono);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
 .schedule-chip {
-  padding: 8rpx 16rpx;
+  padding: 5px 11px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: 22rpx;
+  color: var(--color-sage-dark);
+  font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
 }
 
 .row-icon-btn {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -844,42 +823,31 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-.row-icon-btn:hover {
-  background-color: var(--color-bg-primary);
-}
-
 .review-card {
   flex: 1;
   min-height: 0;
-  padding: 28rpx;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 12px;
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .panel-title {
-  font-size: var(--font-size-base);
+  font-size: 15px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
 
-.refresh-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 8rpx 16rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
+.refresh-btn {
+  width: 30px;
+  height: 30px;
 }
 
 .review-empty {
@@ -897,31 +865,40 @@ onMounted(async () => {
 .due-subject-list {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 8px;
 }
 
 .due-subject-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18rpx 20rpx;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 22rpx;
   cursor: pointer;
+  transition: background-color 0.16s ease, transform 0.14s ease;
+}
+
+.due-subject-row:hover {
+  background-color: var(--color-bg-secondary);
+}
+
+.due-subject-row:active {
+  transform: scale(0.985);
 }
 
 .due-sub-left {
   display: flex;
   align-items: center;
-  gap: 14rpx;
+  gap: 10px;
   min-width: 0;
 }
 
 .sub-icon-badge {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 16rpx;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
@@ -930,21 +907,25 @@ onMounted(async () => {
 }
 
 .sub-name {
-  font-size: var(--font-size-sm);
+  font-size: 13.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .due-sub-right {
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .due-badge {
-  font-size: 22rpx;
-  padding: 6rpx 14rpx;
+  font-size: 12px;
+  font-family: var(--font-family-mono);
+  padding: 2px 9px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-card);
   color: var(--text-muted);
@@ -952,94 +933,48 @@ onMounted(async () => {
 
 .due-badge.active {
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
+  color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
 
-.metrics-wrap {
+.create-modal {
+  max-width: 460px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 10rpx;
-  flex-shrink: 0;
-}
-
-.panel-caption {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
-  padding-left: 8rpx;
-}
-
-.create-modal {
-  max-width: 780rpx;
-  padding: 36rpx;
+  gap: 16px;
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24rpx;
 }
 
 .modal-title {
-  font-size: var(--font-size-lg);
+  font-size: 18px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-}
-
-.modal-close {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
 .modal-form {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
-}
-
-.field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-}
-
-.field-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.zen-input {
-  height: 82rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20rpx;
-  padding: 0 22rpx;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  box-sizing: border-box;
+  gap: 12px;
 }
 
 .chips-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10rpx;
+  gap: 8px;
 }
 
 .chip-item {
-  padding: 10rpx 20rpx;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  font-size: 24rpx;
+  font-size: 12.5px;
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -1047,7 +982,7 @@ onMounted(async () => {
 .chip-item.active {
   background-color: var(--color-sage-bg);
   border-color: var(--border-accent);
-  color: var(--color-zen-sage);
+  color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
 
@@ -1055,67 +990,54 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14rpx 20rpx;
-  background-color: var(--color-bg-primary);
-  border-radius: 20rpx;
+  padding: 2px 0;
 }
 
-.switch-sub {
-  display: block;
-  font-size: 20rpx;
-  color: var(--text-muted);
-  margin-top: 4rpx;
+.field-label {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
 }
 
 .dual-row {
   display: flex;
-  gap: 16rpx;
+  gap: 10px;
 }
 
 .picker-col {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
 }
 
 .picker-box {
-  height: 76rpx;
-  line-height: 76rpx;
-  padding: 0 22rpx;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 18rpx;
-  font-size: var(--font-size-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
 }
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 16rpx;
-  margin-top: 28rpx;
+  gap: 8px;
 }
 
-.btn {
-  padding: 16rpx 32rpx;
-  border-radius: 20rpx;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-}
+@media (max-width: 900px) {
+  .t-dashboard {
+    flex-direction: column;
+    overflow-y: auto;
+  }
 
-.ghost-btn {
-  background-color: var(--color-bg-primary);
-  color: var(--text-secondary);
-}
-
-.save-btn {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-}
-
-.save-btn.disabled {
-  opacity: 0.55;
+  .left-column,
+  .right-column {
+    flex: none;
+    height: auto;
+  }
 }
 </style>

@@ -54,8 +54,8 @@
         <view class="zen-modal-card" @click.stop>
           <view class="modal-header">
             <text class="modal-title">{{ editingBlockId ? '编辑知识块' : '新建知识块' }}</text>
-            <view class="modal-close" @click="closeBlockModal">
-              <LineIcon name="close" size="26rpx" color="var(--text-muted)" />
+            <view class="ui-icon-btn sm" @click="closeBlockModal">
+              <LineIcon name="close" size="14px" color="var(--text-muted)" />
             </view>
           </view>
 
@@ -64,37 +64,37 @@
               <text class="field-label">标题</text>
               <input
                 v-model="blockDraft.title"
-                class="field-input"
+                class="ui-input"
                 maxlength="80"
-                placeholder="例如：拉格朗日中值定理的几何意义"
+                placeholder="拉格朗日中值定理"
               />
             </view>
 
             <view class="form-field">
-              <text class="field-label">来源（选填）</text>
+              <text class="field-label">来源</text>
               <input
                 v-model="blockDraft.source"
-                class="field-input"
+                class="ui-input"
                 maxlength="80"
-                placeholder="例如：第三章讲义 / 自主整理"
+                placeholder="自主整理"
               />
             </view>
 
             <view class="form-field">
-              <text class="field-label">内容（支持 Markdown）</text>
+              <text class="field-label">内容</text>
               <textarea
                 v-model="blockDraft.preview"
-                class="field-textarea"
+                class="ui-textarea"
                 :maxlength="4000"
-                placeholder="记录核心定义、公式推导或关键例题解析..."
+                placeholder="Markdown 正文"
               />
             </view>
           </view>
 
           <view class="modal-footer">
-            <button class="modal-cancel-btn" :disabled="submittingBlock" @click="closeBlockModal">取消</button>
-            <button class="modal-save-btn" :disabled="submittingBlock" @click="submitBlockModal">
-              {{ submittingBlock ? '保存中...' : (editingBlockId ? '保存修改' : '确认创建') }}
+            <button class="ui-btn ui-btn-secondary" :disabled="submittingBlock" @click="closeBlockModal">取消</button>
+            <button class="ui-btn ui-btn-primary" :disabled="submittingBlock" @click="submitBlockModal">
+              {{ submittingBlock ? '保存中...' : '保存' }}
             </button>
           </view>
         </view>
@@ -124,7 +124,7 @@ const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
 
 const subjectId = ref('')
-const activeTab = ref<WorkspaceTabKey>('preview')
+const activeTab = ref<WorkspaceTabKey>('overview')
 const aiPanelVisible = ref(true)
 
 const sources = ref<SourceView[]>([])
@@ -208,6 +208,7 @@ async function loadSources() {
     sources.value = list
     if (selectedSourceId.value && !list.some(item => item.id === selectedSourceId.value)) {
       selectedSourceId.value = null
+      if (activeTab.value === 'preview') activeTab.value = 'overview'
       clearPreview()
     }
   } catch (error) {
@@ -281,6 +282,7 @@ async function loadOverview() {
 
 function selectOverview() {
   selectedSourceId.value = null
+  if (activeTab.value === 'preview') activeTab.value = 'overview'
   clearPreview()
   void loadOverview()
 }
@@ -288,6 +290,7 @@ function selectOverview() {
 function selectSource(source: SourceView) {
   if (!source.id) return
   selectedSourceId.value = source.id
+  activeTab.value = 'preview'
   void loadSourcePreview()
   void loadOverview()
 }
@@ -303,15 +306,16 @@ async function handleUploadFile() {
     if (!isFenceValid(fence, false)) return
     await Promise.all([loadSources(), subjectStore.loadSubjects()])
     if (!isFenceValid(fence, false)) return
-    uni.showToast({ title: '资料已上传，等待 PC 解析', icon: 'none' })
+    uni.showToast({ title: '已上传，等待解析', icon: 'none' })
     if (created.id) {
       selectedSourceId.value = created.id
+      activeTab.value = 'preview'
       void loadSourcePreview()
       void loadOverview()
     }
   } catch (error) {
     if (!isFenceValid(fence, false)) return
-    const msg = error instanceof Error && error.message ? error.message : '文件上传失败'
+    const msg = error instanceof Error && error.message ? error.message : '上传失败'
     uni.showToast({ title: msg, icon: 'none' })
   } finally {
     uploading.value = false
@@ -323,7 +327,7 @@ function handleDeleteSource(source: SourceView) {
   const fence = captureFence()
   uni.showModal({
     title: '删除资料',
-    content: `确定要删除《${source.title || '未命名资料'}》吗？此操作无法撤销。`,
+    content: `确定删除《${source.title || '未命名资料'}》吗？`,
     confirmColor: '#D14343',
     success: async (res) => {
       if (!res.confirm || !source.id || !isFenceValid(fence, false)) return
@@ -332,11 +336,12 @@ function handleDeleteSource(source: SourceView) {
         if (!isFenceValid(fence, false)) return
         if (selectedSourceId.value === source.id) {
           selectedSourceId.value = null
+          if (activeTab.value === 'preview') activeTab.value = 'overview'
           clearPreview()
         }
         await Promise.all([loadSources(), subjectStore.loadSubjects(), loadOverview()])
         if (!isFenceValid(fence, false)) return
-        uni.showToast({ title: '资料已删除', icon: 'none' })
+        uni.showToast({ title: '已删除', icon: 'none' })
       } catch (error) {
         if (!isFenceValid(fence, false)) return
         const msg = error instanceof Error && error.message ? error.message : '删除资料失败'
@@ -461,7 +466,7 @@ onLoad((options) => {
     subjectStore.setActiveSubject(options.id)
   }
   const panel = options?.panel || options?.tab
-  if (panel === 'preview' || panel === 'overview' || panel === 'blocks' || panel === 'review') {
+  if (panel === 'overview' || panel === 'blocks' || panel === 'review') {
     activeTab.value = panel
   }
 })
@@ -488,11 +493,11 @@ onMounted(async () => {
   width: 100%;
   height: 100%;
   background: var(--color-bg-page);
-  padding: 20rpx 24rpx;
+  padding: 16px 18px;
   box-sizing: border-box;
   display: flex;
   align-items: stretch;
-  gap: 20rpx;
+  gap: 14px;
   overflow: hidden;
 }
 
@@ -501,22 +506,24 @@ onMounted(async () => {
   inset: 0;
   z-index: 900;
   background: rgba(28, 28, 26, 0.36);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32rpx;
+  padding: 20px;
 }
 
 .zen-modal-card {
   width: 100%;
-  max-width: 720rpx;
+  max-width: 480px;
   background: var(--bg-card);
-  border-radius: 32rpx;
-  padding: 32rpx;
-  box-shadow: 0 24rpx 64rpx rgba(28, 28, 26, 0.16);
+  border-radius: 22px;
+  border: 1px solid var(--border-subtle);
+  padding: 22px;
+  box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 16px;
 }
 
 .modal-header {
@@ -526,95 +533,42 @@ onMounted(async () => {
 }
 
 .modal-title {
-  font-size: 32rpx;
+  font-size: var(--text-lg);
   font-weight: 700;
+  letter-spacing: -0.015em;
   color: var(--text-primary);
-}
-
-.modal-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 16rpx;
-  background: var(--bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
 .modal-body {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 12px;
 }
 
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: 8rpx;
+  gap: 6px;
 }
 
 .field-label {
-  font-size: 23rpx;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-secondary);
-}
-
-.field-input {
-  height: 76rpx;
-  padding: 0 20rpx;
-  border-radius: 18rpx;
-  background: var(--bg-primary);
-  font-size: 25rpx;
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.field-textarea {
-  width: 100%;
-  min-height: 240rpx;
-  padding: 18rpx 20rpx;
-  border-radius: 18rpx;
-  background: var(--bg-primary);
-  font-size: 25rpx;
-  color: var(--text-primary);
-  line-height: 1.6;
-  box-sizing: border-box;
 }
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 14rpx;
+  gap: 10px;
 }
 
-.modal-cancel-btn,
-.modal-save-btn {
-  height: 74rpx;
-  line-height: 74rpx;
-  margin: 0;
-  padding: 0 28rpx;
-  border-radius: 18rpx;
-  font-size: 25rpx;
-  font-weight: 600;
-}
-
-.modal-cancel-btn {
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-}
-
-.modal-save-btn {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-}
-
-.modal-cancel-btn::after,
-.modal-save-btn::after {
-  border: none;
-}
-
-.modal-save-btn[disabled] {
-  opacity: 0.6;
+@media (max-width: 900px) {
+  .t-workspace {
+    flex-direction: column;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100%;
+  }
 }
 </style>
