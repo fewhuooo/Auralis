@@ -9,10 +9,31 @@ function escapeHtml(raw: string): string {
     .replaceAll("'", '&#39;')
 }
 
+function isSafeImageHref(href?: string | null): string | null {
+  if (!href) return null
+  const trimmed = href.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(trimmed)) return trimmed
+  return null
+}
+
 const renderer = new Renderer()
 renderer.html = ({ text }) => escapeHtml(text)
-renderer.link = ({ href, text }) => `<span style="color:#8B9A6E;text-decoration:underline;">${text}</span>`
-  + (href ? '' : '')
+renderer.link = function (this: Renderer, { tokens, text }) {
+  const label = tokens && tokens.length > 0 ? this.parser.parseInline(tokens) : escapeHtml(text)
+  return `<span style="color:#556B3D;text-decoration:underline;text-underline-offset:3px;">${label}</span>`
+}
+renderer.image = ({ href, text }) => {
+  const safeSrc = isSafeImageHref(href)
+  if (!safeSrc) return escapeHtml(text || '图片')
+  return `<img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(text || '')}" style="max-width:100%;height:auto;border-radius:10px;margin:8px 0;display:block;" />`
+}
+renderer.code = ({ text }) => (
+  `<pre style="margin:12px 0;padding:12px 14px;background-color:#F4EFE6;border:1px solid rgba(28,28,26,0.07);border-radius:10px;overflow-x:auto;font-family:var(--font-family-mono, monospace);font-size:12.5px;line-height:1.6;color:#1C1C1A;"><code style="font-family:inherit;background:transparent;padding:0;color:inherit;font-size:inherit;">${escapeHtml(text)}</code></pre>`
+)
+renderer.codespan = ({ text }) => (
+  `<code style="font-family:var(--font-family-mono, monospace);background-color:rgba(139,154,110,0.12);padding:1px 5px;border-radius:5px;font-size:12.5px;color:#556B3D;">${escapeHtml(text)}</code>`
+)
 
 const markedInstance = new Marked({
   gfm: true,
@@ -21,28 +42,422 @@ const markedInstance = new Marked({
   renderer,
 })
 
+const TEX_SYMBOL_MAP = new Map<string, string>([
+  ['\\Leftrightarrow', '⇔'],
+  ['\\Rightarrow', '⇒'],
+  ['\\Leftarrow', '⇐'],
+  ['\\leftrightarrow', '↔'],
+  ['\\rightarrow', '→'],
+  ['\\leftarrow', '←'],
+  ['\\subseteq', '⊆'],
+  ['\\supseteq', '⊇'],
+  ['\\subseteqq', '⊆'],
+  ['\\varepsilon', 'ε'],
+  ['\\vartheta', 'ϑ'],
+  ['\\partial', '∂'],
+  ['\\forall', '∀'],
+  ['\\exists', '∃'],
+  ['\\lambda', 'λ'],
+  ['\\Lambda', 'Λ'],
+  ['\\varphi', 'φ'],
+  ['\\propto', '∝'],
+  ['\\approx', '≈'],
+  ['\\equiv', '≡'],
+  ['\\times', '×'],
+  ['\\notin', '∉'],
+  ['\\subset', '⊂'],
+  ['\\supset', '⊃'],
+  ['\\infty', '∞'],
+  ['\\nabla', '∇'],
+  ['\\alpha', 'α'],
+  ['\\beta', 'β'],
+  ['\\gamma', 'γ'],
+  ['\\Gamma', 'Γ'],
+  ['\\delta', 'δ'],
+  ['\\Delta', 'Δ'],
+  ['\\epsilon', 'ϵ'],
+  ['\\theta', 'θ'],
+  ['\\Theta', 'Θ'],
+  ['\\sigma', 'σ'],
+  ['\\Sigma', 'Σ'],
+  ['\\omega', 'ω'],
+  ['\\Omega', 'Ω'],
+  ['\\kappa', 'κ'],
+  ['\\zeta', 'ζ'],
+  ['\\iota', 'ι'],
+  ['\\prod', '∏'],
+  ['\\sum', '∑'],
+  ['\\int', '∫'],
+  ['\\leq', '≤'],
+  ['\\geq', '≥'],
+  ['\\neq', '≠'],
+  ['\\phi', 'ϕ'],
+  ['\\Phi', 'Φ'],
+  ['\\psi', 'ψ'],
+  ['\\Psi', 'Ψ'],
+  ['\\rho', 'ρ'],
+  ['\\tau', 'τ'],
+  ['\\eta', 'η'],
+  ['\\chi', 'χ'],
+  ['\\cup', '∪'],
+  ['\\cap', '∩'],
+  ['\\div', '÷'],
+  ['\\to', '→'],
+  ['\\in', '∈'],
+  ['\\le', '≤'],
+  ['\\ge', '≥'],
+  ['\\ne', '≠'],
+  ['\\pm', '±'],
+  ['\\mp', '∓'],
+  ['\\xi', 'ξ'],
+  ['\\Xi', 'Ξ'],
+  ['\\pi', 'π'],
+  ['\\Pi', 'Π'],
+  ['\\mu', 'μ'],
+  ['\\nu', 'ν'],
+  ['\\ldots', '…'],
+  ['\\cdots', '⋯'],
+  ['\\cdot', '·'],
+  ['\\quad', ' '],
+  ['\\qquad', '  '],
+  ['\\,', ' '],
+  ['\\;', ' '],
+  ['\\left', ''],
+  ['\\right', ''],
+  ['\\{', '{'],
+  ['\\}', '}'],
+])
+
+const SUBSCRIPT_DIGITS: Record<string, string> = {
+  '0': '₀',
+  '1': '₁',
+  '2': '₂',
+  '3': '₃',
+  '4': '₄',
+  '5': '₅',
+  '6': '₆',
+  '7': '₇',
+  '8': '₈',
+  '9': '₉',
+  '+': '₊',
+  '-': '₋',
+  '=': '₌',
+  '(': '₍',
+  ')': '₎',
+  'n': 'ₙ',
+  'i': 'ᵢ',
+  'j': 'ⱼ',
+  'k': 'ₖ',
+}
+
+const SUPERSCRIPT_DIGITS: Record<string, string> = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  'n': 'ⁿ',
+  'i': 'ⁱ',
+}
+
+function readBraceGroup(input: string, braceStart: number): { content: string; nextIndex: number } | null {
+  if (input[braceStart] !== '{') return null
+  let depth = 0
+  for (let i = braceStart; i < input.length; i++) {
+    if (input[i] === '\\' && i + 1 < input.length) {
+      i++
+      continue
+    }
+    if (input[i] === '{') depth++
+    else if (input[i] === '}') {
+      depth--
+      if (depth === 0) {
+        return { content: input.slice(braceStart + 1, i), nextIndex: i + 1 }
+      }
+    }
+  }
+  return null
+}
+
+function skipSpaces(input: string, index: number): number {
+  let cursor = index
+  while (cursor < input.length && input[cursor] === ' ') cursor++
+  return cursor
+}
+
+function lookupTexSymbol(cmd: string): string | undefined {
+  return TEX_SYMBOL_MAP.get(cmd)
+}
+
+function readUnbracedToken(input: string, start: number): { value: string; nextIndex: number } {
+  const first = input[start]
+  if (first === '\\') {
+    const match = input.slice(start).match(/^\\(?:[a-zA-Z]+|[,;{}])/)
+    if (match) {
+      const resolved = lookupTexSymbol(match[0])
+      return { value: resolved ?? match[0], nextIndex: start + match[0].length }
+    }
+  }
+  return { value: first, nextIndex: start + 1 }
+}
+
+function transformMathInnerHtml(rawTex: string): string {
+  let out = ''
+  let i = 0
+  while (i < rawTex.length) {
+    if (rawTex.startsWith('\\frac', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
+      const firstStart = skipSpaces(rawTex, i + 5)
+      const numGroup = readBraceGroup(rawTex, firstStart)
+      if (numGroup) {
+        const secondStart = skipSpaces(rawTex, numGroup.nextIndex)
+        const denGroup = readBraceGroup(rawTex, secondStart)
+        if (denGroup) {
+          const numHtml = transformMathInnerHtml(numGroup.content.trim())
+          const denHtml = transformMathInnerHtml(denGroup.content.trim())
+          out += `<span style="display:inline-block;vertical-align:middle;text-align:center;line-height:1.15;font-size:0.88em;padding:0 3px;"><span style="display:block;border-bottom:1px solid rgba(28,28,26,0.52);padding:0 2px 1px;">${numHtml}</span><span style="display:block;padding:1px 2px 0;">${denHtml}</span></span>`
+          i = denGroup.nextIndex
+          continue
+        }
+      }
+    }
+
+    if (rawTex.startsWith('\\sqrt', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
+      const argStart = skipSpaces(rawTex, i + 5)
+      const radGroup = readBraceGroup(rawTex, argStart)
+      if (radGroup) {
+        out += `√<span style="border-top:1px solid rgba(28,28,26,0.52);padding:0 2px;">${transformMathInnerHtml(radGroup.content.trim())}</span>`
+        i = radGroup.nextIndex
+        continue
+      }
+    }
+
+    if (rawTex.startsWith('\\text', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
+      const argStart = skipSpaces(rawTex, i + 5)
+      const txtGroup = readBraceGroup(rawTex, argStart)
+      if (txtGroup) {
+        out += `<span style="font-family:var(--font-family-base,sans-serif);font-style:normal;">${escapeHtml(txtGroup.content)}</span>`
+        i = txtGroup.nextIndex
+        continue
+      }
+    }
+
+    if (rawTex[i] === '^' || rawTex[i] === '_') {
+      const tag = rawTex[i] === '^' ? 'sup' : 'sub'
+      const next = skipSpaces(rawTex, i + 1)
+      const grp = readBraceGroup(rawTex, next)
+      if (grp) {
+        out += `<${tag} style="font-size:0.74em;font-style:normal;line-height:0;">${transformMathInnerHtml(grp.content.trim())}</${tag}>`
+        i = grp.nextIndex
+        continue
+      }
+      if (next < rawTex.length) {
+        const token = readUnbracedToken(rawTex, next)
+        out += `<${tag} style="font-size:0.74em;font-style:normal;line-height:0;">${escapeHtml(token.value)}</${tag}>`
+        i = token.nextIndex
+        continue
+      }
+    }
+
+    if (rawTex[i] === '\\') {
+      const match = rawTex.slice(i).match(/^\\(?:[a-zA-Z]+|[,;{}])/)
+      if (match) {
+        const replaced = lookupTexSymbol(match[0])
+        if (replaced !== undefined) {
+          out += escapeHtml(replaced)
+          i += match[0].length
+          continue
+        }
+      }
+    }
+
+    out += escapeHtml(rawTex[i])
+    i++
+  }
+  return out
+}
+
+function renderMathHtml(tex: string, display: boolean): string {
+  const inner = transformMathInnerHtml(tex.trim())
+  if (display) {
+    return `<div style="margin:10px 0;padding:10px 14px;background-color:#F4EFE6;border:1px solid rgba(28,28,26,0.06);border-radius:10px;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;color:#1C1C1A;overflow-x:auto;">${inner}</div>`
+  }
+  return `<span style="font-family:Georgia,'Times New Roman',serif;font-style:italic;color:#1C1C1A;padding:0 1px;">${inner}</span>`
+}
+
+function mapScriptPlain(text: string, table: Record<string, string>, fallbackPrefix: string): string {
+  const mapped = Array.from(text).map(ch => table[ch]).join('')
+  return mapped.length === text.length ? mapped : `${fallbackPrefix}${text}`
+}
+
+function formatTexPlain(rawTex: string): string {
+  let out = ''
+  let i = 0
+  while (i < rawTex.length) {
+    if (rawTex.startsWith('\\frac', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
+      const firstStart = skipSpaces(rawTex, i + 5)
+      const numGroup = readBraceGroup(rawTex, firstStart)
+      if (numGroup) {
+        const secondStart = skipSpaces(rawTex, numGroup.nextIndex)
+        const denGroup = readBraceGroup(rawTex, secondStart)
+        if (denGroup) {
+          out += `(${formatTexPlain(numGroup.content.trim())})/(${formatTexPlain(denGroup.content.trim())})`
+          i = denGroup.nextIndex
+          continue
+        }
+      }
+    }
+    if (rawTex.startsWith('\\sqrt', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
+      const argStart = skipSpaces(rawTex, i + 5)
+      const radGroup = readBraceGroup(rawTex, argStart)
+      if (radGroup) {
+        out += `√(${formatTexPlain(radGroup.content.trim())})`
+        i = radGroup.nextIndex
+        continue
+      }
+    }
+    if (rawTex.startsWith('\\text', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
+      const argStart = skipSpaces(rawTex, i + 5)
+      const txtGroup = readBraceGroup(rawTex, argStart)
+      if (txtGroup) {
+        out += txtGroup.content
+        i = txtGroup.nextIndex
+        continue
+      }
+    }
+    if (rawTex[i] === '_' || rawTex[i] === '^') {
+      const isSup = rawTex[i] === '^'
+      const table = isSup ? SUPERSCRIPT_DIGITS : SUBSCRIPT_DIGITS
+      const next = skipSpaces(rawTex, i + 1)
+      const grp = readBraceGroup(rawTex, next)
+      if (grp) {
+        out += mapScriptPlain(formatTexPlain(grp.content.trim()), table, isSup ? '^' : '_')
+        i = grp.nextIndex
+        continue
+      }
+      if (next < rawTex.length) {
+        const token = readUnbracedToken(rawTex, next)
+        out += mapScriptPlain(token.value, table, isSup ? '^' : '_')
+        i = token.nextIndex
+        continue
+      }
+    }
+    if (rawTex[i] === '\\') {
+      const match = rawTex.slice(i).match(/^\\(?:[a-zA-Z]+|[,;{}])/)
+      if (match) {
+        const replaced = lookupTexSymbol(match[0])
+        if (replaced !== undefined) {
+          out += replaced
+          i += match[0].length
+          continue
+        }
+      }
+    }
+    out += rawTex[i]
+    i++
+  }
+  return out.replace(/\s+/g, ' ').trim()
+}
+
+function pickSentinelPrefix(input: string, kind: string): string {
+  let prefix = `@@AURALIS${kind}`
+  while (input.includes(prefix)) prefix += 'X'
+  return prefix
+}
+
 function applyZenRichTextStyles(html: string): string {
   return html
-    .replaceAll('<h1', '<h1 style="font-size:20px;font-weight:700;color:#1C1C1A;margin:14px 0 8px;line-height:1.35;"')
-    .replaceAll('<h2', '<h2 style="font-size:18px;font-weight:700;color:#1C1C1A;margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid rgba(0,0,0,0.08);line-height:1.35;"')
-    .replaceAll('<h3', '<h3 style="font-size:16px;font-weight:700;color:#1C1C1A;margin:12px 0 6px;line-height:1.4;"')
-    .replaceAll('<h4', '<h4 style="font-size:15px;font-weight:600;color:#2C2C28;margin:10px 0 6px;line-height:1.4;"')
-    .replaceAll('<p>', '<p style="margin:0 0 8px;line-height:1.68;color:#2C2C28;">')
-    .replaceAll('<ul>', '<ul style="margin:6px 0 10px;padding-left:18px;color:#2C2C28;">')
-    .replaceAll('<ol>', '<ol style="margin:6px 0 10px;padding-left:20px;color:#2C2C28;">')
-    .replaceAll('<li>', '<li style="margin:4px 0;line-height:1.62;">')
-    .replaceAll('<blockquote>', '<blockquote style="margin:8px 0;padding:6px 12px;border-left:3px solid #8B9A6E;background-color:#F7F2EB;color:#5F5E5C;border-radius:0 8px 8px 0;">')
-    .replaceAll('<pre>', '<pre style="margin:8px 0;padding:10px 12px;background-color:#F7F2EB;border:1px solid rgba(0,0,0,0.06);border-radius:10px;overflow-x:auto;font-family:monospace;font-size:13px;line-height:1.55;color:#1C1C1A;">')
-    .replaceAll('<code>', '<code style="font-family:monospace;background-color:#F7F2EB;padding:1px 5px;border-radius:4px;font-size:13px;color:#76855B;">')
+    .replaceAll('<h1', '<h1 style="font-size:17px;font-weight:700;color:#1C1C1A;letter-spacing:-0.015em;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid rgba(28,28,26,0.08);line-height:1.35;"')
+    .replaceAll('<h2', '<h2 style="font-size:15px;font-weight:700;color:#1C1C1A;letter-spacing:-0.01em;margin:16px 0 7px;padding-left:9px;border-left:3px solid #8B9A6E;line-height:1.38;"')
+    .replaceAll('<h3', '<h3 style="font-size:14px;font-weight:600;color:#2C2C28;margin:12px 0 5px;line-height:1.42;"')
+    .replaceAll('<h4', '<h4 style="font-size:13.5px;font-weight:600;color:#474741;margin:10px 0 4px;line-height:1.42;"')
+    .replaceAll('<p>', '<p style="margin:0 0 10px;line-height:1.72;color:#2C2C28;">')
+    .replaceAll('<ul>', '<ul style="margin:6px 0 12px;padding-left:18px;color:#2C2C28;">')
+    .replaceAll('<ol>', '<ol style="margin:6px 0 12px;padding-left:20px;color:#2C2C28;">')
+    .replaceAll('<li>', '<li style="margin:4px 0;line-height:1.68;">')
+    .replaceAll('<blockquote>', '<blockquote style="margin:12px 0;padding:9px 14px;border-left:3px solid #8B9A6E;background-color:#F7F2EB;color:#5F5E5C;border-radius:0 10px 10px 0;">')
     .replaceAll('<strong>', '<strong style="font-weight:700;color:#1C1C1A;">')
-    .replaceAll('<table>', '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;">')
-    .replaceAll('<th', '<th style="border:1px solid rgba(0,0,0,0.1);padding:6px 8px;background-color:#F7F2EB;text-align:left;font-weight:600;"')
-    .replaceAll('<td', '<td style="border:1px solid rgba(0,0,0,0.08);padding:6px 8px;"')
+    .replaceAll('<hr>', '<hr style="border:none;border-top:1px solid rgba(28,28,26,0.08);margin:14px 0;" />')
+    .replaceAll('<table>', '<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">')
+    .replaceAll('<th', '<th style="border:1px solid rgba(28,28,26,0.1);padding:7px 9px;background-color:#F4EFE6;text-align:left;font-weight:600;color:#1C1C1A;"')
+    .replaceAll('<td', '<td style="border:1px solid rgba(28,28,26,0.08);padding:7px 9px;color:#2C2C28;"')
 }
 
 export function renderMarkdownHtml(markdownText: string): string {
   if (!markdownText) return ''
-  const parsed = markedInstance.parse(markdownText, { async: false }) as string
-  const styled = applyZenRichTextStyles(parsed)
-  return `<div style="font-size:15px;line-height:1.68;color:#2C2C28;word-break:break-word;">${styled}</div>`
+  const codePrefix = pickSentinelPrefix(markdownText, 'CODE')
+  const mathPrefix = pickSentinelPrefix(markdownText, 'MATH')
+  const codeTokens: string[] = []
+  const mathTokens: string[] = []
+
+  const withoutCode = markdownText
+    .replace(/```[\s\S]*?```/g, (block) => {
+      const token = `${codePrefix}${codeTokens.length}@@`
+      codeTokens.push(block)
+      return token
+    })
+    .replace(/`[^`\n]+`/g, (span) => {
+      const token = `${codePrefix}${codeTokens.length}@@`
+      codeTokens.push(span)
+      return token
+    })
+
+  const withoutMath = withoutCode
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_all, inner: string) => {
+      const token = `${mathPrefix}${mathTokens.length}@@`
+      mathTokens.push(renderMathHtml(inner, true))
+      return token
+    })
+    .replace(/\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$/g, (_all, inner: string) => {
+      const token = `${mathPrefix}${mathTokens.length}@@`
+      mathTokens.push(renderMathHtml(inner, false))
+      return token
+    })
+
+  let restoredForMarkdown = withoutMath
+  for (let idx = 0; idx < codeTokens.length; idx++) {
+    restoredForMarkdown = restoredForMarkdown.replace(`${codePrefix}${idx}@@`, () => codeTokens[idx])
+  }
+
+  const parsed = markedInstance.parse(restoredForMarkdown, { async: false }) as string
+  let styled = applyZenRichTextStyles(parsed)
+  for (let idx = 0; idx < mathTokens.length; idx++) {
+    styled = styled.replace(`${mathPrefix}${idx}@@`, () => mathTokens[idx])
+  }
+  return `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${styled}</div>`
+}
+
+export function plainMarkdownExcerpt(raw: string): string {
+  if (!raw) return ''
+  const excerptPrefix = pickSentinelPrefix(raw, 'EXC')
+  const mathPlaceholders: string[] = []
+  const withMathStashed = raw
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_all, inner: string) => {
+      const token = `${excerptPrefix}${mathPlaceholders.length}@@`
+      mathPlaceholders.push(formatTexPlain(inner))
+      return token
+    })
+    .replace(/\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$/g, (_all, inner: string) => {
+      const token = `${excerptPrefix}${mathPlaceholders.length}@@`
+      mathPlaceholders.push(formatTexPlain(inner))
+      return token
+    })
+
+  let cleaned = withMathStashed
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[#>\s*-]+/gm, '')
+    .replace(/[*_`~]/g, '')
+
+  for (let idx = 0; idx < mathPlaceholders.length; idx++) {
+    cleaned = cleaned.replace(`${excerptPrefix}${idx}@@`, () => mathPlaceholders[idx])
+  }
+
+  return cleaned.replace(/\s+/g, ' ').trim()
 }

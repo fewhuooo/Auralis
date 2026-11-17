@@ -1,6 +1,6 @@
 <template>
-  <view class="app-bar-container">
-    <view class="app-tabbar-float">
+  <view class="app-bar-container" role="navigation" aria-label="主导航">
+    <view class="app-tabbar-float" role="tablist">
       <view
         class="active-pill-indicator"
         :class="{ 'animate-pill': isAnimatePill }"
@@ -13,6 +13,9 @@
         v-for="(item, idx) in tabItems"
         :key="item.path"
         class="tab-item"
+        role="tab"
+        :aria-label="item.label"
+        :aria-selected="displayIndex === idx"
         @click="switchTab(item.path)"
       >
         <LineIcon
@@ -24,7 +27,12 @@
       </view>
     </view>
 
-    <view class="app-ai-float" @click="goToAi">
+    <view
+      class="app-ai-float"
+      role="button"
+      aria-label="AI 助手"
+      @click="goToAi"
+    >
       <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
     </view>
   </view>
@@ -72,12 +80,13 @@ function switchTab(url: string) {
   const currentIdx = getIndexByUrl(nowRoute)
   const dir = targetIndex > currentIdx ? 'right' : 'left'
   layoutStore.setSlideDirection(dir)
-  layoutStore.startExit(dir, 140)
+  layoutStore.startExit(dir, 140, nowRoute)
 
   isAnimatePill.value = true
   displayIndex.value = targetIndex
 
   setTimeout(() => {
+    layoutStore.clearExit()
     uni.redirectTo({ url })
   }, 140)
 }
@@ -100,7 +109,7 @@ function goToAi() {
   display: flex;
   align-items: center;
   gap: 10px;
-  z-index: 999;
+  z-index: var(--z-index-tabbar, 800);
   box-sizing: border-box;
 }
 
@@ -111,13 +120,14 @@ function goToAi() {
   height: 56px;
   position: relative;
   background-color: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--border-subtle);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   padding: 0 5px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow);
   box-sizing: border-box;
 }
 
@@ -135,7 +145,7 @@ function goToAi() {
 }
 
 .active-pill-indicator.animate-pill {
-  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.26s var(--ease-spring);
 }
 
 .pill-inner {
@@ -188,6 +198,11 @@ function goToAi() {
   box-shadow: var(--shadow-md), var(--accent-glow);
   cursor: pointer;
   transition: transform 0.16s var(--ease-out), box-shadow 0.18s ease;
+}
+
+.app-ai-float:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg), 0 6px 20px rgba(139, 154, 110, 0.42);
 }
 
 .app-ai-float:active {

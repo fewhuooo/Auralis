@@ -1,7 +1,8 @@
 <template>
   <view class="launch-page">
+    <view class="launch-aura"></view>
     <view class="launch-mark">
-      <BrandLogo size="48px" />
+      <BrandLogo size="50px" />
     </view>
   </view>
 </template>
@@ -37,14 +38,27 @@ onMounted(async () => {
 
 <style scoped>
 .launch-page {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.launch-aura {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139, 154, 110, 0.22) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .launch-mark {
+  position: relative;
+  z-index: 1;
   animation: launchBreathe 1.8s var(--ease-out) infinite alternate;
 }
 

@@ -1,10 +1,13 @@
 {
-    "name" : "",
+    "name" : "Auralis",
     "appid" : "",
-    "description" : "",
+    "description" : "Auralis 专注学习与知识编排",
     "versionName" : "1.0.0",
     "versionCode" : "100",
     "transformPx" : false,
+    "h5" : {
+        "title" : "Auralis"
+    },
     /* 5+App特有相关 */
     "app-plus" : {
         "usingComponents" : true,

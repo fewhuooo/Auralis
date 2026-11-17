@@ -3,7 +3,7 @@
     <view class="zen-sheet-body sheet-panel" @click.stop>
       <view class="sheet-header">
         <text class="sheet-title">关联任务</text>
-        <view class="ui-icon-btn" @click="close">
+        <view class="ui-icon-btn" role="button" aria-label="关闭" @click="close">
           <LineIcon name="close" size="16px" color="var(--text-muted)" />
         </view>
       </view>
@@ -12,6 +12,7 @@
         <view
           class="task-option"
           :class="{ 'is-selected': !selectedTaskId }"
+          role="button"
           @click="choose(null)"
         >
           <view class="option-icon">
@@ -28,6 +29,7 @@
             :key="task.id"
             class="task-option"
             :class="{ 'is-selected': selectedTaskId === task.id }"
+            role="button"
             @click="choose(task)"
           >
             <view class="option-icon">
@@ -51,6 +53,7 @@
             :key="task.id"
             class="task-option"
             :class="{ 'is-selected': selectedTaskId === task.id }"
+            role="button"
             @click="choose(task)"
           >
             <view class="option-icon">
@@ -71,10 +74,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
 import { formatLocalTimeHHmm, formatShortDate } from '@/utils/dateKey'
 
-defineProps<{
+const props = defineProps<{
   visible: boolean
   selectedTaskId?: string
 }>()
@@ -83,6 +87,8 @@ const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void
   (event: 'select', task: Task | null): void
 }>()
+
+useEscapeKey(() => props.visible, close)
 
 const taskStore = useTaskStore()
 
@@ -116,6 +122,7 @@ function choose(task: Task | null) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
+  flex-shrink: 0;
 }
 
 .sheet-title {
@@ -125,6 +132,8 @@ function choose(task: Task | null) {
 }
 
 .sheet-scroll {
+  flex: 1;
+  min-height: 0;
   max-height: 52vh;
 }
 
@@ -134,7 +143,7 @@ function choose(task: Task | null) {
 
 .group-label {
   display: block;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   margin-bottom: 8px;
@@ -145,12 +154,16 @@ function choose(task: Task | null) {
   align-items: center;
   gap: 12px;
   padding: 11px 12px;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   margin-bottom: 8px;
   cursor: pointer;
   transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.task-option:hover {
+  border-color: var(--border-accent);
 }
 
 .task-option.is-selected {
@@ -162,7 +175,7 @@ function choose(task: Task | null) {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background-color: var(--color-bg-card);
+  background-color: var(--color-bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,19 +204,4 @@ function choose(task: Task | null) {
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-
-/* #ifdef H5 */
-@media (min-width: 540px) {
-  .zen-sheet-mask {
-    justify-content: center;
-    padding: 24px;
-  }
-
-  .zen-sheet-body {
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--border-subtle);
-    padding: 22px;
-  }
-}
-/* #endif */
 </style>

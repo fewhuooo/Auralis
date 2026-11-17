@@ -18,6 +18,7 @@
       </view>
 
       <AppTabBar v-if="showTabBar" />
+      <slot name="overlay"></slot>
     </view>
   </view>
 </template>
@@ -47,8 +48,12 @@ const props = defineProps({
 })
 
 const layoutStore = useLayoutStore()
+const currentRoute = ref('')
 const isEntering = ref(!props.disableAnimation)
-const isExiting = computed(() => layoutStore.isExiting)
+const isExiting = computed(() => (
+  layoutStore.isExiting
+  && (!layoutStore.exitingRoute || layoutStore.exitingRoute === currentRoute.value)
+))
 const exitDir = computed(() => layoutStore.exitDirection)
 const slideDir = ref<'right' | 'left' | 'up' | 'down'>(layoutStore.getSlideDirection())
 const animOrigin = ref<'default' | 'slide-right' | 'top-right' | 'bottom-right'>('default')
@@ -61,20 +66,23 @@ watch(() => props.disableAnimation, (newVal) => {
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
-  if (props.animOrigin) {
-    animOrigin.value = props.animOrigin as 'default' | 'slide-right' | 'top-right' | 'bottom-right'
-  } else {
-    try {
-      const pages = getCurrentPages()
-      const currentRoute = pages[pages.length - 1]?.route || ''
-      if (currentRoute.includes('profile')) {
+  try {
+    const pages = getCurrentPages()
+    const route = pages.length > 0 ? '/' + (pages[pages.length - 1]?.route || '') : ''
+    currentRoute.value = route
+    if (!props.animOrigin) {
+      if (route.includes('profile')) {
         animOrigin.value = 'slide-right'
-      } else if (currentRoute.includes('ai-search')) {
+      } else if (route.includes('ai-search')) {
         animOrigin.value = 'bottom-right'
       }
-    } catch {
-      // Ignore runtime route inspection failure
     }
+  } catch {
+    // Ignore runtime route inspection failure
+  }
+
+  if (props.animOrigin) {
+    animOrigin.value = props.animOrigin as 'default' | 'slide-right' | 'top-right' | 'bottom-right'
   }
 
   if (!props.disableAnimation) {
@@ -109,24 +117,24 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-primary);
-  z-index: 20;
+  z-index: 1;
   overflow: hidden;
   opacity: 1;
-  transform: translateX(0) scale(1);
-  transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: none;
+  transition: transform 0.36s var(--ease-out), opacity 0.36s var(--ease-out);
 }
 
 .layout-container.has-tabbar .page-layer {
-  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  padding-bottom: 0;
   box-sizing: border-box;
 }
 
 .page-layer.is-entering-right {
-  animation: mobileEnterRight 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: mobileEnterRight 0.34s var(--ease-out) both;
 }
 
 .page-layer.is-entering-left {
-  animation: mobileEnterLeft 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: mobileEnterLeft 0.34s var(--ease-out) both;
 }
 
 @keyframes mobileEnterRight {
@@ -160,7 +168,7 @@ onMounted(() => {
 }
 
 .page-layer.is-returning {
-  animation: returnBreathe 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: returnBreathe 0.34s var(--ease-out);
 }
 
 @keyframes returnBreathe {

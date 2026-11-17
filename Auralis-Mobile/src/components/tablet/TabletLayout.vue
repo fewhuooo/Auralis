@@ -1,7 +1,10 @@
 <template>
   <view class="tablet-layout">
-    <view class="sidebar">
-      <view class="logo-area" title="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
+    <view class="bg-glow bg-glow--1" aria-hidden="true"></view>
+    <view class="bg-glow bg-glow--2" aria-hidden="true"></view>
+
+    <view class="sidebar" role="navigation" aria-label="工作台导航">
+      <view class="logo-area" title="回到首页" aria-label="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
         <BrandLogo size="28px" />
       </view>
 
@@ -22,12 +25,14 @@
           :key="item.path"
           class="nav-item"
           :title="item.label"
+          :aria-label="item.label"
+          :aria-current="displayIndex === index ? 'page' : undefined"
           @click="navigate(item.path)"
         >
           <LineIcon
             :name="item.icon"
             size="20px"
-            :color="displayIndex === index ? '#556B3D' : '#344139'"
+            :color="displayIndex === index ? '#556B3D' : '#7A7A75'"
           />
         </view>
       </view>
@@ -36,7 +41,9 @@
         <view
           class="sidebar-avatar-entry"
           :class="{ 'is-active': displayIndex === -1 }"
+          role="button"
           title="个人中心"
+          aria-label="个人中心"
           @click="navigate('/pages/tablet/profile/index')"
         >
           <view class="sidebar-avatar">
@@ -45,7 +52,9 @@
           <view
             class="avatar-sync-badge"
             :class="syncBadgeClass"
+            role="button"
             title="点击立即同步"
+            aria-label="同步状态"
             @click.stop="syncStore.triggerSync()"
           >
             <view class="avatar-sync-dot"></view>
@@ -68,9 +77,6 @@
     >
       <slot></slot>
     </view>
-
-    <view class="bg-glow bg-glow--1"></view>
-    <view class="bg-glow bg-glow--2"></view>
 
     <slot name="modal"></slot>
   </view>
@@ -267,7 +273,7 @@ const navigate = (path: string) => {
   justify-content: center;
   pointer-events: none;
   z-index: 1;
-  transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nav-active-bar {
@@ -389,27 +395,26 @@ const navigate = (path: string) => {
   min-width: 0;
   height: 100%;
   position: relative;
-  z-index: 2;
   background-color: var(--color-bg-secondary);
   overflow: hidden;
   opacity: 1;
-  transform: translateY(0) translateX(0) scale(1);
+  transform: none;
 }
 
 .main-content.is-entering-down {
-  animation: tabletEnterDown 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterDown 0.34s var(--ease-out) both;
 }
 
 .main-content.is-entering-up {
-  animation: tabletEnterUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterUp 0.34s var(--ease-out) both;
 }
 
 .main-content.is-entering-right {
-  animation: tabletEnterRight 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterRight 0.34s var(--ease-out) both;
 }
 
 .main-content.is-entering-left {
-  animation: tabletEnterLeft 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterLeft 0.34s var(--ease-out) both;
 }
 
 .main-content.is-exiting-down {
@@ -441,7 +446,7 @@ const navigate = (path: string) => {
 }
 
 .main-content.is-returning {
-  animation: returnBreathe 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: returnBreathe 0.34s var(--ease-out);
 }
 
 @keyframes returnBreathe {
@@ -464,8 +469,8 @@ const navigate = (path: string) => {
   border-radius: 50%;
   filter: blur(110px);
   pointer-events: none;
-  z-index: 1;
-  opacity: 0.32;
+  z-index: 0;
+  opacity: 0.3;
 }
 
 .bg-glow--1 {

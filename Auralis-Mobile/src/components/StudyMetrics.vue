@@ -2,7 +2,7 @@
   <view class="study-metrics">
     <view v-if="error && !metrics" class="metrics-error zen-card">
       <text class="status-text">统计暂不可用</text>
-      <view class="ui-btn ui-btn-secondary retry-btn" @click="load">重试</view>
+      <view class="ui-btn ui-btn-secondary retry-btn" role="button" @click="load">重试</view>
     </view>
 
     <view v-else-if="loading && !metrics" class="bento-grid">
@@ -19,8 +19,13 @@
         class="bento-tile zen-card"
         :class="{ 'is-featured': idx === 0 && metrics.length % 2 === 1 }"
       >
-        <text class="metric-value num-tabular">{{ metric.value }}</text>
-        <text class="metric-label">{{ metric.label }}</text>
+        <view class="tile-main">
+          <text class="metric-value num-tabular">{{ metric.value }}</text>
+          <text class="metric-label">{{ metric.label }}</text>
+        </view>
+        <view v-if="idx === 0 && metrics.length % 2 === 1" class="featured-mark" aria-hidden="true">
+          <LineIcon name="layers" size="18px" color="var(--color-sage-ink)" />
+        </view>
       </view>
     </view>
   </view>
@@ -28,6 +33,7 @@
 
 <script setup lang="ts">
 import { onScopeDispose, ref, watch } from 'vue'
+import LineIcon from '@/components/LineIcon.vue'
 import { statsApi } from '@/api/statsApi'
 import { useAuthStore } from '@/store/useAuthStore'
 import { detectLocalTimeZone, getCurrentWeekBounds } from '@/utils/dateKey'
@@ -93,6 +99,13 @@ onScopeDispose(() => { requestId++ })
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.tile-main {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
@@ -100,28 +113,40 @@ onScopeDispose(() => { requestId++ })
 .bento-tile.is-featured {
   grid-column: 1 / -1;
   flex-direction: row;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  background: linear-gradient(135deg, rgba(139, 154, 110, 0.12) 0%, var(--color-bg-card) 75%);
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgba(139, 154, 110, 0.14) 0%, var(--color-bg-tertiary) 76%);
   border-color: var(--border-accent);
+}
+
+.featured-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background-color: rgba(139, 154, 110, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .metric-value {
   font-size: 22px;
-  font-weight: var(--font-weight-bold);
-  font-family: var(--font-family-mono);
+  font-weight: 800;
   color: var(--text-primary);
   line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 
 .bento-tile.is-featured .metric-value {
-  font-size: 26px;
+  font-size: 28px;
   color: var(--color-sage-ink);
 }
 
 .metric-label {
   font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -155,6 +180,6 @@ onScopeDispose(() => { requestId++ })
 .shimmer-label {
   width: 72px;
   height: 12px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 </style>

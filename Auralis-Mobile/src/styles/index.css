@@ -2,7 +2,7 @@
    Design System - Auralis Zen Minimalist (Aligned with Auralis-PC)
    Deterministic logical px + clamp() scale across H5, Tablet & MP-Weixin
    3-Tier Surface Hierarchy:
-   1. Outer Shell (#EEEEEE) -> 2. Primary Panel (#F7F2EB) -> 3. Card/Input (#FAF7F2)
+   1. Canvas Shell (#EEEEEE) -> 2. Primary Linen Panel (#F7F2EB) -> 3. Stationery Card/Input (#FAF7F2)
    ========================================================================== */
 
 page,
@@ -13,6 +13,7 @@ page,
   --color-zen-sage: #8B9A6E;
   --color-sage-dark: #76855B;
   --color-sage-ink: #556B3D;
+  --color-zen-sage-soft: rgba(139, 154, 110, 0.18);
   --color-zen-hairline: #DDD5C7;
   --color-zen-white: #FFFFFF;
   --color-zen-stone: #A8A8A5;
@@ -25,7 +26,7 @@ page,
   --color-gray-100: #EAE2D6;
   --color-gray-200: #EEEEEE;
   --color-gray-300: #DDD5C7;
-  --color-gray-400: #A8A8A5;
+  --color-gray-400: var(--color-zen-stone);
   --color-gray-500: #7A7A75;
   --color-gray-600: #5F5E5C;
   --color-gray-700: #474741;
@@ -53,20 +54,22 @@ page,
   --text-inverse: #FFFFFF;
 
   /* Hairlines & Borders */
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-default: rgba(0, 0, 0, 0.10);
-  --border-strong: rgba(0, 0, 0, 0.18);
+  --border-subtle: rgba(28, 28, 26, 0.068);
+  --border-default: rgba(28, 28, 26, 0.115);
+  --border-strong: rgba(28, 28, 26, 0.19);
   --border-accent: rgba(139, 154, 110, 0.45);
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 
   /* Glassmorphism */
-  --glass-bg: rgba(247, 242, 235, 0.92);
-  --glass-border: rgba(0, 0, 0, 0.06);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
-  --glass-blur: blur(20px);
+  --glass-bg: rgba(250, 247, 242, 0.88);
+  --glass-border: rgba(28, 28, 26, 0.08);
+  --glass-shadow: 0 8px 32px rgba(28, 28, 26, 0.06), 0 1px 3px rgba(28, 28, 26, 0.04);
+  --glass-blur: blur(22px);
 
   /* Semantic Feedback */
   --color-success: #8B9A6E;
   --color-warning: #C89B6D;
+  --color-warning-ink: #9A6B3B;
   --color-warning-bg: rgba(200, 155, 109, 0.15);
   --color-danger: #C93B3B;
   --color-danger-bg: rgba(201, 59, 59, 0.09);
@@ -81,7 +84,7 @@ page,
   --color-sage-glow: rgba(139, 154, 110, 0.30);
 
   /* Typography */
-  --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-family-base: 'DM Sans', 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
   --font-family-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --font-weight-regular: 400;
@@ -109,7 +112,7 @@ page,
 
   --line-height-tight: 1.25;
   --line-height-normal: 1.5;
-  --line-height-relaxed: 1.75;
+  --line-height-relaxed: 1.72;
 
   /* Spacing & Radii */
   --spacing-1: 4px;
@@ -129,18 +132,25 @@ page,
   --radius-full: 9999px;
 
   /* Lightweight Zen Shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-  --shadow-md: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px -1px rgba(0, 0, 0, 0.02);
-  --shadow-lg: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -2px rgba(0, 0, 0, 0.03);
-  --shadow-xl: 0 16px 36px -6px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 2px 0 rgba(28, 28, 26, 0.035), var(--highlight-inset);
+  --shadow-md: 0 2px 8px -2px rgba(60, 72, 50, 0.055), 0 1px 3px -1px rgba(28, 28, 26, 0.03), var(--highlight-inset);
+  --shadow-lg: 0 6px 18px -3px rgba(60, 72, 50, 0.085), 0 2px 6px -2px rgba(28, 28, 26, 0.04), var(--highlight-inset);
+  --shadow-xl: 0 18px 42px -8px rgba(28, 28, 26, 0.12), 0 4px 14px -2px rgba(28, 28, 26, 0.04);
   --panel-shadow: 0 2px 8px -2px rgba(60, 72, 50, 0.04), 0 12px 32px -4px rgba(60, 72, 50, 0.07);
 
   /* Motion */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /* Canonical Z-Index Scale */
+  --z-index-header: 100;
+  --z-index-tabbar: 800;
+  --z-index-sheet: 1100;
+  --z-index-modal: 1200;
+
   /* Shell Metrics */
   --phone-header-height: 52px;
+  --tabbar-clearance: calc(96px + env(safe-area-inset-bottom));
   --tablet-sidebar-width: 68px;
   --tablet-panel-gap: 14px;
 
@@ -162,25 +172,37 @@ page {
   font-family: var(--font-family-base);
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
+  text-decoration: none;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-button {
+/* Reset both native button and Uni-app H5 <uni-button> host defaults */
+button,
+uni-button {
   margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
   font-family: inherit;
+  font-size: inherit;
   line-height: 1.2;
+  color: inherit;
+  box-sizing: border-box;
 }
 
-button::after {
-  border: none;
-  display: none;
+button::after,
+uni-button::after {
+  border: none !important;
+  display: none !important;
+  content: none !important;
 }
 
 /* ===== Semantic Reusable Surface & Interactive Primitives ===== */
 .zen-panel {
   background-color: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--panel-shadow);
 }
@@ -193,8 +215,27 @@ button::after {
   box-shadow: var(--shadow-sm);
 }
 
+.zen-empty-surface {
+  border-radius: 14px;
+  background-color: rgba(250, 247, 242, 0.56);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .num-tabular {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.zen-field-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  margin-bottom: 6px;
 }
 
 .ui-btn {
@@ -210,6 +251,8 @@ button::after {
   cursor: pointer;
   border: 1px solid transparent;
   box-sizing: border-box;
+  margin: 0;
+  line-height: 1.2;
   transition: transform 0.16s var(--ease-out), background-color 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
 }
 
@@ -226,25 +269,38 @@ button::after {
 
 .ui-btn[disabled],
 .ui-btn.is-disabled {
-  opacity: 0.5;
+  opacity: 0.48;
   pointer-events: none;
 }
 
 .ui-btn-primary {
   background: var(--accent-gradient);
   color: var(--text-inverse);
-  box-shadow: 0 4px 12px rgba(118, 135, 88, 0.28);
+  box-shadow: 0 3px 10px rgba(118, 135, 88, 0.26);
+}
+
+.ui-btn-primary:hover {
+  box-shadow: 0 5px 16px rgba(118, 135, 88, 0.34);
 }
 
 .ui-btn-secondary {
   background-color: var(--color-bg-tertiary);
   border-color: var(--border-subtle);
   color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-btn-secondary:hover {
+  border-color: var(--border-accent);
 }
 
 .ui-btn-ghost {
   background-color: transparent;
   color: var(--text-secondary);
+}
+
+.ui-btn-ghost:hover {
+  background-color: rgba(28, 28, 26, 0.045);
 }
 
 .ui-btn-danger {
@@ -261,6 +317,7 @@ button::after {
   justify-content: center;
   background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   flex-shrink: 0;
   transition: transform 0.16s var(--ease-out), background-color 0.16s ease, border-color 0.16s ease;
@@ -270,6 +327,10 @@ button::after {
   width: 30px;
   height: 30px;
   border-radius: 9px;
+}
+
+.ui-icon-btn:hover {
+  border-color: var(--border-accent);
 }
 
 .ui-icon-btn:active {
@@ -300,6 +361,7 @@ button::after {
   line-height: 1.6;
   color: var(--text-primary);
   box-sizing: border-box;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .ui-segmented {
@@ -322,6 +384,8 @@ button::after {
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
@@ -329,7 +393,7 @@ button::after {
 .ui-seg-item.active {
   background-color: var(--color-bg-primary);
   color: var(--text-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px rgba(28, 28, 26, 0.055);
 }
 
 .ui-tag {
@@ -343,21 +407,69 @@ button::after {
   color: var(--color-sage-ink);
   border: 1px solid rgba(139, 154, 110, 0.22);
   line-height: 1.35;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .ui-tag.sage {
-  background-color: rgba(139, 154, 110, 0.16);
+  background-color: rgba(139, 154, 110, 0.15);
   color: var(--color-sage-ink);
 }
 
 .ui-shimmer {
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(255, 255, 255, 0.45) 50%, rgba(0, 0, 0, 0.04) 75%);
+  background: linear-gradient(90deg, rgba(28, 28, 26, 0.04) 25%, rgba(255, 255, 255, 0.55) 50%, rgba(28, 28, 26, 0.04) 75%);
   background-size: 200% 100%;
   animation: uiShimmer 1.5s infinite linear;
   border-radius: var(--radius-sm);
 }
 
-/* Modals & Sheets */
+/* Shared AI Chat Primitives */
+.zen-chat-user-bubble {
+  padding: 10px 15px;
+  border-radius: 16px 16px 4px 16px;
+  background-color: var(--color-zen-graphite);
+  color: #FFFFFF;
+  font-size: var(--text-base);
+  line-height: 1.55;
+  word-break: break-word;
+  box-shadow: 0 2px 8px rgba(28, 28, 26, 0.08);
+}
+
+.zen-chat-assistant-bubble {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  box-sizing: border-box;
+  color: var(--text-primary);
+}
+
+.zen-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px;
+}
+
+.zen-typing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--color-zen-sage);
+  animation: zenTypingPulse 1.2s ease-in-out infinite;
+}
+
+.zen-typing-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.zen-typing-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+/* Modals & Sheets (Always above AppTabBar) */
 .zen-modal-mask {
   position: fixed;
   top: 0;
@@ -369,7 +481,7 @@ button::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 900;
+  z-index: var(--z-index-modal);
   padding: 20px;
   box-sizing: border-box;
 }
@@ -385,7 +497,7 @@ button::after {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  z-index: 900;
+  z-index: var(--z-index-sheet);
 }
 
 .zen-modal-body {
@@ -407,7 +519,7 @@ button::after {
   box-shadow: var(--shadow-xl);
   padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  max-height: 84vh;
+  max-height: 86vh;
   overflow-y: auto;
   animation: uiSheetUp 0.26s var(--ease-out) both;
 }
@@ -432,22 +544,100 @@ button::after {
   100% { background-position: -200% 0; }
 }
 
+@keyframes zenTypingPulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1.15); }
+}
+
 /* #ifdef H5 */
+html,
+body,
+uni-app,
+uni-page,
+uni-page-wrapper,
+uni-page-body {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+uni-input {
+  display: flex;
+  align-items: center;
+}
+
+uni-textarea {
+  display: block;
+}
+
+.uni-picker-container {
+  z-index: 1400 !important;
+}
+
+.uni-picker-container .uni-picker-toggle[style*="display: none"],
+.uni-picker-container .uni-picker[style*="display: none"] {
+  display: none !important;
+}
+
+.uni-picker-container .uni-mask {
+  z-index: 1390 !important;
+  background: rgba(28, 28, 26, 0.34) !important;
+  backdrop-filter: blur(4px);
+}
+
+.uni-picker-container .uni-picker-custom {
+  z-index: 1401 !important;
+  border-radius: 20px 20px 0 0;
+  overflow: hidden;
+  background-color: var(--color-bg-primary) !important;
+}
+
+.uni-picker-container .uni-picker-action.uni-picker-action-confirm {
+  color: var(--color-sage-ink) !important;
+  font-weight: 600;
+}
+
 .ui-input:focus,
-.ui-textarea:focus {
+.ui-input:focus-within,
+.ui-textarea:focus,
+.ui-textarea:focus-within {
   outline: none;
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
 
+.ui-btn:focus-visible,
+.ui-icon-btn:focus-visible,
+.ui-seg-item:focus-visible {
+  outline: 2px solid var(--color-zen-sage);
+  outline-offset: 2px;
+}
+
 @media (min-width: 540px) {
   .zen-sheet-mask {
     align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
   }
 
   .zen-sheet-body {
     max-width: 440px;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-subtle);
+    padding: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

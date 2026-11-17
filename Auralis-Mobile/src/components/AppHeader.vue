@@ -3,7 +3,13 @@
     <view class="status-bar-placeholder"></view>
     <view class="app-header-bar" :style="headerBarStyle">
       <view class="header-left">
-        <view v-if="effectiveShowBack" class="icon-btn back-btn" @click="handleBack">
+        <view
+          v-if="effectiveShowBack"
+          class="icon-btn back-btn"
+          role="button"
+          aria-label="返回"
+          @click="handleBack"
+        >
           <LineIcon name="back" size="18px" color="var(--text-primary)" />
         </view>
         <view v-if="title" class="title-group">
@@ -14,7 +20,13 @@
 
       <view class="header-right">
         <slot name="right">
-          <view v-if="rightIcon" class="icon-btn right-action-btn" @click="handleRightClick">
+          <view
+            v-if="rightIcon"
+            class="icon-btn right-action-btn"
+            role="button"
+            aria-label="操作"
+            @click="handleRightClick"
+          >
             <LineIcon :name="rightIcon" size="18px" color="var(--text-primary)" />
           </view>
         </slot>
@@ -123,7 +135,7 @@ function handleRightClick() {
   background-color: var(--color-bg-primary);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-index-header, 100);
   flex-shrink: 0;
 }
 
@@ -161,11 +173,11 @@ function handleRightClick() {
 }
 
 .header-title-left {
-  font-size: 19px;
-  font-weight: var(--font-weight-bold);
+  font-size: 20px;
+  font-weight: 800;
   color: var(--text-primary);
   line-height: var(--line-height-tight);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -190,7 +202,11 @@ function handleRightClick() {
   box-shadow: var(--shadow-sm);
   flex-shrink: 0;
   cursor: pointer;
-  transition: transform 0.16s var(--ease-out), background-color 0.16s ease;
+  transition: transform 0.16s var(--ease-out), border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.icon-btn:hover {
+  border-color: var(--border-accent);
 }
 
 .icon-btn:active {
