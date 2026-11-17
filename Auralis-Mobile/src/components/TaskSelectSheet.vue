@@ -2,9 +2,9 @@
   <view v-if="visible" class="zen-sheet-mask" @click="close">
     <view class="zen-sheet-body sheet-panel" @click.stop>
       <view class="sheet-header">
-        <text class="sheet-title">关联任务</text>
+        <text class="sheet-title">选择专注任务</text>
         <view class="ui-icon-btn" role="button" aria-label="关闭" @click="close">
-          <LineIcon name="close" size="16px" color="var(--text-muted)" />
+          <LineIcon name="close" size="16px" color="var(--text-muted, #7A7A75)" />
         </view>
       </view>
 
@@ -15,15 +15,18 @@
           role="button"
           @click="choose(null)"
         >
-          <view class="option-icon">
-            <LineIcon name="sparkles" size="16px" color="var(--color-sage-dark)" />
+          <view class="option-icon is-free">
+            <LineIcon name="sparkles" size="16px" color="#536B79" />
           </view>
-          <text class="option-title">自由专注</text>
-          <LineIcon v-if="!selectedTaskId" name="check" size="16px" color="var(--color-sage-dark)" />
+          <view class="option-body">
+            <text class="option-title">自由学习</text>
+          </view>
+          <text class="option-badge is-free-badge">随时开启专注</text>
+          <LineIcon v-if="!selectedTaskId" name="check" size="16px" color="var(--color-sage-ink, #556B3D)" />
         </view>
 
         <view v-if="scheduledTasks.length > 0" class="group-section">
-          <text class="group-label">日程</text>
+          <text class="group-label">已排期日程</text>
           <view
             v-for="task in scheduledTasks"
             :key="task.id"
@@ -33,21 +36,19 @@
             @click="choose(task)"
           >
             <view class="option-icon">
-              <LineIcon name="calendar" size="15px" color="var(--color-sage-dark)" />
+              <LineIcon name="calendar" size="15px" color="var(--color-sage-dark, #76855B)" />
             </view>
             <view class="option-body">
               <text class="option-title">{{ task.name }}</text>
-              <text class="option-meta num-tabular">
-                {{ formatShortDate(task.scheduledAt) }} {{ formatLocalTimeHHmm(task.scheduledAt) }}
-                · {{ task.duration || 30 }}m
-              </text>
+              <text v-if="task.subject" class="option-meta num-tabular">{{ task.subject }} · {{ task.duration || 30 }}m</text>
             </view>
-            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="var(--color-sage-dark)" />
+            <text class="option-badge num-tabular">{{ formatFocusScheduledTime(task.scheduledAt) }}</text>
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="var(--color-sage-ink, #556B3D)" />
           </view>
         </view>
 
         <view v-if="pendingTasks.length > 0" class="group-section">
-          <text class="group-label">待办</text>
+          <text class="group-label">待办清单</text>
           <view
             v-for="task in pendingTasks"
             :key="task.id"
@@ -57,13 +58,14 @@
             @click="choose(task)"
           >
             <view class="option-icon">
-              <LineIcon name="layers" size="15px" color="var(--text-muted)" />
+              <LineIcon name="layers" size="15px" color="var(--text-muted, #7A7A75)" />
             </view>
             <view class="option-body">
               <text class="option-title">{{ task.name }}</text>
-              <text v-if="task.subject" class="option-meta num-tabular">{{ task.subject }} · {{ task.duration || 30 }}m</text>
+              <text v-if="task.subject" class="option-meta">{{ task.subject }}</text>
             </view>
-            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="var(--color-sage-dark)" />
+            <text class="option-badge num-tabular">{{ task.duration || 30 }}m</text>
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="var(--color-sage-ink, #556B3D)" />
           </view>
         </view>
       </scroll-view>
@@ -75,8 +77,8 @@
 import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { formatFocusScheduledTime } from '@/services/focusController'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
-import { formatLocalTimeHHmm, formatShortDate } from '@/utils/dateKey'
 
 const props = defineProps<{
   visible: boolean
@@ -95,7 +97,7 @@ const taskStore = useTaskStore()
 const scheduledTasks = computed(() =>
   taskStore.allTasks
     .filter(task => !task.is_deleted && task.scheduledAt && task.status !== 'completed')
-    .sort((a, b) => Date.parse(a.scheduledAt || '') - Date.parse(b.scheduledAt || '')),
+    .sort((a, b) => (Date.parse(a.scheduledAt || '') || 0) - (Date.parse(b.scheduledAt || '') || 0)),
 )
 
 const pendingTasks = computed(() => taskStore.pendingTasks)
@@ -126,9 +128,9 @@ function choose(task: Task | null) {
 }
 
 .sheet-title {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
+  font-size: var(--font-size-lg, 17px);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-primary, #1C1C1A);
 }
 
 .sheet-scroll {
@@ -143,43 +145,51 @@ function choose(task: Task | null) {
 
 .group-label {
   display: block;
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-muted, #7A7A75);
   margin-bottom: 8px;
 }
 
 .task-option {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  gap: 10px;
+  padding: 10px 12px;
+  background-color: var(--glass-sub-bg, rgba(255, 255, 255, 0.56));
+  backdrop-filter: var(--glass-blur-soft, blur(18px));
+  -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
+  border: 1px solid var(--glass-border-subtle, rgba(255, 255, 255, 0.72));
+  box-shadow: var(--glass-shadow-subtle, 0 2px 10px rgba(45, 55, 40, 0.03));
   border-radius: 14px;
   margin-bottom: 8px;
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .task-option:hover {
-  border-color: var(--border-accent);
+  border-color: var(--border-accent, rgba(139, 154, 110, 0.42));
 }
 
 .task-option.is-selected {
-  border-color: var(--border-accent);
-  background-color: var(--color-sage-bg);
+  border-color: var(--glass-border, rgba(255, 255, 255, 0.82));
+  background-color: rgba(139, 154, 110, 0.14);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 .option-icon {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-primary, #F7F2EB);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.option-icon.is-free {
+  background-color: rgba(110, 136, 152, 0.12);
 }
 
 .option-body {
@@ -191,17 +201,35 @@ function choose(task: Task | null) {
 }
 
 .option-title {
-  flex: 1;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
+  font-size: var(--font-size-sm, 13px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, #1C1C1A);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .option-meta {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
+  font-size: var(--text-2xs, 11px);
+  color: var(--text-muted, #7A7A75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.option-badge {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background-color: rgba(139, 154, 110, 0.12);
+  color: #637748;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.option-badge.is-free-badge {
+  background-color: rgba(110, 136, 152, 0.12);
+  color: #536B79;
 }
 </style>

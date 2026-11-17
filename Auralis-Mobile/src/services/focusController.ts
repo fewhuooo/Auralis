@@ -1,6 +1,6 @@
 import type { components } from '../api/generated/schema.ts'
 import { ApiProblemError } from '../api/protocol.ts'
-import { toLocalDateKey } from '../utils/dateKey.ts'
+import { pad2, toLocalDateKey } from '../utils/dateKey.ts'
 
 export type FocusPhase = 'focus' | 'shortBreak' | 'longBreak'
 export type FocusRunStatus = 'idle' | 'running' | 'paused'
@@ -401,5 +401,126 @@ export function createFocusController(deps: FocusControllerDeps) {
     setFocusMinutes,
     selectTask,
     flushOutbox,
+  }
+}
+
+export interface FocusCandidateTask {
+  id?: string
+  name: string
+  subject?: string
+  duration?: number
+  status?: 'pending' | 'scheduled' | 'completed' | 'cancelled'
+  scheduledAt?: string
+  is_deleted?: boolean
+}
+
+export interface DisplayedFocusTaskView {
+  id: string
+  name: string
+  timeStr: string
+  statusTag: '自由模式' | '已排期' | '关联任务'
+  bannerDesc: string
+  isFreeStudy: boolean
+}
+
+const FOCUS_WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
+
+/** Format local date and HH:mm clock string consistently across H5 and MP-Weixin. */
+export function formatFocusClockDateTime(nowInput: Date | number = new Date()): { dateText: string; timeText: string } {
+  const date = nowInput instanceof Date ? nowInput : new Date(nowInput)
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date
+  return {
+    dateText: `${safeDate.getMonth() + 1}月${safeDate.getDate()}日 ${FOCUS_WEEKDAY_LABELS[safeDate.getDay()]}`,
+    timeText: `${pad2(safeDate.getHours())}:${pad2(safeDate.getMinutes())}`,
+  }
+}
+
+/** Format scheduled timestamp cleanly, omitting current year just like PC Pomodoro. */
+export function formatFocusScheduledTime(scheduledAt?: string, nowInput: Date | number = new Date()): string {
+  if (!scheduledAt) return ''
+  const date = new Date(scheduledAt)
+  if (Number.isNaN(date.getTime())) return ''
+  const reference = nowInput instanceof Date ? nowInput : new Date(nowInput)
+  const yearPrefix = date.getFullYear() === reference.getFullYear() ? '' : `${date.getFullYear()}年`
+  return `${yearPrefix}${date.getMonth() + 1}月${date.getDate()}日 ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
+/** Pick ongoing scheduled task first, then imminent (<10m) task, else null (Free Study). */
+export function resolveDefaultFocusTask<T extends FocusCandidateTask>(
+  tasks: readonly T[],
+  nowMs: number,
+): T | null {
+  const scheduled = tasks
+    .filter((task) => {
+      if (task.is_deleted || !task.id || !task.scheduledAt) return false
+      if (task.status === 'completed' || task.status === 'cancelled') return false
+      return Number.isFinite(Date.parse(task.scheduledAt))
+    })
+    .sort((a, b) => Date.parse(a.scheduledAt || '') - Date.parse(b.scheduledAt || ''))
+
+  const ongoing = scheduled.find((task) => {
+    const start = Date.parse(task.scheduledAt || '')
+    const durationMinutes = task.duration && task.duration > 0 ? task.duration : 30
+    const end = start + durationMinutes * 60_000
+    return nowMs >= start && nowMs < end
+  })
+  if (ongoing) return ongoing
+
+  const imminent = scheduled.find((task) => {
+    const start = Date.parse(task.scheduledAt || '')
+    return start >= nowMs && start <= nowMs + 10 * 60_000
+  })
+  return imminent ?? null
+}
+
+/** Project current selected focus task into PC-aligned banner/selector presentation fields. */
+export function resolveDisplayedFocusTask(params: {
+  selectedTaskId: string
+  selectedTaskTitle: string
+  selectedTaskSubject: string
+  tasks: readonly FocusCandidateTask[]
+  nowMs?: number
+}): DisplayedFocusTaskView {
+  if (!params.selectedTaskId) {
+    return {
+      id: '',
+      name: '自由学习',
+      timeStr: '随时开启专注',
+      statusTag: '自由模式',
+      bannerDesc: '自主掌握心流节奏 · 自由专注',
+      isFreeStudy: true,
+    }
+  }
+
+  const task = params.tasks.find(item => item.id === params.selectedTaskId && !item.is_deleted)
+  const name = task
+    ? (task.name || '未命名任务')
+    : (params.selectedTaskTitle || '关联任务暂不可见')
+  const timeStr = formatFocusScheduledTime(task?.scheduledAt, params.nowMs)
+
+  if (timeStr) {
+    return {
+      id: params.selectedTaskId,
+      name,
+      timeStr,
+      statusTag: '已排期',
+      bannerDesc: `排期时间：${timeStr}`,
+      isFreeStudy: false,
+    }
+  }
+
+  const subjectLabel = task?.subject || params.selectedTaskSubject
+  const durationLabel = task?.duration ? `${task.duration}m` : ''
+  const bannerDesc = subjectLabel
+    ? `${subjectLabel}${durationLabel ? ` · 预计 ${durationLabel}` : ''}`
+    : (durationLabel ? `预计时长：${durationLabel}` : '关联待办任务 · 专注开启中')
+
+  return {
+    id: params.selectedTaskId,
+    name,
+    timeStr: durationLabel || '关联待办',
+    statusTag: '关联任务',
+    bannerDesc,
+    isFreeStudy: false,
   }
 }

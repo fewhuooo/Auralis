@@ -15,26 +15,19 @@
       <circle
         cx="50"
         cy="50"
-        r="48.5"
+        r="44"
         fill="none"
-        stroke="rgba(28, 28, 26, 0.10)"
-        stroke-width="0.75"
+        stroke="rgba(139, 154, 110, 0.14)"
+        stroke-width="3.5"
+        class="track-circle"
       />
       <circle
         cx="50"
         cy="50"
-        r="44.5"
-        fill="none"
-        stroke="rgba(139, 154, 110, 0.2)"
-        stroke-width="2.4"
-      />
-      <circle
-        cx="50"
-        cy="50"
-        r="44.5"
+        r="44"
         fill="none"
         :stroke="color"
-        stroke-width="3.2"
+        stroke-width="3.8"
         stroke-linecap="round"
         :stroke-dasharray="circumference"
         :stroke-dashoffset="dashOffset"
@@ -48,10 +41,15 @@
     <view class="ring-conic-track" :style="{ background: ringBackground }"></view>
     <!-- #endif -->
 
-    <view class="ring-inner">
-      <text v-if="isBreak" class="break-kicker">休息</text>
-      <text class="time-text num-tabular">{{ formattedTime }}</text>
-      <view v-if="cycleCount !== undefined" class="dial-cycles" aria-hidden="true">
+    <view class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill }">
+      <text v-if="isBreak && !showBottomPill" class="break-kicker">休息</text>
+      <view class="time-container">
+        <text class="time-text num-tabular">{{ formattedTime }}</text>
+      </view>
+      <view v-if="showBottomPill" class="ring-pill" :class="{ 'is-pulsing': isRunning }" aria-hidden="true">
+        <view class="pill-dot" :style="{ backgroundColor: color }"></view>
+      </view>
+      <view v-else-if="cycleCount !== undefined" class="dial-cycles" aria-hidden="true">
         <view
           v-for="idx in 4"
           :key="idx"
@@ -77,12 +75,13 @@ const props = defineProps<{
   size?: string
   cycleCount?: number
   isBreak?: boolean
+  showBottomPill?: boolean
   ariaLabel?: string
 }>()
 
 defineEmits(['center-click'])
 
-const circumference = 2 * Math.PI * 44.5
+const circumference = 2 * Math.PI * 44
 
 const progressRatio = computed(() => (
   props.totalSeconds > 0
@@ -136,16 +135,20 @@ const formattedTime = computed(() => {
   pointer-events: none;
 }
 
+.track-circle {
+  transition: stroke 0.3s ease;
+}
+
 .progress-circle {
   transition: stroke-dashoffset 1s linear, stroke 0.3s ease, filter 0.3s ease;
 }
 
 .progress-circle.is-running {
-  filter: drop-shadow(0 0 6px rgba(139, 154, 110, 0.38));
+  filter: drop-shadow(0 0 6px rgba(139, 154, 110, 0.45));
 }
 
 .progress-circle.is-running.is-break {
-  filter: drop-shadow(0 0 6px rgba(200, 155, 109, 0.4));
+  filter: drop-shadow(0 0 6px rgba(200, 155, 109, 0.45));
 }
 /* #endif */
 
@@ -153,8 +156,9 @@ const formattedTime = computed(() => {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  padding: 5px;
   box-sizing: border-box;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
 }
 
 .ring-inner {
@@ -163,12 +167,36 @@ const formattedTime = computed(() => {
   width: calc(100% - 16px);
   height: calc(100% - 16px);
   border-radius: 50%;
-  background-color: var(--color-bg-primary);
+  background-color: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
+  transition: transform 0.35s var(--ease-out);
+}
+
+.ring-inner.is-running {
+  animation: ring-pulse 4s ease-in-out infinite;
+}
+
+@keyframes ring-pulse {
+  0%, 100% {
+    transform: scale(1.008);
+  }
+  50% {
+    transform: scale(1.022);
+  }
+}
+
+.time-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.ring-inner.has-bottom-pill .time-container {
+  margin-top: -12px;
 }
 
 .break-kicker {
@@ -184,6 +212,50 @@ const formattedTime = computed(() => {
   color: var(--text-primary);
   line-height: 1;
   letter-spacing: -0.04em;
+}
+
+.ring-inner.has-bottom-pill .time-text {
+  font-size: clamp(42px, 13.5vw, 54px);
+  letter-spacing: -1.5px;
+}
+
+.ring-pill {
+  position: absolute;
+  bottom: 13.5%;
+  width: 38px;
+  height: 19px;
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.82));
+  background-color: var(--glass-bg, rgba(252, 251, 249, 0.70));
+  backdrop-filter: var(--glass-blur-soft, blur(18px));
+  -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s var(--ease-out);
+}
+
+.pill-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease, transform 0.3s ease;
+}
+
+.ring-pill.is-pulsing .pill-dot {
+  animation: dot-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes dot-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
 }
 
 .dial-cycles {
