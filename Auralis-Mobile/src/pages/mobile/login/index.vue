@@ -1,7 +1,7 @@
 <template>
   <view class="login-viewport">
     <view class="login-page">
-      <view class="side-shape"></view>
+      <view class="side-shape" aria-hidden="true"></view>
 
       <view class="login-inner">
         <view class="brand-header">
@@ -9,10 +9,12 @@
           <text class="brand-title">AURALIS</text>
         </view>
 
-        <view v-if="mode !== 'reset'" class="ui-segmented mode-switch">
+        <view v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
           <view
             class="ui-seg-item"
             :class="{ active: mode === 'login', 'is-disabled': pending }"
+            role="tab"
+            :aria-selected="mode === 'login'"
             @click="show('login')"
           >
             <text>登录</text>
@@ -20,13 +22,15 @@
           <view
             class="ui-seg-item"
             :class="{ active: mode === 'register', 'is-disabled': pending }"
+            role="tab"
+            :aria-selected="mode === 'register'"
             @click="show('register')"
           >
             <text>注册</text>
           </view>
         </view>
         <view v-else class="reset-header">
-          <view class="ui-icon-btn" @click="show('login')">
+          <view class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
             <LineIcon name="back" size="16px" color="var(--text-primary)" />
           </view>
           <text class="form-heading">重置密码</text>
@@ -74,7 +78,7 @@
             class="ui-input"
             v-model="form.password"
             password
-            :placeholder="mode === 'login' ? '密码' : '8+位含大小写及符号'"
+            :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
             :disabled="pending"
           />
 
@@ -90,12 +94,12 @@
 
         <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-        <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">
+        <button class="submit-btn" role="button" :loading="submitting" :disabled="pending" @click="submit">
           {{ actionLabel }}
         </button>
 
         <view v-if="mode === 'login'" class="auth-footer">
-          <text class="link-btn" @click="show('reset')">忘记密码？</text>
+          <text class="link-btn" role="button" @click="show('reset')">忘记密码</text>
         </view>
       </view>
     </view>
@@ -135,14 +139,12 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 .side-shape {
   position: absolute;
-  bottom: -60px;
-  right: -60px;
-  width: 200px;
-  height: 200px;
-  background-color: var(--color-zen-sage);
+  bottom: -70px;
+  right: -70px;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(139, 154, 110, 0.34) 0%, transparent 72%);
   border-radius: 50%;
-  filter: blur(45px);
-  opacity: 0.28;
   pointer-events: none;
 }
 
@@ -152,20 +154,21 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   width: 100%;
   max-width: 340px;
   margin: 0 auto;
+  animation: uiFadeUp 0.36s var(--ease-out) both;
 }
 
 .brand-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }
 
 .brand-title {
   font-size: 28px;
   font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -1.5px;
+  letter-spacing: -0.045em;
   line-height: 1;
 }
 
@@ -174,7 +177,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 }
 
 .ui-seg-item.is-disabled {
-  opacity: 0.5;
+  opacity: 0.48;
   pointer-events: none;
 }
 
@@ -189,6 +192,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   font-size: 20px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
 .form-stack {
@@ -206,7 +210,16 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   box-sizing: border-box;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+/* #ifdef H5 */
+.code-field:focus-within {
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+}
+/* #endif */
 
 .code-input {
   flex: 1;
@@ -222,12 +235,16 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   padding: 0 12px;
   height: 28px;
   line-height: 28px;
+  margin: 0;
   background: transparent;
   border-left: 1px solid var(--border-subtle);
   border-radius: 0;
   font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .code-button[disabled] {
@@ -238,7 +255,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: block;
   margin-top: 12px;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   background-color: var(--color-sage-bg);
   color: var(--color-sage-ink);
   font-size: var(--font-size-xs);
@@ -246,23 +263,29 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 }
 
 .submit-btn {
-  margin-top: 20px;
+  margin: 20px 0 0;
+  padding: 0;
   width: 100%;
   height: 44px;
-  background-color: var(--color-zen-sage);
+  line-height: 44px;
+  background: var(--accent-gradient);
   color: #FFFFFF;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.25);
+  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.26);
+  transition: transform 0.16s var(--ease-out), box-shadow 0.18s ease;
+}
+
+.submit-btn:active {
+  transform: scale(0.98);
 }
 
 .submit-btn[disabled] {
-  opacity: 0.5;
+  opacity: 0.48;
 }
 
 .auth-footer {

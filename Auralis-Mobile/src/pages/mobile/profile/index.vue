@@ -3,8 +3,8 @@
     <view class="profile-page">
       <AppHeader title="我的">
         <template #right>
-          <view class="sync-pill-btn" @click="triggerManualSync">
-            <LineIcon name="sync" size="14px" color="var(--color-sage-dark)" />
+          <view class="sync-pill-btn" role="button" aria-label="同步数据" @click="triggerManualSync">
+            <LineIcon name="sync" size="14px" color="var(--color-sage-ink)" />
             <text>{{ syncStore.isSyncing ? '同步中' : '同步' }}</text>
           </view>
         </template>
@@ -20,8 +20,8 @@
               <text class="user-display">{{ displayName }}</text>
               <text class="user-handle">@{{ authStore.username || 'auralis' }}</text>
             </view>
-            <view class="ui-icon-btn" @click="openNameEditor">
-              <LineIcon name="edit" size="16px" color="var(--color-sage-dark)" />
+            <view class="ui-icon-btn" role="button" aria-label="修改显示名称" @click="openNameEditor">
+              <LineIcon name="edit" size="16px" color="var(--color-sage-ink)" />
             </view>
           </view>
 
@@ -30,7 +30,7 @@
           <view class="quota-card zen-card">
             <view class="quota-card-head">
               <text class="card-heading">AI 额度</text>
-              <view class="ui-icon-btn refresh-mini" @click="fetchAiUsage">
+              <view class="ui-icon-btn sm" role="button" aria-label="刷新额度" @click="fetchAiUsage">
                 <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
               </view>
             </view>
@@ -42,34 +42,40 @@
 
             <view v-else-if="aiUsageError" class="quota-error">
               <text class="error-msg">{{ aiUsageError }}</text>
-              <view class="ui-btn ui-btn-secondary retry-small" @click="fetchAiUsage">重试</view>
+              <view class="ui-btn ui-btn-secondary retry-small" role="button" @click="fetchAiUsage">重试</view>
             </view>
 
             <view v-else-if="aiUsage" class="quota-list">
               <view class="quota-item">
                 <view class="quota-top">
-                  <text class="quota-name">每小时</text>
-                  <text class="quota-nums num-tabular">{{ aiUsage.hourly.remainingTokens }} / {{ aiUsage.hourly.limitTokens }}</text>
+                  <text class="quota-name">每小时剩余</text>
+                  <text class="quota-nums num-tabular">{{ formatQuotaNums(aiUsage.hourly.remainingTokens, aiUsage.hourly.limitTokens) }}</text>
                 </view>
                 <view class="quota-track">
-                  <view class="quota-fill" :style="{ width: usagePercent(aiUsage.hourly.chargedTokens, aiUsage.hourly.limitTokens) }"></view>
+                  <view class="quota-fill" :style="{ width: remainingPercent(aiUsage.hourly.remainingTokens, aiUsage.hourly.limitTokens) }"></view>
                 </view>
+                <text v-if="aiUsage.hourly.chargedTokens > 0 && aiUsage.hourly.resetAt" class="quota-reset num-tabular">
+                  {{ formatResetClock(aiUsage.hourly.resetAt) }} 重置
+                </text>
               </view>
 
               <view class="quota-item">
                 <view class="quota-top">
-                  <text class="quota-name">每日</text>
-                  <text class="quota-nums num-tabular">{{ aiUsage.daily.remainingTokens }} / {{ aiUsage.daily.limitTokens }}</text>
+                  <text class="quota-name">每日剩余</text>
+                  <text class="quota-nums num-tabular">{{ formatQuotaNums(aiUsage.daily.remainingTokens, aiUsage.daily.limitTokens) }}</text>
                 </view>
                 <view class="quota-track">
-                  <view class="quota-fill" :style="{ width: usagePercent(aiUsage.daily.chargedTokens, aiUsage.daily.limitTokens) }"></view>
+                  <view class="quota-fill" :style="{ width: remainingPercent(aiUsage.daily.remainingTokens, aiUsage.daily.limitTokens) }"></view>
                 </view>
+                <text v-if="aiUsage.daily.chargedTokens > 0 && aiUsage.daily.resetAt" class="quota-reset num-tabular">
+                  {{ formatResetClock(aiUsage.daily.resetAt) }} 重置
+                </text>
               </view>
             </view>
           </view>
 
           <view class="menu-card zen-card">
-            <view class="menu-row" @click="openAiConfigSheet">
+            <view class="menu-row" role="button" @click="openAiConfigSheet">
               <LineIcon name="key" size="17px" color="var(--text-secondary)" />
               <text class="row-title">模型服务</text>
               <text class="row-val">{{ aiSummaryLabel }}</text>
@@ -78,7 +84,7 @@
 
             <view class="menu-divider"></view>
 
-            <view class="menu-row" @click="openPasswordSheet">
+            <view class="menu-row" role="button" @click="openPasswordSheet">
               <LineIcon name="lock" size="17px" color="var(--text-secondary)" />
               <text class="row-title">修改密码</text>
               <LineIcon name="chevron-right" size="15px" color="var(--text-muted)" />
@@ -86,30 +92,32 @@
 
             <view class="menu-divider"></view>
 
-            <view class="menu-row" @click="openSessionsSheet">
+            <view class="menu-row" role="button" @click="openSessionsSheet">
               <LineIcon name="device" size="17px" color="var(--text-secondary)" />
               <text class="row-title">登录设备</text>
               <LineIcon name="chevron-right" size="15px" color="var(--text-muted)" />
             </view>
           </view>
 
-          <view class="ui-btn ui-btn-danger logout-btn" @click="handleLogout">
+          <view class="ui-btn ui-btn-danger logout-btn" role="button" @click="handleLogout">
             <LineIcon name="logout" size="16px" color="var(--color-danger)" />
             <text>退出登录</text>
           </view>
         </view>
       </scroll-view>
+    </view>
 
+    <template #overlay>
       <view v-if="showNameSheet" class="zen-sheet-mask" @click="showNameSheet = false">
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
             <text class="sheet-title">修改名称</text>
-            <view class="ui-icon-btn" @click="showNameSheet = false">
+            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="showNameSheet = false">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
           <view class="sheet-form">
-            <input class="ui-input" v-model="nameDraft" maxlength="64" placeholder="显示名称" />
+            <input class="ui-input" v-model="nameDraft" maxlength="64" placeholder="输入显示名称" />
             <button class="ui-btn ui-btn-primary sheet-submit-btn" :loading="savingName" :disabled="savingName" @click="submitDisplayName">
               保存
             </button>
@@ -121,43 +129,54 @@
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
             <text class="sheet-title">模型服务</text>
-            <view class="ui-icon-btn" @click="showAiConfigSheet = false">
+            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="showAiConfigSheet = false">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view class="sheet-form">
-            <view class="ui-segmented">
+            <view class="ui-segmented" role="tablist">
               <view
                 v-for="p in providers"
                 :key="p.id"
                 class="ui-seg-item"
                 :class="{ active: aiForm.provider === p.id }"
+                role="tab"
+                :aria-selected="aiForm.provider === p.id"
                 @click="selectProvider(p.id)"
               >
                 <text>{{ p.label }}</text>
               </view>
             </view>
 
-            <input
-              class="ui-input"
-              v-model="aiForm.baseUrl"
-              placeholder="Base URL（可选）"
-              :disabled="savingAi"
-            />
-            <input
-              class="ui-input"
-              v-model="aiForm.apiKey"
-              password
-              :placeholder="aiForm.hasApiKey ? '已配置密钥（留空保留）' : 'API Key'"
-              :disabled="savingAi"
-            />
-            <input
-              class="ui-input"
-              v-model="aiForm.model"
-              placeholder="模型名称"
-              :disabled="savingAi"
-            />
+            <view>
+              <text class="zen-field-label">Base URL</text>
+              <input
+                class="ui-input"
+                v-model="aiForm.baseUrl"
+                placeholder="https://..."
+                :disabled="savingAi"
+              />
+            </view>
+            <view>
+              <text class="zen-field-label">API Key</text>
+              <input
+                class="ui-input"
+                v-model="aiForm.apiKey"
+                password
+                :placeholder="aiForm.hasApiKey ? '已配置（留空保留）' : 'sk-...'"
+                :disabled="savingAi"
+              />
+            </view>
+            <view>
+              <text class="zen-field-label">模型</text>
+              <input
+                class="ui-input"
+                v-model="aiForm.model"
+                placeholder="例如 gpt-4o-mini"
+                :disabled="savingAi"
+              />
+            </view>
 
             <view v-if="availableModels.length > 0" class="chips-row">
               <view
@@ -165,6 +184,7 @@
                 :key="m"
                 class="chip-item"
                 :class="{ active: aiForm.model === m }"
+                role="button"
                 @click="aiForm.model = m"
               >
                 <text>{{ m }}</text>
@@ -172,8 +192,8 @@
             </view>
 
             <view class="dual-actions">
-              <view class="ui-btn ui-btn-secondary dual-btn" @click="fetchModelsForProvider">拉取模型</view>
-              <view class="ui-btn ui-btn-secondary dual-btn" @click="testProviderConnection">测试连接</view>
+              <view class="ui-btn ui-btn-secondary dual-btn" role="button" @click="fetchModelsForProvider">拉取模型</view>
+              <view class="ui-btn ui-btn-secondary dual-btn" role="button" @click="testProviderConnection">测试连接</view>
             </view>
 
             <button class="ui-btn ui-btn-primary sheet-submit-btn" :loading="savingAi" :disabled="savingAi" @click="saveAiSettings">
@@ -187,13 +207,13 @@
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
             <text class="sheet-title">修改密码</text>
-            <view class="ui-icon-btn" @click="showPasswordSheet = false">
+            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="showPasswordSheet = false">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
           <view class="sheet-form">
             <input class="ui-input" v-model="pwdForm.currentPassword" password placeholder="当前密码" :disabled="savingPwd" />
-            <input class="ui-input" v-model="pwdForm.newPassword" password placeholder="新密码（8+位含大小写及符号）" :disabled="savingPwd" />
+            <input class="ui-input" v-model="pwdForm.newPassword" password placeholder="新密码" :disabled="savingPwd" />
             <input class="ui-input" v-model="pwdForm.confirmPassword" password placeholder="确认新密码" :disabled="savingPwd" />
             <text v-if="pwdError" class="pwd-error">{{ pwdError }}</text>
             <button class="ui-btn ui-btn-primary sheet-submit-btn" :loading="savingPwd" :disabled="savingPwd" @click="submitPasswordChange">
@@ -207,7 +227,7 @@
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
             <text class="sheet-title">登录设备</text>
-            <view class="ui-icon-btn" @click="showSessionsSheet = false">
+            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="showSessionsSheet = false">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
@@ -228,6 +248,7 @@
               <view
                 v-if="!s.current && s.id"
                 class="ui-btn ui-btn-danger revoke-btn"
+                role="button"
                 @click="revokeDevice(s.id)"
               >
                 <text>下线</text>
@@ -236,6 +257,7 @@
             <view
               v-if="sessionsList.some(item => !item.current)"
               class="ui-btn ui-btn-danger revoke-all-btn"
+              role="button"
               @click="revokeAllOthers"
             >
               <text>下线全部其他设备</text>
@@ -243,7 +265,7 @@
           </view>
         </view>
       </view>
-    </view>
+    </template>
   </AppPageLayout>
 </template>
 
@@ -257,6 +279,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useAiUsage } from '@/utils/useAiUsage'
@@ -278,9 +301,19 @@ function formatResetTime(iso: string): string {
   return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function usagePercent(charged: number, limit: number): string {
+function formatResetClock(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatQuotaNums(remaining: number, limit: number): string {
+  return `${Number(remaining || 0).toLocaleString()} / ${Number(limit || 0).toLocaleString()}`
+}
+
+function remainingPercent(remaining: number, limit: number): string {
   if (!limit || limit <= 0) return '0%'
-  const pct = Math.min(100, Math.max(0, Math.round((charged / limit) * 100)))
+  const pct = Math.min(100, Math.max(0, Math.round((remaining / limit) * 100)))
   return `${pct}%`
 }
 
@@ -487,6 +520,17 @@ const showSessionsSheet = ref(false)
 const loadingSessions = ref(false)
 const sessionsList = ref<SessionResponse[]>([])
 
+useEscapeKey(
+  () => showNameSheet.value || showAiConfigSheet.value || showPasswordSheet.value || showSessionsSheet.value,
+  () => {
+    if (savingName.value || savingAi.value || savingPwd.value) return
+    showNameSheet.value = false
+    showAiConfigSheet.value = false
+    showPasswordSheet.value = false
+    showSessionsSheet.value = false
+  },
+)
+
 async function openSessionsSheet() {
   showSessionsSheet.value = true
   loadingSessions.value = true
@@ -557,7 +601,7 @@ onMounted(() => {
   padding: 6px 12px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
-  color: var(--color-sage-dark);
+  color: var(--color-sage-ink);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
@@ -565,11 +609,12 @@ onMounted(() => {
 
 .content-scroll {
   flex: 1;
+  height: 0;
   min-height: 0;
 }
 
 .profile-body {
-  padding: 8px 18px 24px;
+  padding: 8px 18px var(--tabbar-clearance);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -584,14 +629,15 @@ onMounted(() => {
 }
 
 .avatar-badge {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
 .avatar-initial {
@@ -636,11 +682,6 @@ onMounted(() => {
   font-size: 14px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-}
-
-.refresh-mini {
-  width: 30px;
-  height: 30px;
 }
 
 .quota-skeleton {
@@ -698,7 +739,6 @@ onMounted(() => {
 
 .quota-nums {
   font-size: var(--font-size-xs);
-  font-family: var(--font-family-mono);
   color: var(--text-muted);
 }
 
@@ -713,6 +753,13 @@ onMounted(() => {
   height: 100%;
   border-radius: var(--radius-full);
   background: var(--accent-gradient);
+  transition: width 0.32s var(--ease-out);
+}
+
+.quota-reset {
+  font-size: 11px;
+  color: var(--text-muted);
+  align-self: flex-end;
 }
 
 .menu-card {
@@ -782,7 +829,7 @@ onMounted(() => {
 .chip-item {
   padding: 6px 12px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
@@ -829,7 +876,8 @@ onMounted(() => {
   gap: 12px;
   padding: 12px;
   border-radius: 14px;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
 }
 
 .session-meta {

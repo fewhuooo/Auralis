@@ -3,57 +3,63 @@
     <view class="ai-page">
       <AppHeader title="AI" show-back back-url="/pages/mobile/home/index">
         <template #right>
-          <view class="ui-icon-btn" @click="openHistoryDrawer">
+          <view class="ui-icon-btn" role="button" aria-label="历史对话" @click="openHistoryDrawer">
             <LineIcon name="history" size="17px" color="var(--text-primary)" />
           </view>
-          <view class="ui-icon-btn" @click="startNewChat">
+          <view class="ui-icon-btn" role="button" aria-label="新对话" @click="startNewChat">
             <LineIcon name="plus" size="17px" color="var(--text-primary)" />
           </view>
         </template>
       </AppHeader>
 
+      <view v-if="messages.length === 0" class="welcome-state">
+        <BrandLogo size="42px" />
+        <view class="starter-pills">
+          <view
+            v-for="prompt in starterPrompts"
+            :key="prompt"
+            class="starter-pill zen-card"
+            role="button"
+            @click="query = prompt; sendMessage()"
+          >
+            <text>{{ prompt }}</text>
+          </view>
+        </view>
+      </view>
+
       <scroll-view
+        v-else
         scroll-y
         :show-scrollbar="false"
         class="chat-scroll"
         :scroll-into-view="scrollTargetId"
       >
-        <view v-if="messages.length === 0" class="welcome-state">
-          <BrandLogo size="42px" />
-          <view class="starter-pills">
-            <view
-              v-for="prompt in starterPrompts"
-              :key="prompt"
-              class="starter-pill zen-card"
-              @click="query = prompt; sendMessage()"
-            >
-              <text>{{ prompt }}</text>
-            </view>
-          </view>
-        </view>
-
-        <view v-else class="chat-list">
+        <view class="chat-list">
           <view
             v-for="(msg, idx) in messages"
             :key="idx"
             class="chat-row"
             :class="msg.role"
           >
-            <view v-if="msg.role === 'user'" class="user-bubble">
+            <view v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
               <text class="user-text">{{ msg.content }}</text>
             </view>
 
-            <view v-else class="assistant-bubble zen-card">
+            <view v-else class="assistant-bubble zen-chat-assistant-bubble">
               <view v-if="msg.toolHint" class="tool-pill">
                 <text>{{ msg.toolHint }}</text>
               </view>
 
               <MarkdownText v-if="msg.content" :content="msg.content" />
-              <text v-else-if="isTyping" class="typing-dot">···</text>
+              <view v-else-if="isTyping" class="zen-typing-dots" aria-label="思考中">
+                <view class="zen-typing-dot"></view>
+                <view class="zen-typing-dot"></view>
+                <view class="zen-typing-dot"></view>
+              </view>
 
               <view v-if="msg.content && !(isTyping && idx === messages.length - 1)" class="bubble-footer">
-                <view class="copy-btn" @click="copyText(msg.content)">
-                  <LineIcon name="copy" size="14px" color="var(--text-muted)" />
+                <view class="copy-btn" role="button" aria-label="复制回答" @click="copyText(msg.content)">
+                  <LineIcon name="copy" size="13px" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
@@ -76,18 +82,22 @@
           <view
             class="send-btn"
             :class="{ disabled: !query.trim() || isTyping }"
+            role="button"
+            aria-label="发送"
             @click="sendMessage"
           >
             <LineIcon name="arrow-up" size="17px" color="#FFFFFF" />
           </view>
         </view>
       </view>
+    </view>
 
+    <template #overlay>
       <view v-if="showHistorySheet" class="zen-sheet-mask" @click="showHistorySheet = false">
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
             <text class="sheet-title">历史对话</text>
-            <view class="ui-icon-btn" @click="showHistorySheet = false">
+            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="showHistorySheet = false">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
@@ -100,6 +110,7 @@
               :key="conv.id"
               class="history-row"
               :class="{ active: conv.id === currentConversationId }"
+              role="button"
               @click="conv.id && loadConversation(conv.id)"
             >
               <view class="history-meta">
@@ -109,6 +120,8 @@
               <view
                 v-if="conv.id"
                 class="history-delete"
+                role="button"
+                aria-label="删除对话"
                 @click.stop="deleteConversation(conv.id, conv.version ?? 0)"
               >
                 <LineIcon name="trash" size="14px" color="var(--text-muted)" />
@@ -117,7 +130,7 @@
           </scroll-view>
         </view>
       </view>
-    </view>
+    </template>
   </AppPageLayout>
 </template>
 
@@ -131,6 +144,7 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
 import { uuidv7 } from '@/utils/uuid'
 
@@ -152,6 +166,9 @@ const anchorId = 'chat-bottom-anchor'
 const showHistorySheet = ref(false)
 const loadingHistory = ref(false)
 const conversations = ref<ConversationView[]>([])
+useEscapeKey(() => showHistorySheet.value, () => {
+  showHistorySheet.value = false
+})
 
 let activeStreamToken = 0
 
@@ -291,7 +308,7 @@ async function sendMessage() {
       onToolEvent: (ev) => {
         if (!isCurrent()) return
         messages.value[aiIndex].toolHint = ev.phase === 'started'
-          ? `检索 ${ev.name || '资料'}…`
+          ? '检索资料中…'
           : ev.phase === 'completed'
             ? ''
             : '检索未完成'
@@ -330,14 +347,10 @@ onLoad((options) => {
   background-color: var(--color-bg-primary);
 }
 
-.chat-scroll {
+.welcome-state {
   flex: 1;
   min-height: 0;
-}
-
-.welcome-state {
-  min-height: 62vh;
-  padding: 36px 24px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -362,6 +375,21 @@ onLoad((options) => {
   color: var(--text-primary);
   text-align: center;
   cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.14s ease;
+}
+
+.starter-pill:hover {
+  border-color: var(--border-accent);
+}
+
+.starter-pill:active {
+  transform: scale(0.98);
+}
+
+.chat-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
 }
 
 .chat-list {
@@ -386,23 +414,17 @@ onLoad((options) => {
 
 .user-bubble {
   max-width: 82%;
-  padding: 10px 14px;
-  background-color: var(--color-zen-graphite);
-  color: #FFFFFF;
-  border-radius: 16px 16px 4px 16px;
 }
 
 .user-text {
   font-size: 14.5px;
   line-height: 1.5;
   color: #FFFFFF;
+  word-break: break-word;
 }
 
 .assistant-bubble {
-  width: 100%;
   padding: 14px 16px;
-  border-radius: 16px;
-  box-sizing: border-box;
 }
 
 .tool-pill {
@@ -416,27 +438,27 @@ onLoad((options) => {
   margin-bottom: 8px;
 }
 
-.typing-dot {
-  font-size: 18px;
-  color: var(--text-muted);
-  letter-spacing: 3px;
-}
-
 .bubble-footer {
   display: flex;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .copy-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background-color: var(--color-bg-primary);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.14s ease, background-color 0.14s ease;
+}
+
+.copy-btn:hover {
+  opacity: 1;
+  background-color: rgba(28, 28, 26, 0.05);
 }
 
 .bottom-anchor {
@@ -456,7 +478,16 @@ onLoad((options) => {
   padding: 6px 6px 6px 16px;
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-md);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+/* #ifdef H5 */
+.input-capsule:focus-within {
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+}
+/* #endif */
 
 .chat-input {
   flex: 1;
@@ -476,6 +507,11 @@ onLoad((options) => {
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.send-btn:active {
+  transform: scale(0.92);
 }
 
 .send-btn.disabled {
@@ -513,12 +549,14 @@ onLoad((options) => {
   padding: 12px;
   border-radius: 12px;
   margin-bottom: 8px;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
 }
 
 .history-row.active {
   background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
 }
 
 .history-meta {

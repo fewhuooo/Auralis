@@ -3,23 +3,25 @@
     <view class="pomodoro-page">
       <view class="status-bar-spacer"></view>
 
-      <scroll-view scroll-y :show-scrollbar="false" class="page-scroll">
+      <view class="page-scroll-stage">
         <view class="page-inner">
           <view class="selector-row">
             <view
               class="task-pill"
               :class="{ 'is-locked': focusStore.isTaskLocked }"
+              role="button"
+              aria-label="选择专注任务"
               @click="openTaskPicker"
             >
               <LineIcon
                 :name="focusStore.isTaskLocked ? 'lock' : 'calendar'"
-                size="15px"
+                size="14px"
                 color="var(--color-sage-ink)"
               />
               <text class="task-pill-text">
                 {{ focusStore.selectedTaskTitle || '自由专注' }}
               </text>
-              <LineIcon name="chevron-down" size="14px" color="var(--text-muted)" />
+              <LineIcon name="chevron-down" size="13px" color="var(--text-muted)" />
             </view>
 
             <view class="preset-row">
@@ -31,6 +33,7 @@
                   active: focusStore.focusMinutes === mins,
                   disabled: focusStore.isTaskLocked,
                 }"
+                role="button"
                 @click="choosePreset(mins)"
               >
                 <text>{{ mins }}m</text>
@@ -40,48 +43,35 @@
 
           <view class="ring-stage">
             <PomodoroRing
-              size="252px"
+              size="254px"
               :total-seconds="focusStore.totalSeconds"
               :remaining-seconds="focusStore.remainingSeconds"
               :is-running="focusStore.isRunning"
               :color="focusStore.ringColor"
+              :cycle-count="focusStore.cycleCount"
+              :is-break="focusStore.isBreakPhase"
               @center-click="openTaskPicker"
             />
-
-            <view class="phase-pill" :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }">
-              <view class="phase-beacon"></view>
-              <text>{{ phaseText }}</text>
-            </view>
-
-            <view class="cycle-dots">
-              <view
-                v-for="idx in 4"
-                :key="idx"
-                class="cycle-dot"
-                :class="{
-                  'is-filled': (focusStore.cycleCount % 4) >= idx || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0),
-                  'is-break-filled': focusStore.isBreakPhase && ((focusStore.cycleCount % 4) >= idx || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0)),
-                }"
-              ></view>
-            </view>
           </view>
 
           <view v-if="focusStore.lastCompletedTask" class="complete-banner zen-card">
             <text class="banner-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
             <view class="banner-actions">
-              <view class="ui-btn ui-btn-secondary banner-btn" @click="focusStore.dismissCompletedTaskPrompt()">暂不</view>
-              <view class="ui-btn ui-btn-primary banner-btn" @click="completeBoundTask">标记完成</view>
+              <view class="ui-btn ui-btn-secondary banner-btn" role="button" @click="focusStore.dismissCompletedTaskPrompt()">暂不</view>
+              <view class="ui-btn ui-btn-primary banner-btn" role="button" @click="completeBoundTask">完成</view>
             </view>
           </view>
 
           <view class="controls-row">
-            <view class="ctrl-secondary" @click="focusStore.reset()">
+            <view class="ctrl-secondary" role="button" aria-label="重置" @click="focusStore.reset()">
               <text>重置</text>
             </view>
 
             <view
               class="ctrl-primary"
               :class="{ 'is-break': focusStore.isBreakPhase }"
+              role="button"
+              :aria-label="focusStore.isRunning ? '暂停' : '开始'"
               @click="focusStore.toggle()"
             >
               <LineIcon
@@ -91,30 +81,32 @@
               />
             </view>
 
-            <view class="ctrl-secondary" @click="focusStore.skip()">
+            <view class="ctrl-secondary" role="button" aria-label="跳过" @click="focusStore.skip()">
               <text>跳过</text>
             </view>
           </view>
 
-          <view class="stats-pill zen-card num-tabular">
-            <text class="stat-val">{{ focusStore.todayRounds }} 轮</text>
-            <view class="stat-sep"></view>
-            <text class="stat-val">{{ focusStore.todayFocusMinutes }}m</text>
+          <view class="today-summary num-tabular">
+            <text>今日 {{ focusStore.todayRounds }} 轮</text>
+            <text class="summary-dot">·</text>
+            <text>{{ focusStore.todayFocusMinutes }} m</text>
           </view>
         </view>
-      </scroll-view>
+      </view>
+    </view>
 
+    <template #overlay>
       <TaskSelectSheet
         v-model:visible="showTaskSheet"
         :selected-task-id="focusStore.selectedTaskId"
         @select="onTaskSelected"
       />
-    </view>
+    </template>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
@@ -129,8 +121,6 @@ const taskStore = useTaskStore()
 
 const presets = FOCUS_PRESETS
 const showTaskSheet = ref(false)
-
-const phaseText = computed(() => (focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中'))
 
 function syncFocusState() {
   focusStore.reconcileNow(false)
@@ -187,19 +177,22 @@ async function completeBoundTask() {
   flex-shrink: 0;
 }
 
-.page-scroll {
+.page-scroll-stage {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-inner {
-  min-height: 100%;
+  width: 100%;
+  margin: auto 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px 18px 24px;
+  gap: clamp(20px, 3.2vh, 30px);
+  padding: 20px 18px var(--tabbar-clearance);
   box-sizing: border-box;
 }
 
@@ -216,7 +209,7 @@ async function completeBoundTask() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 16px;
+  padding: 8px 15px;
   background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
@@ -245,7 +238,7 @@ async function completeBoundTask() {
 }
 
 .preset-chip {
-  padding: 5px 14px;
+  padding: 5px 13px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
@@ -253,6 +246,7 @@ async function completeBoundTask() {
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
 .preset-chip.active {
@@ -270,71 +264,6 @@ async function completeBoundTask() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-}
-
-.phase-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 15px;
-  border-radius: var(--radius-full);
-  font-size: 12.5px;
-  font-weight: var(--font-weight-bold);
-  background-color: rgba(139, 154, 110, 0.12);
-  color: var(--color-sage-ink);
-  border: 1px solid rgba(139, 154, 110, 0.28);
-}
-
-.phase-beacon {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: #8B9A6E;
-}
-
-.phase-pill.is-active .phase-beacon {
-  animation: beaconPulse 2s ease-in-out infinite;
-}
-
-.phase-pill.is-break {
-  background-color: rgba(200, 155, 109, 0.15);
-  color: #9C7240;
-  border-color: rgba(200, 155, 109, 0.32);
-}
-
-.phase-pill.is-break .phase-beacon {
-  background-color: #C89B6D;
-}
-
-@keyframes beaconPulse {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.4); opacity: 1; }
-}
-
-.cycle-dots {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.cycle-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: rgba(139, 154, 110, 0.18);
-  transition: transform 0.25s var(--ease-out), background-color 0.25s ease;
-}
-
-.cycle-dot.is-filled {
-  background-color: #8B9A6E;
-  box-shadow: 0 0 8px rgba(139, 154, 110, 0.65);
-  transform: scale(1.15);
-}
-
-.cycle-dot.is-break-filled {
-  background-color: #C89B6D;
-  box-shadow: 0 0 8px rgba(200, 155, 109, 0.65);
 }
 
 .complete-banner {
@@ -378,11 +307,11 @@ async function completeBoundTask() {
 }
 
 .ctrl-secondary {
-  padding: 8px 18px;
+  padding: 9px 20px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
@@ -399,7 +328,7 @@ async function completeBoundTask() {
   height: 68px;
   border-radius: 50%;
   background: var(--accent-gradient);
-  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.42), 0 2px 6px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -409,30 +338,23 @@ async function completeBoundTask() {
 
 .ctrl-primary.is-break {
   background: linear-gradient(135deg, #D6AF83 0%, #C89B6D 100%);
-  box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.42), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .ctrl-primary:active {
   transform: scale(0.94);
 }
 
-.stats-pill {
+.today-summary {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
-  padding: 9px 20px;
-  border-radius: var(--radius-full);
+  gap: 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-muted);
 }
 
-.stat-val {
-  font-size: 13px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.stat-sep {
-  width: 1px;
-  height: 12px;
-  background-color: var(--border-default);
+.summary-dot {
+  opacity: 0.6;
 }
 </style>

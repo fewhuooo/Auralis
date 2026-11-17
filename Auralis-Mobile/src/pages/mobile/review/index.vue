@@ -4,12 +4,22 @@
       <view class="status-bar-spacer"></view>
 
       <view class="review-toolbar">
-        <view class="subject-switcher" @click="showSubjectPicker = true">
+        <view
+          class="subject-switcher"
+          role="button"
+          aria-label="切换学科"
+          @click="showSubjectPicker = true"
+        >
           <text class="switcher-label">{{ activeSubjectLabel }}</text>
-          <LineIcon name="chevron-down" size="14px" color="var(--color-sage-dark)" />
+          <LineIcon name="chevron-down" size="14px" color="var(--color-sage-ink)" />
         </view>
 
-        <text class="summary-text num-tabular">{{ remainingCount }} 待复习 · {{ completedCount }} 完成</text>
+        <view class="progress-indicator">
+          <view class="progress-track">
+            <view class="progress-fill" :style="{ width: `${progressPercent}%` }"></view>
+          </view>
+          <text class="summary-text num-tabular">{{ counterText }}</text>
+        </view>
       </view>
 
       <view class="card-stage">
@@ -19,12 +29,15 @@
           :front="activeCard.title"
           :back="activeCard.preview"
           :subject="activeCard.subject"
+          :has-next="remainingCount > 1"
         />
 
         <view v-else class="empty-card zen-card">
-          <LineIcon :name="loading ? 'refresh' : 'star'" size="32px" color="var(--color-sage-dark)" />
-          <text class="empty-title">{{ loading ? '加载中' : loadError || '已清空' }}</text>
-          <view v-if="!loading" class="ui-btn ui-btn-secondary refresh-pill" @click="loadReview">
+          <view class="empty-halo">
+            <LineIcon :name="loading ? 'refresh' : 'check'" size="24px" color="var(--color-sage-ink)" />
+          </view>
+          <text class="empty-title">{{ loading ? '加载中' : loadError || emptyStateTitle }}</text>
+          <view v-if="!loading" class="ui-btn ui-btn-secondary refresh-pill" role="button" @click="loadReview">
             <LineIcon name="refresh" size="14px" color="var(--text-primary)" />
             <text>刷新</text>
           </view>
@@ -36,6 +49,7 @@
         <view
           v-if="saveError"
           class="ui-btn ui-btn-primary retry-pill"
+          role="button"
           @click="refreshRequired ? loadReview() : retrySave()"
         >
           <text>{{ refreshRequired ? '刷新队列' : '重试' }}</text>
@@ -44,28 +58,30 @@
 
       <view v-else-if="activeCard" class="action-bar">
         <template v-if="!isFlipped">
-          <view class="ui-btn ui-btn-secondary bar-btn" @click="skipCard">
+          <view class="ui-btn ui-btn-secondary bar-btn" role="button" @click="skipCard">
             <text>跳过</text>
           </view>
-          <view class="ui-btn ui-btn-primary bar-btn wide" @click="isFlipped = true">
+          <view class="ui-btn ui-btn-primary bar-btn wide" role="button" @click="isFlipped = true">
             <text>显示答案</text>
           </view>
         </template>
         <template v-else>
-          <view class="ui-btn bar-btn again-btn" :class="{ 'is-disabled': saving }" @click="rateCard('AGAIN')">
+          <view class="ui-btn bar-btn again-btn" :class="{ 'is-disabled': saving }" role="button" @click="rateCard('AGAIN')">
             <text>再记一次</text>
           </view>
-          <view class="ui-btn ui-btn-primary bar-btn wide" :class="{ 'is-disabled': saving }" @click="rateCard('GOOD')">
+          <view class="ui-btn ui-btn-primary bar-btn wide" :class="{ 'is-disabled': saving }" role="button" @click="rateCard('GOOD')">
             <text>已掌握</text>
           </view>
         </template>
       </view>
+    </view>
 
+    <template #overlay>
       <view v-if="showSubjectPicker" class="zen-sheet-mask" @click="showSubjectPicker = false">
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
-            <text class="sheet-title">学科范围</text>
-            <view class="ui-icon-btn" @click="showSubjectPicker = false">
+            <text class="sheet-title">学科</text>
+            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="showSubjectPicker = false">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
@@ -74,25 +90,27 @@
             <view
               class="subject-option"
               :class="{ active: !selectedSubjectId }"
+              role="button"
               @click="selectSubjectScope('')"
             >
               <text class="subject-option-name">全部学科</text>
-              <LineIcon v-if="!selectedSubjectId" name="check" size="16px" color="var(--color-sage-dark)" />
+              <LineIcon v-if="!selectedSubjectId" name="check" size="16px" color="var(--color-sage-ink)" />
             </view>
             <view
               v-for="sub in subjectStore.subjects"
               :key="sub.id"
               class="subject-option"
               :class="{ active: selectedSubjectId === sub.id }"
+              role="button"
               @click="selectSubjectScope(sub.id)"
             >
               <text class="subject-option-name">{{ sub.name }}</text>
-              <LineIcon v-if="selectedSubjectId === sub.id" name="check" size="16px" color="var(--color-sage-dark)" />
+              <LineIcon v-if="selectedSubjectId === sub.id" name="check" size="16px" color="var(--color-sage-ink)" />
             </view>
           </scroll-view>
         </view>
       </view>
-    </view>
+    </template>
   </AppPageLayout>
 </template>
 
@@ -103,11 +121,15 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import FlashCard from '@/components/FlashCard.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useDueReview } from '@/composables/useDueReview'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useSubjectStore } from '@/store/useSubjectStore'
 
 const subjectStore = useSubjectStore()
 const selectedSubjectId = ref('')
 const showSubjectPicker = ref(false)
+useEscapeKey(() => showSubjectPicker.value, () => {
+  showSubjectPicker.value = false
+})
 
 const activeSubjectLabel = computed(() => {
   if (!selectedSubjectId.value) return '全部学科'
@@ -115,6 +137,8 @@ const activeSubjectLabel = computed(() => {
 })
 
 const {
+  sessionQueue,
+  currentIndex,
   completedCount,
   remainingCount,
   activeCard,
@@ -134,6 +158,23 @@ const {
   allowAllSubjects: true,
 })
 
+const progressPercent = computed(() => {
+  const total = sessionQueue.value.length
+  if (!total) return 0
+  return Math.min(100, Math.round((currentIndex.value / total) * 100))
+})
+
+const counterText = computed(() => {
+  const total = sessionQueue.value.length
+  if (!total) return '0 / 0'
+  const current = Math.min(total, currentIndex.value + (activeCard.value ? 1 : 0))
+  return `${current} / ${total}`
+})
+
+const emptyStateTitle = computed(() => (
+  completedCount.value > 0 ? '本轮复习完成' : '暂无待复习'
+))
+
 onMounted(() => {
   void subjectStore.loadSubjects()
 })
@@ -150,6 +191,8 @@ function selectSubjectScope(subjectId: string) {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding-bottom: var(--tabbar-clearance);
+  box-sizing: border-box;
   background-color: var(--color-bg-primary);
 }
 
@@ -162,8 +205,8 @@ function selectSubjectScope(subjectId: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px 8px;
+  gap: 14px;
+  padding: 16px 18px 8px;
   flex-shrink: 0;
 }
 
@@ -171,13 +214,18 @@ function selectSubjectScope(subjectId: string) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  background-color: var(--color-bg-card);
+  padding: 7px 14px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-sm);
-  max-width: 54%;
+  max-width: 52%;
   cursor: pointer;
+  transition: border-color 0.16s ease;
+}
+
+.subject-switcher:hover {
+  border-color: var(--border-accent);
 }
 
 .switcher-label {
@@ -189,11 +237,32 @@ function selectSubjectScope(subjectId: string) {
   text-overflow: ellipsis;
 }
 
+.progress-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.progress-track {
+  width: 64px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background-color: rgba(139, 154, 110, 0.16);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  transition: width 0.28s var(--ease-out);
+}
+
 .summary-text {
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
-  flex-shrink: 0;
 }
 
 .card-stage {
@@ -213,6 +282,17 @@ function selectSubjectScope(subjectId: string) {
   justify-content: center;
   gap: 14px;
   padding: 24px;
+  border-radius: 20px;
+}
+
+.empty-halo {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-title {
@@ -228,7 +308,7 @@ function selectSubjectScope(subjectId: string) {
 }
 
 .status-banner {
-  margin: 4px 18px 14px;
+  margin: 4px 18px 8px;
   padding: 12px 14px;
   display: flex;
   align-items: center;
@@ -251,19 +331,19 @@ function selectSubjectScope(subjectId: string) {
 .action-bar {
   display: flex;
   gap: 10px;
-  padding: 8px 18px 14px;
+  padding: 8px 18px 4px;
   flex-shrink: 0;
 }
 
 .bar-btn {
   flex: 1;
-  height: 46px;
+  height: 48px;
   border-radius: 14px;
   font-size: 14.5px;
 }
 
 .bar-btn.wide {
-  flex: 1.6;
+  flex: 1.65;
 }
 
 .again-btn {
@@ -294,13 +374,15 @@ function selectSubjectScope(subjectId: string) {
   justify-content: space-between;
   padding: 13px 14px;
   border-radius: 12px;
-  margin-bottom: 6px;
-  background-color: var(--color-bg-primary);
+  margin-bottom: 8px;
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
 }
 
 .subject-option.active {
   background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
 }
 
 .subject-option-name {
