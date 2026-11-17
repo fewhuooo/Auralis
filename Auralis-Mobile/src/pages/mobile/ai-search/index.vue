@@ -1,13 +1,13 @@
 <template>
   <AppPageLayout anim-origin="bottom-right" :show-tab-bar="false">
     <view class="ai-page">
-      <AppHeader title="AI 助手" show-back back-url="/pages/mobile/home/index">
+      <AppHeader title="AI" show-back back-url="/pages/mobile/home/index">
         <template #right>
-          <view class="icon-pill-btn" @click="openHistoryDrawer">
-            <LineIcon name="history" size="34rpx" color="var(--text-primary)" />
+          <view class="ui-icon-btn" @click="openHistoryDrawer">
+            <LineIcon name="history" size="17px" color="var(--text-primary)" />
           </view>
-          <view class="icon-pill-btn" @click="startNewChat">
-            <LineIcon name="plus" size="34rpx" color="var(--text-primary)" />
+          <view class="ui-icon-btn" @click="startNewChat">
+            <LineIcon name="plus" size="17px" color="var(--text-primary)" />
           </view>
         </template>
       </AppHeader>
@@ -19,11 +19,17 @@
         :scroll-into-view="scrollTargetId"
       >
         <view v-if="messages.length === 0" class="welcome-state">
-          <view class="welcome-icon">
-            <LineIcon name="sparkles" size="56rpx" color="var(--color-zen-sage)" />
+          <BrandLogo size="42px" />
+          <view class="starter-pills">
+            <view
+              v-for="prompt in starterPrompts"
+              :key="prompt"
+              class="starter-pill zen-card"
+              @click="query = prompt; sendMessage()"
+            >
+              <text>{{ prompt }}</text>
+            </view>
           </view>
-          <text class="welcome-title">{{ displayName }}，有什么想探讨的？</text>
-          <text class="welcome-sub">支持基于已解析学科资料检索与学习问答</text>
         </view>
 
         <view v-else class="chat-list">
@@ -38,22 +44,16 @@
             </view>
 
             <view v-else class="assistant-bubble zen-card">
-              <view class="assistant-head">
-                <LineIcon name="sparkles" size="26rpx" color="var(--color-zen-sage)" />
-                <text class="assistant-name">Auralis AI</text>
-              </view>
-
               <view v-if="msg.toolHint" class="tool-pill">
                 <text>{{ msg.toolHint }}</text>
               </view>
 
               <MarkdownText v-if="msg.content" :content="msg.content" />
-              <text v-else-if="isTyping" class="typing-placeholder">正在思考并检索资料…</text>
+              <text v-else-if="isTyping" class="typing-dot">···</text>
 
               <view v-if="msg.content && !(isTyping && idx === messages.length - 1)" class="bubble-footer">
                 <view class="copy-btn" @click="copyText(msg.content)">
-                  <LineIcon name="copy" size="24rpx" color="var(--text-muted)" />
-                  <text>复制</text>
+                  <LineIcon name="copy" size="14px" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
@@ -68,7 +68,7 @@
           <input
             class="chat-input"
             v-model="query"
-            placeholder="输入问题，问问 Auralis AI…"
+            placeholder="提问…"
             confirm-type="send"
             :disabled="isTyping"
             @confirm="sendMessage"
@@ -78,7 +78,7 @@
             :class="{ disabled: !query.trim() || isTyping }"
             @click="sendMessage"
           >
-            <LineIcon name="arrow-up" size="34rpx" color="#FFFFFF" />
+            <LineIcon name="arrow-up" size="17px" color="#FFFFFF" />
           </view>
         </view>
       </view>
@@ -87,12 +87,12 @@
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
             <text class="sheet-title">历史对话</text>
-            <view class="sheet-close" @click="showHistorySheet = false">
-              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            <view class="ui-icon-btn" @click="showHistorySheet = false">
+              <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
 
-          <view v-if="loadingHistory" class="history-empty">正在加载对话记录…</view>
+          <view v-if="loadingHistory" class="history-empty">加载中…</view>
           <view v-else-if="conversations.length === 0" class="history-empty">暂无历史对话</view>
           <scroll-view v-else scroll-y :show-scrollbar="false" class="history-scroll">
             <view
@@ -104,14 +104,14 @@
             >
               <view class="history-meta">
                 <text class="history-title">{{ conv.title || '新对话' }}</text>
-                <text class="history-time">{{ formatConvDate(conv.updatedAt || conv.createdAt) }}</text>
+                <text class="history-time num-tabular">{{ formatConvDate(conv.updatedAt || conv.createdAt) }}</text>
               </view>
               <view
                 v-if="conv.id"
                 class="history-delete"
                 @click.stop="deleteConversation(conv.id, conv.version ?? 0)"
               >
-                <LineIcon name="trash" size="26rpx" color="var(--text-muted)" />
+                <LineIcon name="trash" size="14px" color="var(--text-muted)" />
               </view>
             </view>
           </scroll-view>
@@ -122,12 +122,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import { chatWithAI } from '@/api/aiClient'
 import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
+import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -140,7 +141,6 @@ interface ChatMessageItem {
 }
 
 const authStore = useAuthStore()
-const displayName = computed(() => authStore.user?.displayName || authStore.username || '同学')
 
 const query = ref('')
 const messages = ref<ChatMessageItem[]>([])
@@ -154,6 +154,12 @@ const loadingHistory = ref(false)
 const conversations = ref<ConversationView[]>([])
 
 let activeStreamToken = 0
+
+const starterPrompts = [
+  '梳理本周待复习重点',
+  '对比易混淆概念',
+  '生成 3 道自测练习题',
+]
 
 function scrollToBottom() {
   nextTick(() => {
@@ -195,7 +201,7 @@ async function openHistoryDrawer() {
     if (generation !== authStore.getLoginGeneration()) return
     conversations.value = list.filter(item => !item.deletedAt)
   } catch {
-    uni.showToast({ title: '历史对话加载失败', icon: 'none' })
+    uni.showToast({ title: '加载失败', icon: 'none' })
   } finally {
     loadingHistory.value = false
   }
@@ -220,7 +226,7 @@ async function loadConversation(conversationId: string) {
     scrollToBottom()
   } catch {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '加载对话内容失败', icon: 'none' })
+    uni.showToast({ title: '加载失败', icon: 'none' })
   }
 }
 
@@ -237,10 +243,10 @@ async function deleteConversation(conversationId: string, baseVersion: number) {
       currentConversationId.value = ''
       messages.value = []
     }
-    uni.showToast({ title: '已删除对话', icon: 'none' })
+    uni.showToast({ title: '已删除', icon: 'none' })
   } catch {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '删除失败，请刷新重试', icon: 'none' })
+    uni.showToast({ title: '删除失败', icon: 'none' })
   }
 }
 
@@ -252,7 +258,7 @@ async function ensureConversation(seedTitle: string, generation: symbol): Promis
     clientRequestId: uuidv7(),
   })
   if (generation !== authStore.getLoginGeneration()) {
-    throw new Error('登录状态已变化，请重试。')
+    throw new Error('登录状态已变化，请重试')
   }
   if (!created.id) throw new Error('创建对话失败')
   currentConversationId.value = created.id
@@ -285,10 +291,10 @@ async function sendMessage() {
       onToolEvent: (ev) => {
         if (!isCurrent()) return
         messages.value[aiIndex].toolHint = ev.phase === 'started'
-          ? `正在调用 ${ev.name || '资料工具'}…`
+          ? `检索 ${ev.name || '资料'}…`
           : ev.phase === 'completed'
             ? ''
-            : `工具调用未完成`
+            : '检索未完成'
       },
     })
   } catch (err) {
@@ -297,7 +303,7 @@ async function sendMessage() {
       query.value = text
     }
     if (!messages.value[aiIndex].content) {
-      messages.value[aiIndex].content = err instanceof Error ? err.message : '请求失败，请稍后重试。'
+      messages.value[aiIndex].content = err instanceof Error ? err.message : '请求失败'
     }
   } finally {
     if (isCurrent()) {
@@ -324,60 +330,45 @@ onLoad((options) => {
   background-color: var(--color-bg-primary);
 }
 
-.icon-pill-btn {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .chat-scroll {
   flex: 1;
   min-height: 0;
-  padding: 20rpx 28rpx;
-  box-sizing: border-box;
 }
 
 .welcome-state {
-  min-height: 55vh;
+  min-height: 62vh;
+  padding: 36px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16rpx;
-  text-align: center;
-  padding: 40rpx;
+  gap: 24px;
+  box-sizing: border-box;
 }
 
-.welcome-icon {
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 32rpx;
-  background-color: var(--color-sage-bg);
+.starter-pills {
+  width: 100%;
+  max-width: 300px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.welcome-title {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
+.starter-pill {
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
-}
-
-.welcome-sub {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  text-align: center;
+  cursor: pointer;
 }
 
 .chat-list {
+  padding: 12px 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 14px;
 }
 
 .chat-row {
@@ -395,118 +386,107 @@ onLoad((options) => {
 
 .user-bubble {
   max-width: 82%;
-  padding: 20rpx 26rpx;
-  border-radius: 28rpx 28rpx 8rpx 28rpx;
-  background: var(--accent-gradient);
+  padding: 10px 14px;
+  background-color: var(--color-zen-graphite);
   color: #FFFFFF;
+  border-radius: 16px 16px 4px 16px;
 }
 
 .user-text {
-  font-size: var(--font-size-sm);
-  line-height: 1.55;
-  word-break: break-word;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: #FFFFFF;
 }
 
 .assistant-bubble {
   width: 100%;
-  padding: 24rpx 26rpx;
+  padding: 14px 16px;
+  border-radius: 16px;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-}
-
-.assistant-head {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-}
-
-.assistant-name {
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-zen-sage);
 }
 
 .tool-pill {
-  align-self: flex-start;
-  padding: 6rpx 16rpx;
+  display: inline-block;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-size: 22rpx;
+  color: var(--color-sage-ink);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  margin-bottom: 8px;
 }
 
-.typing-placeholder {
-  font-size: var(--font-size-xs);
+.typing-dot {
+  font-size: 18px;
   color: var(--text-muted);
+  letter-spacing: 3px;
 }
 
 .bubble-footer {
   display: flex;
   justify-content: flex-end;
-  padding-top: 10rpx;
-  border-top: 1px solid var(--border-subtle);
+  margin-top: 8px;
 }
 
 .copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 8rpx 18rpx;
-  border-radius: var(--radius-full);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background-color: var(--color-bg-primary);
-  color: var(--text-muted);
-  font-size: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .bottom-anchor {
-  height: 24rpx;
+  height: 12px;
 }
 
 .input-dock {
-  padding: 16rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  padding: 8px 18px calc(16px + env(safe-area-inset-bottom));
   background-color: var(--color-bg-primary);
-  border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .input-capsule {
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  padding: 10rpx 12rpx 10rpx 26rpx;
+  gap: 10px;
+  padding: 6px 6px 6px 16px;
   border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
 }
 
 .chat-input {
   flex: 1;
   min-width: 0;
-  height: 72rpx;
-  font-size: var(--font-size-sm);
+  height: 36px;
+  font-size: 14.5px;
   color: var(--text-primary);
 }
 
 .send-btn {
-  width: 72rpx;
-  height: 72rpx;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .send-btn.disabled {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20rpx;
+  margin-bottom: 14px;
 }
 
 .sheet-title {
@@ -515,18 +495,8 @@ onLoad((options) => {
   color: var(--text-primary);
 }
 
-.sheet-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .history-empty {
-  padding: 36rpx 0;
+  padding: 28px 0;
   text-align: center;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
@@ -539,17 +509,15 @@ onLoad((options) => {
 .history-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  padding: 20rpx 22rpx;
-  margin-bottom: 12rpx;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 8px;
   background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20rpx;
+  cursor: pointer;
 }
 
 .history-row.active {
-  border-color: var(--border-accent);
   background-color: var(--color-sage-bg);
 }
 
@@ -558,25 +526,30 @@ onLoad((options) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 3px;
 }
 
 .history-title {
-  font-size: var(--font-size-sm);
+  font-size: 13.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-time {
-  font-size: 20rpx;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .history-delete {
-  padding: 10rpx;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 </style>

@@ -1,29 +1,31 @@
 <template>
   <AppPageLayout>
     <view class="home-page">
-      <AppHeader title="今日" :subtitle="selectedDateHeading" />
+      <view class="status-bar-spacer"></view>
+
+      <view class="top-bar">
+        <view class="top-left">
+          <text class="date-heading">{{ selectedDateHeading }}</text>
+          <view v-if="selectedDateKey !== todayKey" class="today-pill" @click="jumpToToday">
+            <text>今天</text>
+          </view>
+          <view v-if="syncStore.isSyncing" class="sync-dot"></view>
+        </view>
+        <view class="add-fab" @click="openCaptureSheet('task')">
+          <LineIcon name="plus" size="18px" color="#FFFFFF" />
+        </view>
+      </view>
 
       <scroll-view scroll-y :show-scrollbar="false" class="home-scroll">
         <view class="home-content">
-          <view class="greeting-row">
-            <view class="greeting-left">
-              <text class="greeting-title">{{ greetingText }}，{{ displayName }}</text>
-              <text v-if="syncStore.isSyncing" class="sync-pill">同步中…</text>
-              <text v-else-if="selectedDateKey !== todayKey" class="back-today-pill" @click="jumpToToday">回到今天</text>
-            </view>
-            <view class="add-fab-btn" @click="openCaptureSheet('task')">
-              <LineIcon name="plus" size="38rpx" color="#FFFFFF" />
-            </view>
-          </view>
-
           <view class="week-card zen-card">
             <view class="week-nav-row">
               <view class="week-arrow" @click="shiftWeek(-7)">
-                <LineIcon name="chevron-left" size="28rpx" color="var(--text-muted)" />
+                <LineIcon name="chevron-left" size="15px" color="var(--text-muted)" />
               </view>
-              <text class="week-range-label">{{ weekRangeLabel }}</text>
+              <text class="week-range-label num-tabular">{{ weekRangeLabel }}</text>
               <view class="week-arrow" @click="shiftWeek(7)">
-                <LineIcon name="chevron-right" size="28rpx" color="var(--text-muted)" />
+                <LineIcon name="chevron-right" size="15px" color="var(--text-muted)" />
               </view>
             </view>
 
@@ -39,25 +41,20 @@
                 @click="selectedDateKey = day.dateKey"
               >
                 <text class="w-week">{{ day.weekdayLabel }}</text>
-                <text class="w-num">{{ day.dayNumber }}</text>
-                <view
-                  class="w-dot"
-                  :class="{ visible: hasScheduledOnDate(day.dateKey) }"
-                ></view>
+                <text class="w-num num-tabular">{{ day.dayNumber }}</text>
+                <view class="w-dot" :class="{ visible: hasScheduledOnDate(day.dateKey) }"></view>
               </view>
             </view>
           </view>
 
           <view class="section-block">
             <view class="section-header">
-              <text class="section-title">当日日程</text>
-              <text class="section-count">{{ scheduledForSelectedDay.length }} 项</text>
+              <text class="section-title">日程</text>
+              <text class="section-count num-tabular">{{ scheduledForSelectedDay.length }}</text>
             </view>
 
-            <view v-if="scheduledForSelectedDay.length === 0" class="empty-card zen-card">
-              <LineIcon name="calendar" size="48rpx" color="var(--text-muted)" />
-              <text class="empty-title">{{ selectedDateHeading }} 暂无已排期日程</text>
-              <text class="empty-sub">点击右上角 + 创建任务，或从下方待办排入今日</text>
+            <view v-if="scheduledForSelectedDay.length === 0" class="empty-slot">
+              <text class="empty-label">暂无日程</text>
             </view>
 
             <view v-else class="card-list">
@@ -75,26 +72,26 @@
                   }"
                   @click="item.id && toggleComplete(item.id)"
                 >
-                  <LineIcon v-if="item.status === 'completed'" name="check" size="22rpx" color="#FFFFFF" />
+                  <LineIcon v-if="item.status === 'completed'" name="check" size="12px" color="#FFFFFF" />
                 </view>
 
                 <view class="task-main" @click="item.id && toggleComplete(item.id)">
-                  <view class="task-top-row">
-                    <text class="task-time">{{ formatLocalTimeHHmm(item.scheduledAt) || '全天' }}</text>
-                    <text v-if="item.subject" class="task-subject">{{ item.subject }}</text>
-                    <text v-if="item.dueAt" class="task-ddl">截止 {{ formatShortDate(item.dueAt) }}</text>
-                  </view>
                   <text class="task-title" :class="{ strike: item.status === 'completed' }">{{ item.name }}</text>
+                  <view class="task-meta-row">
+                    <text class="task-time num-tabular">{{ formatLocalTimeHHmm(item.scheduledAt) || '全天' }}</text>
+                    <text v-if="item.subject" class="ui-tag">{{ item.subject }}</text>
+                    <text v-if="item.dueAt" class="task-ddl num-tabular">截止 {{ formatShortDate(item.dueAt) }}</text>
+                  </view>
                 </view>
 
                 <view class="task-actions">
-                  <text class="dur-badge">{{ item.duration || 30 }}m</text>
+                  <text class="dur-badge num-tabular">{{ item.duration || 30 }}m</text>
                   <view
                     v-if="item.id && item.status !== 'completed'"
-                    class="unschedule-btn"
+                    class="row-icon-action"
                     @click.stop="unschedule(item.id)"
                   >
-                    <text>移回待办</text>
+                    <LineIcon name="close" size="14px" color="var(--text-muted)" />
                   </view>
                 </view>
               </view>
@@ -103,14 +100,12 @@
 
           <view class="section-block">
             <view class="section-header">
-              <text class="section-title">待办清单</text>
-              <text class="section-count">{{ taskStore.pendingTasks.length }} 项</text>
+              <text class="section-title">待办</text>
+              <text class="section-count num-tabular">{{ taskStore.pendingTasks.length }}</text>
             </view>
 
-            <view v-if="taskStore.pendingTasks.length === 0" class="empty-card zen-card">
-              <LineIcon name="inbox" size="48rpx" color="var(--text-muted)" />
-              <text class="empty-title">待办清单已清空</text>
-              <text class="empty-sub">随时通过 + 记录新的学习待办</text>
+            <view v-if="taskStore.pendingTasks.length === 0" class="empty-slot">
+              <text class="empty-label">暂无待办</text>
             </view>
 
             <view v-else class="card-list">
@@ -121,12 +116,12 @@
                   @click="todo.id && toggleComplete(todo.id)"
                 ></view>
 
-                <view class="task-main">
-                  <view class="task-top-row">
-                    <text v-if="todo.subject" class="task-subject">{{ todo.subject }}</text>
-                    <text v-if="todo.dueAt" class="task-ddl">截止 {{ formatShortDate(todo.dueAt) }}</text>
-                  </view>
+                <view class="task-main" @click="todo.id && toggleComplete(todo.id)">
                   <text class="task-title">{{ todo.name }}</text>
+                  <view v-if="todo.subject || todo.dueAt" class="task-meta-row">
+                    <text v-if="todo.subject" class="ui-tag">{{ todo.subject }}</text>
+                    <text v-if="todo.dueAt" class="task-ddl num-tabular">截止 {{ formatShortDate(todo.dueAt) }}</text>
+                  </view>
                 </view>
 
                 <view class="task-actions">
@@ -137,11 +132,11 @@
                     @change="onSchedulePending(todo.id, $event)"
                   >
                     <view class="schedule-pill">
-                      <text>排入该日</text>
+                      <text>排入</text>
                     </view>
                   </picker>
-                  <view v-if="todo.id" class="delete-icon-btn" @click="confirmDeleteTask(todo.id, todo.name)">
-                    <LineIcon name="trash" size="26rpx" color="var(--text-muted)" />
+                  <view v-if="todo.id" class="row-icon-action" @click="confirmDeleteTask(todo.id, todo.name)">
+                    <LineIcon name="trash" size="14px" color="var(--text-muted)" />
                   </view>
                 </view>
               </view>
@@ -153,179 +148,150 @@
       <view v-if="showCaptureSheet" class="zen-sheet-mask" @click="closeCaptureSheet">
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
-            <view class="mode-tabs">
+            <view class="ui-segmented mode-tabs">
               <view
                 v-for="tab in captureTabs"
                 :key="tab.id"
-                class="mode-tab"
+                class="ui-seg-item"
                 :class="{ active: captureMode === tab.id }"
                 @click="switchCaptureMode(tab.id)"
               >
                 <text>{{ tab.label }}</text>
               </view>
             </view>
-            <view class="sheet-close" @click="closeCaptureSheet">
-              <LineIcon name="close" size="30rpx" color="var(--text-muted)" />
+            <view class="ui-icon-btn" @click="closeCaptureSheet">
+              <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view v-if="subjectStore.subjects.length === 0" class="no-subject-tip">
-            <text>当前暂无学科，请先在平板或 PC 端创建学科后再添加任务、知识块或文件。</text>
+            <text>请先创建学科后再添加</text>
           </view>
 
           <view v-if="captureMode === 'task'" class="form-stack">
-            <view class="field-group">
-              <text class="field-label">任务内容</text>
-              <input
-                class="zen-input"
-                v-model="taskForm.name"
-                placeholder="例如：整理高数第三章错题"
-                :disabled="submittingCapture"
-              />
-            </view>
+            <input
+              class="ui-input"
+              v-model="taskForm.name"
+              placeholder="任务名称"
+              :disabled="submittingCapture"
+            />
 
-            <view class="field-group">
-              <text class="field-label">所属学科</text>
-              <scroll-view scroll-x :show-scrollbar="false" class="subject-chips-scroll">
-                <view class="chips-row">
-                  <view
-                    v-for="sub in subjectStore.subjects"
-                    :key="sub.id"
-                    class="chip-item"
-                    :class="{ active: taskForm.subjectId === sub.id }"
-                    @click="taskForm.subjectId = sub.id"
-                  >
-                    <text>{{ sub.name }}</text>
-                  </view>
-                </view>
-              </scroll-view>
-            </view>
-
-            <view class="field-group">
-              <text class="field-label">预计时长</text>
+            <scroll-view scroll-x :show-scrollbar="false" class="chips-scroll">
               <view class="chips-row">
                 <view
-                  v-for="mins in [30, 60, 90, 120]"
-                  :key="mins"
+                  v-for="sub in subjectStore.subjects"
+                  :key="sub.id"
                   class="chip-item"
-                  :class="{ active: taskForm.duration === mins }"
-                  @click="taskForm.duration = mins"
+                  :class="{ active: taskForm.subjectId === sub.id }"
+                  @click="taskForm.subjectId = sub.id"
                 >
-                  <text>{{ mins }} 分钟</text>
+                  <text>{{ sub.name }}</text>
                 </view>
+              </view>
+            </scroll-view>
+
+            <view class="chips-row">
+              <view
+                v-for="mins in [30, 60, 90, 120]"
+                :key="mins"
+                class="chip-item num-tabular"
+                :class="{ active: taskForm.duration === mins }"
+                @click="taskForm.duration = mins"
+              >
+                <text>{{ mins }}m</text>
               </view>
             </view>
 
             <view class="switch-row">
-              <view class="switch-left">
-                <text class="field-label">排入 {{ selectedDateHeading }}</text>
-                <text class="field-hint">{{ taskForm.scheduled ? '将出现在当日日程时间轴' : '保存为未排期待办任务' }}</text>
-              </view>
+              <text class="field-label">排入 {{ selectedDateHeading }}</text>
               <switch :checked="taskForm.scheduled" color="#8B9A6E" @change="onTaskScheduledToggle" />
             </view>
 
             <view class="dual-pickers">
               <view v-if="taskForm.scheduled" class="picker-col">
-                <text class="field-label">开始时间</text>
                 <picker mode="time" :value="taskForm.timeHHmm" @change="onTaskTimeChange">
-                  <view class="picker-box">{{ taskForm.timeHHmm }}</view>
+                  <view class="picker-box num-tabular">{{ taskForm.timeHHmm }}</view>
                 </picker>
               </view>
               <view class="picker-col">
-                <text class="field-label">截止日期（可选）</text>
                 <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onTaskDueDateChange">
-                  <view class="picker-box">{{ taskForm.dueDateKey || '不设置 DDL' }}</view>
+                  <view class="picker-box num-tabular">{{ taskForm.dueDateKey || '截止日期' }}</view>
                 </picker>
               </view>
             </view>
 
-            <button class="sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitTask">
+            <button class="ui-btn ui-btn-primary sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitTask">
               保存任务
             </button>
           </view>
 
           <view v-else-if="captureMode === 'block'" class="form-stack">
-            <view class="field-group">
-              <text class="field-label">所属学科</text>
-              <scroll-view scroll-x :show-scrollbar="false" class="subject-chips-scroll">
-                <view class="chips-row">
-                  <view
-                    v-for="sub in subjectStore.subjects"
-                    :key="sub.id"
-                    class="chip-item"
-                    :class="{ active: blockForm.subjectId === sub.id }"
-                    @click="blockForm.subjectId = sub.id"
-                  >
-                    <text>{{ sub.name }}</text>
-                  </view>
+            <scroll-view scroll-x :show-scrollbar="false" class="chips-scroll">
+              <view class="chips-row">
+                <view
+                  v-for="sub in subjectStore.subjects"
+                  :key="sub.id"
+                  class="chip-item"
+                  :class="{ active: blockForm.subjectId === sub.id }"
+                  @click="blockForm.subjectId = sub.id"
+                >
+                  <text>{{ sub.name }}</text>
                 </view>
-              </scroll-view>
-            </view>
+              </view>
+            </scroll-view>
 
-            <view class="field-group">
-              <text class="field-label">知识块标题 / 提问正面</text>
-              <input
-                class="zen-input"
-                v-model="blockForm.title"
-                placeholder="输入核心概念或记忆提问…"
-                :disabled="submittingCapture"
-              />
-            </view>
+            <input
+              class="ui-input"
+              v-model="blockForm.title"
+              placeholder="标题"
+              :disabled="submittingCapture"
+            />
 
-            <view class="field-group">
-              <text class="field-label">内容 / 答案解析（支持 Markdown）</text>
-              <textarea
-                class="zen-textarea"
-                v-model="blockForm.content"
-                placeholder="记下关键结论、公式或理解要点…"
-                :disabled="submittingCapture"
-              />
-            </view>
+            <textarea
+              class="ui-textarea"
+              v-model="blockForm.content"
+              placeholder="内容（Markdown）"
+              :disabled="submittingCapture"
+            />
 
-            <button class="sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitQuickBlock">
+            <button class="ui-btn ui-btn-primary sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitQuickBlock">
               保存知识块
             </button>
           </view>
 
           <view v-else class="form-stack">
-            <view class="field-group">
-              <text class="field-label">归入学科</text>
-              <scroll-view scroll-x :show-scrollbar="false" class="subject-chips-scroll">
-                <view class="chips-row">
-                  <view
-                    v-for="sub in subjectStore.subjects"
-                    :key="sub.id"
-                    class="chip-item"
-                    :class="{ active: uploadForm.subjectId === sub.id }"
-                    @click="uploadForm.subjectId = sub.id"
-                  >
-                    <text>{{ sub.name }}</text>
-                  </view>
+            <scroll-view scroll-x :show-scrollbar="false" class="chips-scroll">
+              <view class="chips-row">
+                <view
+                  v-for="sub in subjectStore.subjects"
+                  :key="sub.id"
+                  class="chip-item"
+                  :class="{ active: uploadForm.subjectId === sub.id }"
+                  @click="uploadForm.subjectId = sub.id"
+                >
+                  <text>{{ sub.name }}</text>
                 </view>
-              </scroll-view>
-            </view>
+              </view>
+            </scroll-view>
 
             <view class="file-drop-box" @click="chooseFileToUpload">
-              <LineIcon name="upload" size="42rpx" color="var(--color-zen-sage)" />
+              <LineIcon name="upload" size="22px" color="var(--color-sage-dark)" />
               <text class="file-drop-name">
-                {{ uploadForm.file ? uploadForm.file.name : '点击选择本地文件 / 聊天文件' }}
+                {{ uploadForm.file ? uploadForm.file.name : '选择本地文件' }}
               </text>
-              <text class="file-drop-hint">
-                {{ uploadForm.file ? formatFileSize(uploadForm.file.size) : '支持 PDF、Word、PPT、TXT、Markdown 等学习资料' }}
+              <text v-if="uploadForm.file" class="file-drop-size num-tabular">
+                {{ formatBytes(uploadForm.file.size) }}
               </text>
             </view>
 
-            <view class="field-group">
-              <text class="field-label">资料名称</text>
-              <input
-                class="zen-input"
-                v-model="uploadForm.title"
-                placeholder="自动带出文件名，可自定义"
-                :disabled="submittingCapture"
-              />
-            </view>
+            <input
+              class="ui-input"
+              v-model="uploadForm.title"
+              placeholder="资料名称"
+              :disabled="submittingCapture"
+            />
 
-            <button class="sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitFileUpload">
+            <button class="ui-btn ui-btn-primary sheet-submit-btn" :loading="submittingCapture" :disabled="submittingCapture" @click="submitFileUpload">
               上传归档
             </button>
           </view>
@@ -337,7 +303,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import type { LocalUploadFile } from '@/services/assetUpload'
@@ -357,6 +322,7 @@ import {
   toLocalDateKey,
 } from '@/utils/dateKey'
 import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
+import { formatBytes } from '@/utils/sourceFormat'
 
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
@@ -370,15 +336,7 @@ const weekDays = computed(() => getWeekDays(selectedDateKey.value, todayKey.valu
 const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
 const weekRangeLabel = computed(() => {
   const days = weekDays.value
-  return `${formatShortDate(days[0].dateKey)} - ${formatShortDate(days[6].dateKey)}`
-})
-
-const displayName = computed(() => authStore.user?.displayName || authStore.username || '同学')
-const greetingText = computed(() => {
-  const hour = new Date().getHours()
-  if (hour < 12) return '早安'
-  if (hour < 18) return '午后'
-  return '晚安'
+  return `${formatShortDate(days[0].dateKey)} – ${formatShortDate(days[6].dateKey)}`
 })
 
 const scheduledForSelectedDay = computed(() => taskStore.getScheduledTasksForDate(selectedDateKey.value))
@@ -409,13 +367,14 @@ async function onSchedulePending(taskId: string, event: { detail?: { value?: str
   const hhmm = event?.detail?.value
   if (!hhmm) return
   await taskStore.scheduleTask(taskId, combineLocalDateAndTime(selectedDateKey.value, hhmm))
-  uni.showToast({ title: `已排入 ${selectedDateHeading.value} ${hhmm}`, icon: 'none' })
+  uni.showToast({ title: `已排入 ${hhmm}`, icon: 'none' })
 }
 
 function confirmDeleteTask(id: string, title: string) {
   uni.showModal({
     title: '删除待办',
     content: `确定要删除「${title}」吗？`,
+    confirmColor: '#C93B3B',
     success: (res) => {
       if (res.confirm) void taskStore.removeTask(id)
     },
@@ -424,9 +383,9 @@ function confirmDeleteTask(id: string, title: string) {
 
 type CaptureMode = 'task' | 'block' | 'upload'
 const captureTabs: Array<{ id: CaptureMode; label: string }> = [
-  { id: 'task', label: '新建任务' },
-  { id: 'block', label: '记知识块' },
-  { id: 'upload', label: '上传文件' },
+  { id: 'task', label: '任务' },
+  { id: 'block', label: '知识块' },
+  { id: 'upload', label: '文件' },
 ]
 
 const showCaptureSheet = ref(false)
@@ -498,12 +457,12 @@ async function submitTask() {
   if (submittingCapture.value) return
   const title = taskForm.name.trim()
   if (!title) {
-    uni.showToast({ title: '请输入任务内容', icon: 'none' })
+    uni.showToast({ title: '请输入任务名称', icon: 'none' })
     return
   }
   const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择所属学科', icon: 'none' })
+    uni.showToast({ title: '请选择学科', icon: 'none' })
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -526,9 +485,9 @@ async function submitTask() {
     taskForm.name = ''
     taskForm.dueDateKey = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: scheduledAt ? '已加入当日日程' : '已加入待办清单', icon: 'none' })
+    uni.showToast({ title: scheduledAt ? '已加入日程' : '已加入待办', icon: 'none' })
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '任务保存失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
     submittingCapture.value = false
   }
@@ -540,7 +499,7 @@ async function submitQuickBlock() {
   const content = blockForm.content.trim()
   const subject = subjectStore.subjects.find(item => item.id === blockForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择所属学科', icon: 'none' })
+    uni.showToast({ title: '请选择学科', icon: 'none' })
     return
   }
   if (!title || !content) {
@@ -562,9 +521,9 @@ async function submitQuickBlock() {
     blockForm.title = ''
     blockForm.content = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: '知识块已保存', icon: 'none' })
+    uni.showToast({ title: '已保存知识块', icon: 'none' })
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '知识块保存失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
     submittingCapture.value = false
   }
@@ -578,26 +537,19 @@ async function chooseFileToUpload() {
     uploadForm.file = file
     if (!uploadForm.title.trim()) uploadForm.title = file.name
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '选择文件失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '选择失败', icon: 'none' })
   }
-}
-
-function formatFileSize(bytes: number): string {
-  if (!bytes) return '大小未知'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 async function submitFileUpload() {
   if (submittingCapture.value) return
   const subject = subjectStore.subjects.find(item => item.id === uploadForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择要归入的学科', icon: 'none' })
+    uni.showToast({ title: '请选择学科', icon: 'none' })
     return
   }
   if (!uploadForm.file) {
-    uni.showToast({ title: '请先选择要上传的文件', icon: 'none' })
+    uni.showToast({ title: '请选择文件', icon: 'none' })
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -612,9 +564,9 @@ async function submitFileUpload() {
     uploadForm.file = null
     uploadForm.title = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: `已归入「${subject.name}」，等待 PC 解析`, icon: 'none' })
+    uni.showToast({ title: `已归入「${subject.name}」`, icon: 'none' })
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '文件上传失败', icon: 'none' })
+    uni.showToast({ title: err instanceof Error ? err.message : '上传失败', icon: 'none' })
   } finally {
     submittingCapture.value = false
   }
@@ -635,129 +587,155 @@ onMounted(async () => {
   background-color: var(--color-bg-primary);
 }
 
+.status-bar-spacer {
+  height: var(--status-bar-height, 0px);
+  flex-shrink: 0;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 8px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.top-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.date-heading {
+  font-size: 21px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.today-pill {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-sage-bg);
+  color: var(--color-sage-dark);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--color-zen-sage);
+  animation: syncPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+.add-fab {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--accent-glow);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.16s var(--ease-out);
+}
+
+.add-fab:active {
+  transform: scale(0.92);
+}
+
 .home-scroll {
   flex: 1;
   min-height: 0;
 }
 
 .home-content {
-  padding: 20rpx 32rpx 40rpx;
+  padding: 6px 18px 24px;
   display: flex;
   flex-direction: column;
-  gap: 28rpx;
-  box-sizing: border-box;
-}
-
-.greeting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.greeting-left {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 14rpx;
-  min-width: 0;
-  flex: 1;
-}
-
-.greeting-title {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.sync-pill,
-.back-today-pill {
-  font-size: 22rpx;
-  padding: 6rpx 16rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-  font-weight: var(--font-weight-semibold);
-}
-
-.add-fab-btn {
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 50%;
-  background: var(--accent-gradient);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8rpx 20rpx rgba(139, 154, 110, 0.28);
-  flex-shrink: 0;
+  gap: 18px;
 }
 
 .week-card {
-  padding: 20rpx 18rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+  padding: 12px 12px 14px;
 }
 
 .week-nav-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8rpx;
+  margin-bottom: 10px;
+  padding: 0 2px;
 }
 
 .week-arrow {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background-color: var(--color-bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
 }
 
 .week-range-label {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
   font-weight: var(--font-weight-medium);
-  font-variant-numeric: tabular-nums;
 }
 
 .week-strip {
-  display: flex;
-  justify-content: space-between;
-  gap: 8rpx;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .w-day {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8rpx;
-  padding: 14rpx 0;
-  border-radius: 22rpx;
-  background-color: transparent;
+  gap: 3px;
+  padding: 7px 0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.16s ease, transform 0.14s ease;
+}
+
+.w-day:active {
+  transform: scale(0.94);
 }
 
 .w-day.active {
   background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
 }
 
 .w-week {
-  font-size: 22rpx;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .w-num {
-  font-size: 28rpx;
+  font-size: 15px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
 }
 
 .w-day.is-today:not(.active) .w-num {
-  color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
 }
 
 .w-day.active .w-week,
@@ -766,14 +744,15 @@ onMounted(async () => {
 }
 
 .w-dot {
-  width: 8rpx;
-  height: 8rpx;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background-color: transparent;
+  background-color: var(--color-zen-sage);
+  opacity: 0;
 }
 
 .w-dot.visible {
-  background-color: var(--color-zen-sage);
+  opacity: 1;
 }
 
 .w-day.active .w-dot.visible {
@@ -783,43 +762,38 @@ onMounted(async () => {
 .section-block {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 10px;
 }
 
 .section-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  padding: 0 4rpx;
+  padding: 0 2px;
 }
 
 .section-title {
-  font-size: var(--font-size-base);
+  font-size: 14px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
 
 .section-count {
   font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
   color: var(--text-muted);
 }
 
-.empty-card {
-  padding: 40rpx 28rpx;
+.empty-slot {
+  height: 46px;
+  border-radius: 14px;
+  border: 1px dashed var(--border-default);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 10rpx;
-  text-align: center;
+  justify-content: center;
 }
 
-.empty-title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.empty-sub {
+.empty-label {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
@@ -827,29 +801,32 @@ onMounted(async () => {
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
+  gap: 8px;
 }
 
 .task-card {
-  padding: 24rpx;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: 18rpx;
+  gap: 12px;
+  border-radius: 16px;
 }
 
 .task-card.is-completed {
-  opacity: 0.65;
+  opacity: 0.56;
 }
 
 .check-circle {
-  width: 40rpx;
-  height: 40rpx;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid var(--border-strong);
+  border: 1.5px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
 .check-circle.checked {
@@ -858,7 +835,7 @@ onMounted(async () => {
 }
 
 .check-circle.locked {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .task-main {
@@ -866,44 +843,15 @@ onMounted(async () => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
-}
-
-.task-top-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10rpx;
-}
-
-.task-time {
-  font-size: 22rpx;
-  font-family: var(--font-family-mono);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-zen-sage);
-}
-
-.task-subject {
-  font-size: 20rpx;
-  padding: 4rpx 12rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
-  color: var(--text-muted);
-}
-
-.task-ddl {
-  font-size: 20rpx;
-  padding: 4rpx 12rpx;
-  border-radius: var(--radius-full);
-  background-color: rgba(200, 155, 109, 0.16);
-  color: #8C6235;
+  gap: 4px;
+  cursor: pointer;
 }
 
 .task-title {
-  font-size: var(--font-size-sm);
+  font-size: 14.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
-  word-break: break-word;
+  line-height: 1.35;
 }
 
 .task-title.strike {
@@ -911,171 +859,121 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 
+.task-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.task-time {
+  font-size: 11.5px;
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-family-mono);
+  color: var(--color-sage-dark);
+}
+
+.task-ddl {
+  font-size: 11px;
+  color: var(--color-warning);
+  font-weight: var(--font-weight-semibold);
+}
+
 .task-actions {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .dur-badge {
-  font-size: 22rpx;
+  font-size: 11px;
   font-family: var(--font-family-mono);
   color: var(--text-muted);
+  background-color: var(--color-bg-primary);
+  padding: 3px 8px;
+  border-radius: 8px;
 }
 
-.unschedule-btn,
 .schedule-pill {
-  padding: 8rpx 16rpx;
+  padding: 5px 11px;
   border-radius: var(--radius-full);
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-}
-
-.unschedule-btn {
-  background-color: var(--color-bg-primary);
-  color: var(--text-muted);
-}
-
-.schedule-pill {
   background-color: var(--color-sage-bg);
-  color: var(--color-zen-sage);
-}
-
-.delete-icon-btn {
-  padding: 8rpx;
-}
-
-.sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  margin-bottom: 24rpx;
-}
-
-.mode-tabs {
-  display: flex;
-  gap: 8rpx;
-  background-color: var(--color-bg-primary);
-  padding: 6rpx;
-  border-radius: 20rpx;
-  flex: 1;
-}
-
-.mode-tab {
-  flex: 1;
-  text-align: center;
-  padding: 12rpx 8rpx;
-  border-radius: 16rpx;
-  font-size: 24rpx;
+  color: var(--color-sage-dark);
+  font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
+  cursor: pointer;
 }
 
-.mode-tab.active {
-  background-color: var(--color-bg-card);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.sheet-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-primary);
+.row-icon-action {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+}
+
+/* Capture Bottom Sheet */
+.sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.mode-tabs {
+  flex: 1;
 }
 
 .no-subject-tip {
-  padding: 16rpx 20rpx;
-  border-radius: 18rpx;
-  background-color: rgba(200, 155, 109, 0.14);
-  color: #8C6235;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: var(--color-warning-bg);
+  color: #8A5D31;
   font-size: var(--font-size-xs);
-  margin-bottom: 18rpx;
+  margin-bottom: 12px;
 }
 
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 12px;
 }
 
-.field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-}
-
-.field-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.field-hint {
-  font-size: 22rpx;
-  color: var(--text-muted);
-  margin-top: 4rpx;
-}
-
-.zen-input {
-  height: 84rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20rpx;
-  padding: 0 24rpx;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.zen-textarea {
-  width: 100%;
-  min-height: 200rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20rpx;
-  padding: 20rpx 24rpx;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.subject-chips-scroll {
+.chips-scroll {
   width: 100%;
   white-space: nowrap;
 }
 
 .chips-row {
   display: flex;
-  gap: 12rpx;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.subject-chips-scroll .chips-row {
+.chips-scroll .chips-row {
   flex-wrap: nowrap;
 }
 
 .chip-item {
-  display: inline-flex;
-  align-items: center;
-  padding: 12rpx 22rpx;
+  flex-shrink: 0;
+  padding: 7px 14px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  font-size: 24rpx;
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
-  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .chip-item.active {
   background-color: var(--color-sage-bg);
   border-color: var(--border-accent);
-  color: var(--color-zen-sage);
+  color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
 
@@ -1083,77 +981,66 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16rpx 20rpx;
-  background-color: var(--color-bg-primary);
-  border-radius: 20rpx;
+  padding: 4px 2px;
 }
 
-.switch-left {
-  display: flex;
-  flex-direction: column;
+.field-label {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
 }
 
 .dual-pickers {
   display: flex;
-  gap: 16rpx;
+  gap: 10px;
 }
 
 .picker-col {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
 }
 
 .picker-box {
-  height: 78rpx;
-  line-height: 78rpx;
-  padding: 0 22rpx;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 18rpx;
-  font-size: var(--font-size-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
 }
 
 .file-drop-box {
-  padding: 36rpx 24rpx;
-  border-radius: 24rpx;
-  background-color: var(--color-bg-primary);
-  border: 1px dashed var(--border-accent);
+  padding: 20px 14px;
+  border-radius: 14px;
+  border: 1.5px dashed var(--border-accent);
+  background-color: var(--color-sage-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10rpx;
+  gap: 6px;
   text-align: center;
+  cursor: pointer;
 }
 
 .file-drop-name {
-  font-size: var(--font-size-sm);
+  font-size: 13.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   word-break: break-all;
 }
 
-.file-drop-hint {
-  font-size: 22rpx;
+.file-drop-size {
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 
 .sheet-submit-btn {
-  margin-top: 8rpx;
+  margin-top: 4px;
   width: 100%;
-  height: 88rpx;
-  line-height: 88rpx;
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  border-radius: 24rpx;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  border: none;
-}
-
-.sheet-submit-btn::after {
-  border: none;
+  height: 44px;
 }
 </style>

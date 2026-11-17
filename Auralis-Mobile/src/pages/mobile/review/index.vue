@@ -1,17 +1,15 @@
 <template>
   <AppPageLayout>
     <view class="review-page">
-      <AppHeader title="学习" />
+      <view class="status-bar-spacer"></view>
 
       <view class="review-toolbar">
         <view class="subject-switcher" @click="showSubjectPicker = true">
           <text class="switcher-label">{{ activeSubjectLabel }}</text>
-          <LineIcon name="chevron-down" size="28rpx" color="var(--color-zen-sage)" />
+          <LineIcon name="chevron-down" size="14px" color="var(--color-sage-dark)" />
         </view>
 
-        <view class="progress-summary">
-          <text class="summary-text">待复习 {{ remainingCount }} · 已完成 {{ completedCount }}</text>
-        </view>
+        <text class="summary-text num-tabular">{{ remainingCount }} 待复习 · {{ completedCount }} 完成</text>
       </view>
 
       <view class="card-stage">
@@ -24,43 +22,40 @@
         />
 
         <view v-else class="empty-card zen-card">
-          <LineIcon :name="loading ? 'refresh' : 'star'" size="72rpx" color="var(--color-zen-sage)" />
-          <text class="empty-title">{{ loading ? '正在加载待复习卡片…' : loadError || '本轮复习已完成' }}</text>
-          <text class="empty-desc">
-            {{ loading ? '请稍候' : loadError ? '请检查网络连接后重试' : '当前范围内已无到期知识卡片' }}
-          </text>
-          <view v-if="!loading" class="refresh-btn" @click="loadReview">
-            <LineIcon name="refresh" size="28rpx" color="#FFFFFF" />
-            <text>刷新复习队列</text>
+          <LineIcon :name="loading ? 'refresh' : 'star'" size="32px" color="var(--color-sage-dark)" />
+          <text class="empty-title">{{ loading ? '加载中' : loadError || '已清空' }}</text>
+          <view v-if="!loading" class="ui-btn ui-btn-secondary refresh-pill" @click="loadReview">
+            <LineIcon name="refresh" size="14px" color="var(--text-primary)" />
+            <text>刷新</text>
           </view>
         </view>
       </view>
 
       <view v-if="saving || saveError" class="status-banner zen-card">
-        <text class="status-msg">{{ saving ? '正在保存复习进度…' : saveError }}</text>
+        <text class="status-msg">{{ saving ? '保存中…' : saveError }}</text>
         <view
           v-if="saveError"
-          class="status-retry"
+          class="ui-btn ui-btn-primary retry-pill"
           @click="refreshRequired ? loadReview() : retrySave()"
         >
-          <text>{{ refreshRequired ? '刷新队列' : '重试保存' }}</text>
+          <text>{{ refreshRequired ? '刷新队列' : '重试' }}</text>
         </view>
       </view>
 
       <view v-else-if="activeCard" class="action-bar">
         <template v-if="!isFlipped">
-          <view class="action-btn secondary" @click="skipCard">
+          <view class="ui-btn ui-btn-secondary bar-btn" @click="skipCard">
             <text>跳过</text>
           </view>
-          <view class="action-btn primary" @click="isFlipped = true">
+          <view class="ui-btn ui-btn-primary bar-btn wide" @click="isFlipped = true">
             <text>显示答案</text>
           </view>
         </template>
         <template v-else>
-          <view class="action-btn warn" :class="{ disabled: saving }" @click="rateCard('AGAIN')">
+          <view class="ui-btn bar-btn again-btn" :class="{ 'is-disabled': saving }" @click="rateCard('AGAIN')">
             <text>再记一次</text>
           </view>
-          <view class="action-btn primary" :class="{ disabled: saving }" @click="rateCard('GOOD')">
+          <view class="ui-btn ui-btn-primary bar-btn wide" :class="{ 'is-disabled': saving }" @click="rateCard('GOOD')">
             <text>已掌握</text>
           </view>
         </template>
@@ -69,9 +64,9 @@
       <view v-if="showSubjectPicker" class="zen-sheet-mask" @click="showSubjectPicker = false">
         <view class="zen-sheet-body" @click.stop>
           <view class="sheet-header">
-            <text class="sheet-title">选择复习学科范围</text>
-            <view class="sheet-close" @click="showSubjectPicker = false">
-              <LineIcon name="close" size="32rpx" color="var(--text-muted)" />
+            <text class="sheet-title">学科范围</text>
+            <view class="ui-icon-btn" @click="showSubjectPicker = false">
+              <LineIcon name="close" size="16px" color="var(--text-muted)" />
             </view>
           </view>
 
@@ -82,7 +77,7 @@
               @click="selectSubjectScope('')"
             >
               <text class="subject-option-name">全部学科</text>
-              <LineIcon v-if="!selectedSubjectId" name="check" size="30rpx" color="var(--color-zen-sage)" />
+              <LineIcon v-if="!selectedSubjectId" name="check" size="16px" color="var(--color-sage-dark)" />
             </view>
             <view
               v-for="sub in subjectStore.subjects"
@@ -92,7 +87,7 @@
               @click="selectSubjectScope(sub.id)"
             >
               <text class="subject-option-name">{{ sub.name }}</text>
-              <LineIcon v-if="selectedSubjectId === sub.id" name="check" size="30rpx" color="var(--color-zen-sage)" />
+              <LineIcon v-if="selectedSubjectId === sub.id" name="check" size="16px" color="var(--color-sage-dark)" />
             </view>
           </scroll-view>
         </view>
@@ -104,7 +99,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { reviewApi } from '@/api/reviewApi'
-import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import FlashCard from '@/components/FlashCard.vue'
 import LineIcon from '@/components/LineIcon.vue'
@@ -159,29 +153,35 @@ function selectSubjectScope(subjectId: string) {
   background-color: var(--color-bg-primary);
 }
 
+.status-bar-spacer {
+  height: var(--status-bar-height, 0px);
+  flex-shrink: 0;
+}
+
 .review-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
-  padding: 18rpx 32rpx 12rpx;
+  gap: 12px;
+  padding: 14px 18px 8px;
   flex-shrink: 0;
 }
 
 .subject-switcher {
   display: inline-flex;
   align-items: center;
-  gap: 10rpx;
-  padding: 12rpx 24rpx;
+  gap: 6px;
+  padding: 8px 14px;
   background-color: var(--color-bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-sm);
-  max-width: 52%;
+  max-width: 54%;
+  cursor: pointer;
 }
 
 .switcher-label {
-  font-size: var(--font-size-xs);
+  font-size: 13px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   white-space: nowrap;
@@ -189,133 +189,93 @@ function selectSubjectScope(subjectId: string) {
   text-overflow: ellipsis;
 }
 
-.progress-summary {
-  flex-shrink: 0;
-}
-
 .summary-text {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .card-stage {
   flex: 1;
   min-height: 0;
-  padding: 16rpx 32rpx;
+  padding: 10px 18px;
   display: flex;
   box-sizing: border-box;
 }
 
 .empty-card {
   width: 100%;
-  height: 100%;
-  min-height: 520rpx;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18rpx;
-  padding: 40rpx;
-  box-sizing: border-box;
+  gap: 14px;
+  padding: 24px;
 }
 
 .empty-title {
-  font-size: var(--font-size-lg);
+  font-size: 16px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   text-align: center;
 }
 
-.empty-desc {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.refresh-btn {
-  margin-top: 12rpx;
-  display: inline-flex;
-  align-items: center;
-  gap: 10rpx;
-  padding: 18rpx 36rpx;
-  border-radius: var(--radius-full);
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+.refresh-pill {
+  height: 36px;
+  padding: 0 16px;
 }
 
 .status-banner {
-  margin: 0 32rpx 24rpx;
-  padding: 20rpx 24rpx;
+  margin: 4px 18px 14px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
-  flex-shrink: 0;
+  gap: 10px;
 }
 
 .status-msg {
+  flex: 1;
   font-size: var(--font-size-xs);
-  color: var(--color-danger);
+  color: var(--text-secondary);
 }
 
-.status-retry {
-  padding: 10rpx 22rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-danger-bg);
-  color: var(--color-danger);
+.retry-pill {
+  height: 32px;
+  padding: 0 14px;
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
 }
 
 .action-bar {
   display: flex;
-  gap: 20rpx;
-  padding: 12rpx 32rpx 24rpx;
+  gap: 10px;
+  padding: 8px 18px 14px;
   flex-shrink: 0;
 }
 
-.action-btn {
+.bar-btn {
   flex: 1;
-  height: 88rpx;
-  border-radius: 24rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  height: 46px;
+  border-radius: 14px;
+  font-size: 14.5px;
 }
 
-.action-btn.primary {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  box-shadow: 0 8rpx 20rpx rgba(139, 154, 110, 0.25);
+.bar-btn.wide {
+  flex: 1.6;
 }
 
-.action-btn.secondary {
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-}
-
-.action-btn.warn {
-  background-color: rgba(200, 155, 109, 0.16);
-  border: 1px solid rgba(200, 155, 109, 0.45);
-  color: #8C6235;
-}
-
-.action-btn.disabled {
-  opacity: 0.55;
+.again-btn {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 .sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20rpx;
+  margin-bottom: 14px;
 }
 
 .sheet-title {
@@ -324,34 +284,23 @@ function selectSubjectScope(subjectId: string) {
   color: var(--text-primary);
 }
 
-.sheet-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .subject-sheet-scroll {
-  max-height: 50vh;
+  max-height: 52vh;
 }
 
 .subject-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24rpx;
-  margin-bottom: 12rpx;
+  padding: 13px 14px;
+  border-radius: 12px;
+  margin-bottom: 6px;
   background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 22rpx;
+  cursor: pointer;
 }
 
 .subject-option.active {
   background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
 }
 
 .subject-option-name {
