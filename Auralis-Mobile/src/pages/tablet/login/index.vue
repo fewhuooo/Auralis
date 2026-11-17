@@ -2,13 +2,11 @@
   <view class="login-page">
     <view class="login-wrapper">
       <view class="brand-side">
-        <view class="brand-ring ring-outer"></view>
-        <view class="brand-ring ring-inner"></view>
-        <view class="brand-glow"></view>
         <view class="brand-content">
-          <BrandLogo size="46px" />
-          <text class="brand-title">Auralis</text>
+          <BrandLogo size="32px" />
+          <text class="brand-vertical-text">AURALIS</text>
         </view>
+        <view class="side-shape"></view>
       </view>
 
       <view class="form-side">
@@ -94,12 +92,12 @@
 
           <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-          <button class="ui-btn ui-btn-primary submit-btn" :loading="submitting" :disabled="pending" @click="submit">
+          <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">
             {{ actionLabel }}
           </button>
 
           <view v-if="mode === 'login'" class="footer-links">
-            <text class="footer-link" @click="show('reset')">忘记密码</text>
+            <text class="footer-link" @click="show('reset')">忘记密码？</text>
           </view>
         </view>
       </view>
@@ -122,60 +120,34 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background-color: var(--color-bg-page);
+  padding: 20px;
+  background-color: var(--color-bg-secondary);
   box-sizing: border-box;
 }
 
 .login-wrapper {
   display: flex;
   width: 100%;
-  max-width: 860px;
-  min-height: 500px;
-  background-color: var(--color-bg-card);
-  border-radius: 28px;
+  max-width: 880px;
+  min-height: 540px;
+  background-color: var(--color-bg-primary);
+  border-radius: 32px;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .brand-side {
-  width: 44%;
+  width: 350px;
   background-color: var(--color-bg-primary);
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  padding: 52px;
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
   box-sizing: border-box;
-}
-
-.brand-ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(139, 154, 110, 0.22);
-  pointer-events: none;
-}
-
-.ring-outer {
-  width: 340px;
-  height: 340px;
-}
-
-.ring-inner {
-  width: 220px;
-  height: 220px;
-  border-color: rgba(139, 154, 110, 0.34);
-}
-
-.brand-glow {
-  position: absolute;
-  width: 260px;
-  height: 260px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(139, 154, 110, 0.16) 0%, transparent 72%);
-  pointer-events: none;
+  flex-shrink: 0;
 }
 
 .brand-content {
@@ -183,35 +155,50 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   z-index: 2;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 28px;
 }
 
-.brand-title {
-  font-size: 30px;
-  font-weight: var(--font-weight-bold);
+.brand-vertical-text {
+  font-size: 44px;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.03em;
   line-height: 1;
+  letter-spacing: -2px;
+  opacity: 0.9;
+}
+
+.side-shape {
+  position: absolute;
+  bottom: -50px;
+  right: -50px;
+  width: 200px;
+  height: 200px;
+  background-color: var(--color-zen-sage);
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 .form-side {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 44px;
-  background-color: var(--color-bg-card);
+  padding: 36px 40px;
+  background-color: var(--color-bg-primary);
   box-sizing: border-box;
 }
 
 .login-box {
   width: 100%;
-  max-width: 340px;
+  max-width: 320px;
 }
 
 .auth-toggle {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .ui-seg-item.is-disabled {
@@ -223,7 +210,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .form-title {
@@ -239,10 +226,10 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 }
 
 .code-field {
-  height: 44px;
-  background-color: var(--color-bg-primary);
+  height: 42px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   padding: 0 6px 0 14px;
   display: flex;
   align-items: center;
@@ -261,14 +248,14 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 .code-button {
   flex-shrink: 0;
   padding: 0 12px;
-  height: 30px;
-  line-height: 30px;
+  height: 28px;
+  line-height: 28px;
   background: transparent;
   border-left: 1px solid var(--border-subtle);
   border-radius: 0;
   font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
-  color: var(--color-sage-dark);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -279,8 +266,8 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 .auth-feedback {
   display: block;
   margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
   background-color: var(--color-sage-bg);
   color: var(--color-sage-ink);
   font-size: var(--font-size-xs);
@@ -291,11 +278,29 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   margin-top: 20px;
   width: 100%;
   height: 44px;
-  font-size: 14.5px;
+  background-color: var(--color-zen-sage);
+  color: #FFFFFF;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.25);
+  transition: transform 0.18s var(--ease-out), filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+.submit-btn:active {
+  transform: scale(0.98);
+}
+
+.submit-btn[disabled] {
+  opacity: 0.5;
 }
 
 .footer-links {
-  margin-top: 14px;
+  margin-top: 16px;
   text-align: center;
 }
 

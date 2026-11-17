@@ -14,7 +14,7 @@
               <LineIcon
                 :name="focusStore.isTaskLocked ? 'lock' : 'calendar'"
                 size="15px"
-                color="var(--color-sage-dark)"
+                color="var(--color-sage-ink)"
               />
               <text class="task-pill-text">
                 {{ focusStore.selectedTaskTitle || '自由专注' }}
@@ -40,24 +40,27 @@
 
           <view class="ring-stage">
             <PomodoroRing
-              size="248px"
+              size="252px"
               :total-seconds="focusStore.totalSeconds"
               :remaining-seconds="focusStore.remainingSeconds"
               :is-running="focusStore.isRunning"
               :color="focusStore.ringColor"
-              :phase-label="phaseLabel"
               @center-click="openTaskPicker"
             />
+
+            <view class="phase-pill" :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }">
+              <view class="phase-beacon"></view>
+              <text>{{ phaseText }}</text>
+            </view>
 
             <view class="cycle-dots">
               <view
                 v-for="idx in 4"
                 :key="idx"
                 class="cycle-dot"
-                :style="{
-                  backgroundColor: (focusStore.cycleCount % 4) >= idx || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0)
-                    ? focusStore.ringColor
-                    : 'rgba(28, 28, 26, 0.14)',
+                :class="{
+                  'is-filled': (focusStore.cycleCount % 4) >= idx || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0),
+                  'is-break-filled': focusStore.isBreakPhase && ((focusStore.cycleCount % 4) >= idx || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0)),
                 }"
               ></view>
             </view>
@@ -73,23 +76,23 @@
 
           <view class="controls-row">
             <view class="ctrl-secondary" @click="focusStore.reset()">
-              <LineIcon name="rotate" size="18px" color="var(--text-secondary)" />
+              <text>重置</text>
             </view>
 
             <view
               class="ctrl-primary"
-              :style="{ backgroundColor: focusStore.isBreakPhase ? '#C89B6D' : '#7B8B5E' }"
+              :class="{ 'is-break': focusStore.isBreakPhase }"
               @click="focusStore.toggle()"
             >
               <LineIcon
                 :name="focusStore.isRunning ? 'pause' : 'play'"
-                size="24px"
+                size="22px"
                 color="#FFFFFF"
               />
             </view>
 
             <view class="ctrl-secondary" @click="focusStore.skip()">
-              <LineIcon name="skip" size="18px" color="var(--text-secondary)" />
+              <text>跳过</text>
             </view>
           </view>
 
@@ -127,11 +130,7 @@ const taskStore = useTaskStore()
 const presets = FOCUS_PRESETS
 const showTaskSheet = ref(false)
 
-const phaseLabel = computed(() => {
-  if (focusStore.phase === 'shortBreak') return 'SHORT BREAK'
-  if (focusStore.phase === 'longBreak') return 'LONG BREAK'
-  return ''
-})
+const phaseText = computed(() => (focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中'))
 
 function syncFocusState() {
   focusStore.reconcileNow(false)
@@ -199,7 +198,7 @@ async function completeBoundTask() {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 18px;
   padding: 18px 18px 24px;
   box-sizing: border-box;
 }
@@ -218,10 +217,11 @@ async function completeBoundTask() {
   align-items: center;
   gap: 8px;
   padding: 9px 16px;
-  background-color: var(--color-bg-card);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-sm);
+  box-sizing: border-box;
   cursor: pointer;
 }
 
@@ -245,12 +245,12 @@ async function completeBoundTask() {
 }
 
 .preset-chip {
-  padding: 6px 14px;
+  padding: 5px 14px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-card);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   font-size: 12.5px;
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -270,7 +270,46 @@ async function completeBoundTask() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+}
+
+.phase-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 15px;
+  border-radius: var(--radius-full);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-bold);
+  background-color: rgba(139, 154, 110, 0.12);
+  color: var(--color-sage-ink);
+  border: 1px solid rgba(139, 154, 110, 0.28);
+}
+
+.phase-beacon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #8B9A6E;
+}
+
+.phase-pill.is-active .phase-beacon {
+  animation: beaconPulse 2s ease-in-out infinite;
+}
+
+.phase-pill.is-break {
+  background-color: rgba(200, 155, 109, 0.15);
+  color: #9C7240;
+  border-color: rgba(200, 155, 109, 0.32);
+}
+
+.phase-pill.is-break .phase-beacon {
+  background-color: #C89B6D;
+}
+
+@keyframes beaconPulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.4); opacity: 1; }
 }
 
 .cycle-dots {
@@ -280,9 +319,22 @@ async function completeBoundTask() {
 }
 
 .cycle-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
+  background-color: rgba(139, 154, 110, 0.18);
+  transition: transform 0.25s var(--ease-out), background-color 0.25s ease;
+}
+
+.cycle-dot.is-filled {
+  background-color: #8B9A6E;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.65);
+  transform: scale(1.15);
+}
+
+.cycle-dot.is-break-filled {
+  background-color: #C89B6D;
+  box-shadow: 0 0 8px rgba(200, 155, 109, 0.65);
 }
 
 .complete-banner {
@@ -326,28 +378,28 @@ async function completeBoundTask() {
 }
 
 .ctrl-secondary {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: transform 0.16s var(--ease-out);
 }
 
 .ctrl-secondary:active {
-  transform: scale(0.92);
+  transform: scale(0.95);
 }
 
 .ctrl-primary {
-  width: 66px;
-  height: 66px;
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
-  box-shadow: var(--shadow-md), var(--accent-glow);
+  background: var(--accent-gradient);
+  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -355,8 +407,13 @@ async function completeBoundTask() {
   transition: transform 0.16s var(--ease-out);
 }
 
+.ctrl-primary.is-break {
+  background: linear-gradient(135deg, #D6AF83 0%, #C89B6D 100%);
+  box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
 .ctrl-primary:active {
-  transform: scale(0.92);
+  transform: scale(0.94);
 }
 
 .stats-pill {
@@ -370,7 +427,6 @@ async function completeBoundTask() {
 .stat-val {
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
-  font-family: var(--font-family-mono);
   color: var(--text-secondary);
 }
 

@@ -18,7 +18,7 @@
         <LineIcon
           :name="item.icon"
           size="19px"
-          :color="displayIndex === idx ? '#6D7D51' : '#76756F'"
+          :color="displayIndex === idx ? '#556B3D' : '#7A7A75'"
         />
         <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
       </view>
@@ -108,7 +108,7 @@ function goToAi() {
   pointer-events: auto;
   flex: 1;
   min-width: 0;
-  height: 58px;
+  height: 56px;
   position: relative;
   background-color: var(--glass-bg);
   backdrop-filter: blur(20px);
@@ -140,9 +140,9 @@ function goToAi() {
 
 .pill-inner {
   width: 92%;
-  height: 46px;
+  height: 44px;
   border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
+  background-color: rgba(139, 154, 110, 0.16);
 }
 
 .tab-item {
@@ -171,14 +171,14 @@ function goToAi() {
 }
 
 .tab-label.is-active {
-  color: var(--color-sage-dark);
+  color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
 
 .app-ai-float {
   pointer-events: auto;
-  width: 56px;
-  height: 56px;
+  width: 54px;
+  height: 54px;
   flex-shrink: 0;
   background: var(--accent-gradient);
   border-radius: 50%;

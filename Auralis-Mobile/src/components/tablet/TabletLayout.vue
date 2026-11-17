@@ -1,49 +1,56 @@
 <template>
   <view class="tablet-layout">
-    <view class="left-nav-column">
-      <view class="sidebar">
-        <view class="logo-area" @click="navigate('/pages/tablet/dashboard/index')">
-          <BrandLogo size="36px" />
-        </view>
-
-        <view class="nav-menu">
-          <view
-            class="active-capsule-indicator"
-            :style="{
-              transform: `translateY(${displayIndex >= 0 ? displayIndex * 70 : 0}px)`,
-              opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
-            }"
-          >
-            <view class="capsule-inner"></view>
-          </view>
-
-          <view
-            v-for="(item, index) in navItems"
-            :key="item.path"
-            class="nav-item"
-            @click="navigate(item.path)"
-          >
-            <view class="icon-wrap">
-              <LineIcon
-                :name="item.icon"
-                size="20px"
-                :color="displayIndex === index ? '#6D7D51' : '#76756F'"
-              />
-            </view>
-            <text class="nav-label" :class="{ 'label-active': displayIndex === index }">{{ item.label }}</text>
-          </view>
-        </view>
-
-        <view class="nav-bottom"></view>
+    <view class="sidebar">
+      <view class="logo-area" title="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
+        <BrandLogo size="28px" />
       </view>
 
-      <view
-        class="tablet-ai-float"
-        :class="{ 'is-active': displayIndex === -1 }"
-        @click="navigate('/pages/tablet/ai-search/index')"
-        title="AI"
-      >
-        <LineIcon name="sparkles" size="22px" color="#FFFFFF" />
+      <view class="nav-menu">
+        <view
+          class="active-capsule-indicator"
+          :style="{
+            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * 52 : 0}px)`,
+            opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
+          }"
+        >
+          <view class="nav-active-bar"></view>
+          <view class="capsule-inner"></view>
+        </view>
+
+        <view
+          v-for="(item, index) in navItems"
+          :key="item.path"
+          class="nav-item"
+          :title="item.label"
+          @click="navigate(item.path)"
+        >
+          <LineIcon
+            :name="item.icon"
+            size="20px"
+            :color="displayIndex === index ? '#556B3D' : '#344139'"
+          />
+        </view>
+      </view>
+
+      <view class="sidebar-footer">
+        <view
+          class="sidebar-avatar-entry"
+          :class="{ 'is-active': displayIndex === -1 }"
+          title="个人中心"
+          @click="navigate('/pages/tablet/profile/index')"
+        >
+          <view class="sidebar-avatar">
+            <text>{{ userInitial }}</text>
+          </view>
+          <view
+            class="avatar-sync-badge"
+            :class="syncBadgeClass"
+            title="点击立即同步"
+            @click.stop="syncStore.triggerSync()"
+          >
+            <view class="avatar-sync-dot"></view>
+          </view>
+        </view>
       </view>
     </view>
 
@@ -62,6 +69,9 @@
       <slot></slot>
     </view>
 
+    <view class="bg-glow bg-glow--1"></view>
+    <view class="bg-glow bg-glow--2"></view>
+
     <slot name="modal"></slot>
   </view>
 </template>
@@ -71,16 +81,20 @@ import { computed, onMounted, ref } from 'vue'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
+import { useSyncStore } from '@/store/useSyncStore'
 
+const authStore = useAuthStore()
 const layoutStore = useLayoutStore()
+const syncStore = useSyncStore()
 
 const getIndexByUrl = (path: string) => {
   if (path.includes('subject-hall') || path.includes('workspace')) return 1
   if (path.includes('pomodoro')) return 2
   if (path.includes('handwriting')) return tabletHandwritingNotesEnabled ? 3 : -2
-  if (path.includes('profile')) return tabletHandwritingNotesEnabled ? 4 : 3
-  if (path.includes('ai-search')) return -1
+  if (path.includes('ai-search')) return tabletHandwritingNotesEnabled ? 4 : 3
+  if (path.includes('profile')) return -1
   return 0
 }
 
@@ -125,6 +139,17 @@ const exitDir = ref<'up' | 'down' | 'left' | 'right'>('down')
 const slideDir = ref<'right' | 'left' | 'up' | 'down'>(layoutStore.getSlideDirection())
 const isReturning = computed(() => layoutStore.isReturning)
 
+const userInitial = computed(() => {
+  const name = (authStore.user?.displayName || authStore.username || 'U').trim()
+  return name.charAt(0).toUpperCase() || 'U'
+})
+
+const syncBadgeClass = computed(() => {
+  if (syncStore.isSyncing) return 'status-syncing'
+  if (syncStore.lastError) return 'status-error'
+  return 'status-connected'
+})
+
 const navItems = [
   { path: '/pages/tablet/dashboard/index', icon: 'home', label: '首页' },
   { path: '/pages/tablet/subject-hall/index', icon: 'book', label: '学科' },
@@ -132,7 +157,7 @@ const navItems = [
   ...(tabletHandwritingNotesEnabled
     ? [{ path: '/pages/tablet/handwriting/index', icon: 'edit', label: '手写' }]
     : []),
-  { path: '/pages/tablet/profile/index', icon: 'avatar', label: '我的' },
+  { path: '/pages/tablet/ai-search/index', icon: 'sparkles', label: 'AI 助手' },
 ]
 
 onMounted(() => {
@@ -181,57 +206,53 @@ const navigate = (path: string) => {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background-color: var(--color-bg-page);
+  background-color: var(--color-bg-secondary);
   overflow: hidden;
   position: relative;
 }
 
-.left-nav-column {
-  width: 76px;
-  height: calc(100vh - 28px);
-  margin: 14px 12px 14px 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-shrink: 0;
-  z-index: 100;
-}
-
 .sidebar {
-  width: 100%;
-  flex: 1;
+  width: 68px;
+  height: 100%;
   background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 24px;
+  border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px 0;
-  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  user-select: none;
+  box-sizing: border-box;
 }
 
 .logo-area {
+  width: 100%;
+  padding: 20px 0 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24px;
-  transition: transform 0.16s var(--ease-out);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 14px;
   cursor: pointer;
+  transition: transform 0.2s var(--ease-out);
+}
+
+.logo-area:hover {
+  transform: scale(1.06);
 }
 
 .logo-area:active {
-  transform: scale(0.92);
+  transform: scale(0.94);
 }
 
 .nav-menu {
   flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: 100%;
   align-items: center;
+  gap: 8px;
   position: relative;
 }
 
@@ -240,7 +261,7 @@ const navigate = (path: string) => {
   top: 0;
   left: 0;
   right: 0;
-  height: 62px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -249,73 +270,127 @@ const navigate = (path: string) => {
   transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.capsule-inner {
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+.nav-active-bar {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 3.5px;
+  height: 20px;
+  background: var(--accent-gradient);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.55);
 }
 
-.nav-bottom {
-  height: 4px;
+.capsule-inner {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background-color: rgba(139, 154, 110, 0.16);
 }
 
 .nav-item {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   cursor: pointer;
-  width: 54px;
-  height: 62px;
-  border-radius: 16px;
   position: relative;
   z-index: 2;
   transition: background-color 0.18s ease, transform 0.16s var(--ease-out);
 }
 
 .nav-item:hover {
-  background-color: var(--color-sage-bg);
+  background-color: rgba(139, 154, 110, 0.12);
 }
 
 .nav-item:active {
-  transform: scale(0.92);
+  transform: scale(0.94);
 }
 
-.icon-wrap {
+.sidebar-footer {
+  width: 100%;
+  padding: 14px 0 18px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.sidebar-avatar-entry {
+  position: relative;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.nav-label {
-  font-size: 11px;
-  font-weight: var(--font-weight-medium);
-  color: var(--text-muted);
-  line-height: 1;
-  transition: color 0.18s ease;
+.sidebar-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #FFFFFF;
+  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s ease;
 }
 
-.nav-label.label-active {
-  color: var(--color-sage-dark);
-  font-weight: var(--font-weight-bold);
+.sidebar-avatar-entry:hover .sidebar-avatar,
+.sidebar-avatar-entry.is-active .sidebar-avatar {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.28);
+}
+
+.avatar-sync-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.avatar-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #8B9A6E;
+}
+
+.avatar-sync-badge.status-syncing .avatar-sync-dot {
+  background-color: #C89B6D;
+  animation: syncPulse 1.4s ease-in-out infinite;
+}
+
+.avatar-sync-badge.status-error .avatar-sync-dot {
+  background-color: var(--color-danger);
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
 }
 
 .main-content {
   flex: 1;
   display: flex;
   min-width: 0;
-  margin: 14px 14px 14px 0;
+  height: 100%;
   position: relative;
-  z-index: 1;
-  height: calc(100vh - 28px);
-  background-color: var(--color-bg-primary);
-  border-radius: 24px;
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  z-index: 2;
+  background-color: var(--color-bg-secondary);
   overflow: hidden;
   opacity: 1;
   transform: translateY(0) translateX(0) scale(1);
@@ -384,40 +459,34 @@ const navigate = (path: string) => {
   100% { opacity: 0; transform: translateY(10px) scale(0.994); }
 }
 
-.tablet-ai-float {
-  width: 54px;
-  height: 54px;
+.bg-glow {
+  position: fixed;
   border-radius: 50%;
-  background: var(--accent-gradient);
-  box-shadow: var(--shadow-md), var(--accent-glow);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: transform 0.18s var(--ease-out), box-shadow 0.18s ease;
+  filter: blur(110px);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.32;
 }
 
-.tablet-ai-float:hover {
-  transform: scale(1.06);
+.bg-glow--1 {
+  width: 480px;
+  height: 480px;
+  background: rgba(139, 154, 110, 0.18);
+  top: -180px;
+  right: -80px;
 }
 
-.tablet-ai-float:active {
-  transform: scale(0.92);
-}
-
-.tablet-ai-float.is-active {
-  box-shadow: 0 0 0 4px var(--color-sage-bg), var(--shadow-md);
+.bg-glow--2 {
+  width: 340px;
+  height: 340px;
+  background: rgba(139, 154, 110, 0.12);
+  bottom: -100px;
+  left: 16%;
 }
 
 /* #ifdef H5 */
 .tablet-layout {
   height: 100dvh;
-}
-
-.left-nav-column,
-.main-content {
-  height: calc(100dvh - 28px);
 }
 /* #endif */
 </style>

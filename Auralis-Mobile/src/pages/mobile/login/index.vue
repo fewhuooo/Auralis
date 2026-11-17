@@ -1,12 +1,14 @@
 <template>
   <view class="login-viewport">
     <view class="login-page">
-      <view class="brand-header">
-        <BrandLogo size="42px" />
-        <text class="brand-title">Auralis</text>
-      </view>
+      <view class="side-shape"></view>
 
-      <view class="auth-card zen-card">
+      <view class="login-inner">
+        <view class="brand-header">
+          <BrandLogo size="32px" />
+          <text class="brand-title">AURALIS</text>
+        </view>
+
         <view v-if="mode !== 'reset'" class="ui-segmented mode-switch">
           <view
             class="ui-seg-item"
@@ -88,12 +90,12 @@
 
         <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-        <button class="ui-btn ui-btn-primary submit-btn" :loading="submitting" :disabled="pending" @click="submit">
+        <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">
           {{ actionLabel }}
         </button>
 
         <view v-if="mode === 'login'" class="auth-footer">
-          <text class="link-btn" @click="show('reset')">忘记密码</text>
+          <text class="link-btn" @click="show('reset')">忘记密码？</text>
         </view>
       </view>
     </view>
@@ -112,50 +114,63 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 <style scoped>
 .login-viewport {
   min-height: 100vh;
-  background-color: var(--color-bg-page);
+  background-color: var(--color-bg-secondary);
   display: flex;
   justify-content: center;
 }
 
 .login-page {
+  position: relative;
   width: 100%;
   max-width: 440px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
+  padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
   background-color: var(--color-bg-primary);
+  overflow: hidden;
   box-sizing: border-box;
+}
+
+.side-shape {
+  position: absolute;
+  bottom: -60px;
+  right: -60px;
+  width: 200px;
+  height: 200px;
+  background-color: var(--color-zen-sage);
+  border-radius: 50%;
+  filter: blur(45px);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.login-inner {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
 }
 
 .brand-header {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 24px;
+  gap: 12px;
+  margin-bottom: 28px;
 }
 
 .brand-title {
-  font-size: 24px;
-  font-weight: var(--font-weight-bold);
+  font-size: 28px;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.03em;
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 380px;
-  margin: 0 auto;
-  padding: 22px 20px;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-md);
-  box-sizing: border-box;
+  letter-spacing: -1.5px;
+  line-height: 1;
 }
 
 .mode-switch {
-  margin-bottom: 18px;
+  margin-bottom: 22px;
 }
 
 .ui-seg-item.is-disabled {
@@ -167,11 +182,11 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 22px;
 }
 
 .form-heading {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
@@ -179,14 +194,14 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .code-field {
-  height: 44px;
-  background-color: var(--color-bg-primary);
+  height: 42px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   padding: 0 6px 0 14px;
   display: flex;
   align-items: center;
@@ -205,14 +220,14 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 .code-button {
   flex-shrink: 0;
   padding: 0 12px;
-  height: 30px;
-  line-height: 30px;
+  height: 28px;
+  line-height: 28px;
   background: transparent;
   border-left: 1px solid var(--border-subtle);
   border-radius: 0;
   font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
-  color: var(--color-sage-dark);
+  color: var(--text-secondary);
 }
 
 .code-button[disabled] {
@@ -222,8 +237,8 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 .auth-feedback {
   display: block;
   margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
   background-color: var(--color-sage-bg);
   color: var(--color-sage-ink);
   font-size: var(--font-size-xs);
@@ -231,14 +246,27 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 }
 
 .submit-btn {
-  margin-top: 18px;
+  margin-top: 20px;
   width: 100%;
   height: 44px;
-  font-size: 14.5px;
+  background-color: var(--color-zen-sage);
+  color: #FFFFFF;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.25);
+}
+
+.submit-btn[disabled] {
+  opacity: 0.5;
 }
 
 .auth-footer {
-  margin-top: 14px;
+  margin-top: 16px;
   display: flex;
   justify-content: center;
 }
@@ -260,7 +288,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   .login-page {
     border-left: 1px solid var(--border-subtle);
     border-right: 1px solid var(--border-subtle);
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.04);
   }
 }
 /* #endif */

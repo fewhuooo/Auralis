@@ -2,19 +2,16 @@
   <view
     class="pomodoro-ring"
     :style="{
-      width: size || '256px',
-      height: size || '256px',
+      width: size || '264px',
+      height: size || '264px',
       background: ringBackground,
     }"
   >
-    <view
-      class="ring-inner"
-      :class="{ 'is-running': isRunning }"
-      @click="$emit('center-click')"
-    >
-      <text v-if="phaseLabel" class="phase-tag" :style="{ color }">{{ phaseLabel }}</text>
+    <view class="ring-inner" @click="$emit('center-click')">
       <text class="time-text num-tabular">{{ formattedTime }}</text>
-      <view v-if="isRunning" class="live-dot" :style="{ backgroundColor: color }"></view>
+      <view class="ring-pill" :class="{ 'is-pulsing': isRunning }">
+        <view class="pill-dot" :style="{ backgroundColor: color }"></view>
+      </view>
     </view>
   </view>
 </template>
@@ -38,7 +35,7 @@ const ringBackground = computed(() => {
     ? Math.max(0, Math.min(1, props.remainingSeconds / props.totalSeconds))
     : 0
   const deg = Math.round(ratio * 3600) / 10
-  return `conic-gradient(${props.color} ${deg}deg, rgba(28, 28, 26, 0.08) ${deg}deg)`
+  return `conic-gradient(${props.color} ${deg}deg, rgba(139, 154, 110, 0.14) ${deg}deg)`
 })
 
 const formattedTime = computed(() => {
@@ -53,14 +50,17 @@ const formattedTime = computed(() => {
 .pomodoro-ring {
   position: relative;
   border-radius: 50%;
-  padding: 6px;
+  padding: 5px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md);
   cursor: pointer;
-  transition: transform 0.2s var(--ease-out), background 0.3s linear;
+  transition: transform 0.25s var(--ease-out), background 0.3s linear;
+}
+
+.pomodoro-ring:hover {
+  transform: scale(1.012);
 }
 
 .pomodoro-ring:active {
@@ -71,41 +71,50 @@ const formattedTime = computed(() => {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--specular-top);
+  background-color: var(--color-bg-primary);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   position: relative;
 }
 
-.phase-tag {
-  font-size: 11px;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.08em;
-}
-
 .time-text {
-  font-size: clamp(46px, 5.5vw, 64px);
+  font-size: clamp(54px, 6vw, 72px);
   font-weight: var(--font-weight-bold);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   color: var(--text-primary);
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: -2px;
+  margin-top: -12px;
 }
 
-.live-dot {
-  width: 6px;
-  height: 6px;
+.ring-pill {
+  position: absolute;
+  bottom: 34px;
+  width: 38px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background-color: var(--color-bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+}
+
+.pill-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  animation: pulseDot 1.8s ease-in-out infinite;
 }
 
-@keyframes pulseDot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.35; transform: scale(0.75); }
+.ring-pill.is-pulsing .pill-dot {
+  animation: dotBreathe 2.4s ease-in-out infinite;
+}
+
+@keyframes dotBreathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.35); opacity: 1; }
 }
 </style>

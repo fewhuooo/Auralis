@@ -1,41 +1,43 @@
 /* ==========================================================================
-   Design System - Auralis Editorial Zen Palette (Mobile & Tablet)
+   Design System - Auralis Zen Minimalist (Aligned with Auralis-PC)
    Deterministic logical px + clamp() scale across H5, Tablet & MP-Weixin
+   3-Tier Surface Hierarchy:
+   1. Outer Shell (#EEEEEE) -> 2. Primary Panel (#F7F2EB) -> 3. Card/Input (#FAF7F2)
    ========================================================================== */
 
 page,
 :root {
-  /* ===== Botanical & Cotton-Paper Palette ===== */
+  /* ===== Zen Minimalist Palette ===== */
   --color-zen-ivory: #F7F2EB;
   --color-zen-graphite: #1C1C1A;
   --color-zen-sage: #8B9A6E;
-  --color-sage-dark: #6D7D51;
-  --color-sage-ink: #283721;
-  --color-zen-hairline: #DCD5C7;
+  --color-sage-dark: #76855B;
+  --color-sage-ink: #556B3D;
+  --color-zen-hairline: #DDD5C7;
   --color-zen-white: #FFFFFF;
-  --color-zen-stone: #9D9C95;
+  --color-zen-stone: #A8A8A5;
 
   --color-white: #FFFFFF;
   --color-black: #1C1C1A;
   --color-transparent: transparent;
 
   --color-gray-50: #F7F2EB;
-  --color-gray-100: #ECE6DA;
-  --color-gray-200: #ECEAE4;
-  --color-gray-300: #DCD5C7;
-  --color-gray-400: #9D9C95;
-  --color-gray-500: #76756F;
-  --color-gray-600: #595854;
-  --color-gray-700: #3E3E3A;
-  --color-gray-800: #2A2A27;
+  --color-gray-100: #EAE2D6;
+  --color-gray-200: #EEEEEE;
+  --color-gray-300: #DDD5C7;
+  --color-gray-400: #A8A8A5;
+  --color-gray-500: #7A7A75;
+  --color-gray-600: #5F5E5C;
+  --color-gray-700: #474741;
+  --color-gray-800: #2C2C28;
   --color-gray-900: #1C1C1A;
 
-  /* Surfaces (Gallery Stone -> Warm Oat -> Cotton Paper -> Elevated Paper) */
-  --color-bg-page: #ECEAE4;
+  /* 3-Tier Oatmeal Surfaces (#EEEEEE -> #F7F2EB -> #FAF7F2) */
+  --color-bg-page: #EEEEEE;
+  --color-bg-secondary: #EEEEEE;
   --color-bg-primary: #F7F2EB;
-  --color-bg-secondary: #ECE6DA;
   --color-bg-tertiary: #FAF7F2;
-  --color-bg-elevated: #FCF9F4;
+  --color-bg-elevated: #FAF7F2;
   --color-bg-card: #FAF7F2;
 
   --bg-primary: var(--color-bg-primary);
@@ -45,39 +47,38 @@ page,
 
   /* Ink Hierarchy */
   --text-primary: #1C1C1A;
-  --text-secondary: #3E3E3A;
-  --text-muted: #76756F;
-  --text-accent: var(--color-sage-dark);
+  --text-secondary: #2C2C28;
+  --text-muted: #7A7A75;
+  --text-accent: var(--color-zen-sage);
   --text-inverse: #FFFFFF;
 
   /* Hairlines & Borders */
-  --border-subtle: rgba(28, 28, 26, 0.07);
-  --border-default: rgba(28, 28, 26, 0.12);
-  --border-strong: rgba(28, 28, 26, 0.20);
-  --border-accent: rgba(139, 154, 110, 0.42);
-  --specular-top: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --border-accent: rgba(139, 154, 110, 0.45);
 
   /* Glassmorphism */
-  --glass-bg: rgba(250, 247, 242, 0.86);
-  --glass-border: rgba(28, 28, 26, 0.08);
-  --glass-shadow: 0 8px 32px rgba(28, 28, 26, 0.06);
+  --glass-bg: rgba(247, 242, 235, 0.92);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
   --glass-blur: blur(20px);
 
   /* Semantic Feedback */
-  --color-success: #6D7D51;
+  --color-success: #8B9A6E;
   --color-warning: #C89B6D;
-  --color-warning-bg: rgba(200, 155, 109, 0.14);
+  --color-warning-bg: rgba(200, 155, 109, 0.15);
   --color-danger: #C93B3B;
-  --color-danger-bg: rgba(201, 59, 59, 0.10);
+  --color-danger-bg: rgba(201, 59, 59, 0.09);
   --color-info: #6B8290;
 
-  /* Accent */
+  /* Sage Accent */
   --accent-start: #8B9A6E;
-  --accent-gradient: linear-gradient(135deg, #96A578 0%, #7B8B5E 100%);
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
   --btn-primary-bg: var(--accent-gradient);
-  --accent-glow: 0 6px 20px rgba(123, 139, 94, 0.26);
-  --color-sage-bg: rgba(139, 154, 110, 0.14);
-  --color-sage-glow: rgba(139, 154, 110, 0.26);
+  --accent-glow: 0 4px 14px rgba(139, 154, 110, 0.28);
+  --color-sage-bg: rgba(139, 154, 110, 0.12);
+  --color-sage-glow: rgba(139, 154, 110, 0.30);
 
   /* Typography */
   --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -89,18 +90,26 @@ page,
   --font-weight-bold: 700;
 
   --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-display: clamp(22px, 2.4vw, 28px);
+
   --font-size-xs: 12px;
-  --font-size-sm: 13.5px;
-  --font-size-base: 15px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
   --font-size-lg: 17px;
   --font-size-xl: 20px;
   --font-size-2xl: 24px;
-  --font-size-3xl: 30px;
-  --text-display: clamp(26px, 3vw, 34px);
+  --font-size-3xl: 28px;
 
-  --line-height-tight: 1.24;
+  --line-height-tight: 1.25;
   --line-height-normal: 1.5;
-  --line-height-relaxed: 1.7;
+  --line-height-relaxed: 1.75;
 
   /* Spacing & Radii */
   --spacing-1: 4px;
@@ -112,26 +121,28 @@ page,
   --spacing-8: 32px;
   --spacing-10: 40px;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-card: 16px;
   --radius-full: 9999px;
 
-  /* Umber Shadows (Directional, Subtle, Editorial) */
-  --shadow-sm: var(--specular-top), 0 1px 3px rgba(28, 28, 26, 0.04), 0 4px 12px rgba(28, 28, 26, 0.03);
-  --shadow-md: var(--specular-top), 0 2px 6px rgba(28, 28, 26, 0.05), 0 10px 28px rgba(28, 28, 26, 0.06);
-  --shadow-lg: var(--specular-top), 0 12px 40px rgba(28, 28, 26, 0.09);
-  --shadow-xl: 0 20px 56px rgba(28, 28, 26, 0.14);
+  /* Lightweight Zen Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px -1px rgba(0, 0, 0, 0.02);
+  --shadow-lg: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-xl: 0 16px 36px -6px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+  --panel-shadow: 0 2px 8px -2px rgba(60, 72, 50, 0.04), 0 12px 32px -4px rgba(60, 72, 50, 0.07);
 
-  /* Motion Curves */
+  /* Motion */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Shell Metrics */
   --phone-header-height: 52px;
-  --tablet-sidebar-width: 76px;
-  --tablet-panel-gap: 16px;
+  --tablet-sidebar-width: 68px;
+  --tablet-panel-gap: 14px;
 
   --color-pomodoro: #8B9A6E;
   --color-pomodoro-glow: rgba(139, 154, 110, 0.24);
@@ -167,10 +178,17 @@ button::after {
 }
 
 /* ===== Semantic Reusable Surface & Interactive Primitives ===== */
+.zen-panel {
+  background-color: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--panel-shadow);
+}
+
 .zen-card,
 .ui-surface {
-  background-color: var(--color-bg-card);
-  border-radius: var(--radius-lg);
+  background-color: var(--color-bg-tertiary);
+  border-radius: 14px;
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-sm);
 }
@@ -184,35 +202,42 @@ button::after {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 40px;
+  height: 38px;
   padding: 0 18px;
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
   border: 1px solid transparent;
   box-sizing: border-box;
-  transition: transform 0.16s var(--ease-out), background-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+  transition: transform 0.16s var(--ease-out), background-color 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+}
+
+.ui-btn.sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: var(--font-size-xs);
+  border-radius: 9px;
 }
 
 .ui-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.975);
 }
 
 .ui-btn[disabled],
 .ui-btn.is-disabled {
-  opacity: 0.48;
+  opacity: 0.5;
   pointer-events: none;
 }
 
 .ui-btn-primary {
   background: var(--accent-gradient);
   color: var(--text-inverse);
-  box-shadow: var(--accent-glow);
+  box-shadow: 0 4px 12px rgba(118, 135, 88, 0.28);
 }
 
 .ui-btn-secondary {
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
   border-color: var(--border-subtle);
   color: var(--text-primary);
 }
@@ -228,17 +253,23 @@ button::after {
 }
 
 .ui-icon-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-bg-card);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   cursor: pointer;
   flex-shrink: 0;
   transition: transform 0.16s var(--ease-out), background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.ui-icon-btn.sm {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
 }
 
 .ui-icon-btn:active {
@@ -247,10 +278,10 @@ button::after {
 
 .ui-input {
   width: 100%;
-  height: 44px;
+  height: 42px;
   padding: 0 14px;
-  border-radius: var(--radius-md);
-  background-color: var(--color-bg-primary);
+  border-radius: 12px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   font-size: var(--font-size-sm);
   color: var(--text-primary);
@@ -260,10 +291,10 @@ button::after {
 
 .ui-textarea {
   width: 100%;
-  min-height: 120px;
+  min-height: 112px;
   padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background-color: var(--color-bg-primary);
+  border-radius: 12px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   font-size: var(--font-size-sm);
   line-height: 1.6;
@@ -274,11 +305,11 @@ button::after {
 .ui-segmented {
   display: flex;
   align-items: center;
-  padding: 4px;
-  border-radius: var(--radius-md);
-  background-color: var(--color-bg-primary);
+  padding: 3px;
+  border-radius: 12px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
-  gap: 4px;
+  gap: 3px;
 }
 
 .ui-seg-item {
@@ -296,25 +327,31 @@ button::after {
 }
 
 .ui-seg-item.active {
-  background-color: var(--color-bg-card);
+  background-color: var(--color-bg-primary);
   color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .ui-tag {
   display: inline-flex;
   align-items: center;
-  padding: 3px 9px;
-  border-radius: 7px;
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
   background-color: var(--color-sage-bg);
   color: var(--color-sage-ink);
-  line-height: 1.3;
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  line-height: 1.35;
+}
+
+.ui-tag.sage {
+  background-color: rgba(139, 154, 110, 0.16);
+  color: var(--color-sage-ink);
 }
 
 .ui-shimmer {
-  background: linear-gradient(90deg, var(--color-bg-secondary) 25%, var(--color-bg-primary) 50%, var(--color-bg-secondary) 75%);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(255, 255, 255, 0.45) 50%, rgba(0, 0, 0, 0.04) 75%);
   background-size: 200% 100%;
   animation: uiShimmer 1.5s infinite linear;
   border-radius: var(--radius-sm);
@@ -353,7 +390,7 @@ button::after {
 
 .zen-modal-body {
   width: 100%;
-  background-color: var(--color-bg-elevated);
+  background-color: var(--color-bg-primary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-xl);
@@ -364,7 +401,7 @@ button::after {
 
 .zen-sheet-body {
   width: 100%;
-  background-color: var(--color-bg-elevated);
+  background-color: var(--color-bg-primary);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   border-top: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-xl);
@@ -399,9 +436,9 @@ button::after {
 .ui-input:focus,
 .ui-textarea:focus {
   outline: none;
-  border-color: var(--border-accent);
-  background-color: var(--color-bg-elevated);
-  box-shadow: 0 0 0 3px var(--color-sage-bg);
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
 
 @media (min-width: 540px) {

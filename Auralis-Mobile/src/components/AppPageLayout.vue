@@ -89,7 +89,7 @@ onMounted(() => {
 .mobile-viewport-shell {
   width: 100%;
   height: 100vh;
-  background-color: var(--color-bg-page);
+  background-color: var(--color-bg-secondary);
 }
 
 .layout-container {
@@ -117,7 +117,7 @@ onMounted(() => {
 }
 
 .layout-container.has-tabbar .page-layer {
-  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -183,7 +183,7 @@ onMounted(() => {
     margin: 0 auto;
     border-left: 1px solid var(--border-subtle);
     border-right: 1px solid var(--border-subtle);
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.04);
   }
 }
 /* #endif */

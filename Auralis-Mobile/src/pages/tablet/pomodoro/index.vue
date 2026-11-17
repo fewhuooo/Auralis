@@ -2,13 +2,13 @@
   <TabletLayout>
     <view class="t-pomodoro">
       <view class="main-content">
-        <view class="left-column">
+        <view class="left-column zen-panel">
           <TimerCore @center-click="openTaskPicker" />
         </view>
 
         <view class="right-column">
-          <view class="panel-card zen-card">
-            <text class="card-title">关联任务</text>
+          <view class="panel-card zen-panel">
+            <text class="card-title">当前专注</text>
             <view
               class="task-box"
               :class="{ 'is-locked': focusStore.isTaskLocked }"
@@ -17,7 +17,7 @@
               <LineIcon
                 :name="focusStore.isTaskLocked ? 'lock' : 'calendar'"
                 size="16px"
-                color="var(--color-sage-dark)"
+                color="var(--color-sage-ink)"
               />
               <text class="task-name">
                 {{ focusStore.selectedTaskTitle || '自由专注' }}
@@ -26,7 +26,7 @@
             </view>
           </view>
 
-          <view v-if="focusStore.lastCompletedTask" class="panel-card zen-card prompt-card">
+          <view v-if="focusStore.lastCompletedTask" class="panel-card zen-panel prompt-card">
             <text class="prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
             <view class="prompt-actions">
               <view class="ui-btn ui-btn-secondary prompt-btn" @click="focusStore.dismissCompletedTaskPrompt()">暂不</view>
@@ -34,12 +34,12 @@
             </view>
           </view>
 
-          <view class="panel-card zen-card">
-            <text class="card-title">今日专注</text>
+          <view class="panel-card zen-panel">
+            <text class="card-title">今日专注看板</text>
             <view class="stats-container">
               <view class="stat-col">
                 <text class="stat-val num-tabular">{{ focusStore.todayRounds }}</text>
-                <text class="stat-label">轮次</text>
+                <text class="stat-label">今日番茄</text>
               </view>
               <view class="stat-divider"></view>
               <view class="stat-col">
@@ -47,7 +47,7 @@
                   <text class="stat-val num-tabular">{{ focusStore.todayFocusMinutes }}</text>
                   <text class="stat-unit">m</text>
                 </view>
-                <text class="stat-label">分钟</text>
+                <text class="stat-label">专注时长</text>
               </view>
             </view>
           </view>
@@ -117,49 +117,49 @@ async function completeBoundTask() {
   display: flex;
   width: 100%;
   height: 100%;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-secondary);
+  padding: 16px;
+  box-sizing: border-box;
   overflow: hidden;
 }
 
 .main-content {
   width: 100%;
-  max-width: 1020px;
-  margin: 0 auto;
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 28px 32px;
-  gap: 36px;
+  gap: 14px;
   box-sizing: border-box;
-  align-items: center;
 }
 
 .left-column {
-  flex: 5.5;
+  flex: 6.2;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-width: 0;
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .right-column {
-  flex: 4.5;
+  flex: 3.8;
   min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .panel-card {
-  padding: 20px;
+  padding: 22px 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
 }
@@ -169,8 +169,8 @@ async function completeBoundTask() {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  border-radius: 14px;
-  background-color: var(--color-bg-primary);
+  border-radius: 12px;
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   cursor: pointer;
 }
@@ -213,6 +213,7 @@ async function completeBoundTask() {
 .stats-container {
   display: flex;
   align-items: center;
+  padding-top: 4px;
 }
 
 .stat-col {
@@ -220,8 +221,7 @@ async function completeBoundTask() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 0;
+  gap: 6px;
 }
 
 .val-wrapper {
@@ -233,7 +233,7 @@ async function completeBoundTask() {
 .stat-val {
   font-size: 32px;
   font-weight: var(--font-weight-bold);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   color: var(--text-primary);
   line-height: 1;
 }
@@ -250,7 +250,7 @@ async function completeBoundTask() {
 
 .stat-divider {
   width: 1px;
-  height: 38px;
+  height: 36px;
   background-color: var(--border-subtle);
 }
 
@@ -258,7 +258,7 @@ async function completeBoundTask() {
   .main-content {
     flex-direction: column;
     overflow-y: auto;
-    gap: 24px;
+    height: auto;
   }
 
   .left-column,
