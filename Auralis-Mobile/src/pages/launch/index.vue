@@ -1,9 +1,7 @@
 <template>
   <view class="launch-page">
-    <view class="launch-card">
-      <BrandLogo size="96rpx" />
-      <text class="launch-title">Auralis</text>
-      <text class="launch-subtitle">正在载入工作空间…</text>
+    <view class="launch-mark">
+      <BrandLogo size="48px" />
     </view>
   </view>
 </template>
@@ -46,22 +44,18 @@ onMounted(async () => {
   background-color: var(--color-bg-primary);
 }
 
-.launch-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18rpx;
+.launch-mark {
+  animation: launchBreathe 1.8s var(--ease-out) infinite alternate;
 }
 
-.launch-title {
-  font-size: 42rpx;
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-  letter-spacing: 1rpx;
+@keyframes launchBreathe {
+  0% { opacity: 0.72; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1.03); }
 }
 
-.launch-subtitle {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
+/* #ifdef H5 */
+.launch-page {
+  min-height: 100dvh;
 }
+/* #endif */
 </style>

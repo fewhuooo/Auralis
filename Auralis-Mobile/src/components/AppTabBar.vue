@@ -17,15 +17,15 @@
       >
         <LineIcon
           :name="item.icon"
-          size="38rpx"
-          :color="displayIndex === idx ? '#8B9A6E' : '#7A7A75'"
+          size="19px"
+          :color="displayIndex === idx ? '#6D7D51' : '#76756F'"
         />
         <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
       </view>
     </view>
 
     <view class="app-ai-float" @click="goToAi">
-      <LineIcon name="sparkles" size="42rpx" color="#FFFFFF" />
+      <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
     </view>
   </view>
 </template>
@@ -90,22 +90,33 @@ function goToAi() {
 <style scoped>
 .app-bar-container {
   pointer-events: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  margin: 0 auto;
+  max-width: 440px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 999;
+  box-sizing: border-box;
 }
 
 .app-tabbar-float {
   pointer-events: auto;
-  position: fixed;
-  bottom: calc(28rpx + env(safe-area-inset-bottom));
-  left: 28rpx;
-  right: 164rpx;
-  height: 112rpx;
-  background-color: var(--color-bg-card);
+  flex: 1;
+  min-width: 0;
+  height: 58px;
+  position: relative;
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(20px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
-  padding: 0 8rpx;
-  z-index: 999;
+  padding: 0 5px;
   box-shadow: var(--shadow-md);
   box-sizing: border-box;
 }
@@ -114,8 +125,8 @@ function goToAi() {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 8rpx;
-  width: calc((100% - 16rpx) / 4);
+  left: 5px;
+  width: calc((100% - 10px) / 4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,12 +135,12 @@ function goToAi() {
 }
 
 .active-pill-indicator.animate-pill {
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pill-inner {
-  width: 90%;
-  height: 88rpx;
+  width: 92%;
+  height: 46px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
 }
@@ -141,10 +152,11 @@ function goToAi() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4rpx;
+  gap: 3px;
   position: relative;
   z-index: 2;
-  transition: transform 0.16s ease;
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-out);
 }
 
 .tab-item:active {
@@ -152,35 +164,33 @@ function goToAi() {
 }
 
 .tab-label {
-  font-size: 20rpx;
+  font-size: 11px;
   font-weight: var(--font-weight-medium);
   color: var(--text-muted);
   line-height: 1;
 }
 
 .tab-label.is-active {
-  color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
   font-weight: var(--font-weight-bold);
 }
 
 .app-ai-float {
   pointer-events: auto;
-  position: fixed;
-  bottom: calc(28rpx + env(safe-area-inset-bottom));
-  right: 28rpx;
-  width: 112rpx;
-  height: 112rpx;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
   background: var(--accent-gradient);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md), 0 8rpx 24rpx rgba(139, 154, 110, 0.32);
-  z-index: 999;
-  transition: transform 0.16s ease;
+  box-shadow: var(--shadow-md), var(--accent-glow);
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-out), box-shadow 0.18s ease;
 }
 
 .app-ai-float:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 </style>

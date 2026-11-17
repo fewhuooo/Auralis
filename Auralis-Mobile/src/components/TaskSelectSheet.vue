@@ -2,9 +2,9 @@
   <view v-if="visible" class="zen-sheet-mask" @click="close">
     <view class="zen-sheet-body sheet-panel" @click.stop>
       <view class="sheet-header">
-        <text class="sheet-title">选择专注关联任务</text>
-        <view class="sheet-close" @click="close">
-          <LineIcon name="close" size="34rpx" color="var(--text-muted)" />
+        <text class="sheet-title">关联任务</text>
+        <view class="ui-icon-btn" @click="close">
+          <LineIcon name="close" size="16px" color="var(--text-muted)" />
         </view>
       </view>
 
@@ -14,18 +14,15 @@
           :class="{ 'is-selected': !selectedTaskId }"
           @click="choose(null)"
         >
-          <view class="option-icon free">
-            <LineIcon name="sparkles" size="32rpx" color="var(--color-zen-sage)" />
+          <view class="option-icon">
+            <LineIcon name="sparkles" size="16px" color="var(--color-sage-dark)" />
           </view>
-          <view class="option-body">
-            <text class="option-title">自由学习</text>
-            <text class="option-meta">不绑定具体任务，专注计时完成后仍计入专注记录</text>
-          </view>
-          <LineIcon v-if="!selectedTaskId" name="check" size="32rpx" color="var(--color-zen-sage)" />
+          <text class="option-title">自由专注</text>
+          <LineIcon v-if="!selectedTaskId" name="check" size="16px" color="var(--color-sage-dark)" />
         </view>
 
         <view v-if="scheduledTasks.length > 0" class="group-section">
-          <text class="group-label">已排期日程</text>
+          <text class="group-label">日程</text>
           <view
             v-for="task in scheduledTasks"
             :key="task.id"
@@ -34,21 +31,21 @@
             @click="choose(task)"
           >
             <view class="option-icon">
-              <LineIcon name="calendar" size="30rpx" color="var(--color-zen-sage)" />
+              <LineIcon name="calendar" size="15px" color="var(--color-sage-dark)" />
             </view>
             <view class="option-body">
               <text class="option-title">{{ task.name }}</text>
-              <text class="option-meta">
+              <text class="option-meta num-tabular">
                 {{ formatShortDate(task.scheduledAt) }} {{ formatLocalTimeHHmm(task.scheduledAt) }}
-                · {{ task.subject || '通用' }} · {{ task.duration || 30 }} 分钟
+                · {{ task.duration || 30 }}m
               </text>
             </view>
-            <LineIcon v-if="selectedTaskId === task.id" name="check" size="32rpx" color="var(--color-zen-sage)" />
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="var(--color-sage-dark)" />
           </view>
         </view>
 
         <view v-if="pendingTasks.length > 0" class="group-section">
-          <text class="group-label">待办清单</text>
+          <text class="group-label">待办</text>
           <view
             v-for="task in pendingTasks"
             :key="task.id"
@@ -57,21 +54,14 @@
             @click="choose(task)"
           >
             <view class="option-icon">
-              <LineIcon name="layers" size="30rpx" color="var(--text-muted)" />
+              <LineIcon name="layers" size="15px" color="var(--text-muted)" />
             </view>
             <view class="option-body">
               <text class="option-title">{{ task.name }}</text>
-              <text class="option-meta">
-                {{ task.subject || '通用' }} · {{ task.duration || 30 }} 分钟
-              </text>
+              <text v-if="task.subject" class="option-meta num-tabular">{{ task.subject }} · {{ task.duration || 30 }}m</text>
             </view>
-            <LineIcon v-if="selectedTaskId === task.id" name="check" size="32rpx" color="var(--color-zen-sage)" />
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="var(--color-sage-dark)" />
           </view>
-        </view>
-
-        <view v-if="scheduledTasks.length === 0 && pendingTasks.length === 0" class="empty-tip">
-          <LineIcon name="coffee" size="48rpx" color="var(--text-muted)" />
-          <text class="empty-text">暂无待办或已排期任务，可直接使用自由学习</text>
         </view>
       </scroll-view>
     </view>
@@ -116,7 +106,7 @@ function choose(task: Task | null) {
 
 <style scoped>
 .sheet-panel {
-  max-height: 72vh;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
 }
@@ -125,7 +115,7 @@ function choose(task: Task | null) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24rpx;
+  margin-bottom: 14px;
 }
 
 .sheet-title {
@@ -134,22 +124,12 @@ function choose(task: Task | null) {
   color: var(--text-primary);
 }
 
-.sheet-close {
-  width: 60rpx;
-  height: 60rpx;
-  border-radius: 50%;
-  background-color: var(--color-bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .sheet-scroll {
-  max-height: 54vh;
+  max-height: 52vh;
 }
 
 .group-section {
-  margin-top: 24rpx;
+  margin-top: 14px;
 }
 
 .group-label {
@@ -157,20 +137,20 @@ function choose(task: Task | null) {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
-  margin-bottom: 12rpx;
-  padding-left: 8rpx;
+  margin-bottom: 8px;
 }
 
 .task-option {
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  padding: 22rpx 24rpx;
+  gap: 12px;
+  padding: 11px 12px;
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 24rpx;
-  margin-bottom: 14rpx;
-  transition: all 0.16s ease;
+  border-radius: 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
 .task-option.is-selected {
@@ -179,9 +159,9 @@ function choose(task: Task | null) {
 }
 
 .option-icon {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 18rpx;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   background-color: var(--color-bg-card);
   display: flex;
   align-items: center;
@@ -194,10 +174,11 @@ function choose(task: Task | null) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 2px;
 }
 
 .option-title {
+  flex: 1;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
@@ -207,20 +188,22 @@ function choose(task: Task | null) {
 }
 
 .option-meta {
-  font-size: 22rpx;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
-.empty-tip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14rpx;
-  padding: 36rpx 24rpx;
-}
+/* #ifdef H5 */
+@media (min-width: 540px) {
+  .zen-sheet-mask {
+    justify-content: center;
+    padding: 24px;
+  }
 
-.empty-text {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  .zen-sheet-body {
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-subtle);
+    padding: 22px;
+  }
 }
+/* #endif */
 </style>

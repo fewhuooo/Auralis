@@ -2,50 +2,44 @@
   <view class="login-page">
     <view class="login-wrapper">
       <view class="brand-side">
+        <view class="brand-ring ring-outer"></view>
+        <view class="brand-ring ring-inner"></view>
+        <view class="brand-glow"></view>
         <view class="brand-content">
-          <BrandLogo size="88rpx" />
-          <text class="brand-title">AURALIS</text>
-          <view class="brand-manifesto">
-            <text class="manifesto-line">重塑碎片信息</text>
-            <text class="manifesto-line">构建深度知识链接</text>
-            <text class="manifesto-line">让每一份思考都有迹可循</text>
-          </view>
+          <BrandLogo size="46px" />
+          <text class="brand-title">Auralis</text>
         </view>
-        <view class="side-glow"></view>
       </view>
 
       <view class="form-side">
         <view class="login-box">
-          <view class="form-header">
-            <text class="form-title">
-              {{ mode === 'reset' ? '重置密码' : mode === 'login' ? '欢迎回来' : '开启新旅程' }}
-            </text>
-            <text class="form-subtitle">
-              {{ mode === 'reset' ? '使用注册邮箱接收验证码并设置新密码' : '使用 Auralis 账号继续您的平板学习空间' }}
-            </text>
-          </view>
-
-          <view v-if="mode !== 'reset'" class="auth-toggle">
+          <view v-if="mode !== 'reset'" class="ui-segmented auth-toggle">
             <view
-              class="toggle-btn"
-              :class="{ active: mode === 'login', disabled: pending }"
+              class="ui-seg-item"
+              :class="{ active: mode === 'login', 'is-disabled': pending }"
               @click="show('login')"
             >
               <text>登录</text>
             </view>
             <view
-              class="toggle-btn"
-              :class="{ active: mode === 'register', disabled: pending }"
+              class="ui-seg-item"
+              :class="{ active: mode === 'register', 'is-disabled': pending }"
               @click="show('register')"
             >
               <text>注册</text>
             </view>
           </view>
+          <view v-else class="reset-header">
+            <view class="ui-icon-btn" @click="show('login')">
+              <LineIcon name="back" size="16px" color="var(--text-primary)" />
+            </view>
+            <text class="form-title">重置密码</text>
+          </view>
 
           <view class="form-stack">
             <input
               v-if="mode !== 'reset'"
-              class="zen-input"
+              class="ui-input"
               v-model="form.username"
               :maxlength="mode === 'login' ? 254 : 64"
               :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
@@ -54,10 +48,10 @@
 
             <template v-if="mode !== 'login'">
               <input
-                class="zen-input"
+                class="ui-input"
                 v-model="form.email"
                 :maxlength="254"
-                placeholder="邮箱地址"
+                placeholder="邮箱"
                 :disabled="pending"
               />
               <view class="code-field">
@@ -66,7 +60,7 @@
                   v-model="form.emailCode"
                   type="number"
                   :maxlength="6"
-                  placeholder="6 位邮箱验证码"
+                  placeholder="验证码"
                   :disabled="pending"
                 />
                 <button
@@ -75,22 +69,22 @@
                   :disabled="sendDisabled"
                   @click="sendCode"
                 >
-                  {{ sending ? '发送中…' : sendLabel }}
+                  {{ sending ? '发送中' : sendLabel }}
                 </button>
               </view>
             </template>
 
             <input
-              class="zen-input"
+              class="ui-input"
               v-model="form.password"
               password
-              :placeholder="mode === 'reset' ? '新密码（至少 8 位含大小写和符号）' : mode === 'register' ? '密码（至少 8 位含大小写和符号）' : '密码'"
+              :placeholder="mode === 'login' ? '密码' : '8+位含大小写及符号'"
               :disabled="pending"
             />
 
             <input
               v-if="mode !== 'login'"
-              class="zen-input"
+              class="ui-input"
               v-model="form.confirmPassword"
               password
               placeholder="确认密码"
@@ -100,13 +94,12 @@
 
           <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-          <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">
+          <button class="ui-btn ui-btn-primary submit-btn" :loading="submitting" :disabled="pending" @click="submit">
             {{ actionLabel }}
           </button>
 
-          <view class="footer-links">
-            <text v-if="mode === 'login'" class="footer-link" @click="show('reset')">忘记密码？</text>
-            <text v-else class="footer-link" @click="show('login')">返回登录</text>
+          <view v-if="mode === 'login'" class="footer-links">
+            <text class="footer-link" @click="show('reset')">忘记密码</text>
           </view>
         </view>
       </view>
@@ -116,6 +109,7 @@
 
 <script setup lang="ts">
 import BrandLogo from '@/components/BrandLogo.vue'
+import LineIcon from '@/components/LineIcon.vue'
 import { useAuthForm } from '@/composables/useAuthForm'
 
 const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
@@ -128,7 +122,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 36rpx;
+  padding: 24px;
   background-color: var(--color-bg-page);
   box-sizing: border-box;
 }
@@ -136,25 +130,52 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 .login-wrapper {
   display: flex;
   width: 100%;
-  max-width: 1440rpx;
-  min-height: 820rpx;
+  max-width: 860px;
+  min-height: 500px;
   background-color: var(--color-bg-card);
-  border-radius: 48rpx;
+  border-radius: 28px;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-lg);
 }
 
 .brand-side {
-  width: 42%;
+  width: 44%;
   background-color: var(--color-bg-primary);
   position: relative;
   display: flex;
   align-items: center;
-  padding: 72rpx;
+  justify-content: center;
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
   box-sizing: border-box;
+}
+
+.brand-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  pointer-events: none;
+}
+
+.ring-outer {
+  width: 340px;
+  height: 340px;
+}
+
+.ring-inner {
+  width: 220px;
+  height: 220px;
+  border-color: rgba(139, 154, 110, 0.34);
+}
+
+.brand-glow {
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139, 154, 110, 0.16) 0%, transparent 72%);
+  pointer-events: none;
 }
 
 .brand-content {
@@ -162,38 +183,16 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   z-index: 2;
   display: flex;
   flex-direction: column;
-  gap: 28rpx;
+  align-items: center;
+  gap: 14px;
 }
 
 .brand-title {
-  font-size: 64rpx;
+  font-size: 30px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  letter-spacing: -1rpx;
-  line-height: 1.05;
-}
-
-.brand-manifesto {
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-}
-
-.manifesto-line {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.side-glow {
-  position: absolute;
-  bottom: -120rpx;
-  right: -120rpx;
-  width: 360rpx;
-  height: 360rpx;
-  border-radius: 50%;
-  background-color: rgba(139, 154, 110, 0.18);
-  pointer-events: none;
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
 
 .form-side {
@@ -201,87 +200,53 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 64rpx 72rpx;
+  padding: 40px 44px;
   background-color: var(--color-bg-card);
   box-sizing: border-box;
 }
 
 .login-box {
   width: 100%;
-  max-width: 620rpx;
-}
-
-.form-header {
-  margin-bottom: 36rpx;
-}
-
-.form-title {
-  display: block;
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-  margin-bottom: 10rpx;
-}
-
-.form-subtitle {
-  display: block;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  max-width: 340px;
 }
 
 .auth-toggle {
+  margin-bottom: 20px;
+}
+
+.ui-seg-item.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.reset-header {
   display: flex;
-  background-color: var(--color-bg-primary);
-  padding: 8rpx;
-  border-radius: 24rpx;
-  margin-bottom: 32rpx;
-  border: 1px solid var(--border-subtle);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
-.toggle-btn {
-  flex: 1;
-  text-align: center;
-  padding: 16rpx 0;
-  border-radius: 18rpx;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.toggle-btn.active {
-  background-color: var(--color-bg-card);
+.form-title {
+  font-size: 20px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.toggle-btn.disabled {
-  opacity: 0.6;
 }
 
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 12px;
 }
 
-.zen-input,
 .code-field {
-  height: 92rpx;
+  height: 44px;
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 24rpx;
-  padding: 0 28rpx;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.code-field {
+  border-radius: var(--radius-md);
+  padding: 0 6px 0 14px;
   display: flex;
   align-items: center;
-  padding-right: 14rpx;
+  box-sizing: border-box;
 }
 
 .code-input {
@@ -295,65 +260,42 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 .code-button {
   flex-shrink: 0;
-  margin: 0;
-  padding: 0 22rpx;
-  height: 54rpx;
-  line-height: 54rpx;
+  padding: 0 12px;
+  height: 30px;
+  line-height: 30px;
   background: transparent;
-  border: none;
   border-left: 1px solid var(--border-subtle);
   border-radius: 0;
-  font-size: 26rpx;
+  font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
-  color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
   cursor: pointer;
-}
-
-.code-button::after {
-  border: none;
 }
 
 .code-button[disabled] {
   color: var(--text-muted);
-  background: transparent;
 }
 
 .auth-feedback {
   display: block;
-  margin-top: 20rpx;
-  padding: 16rpx 20rpx;
-  border-radius: 18rpx;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
   background-color: var(--color-sage-bg);
-  color: var(--text-secondary);
+  color: var(--color-sage-ink);
   font-size: var(--font-size-xs);
   line-height: 1.5;
 }
 
 .submit-btn {
-  margin-top: 32rpx;
+  margin-top: 20px;
   width: 100%;
-  height: 92rpx;
-  line-height: 92rpx;
-  background: var(--accent-gradient);
-  color: var(--text-inverse);
-  border-radius: 24rpx;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  border: none;
-  box-shadow: 0 8rpx 24rpx rgba(139, 154, 110, 0.28);
-  cursor: pointer;
-}
-
-.submit-btn::after {
-  border: none;
-}
-
-.submit-btn[disabled] {
-  opacity: 0.6;
+  height: 44px;
+  font-size: 14.5px;
 }
 
 .footer-links {
-  margin-top: 24rpx;
+  margin-top: 14px;
   text-align: center;
 }
 
@@ -361,16 +303,22 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   font-size: var(--font-size-xs);
   color: var(--text-muted);
   cursor: pointer;
-  padding: 8rpx 16rpx;
+  padding: 4px 10px;
 }
 
-@media (max-width: 720px) {
+/* #ifdef H5 */
+.login-page {
+  min-height: 100dvh;
+}
+/* #endif */
+
+@media (max-width: 760px) {
   .brand-side {
     display: none;
   }
 
   .form-side {
-    padding: 48rpx 36rpx;
+    padding: 32px 24px;
   }
 }
 </style>

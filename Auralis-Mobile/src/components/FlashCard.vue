@@ -1,29 +1,24 @@
 <template>
   <view class="flash-card-container" @click="toggleFlip">
-    <view v-if="!flipped" class="card-face zen-card">
+    <view v-if="!flipped" class="card-face zen-card front-face">
       <view class="card-header">
-        <view class="subject-badge">
-          <text>{{ subject || '未分类' }}</text>
+        <view class="ui-tag">
+          <text>{{ subject || '通用' }}</text>
         </view>
-        <text class="state-indicator">问题</text>
+        <LineIcon name="rotate" size="16px" color="var(--text-muted)" />
       </view>
 
       <view class="card-front-body">
         <text class="front-text">{{ front }}</text>
       </view>
-
-      <view class="card-footer">
-        <LineIcon name="eye" size="28rpx" color="var(--text-muted)" />
-        <text class="hint-text">轻触卡片翻看答案</text>
-      </view>
     </view>
 
-    <view v-else class="card-face card-back zen-card">
+    <view v-else class="card-face zen-card back-face">
       <view class="card-header">
-        <view class="subject-badge active">
-          <text>{{ subject || '未分类' }}</text>
+        <view class="ui-tag">
+          <text>{{ subject || '通用' }}</text>
         </view>
-        <text class="state-indicator answer">解析答案</text>
+        <LineIcon name="rotate" size="16px" color="var(--color-sage-dark)" />
       </view>
 
       <view class="question-recap">
@@ -31,12 +26,10 @@
       </view>
 
       <scroll-view scroll-y :show-scrollbar="false" class="card-back-scroll" @click.stop>
-        <MarkdownText :content="back" />
+        <view class="answer-prose">
+          <MarkdownText :content="back" />
+        </view>
       </scroll-view>
-
-      <view class="card-footer">
-        <text class="hint-text">根据回忆程度选择下方反馈</text>
-      </view>
     </view>
   </view>
 </template>
@@ -65,51 +58,30 @@ function toggleFlip() {
 .flash-card-container {
   width: 100%;
   height: 100%;
-  min-height: 520rpx;
+  min-height: 280px;
+  cursor: pointer;
 }
 
 .card-face {
   width: 100%;
   height: 100%;
-  padding: 36rpx 32rpx;
+  padding: 24px 28px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  animation: cardReveal 0.2s var(--ease-out) both;
+}
+
+@keyframes cardReveal {
+  0% { opacity: 0.72; transform: scale(0.985); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 20rpx;
-  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-}
-
-.subject-badge {
-  padding: 8rpx 20rpx;
-  border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.subject-badge.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
-  color: var(--color-zen-sage);
-}
-
-.state-indicator {
-  font-size: 22rpx;
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
-}
-
-.state-indicator.answer {
-  color: var(--color-zen-sage);
 }
 
 .card-front-body {
@@ -117,53 +89,42 @@ function toggleFlip() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32rpx 12rpx;
+  padding: 20px 8px;
 }
 
 .front-text {
-  font-size: 38rpx;
+  max-width: 30ch;
+  font-size: clamp(20px, 2.4vw, 26px);
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   text-align: center;
-  line-height: 1.45;
+  line-height: 1.42;
+  letter-spacing: -0.02em;
   word-break: break-word;
 }
 
 .question-recap {
-  margin-top: 20rpx;
-  padding: 16rpx 20rpx;
-  background-color: var(--color-bg-primary);
-  border-radius: 18rpx;
-  border: 1px solid var(--border-subtle);
+  margin-top: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .recap-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: 16px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   line-height: 1.45;
+  letter-spacing: -0.01em;
 }
 
 .card-back-scroll {
   flex: 1;
   min-height: 0;
-  margin-top: 18rpx;
+  margin-top: 16px;
 }
 
-.card-footer {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8rpx;
-  padding-top: 20rpx;
-  margin-top: 16rpx;
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.hint-text {
-  font-size: 22rpx;
-  color: var(--text-muted);
+.answer-prose {
+  padding-bottom: 8px;
 }
 </style>

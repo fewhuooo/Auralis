@@ -4,11 +4,10 @@
     <view class="app-header-bar" :style="headerBarStyle">
       <view class="header-left">
         <view v-if="effectiveShowBack" class="icon-btn back-btn" @click="handleBack">
-          <LineIcon name="back" size="38rpx" color="var(--text-primary)" />
+          <LineIcon name="back" size="18px" color="var(--text-primary)" />
         </view>
-        <view class="title-group">
-          <text v-if="title" class="header-title-left">{{ title }}</text>
-          <text v-if="subtitle" class="header-subtitle">{{ subtitle }}</text>
+        <view v-if="title" class="title-group">
+          <text class="header-title-left">{{ title }}</text>
         </view>
         <slot name="left"></slot>
       </view>
@@ -16,7 +15,7 @@
       <view class="header-right">
         <slot name="right">
           <view v-if="rightIcon" class="icon-btn right-action-btn" @click="handleRightClick">
-            <LineIcon :name="rightIcon" size="36rpx" color="var(--text-primary)" />
+            <LineIcon :name="rightIcon" size="18px" color="var(--text-primary)" />
           </view>
         </slot>
       </view>
@@ -31,10 +30,6 @@ import { useLayoutStore } from '@/store/useLayoutStore'
 
 const props = defineProps({
   title: {
-    type: String,
-    default: '',
-  },
-  subtitle: {
     type: String,
     default: '',
   },
@@ -56,7 +51,7 @@ const props = defineProps({
   },
   showBorder: {
     type: Boolean,
-    default: true,
+    default: false,
   },
 })
 
@@ -95,7 +90,7 @@ const topLevelRoutes = [
 
 function handleBack() {
   emit('back-click')
-  layoutStore.triggerReturn(480)
+  layoutStore.triggerReturn(360)
   if (props.backUrl) {
     if (topLevelRoutes.some(route => props.backUrl.includes(route.replace('/pages/mobile/', '')))) {
       uni.reLaunch({ url: props.backUrl })
@@ -145,40 +140,32 @@ function handleRightClick() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
+  gap: 12px;
   min-height: var(--phone-header-height);
-  padding: 16rpx 32rpx;
+  padding: 8px 18px;
   box-sizing: border-box;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 10px;
   flex: 1;
   min-width: 0;
 }
 
 .title-group {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   min-width: 0;
 }
 
 .header-title-left {
-  font-size: 38rpx;
+  font-size: 19px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   line-height: var(--line-height-tight);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.header-subtitle {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  margin-top: 4rpx;
+  letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -187,25 +174,27 @@ function handleRightClick() {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .icon-btn {
-  width: 68rpx;
-  height: 68rpx;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: var(--color-bg-card);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
   flex-shrink: 0;
-  transition: transform 0.16s ease, background-color 0.16s ease;
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-out), background-color 0.16s ease;
 }
 
 .icon-btn:active {
-  transform: scale(0.94);
-  background-color: var(--color-gray-100);
+  transform: scale(0.92);
+  background-color: var(--color-bg-secondary);
 }
 </style>

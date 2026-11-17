@@ -1,22 +1,24 @@
 <template>
-  <view class="layout-container" :class="{ 'has-tabbar': showTabBar }">
-    <view
-      class="page-layer"
-      :class="{
-        'is-entering-right': isEntering && slideDir === 'right',
-        'is-entering-left': isEntering && slideDir === 'left',
-        'is-exiting-right': isExiting && exitDir === 'right',
-        'is-exiting-left': isExiting && exitDir === 'left',
-        'origin-slide-right': animOrigin === 'slide-right' || animOrigin === 'top-right',
-        'origin-bottom-right': animOrigin === 'bottom-right',
-        'is-returning': isReturning,
-        'has-custom-bg': customBg,
-      }"
-    >
-      <slot></slot>
-    </view>
+  <view class="mobile-viewport-shell">
+    <view class="layout-container" :class="{ 'has-tabbar': showTabBar }">
+      <view
+        class="page-layer"
+        :class="{
+          'is-entering-right': isEntering && slideDir === 'right',
+          'is-entering-left': isEntering && slideDir === 'left',
+          'is-exiting-right': isExiting && exitDir === 'right',
+          'is-exiting-left': isExiting && exitDir === 'left',
+          'origin-slide-right': animOrigin === 'slide-right' || animOrigin === 'top-right',
+          'origin-bottom-right': animOrigin === 'bottom-right',
+          'is-returning': isReturning,
+          'has-custom-bg': customBg,
+        }"
+      >
+        <slot></slot>
+      </view>
 
-    <AppTabBar v-if="showTabBar" />
+      <AppTabBar v-if="showTabBar" />
+    </view>
   </view>
 </template>
 
@@ -78,15 +80,21 @@ onMounted(() => {
   if (!props.disableAnimation) {
     setTimeout(() => {
       isEntering.value = false
-    }, 520)
+    }, 360)
   }
 })
 </script>
 
 <style scoped>
-.layout-container {
-  width: 100vw;
+.mobile-viewport-shell {
+  width: 100%;
   height: 100vh;
+  background-color: var(--color-bg-page);
+}
+
+.layout-container {
+  width: 100%;
+  height: 100%;
   position: relative;
   overflow: hidden;
   background-color: var(--color-bg-primary);
@@ -105,41 +113,41 @@ onMounted(() => {
   overflow: hidden;
   opacity: 1;
   transform: translateX(0) scale(1);
-  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .layout-container.has-tabbar .page-layer {
-  padding-bottom: calc(164rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
 .page-layer.is-entering-right {
-  animation: mobileEnterRight 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: mobileEnterRight 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .page-layer.is-entering-left {
-  animation: mobileEnterLeft 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: mobileEnterLeft 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes mobileEnterRight {
-  0% { opacity: 0; transform: translateX(-28rpx) scale(0.99); }
+  0% { opacity: 0; transform: translateX(-14px) scale(0.992); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 @keyframes mobileEnterLeft {
-  0% { opacity: 0; transform: translateX(28rpx) scale(0.99); }
+  0% { opacity: 0; transform: translateX(14px) scale(0.992); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 .page-layer.is-exiting-right {
   opacity: 0;
-  transform: translateX(24rpx) scale(0.99);
+  transform: translateX(12px) scale(0.992);
   transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1), opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
 }
 
 .page-layer.is-exiting-left {
   opacity: 0;
-  transform: translateX(-24rpx) scale(0.99);
+  transform: translateX(-12px) scale(0.992);
   transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1), opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
 }
 
@@ -152,15 +160,31 @@ onMounted(() => {
 }
 
 .page-layer.is-returning {
-  animation: returnBreathe 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: returnBreathe 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes returnBreathe {
-  0% { opacity: 0; transform: scale(0.99); }
+  0% { opacity: 0; transform: scale(0.992); }
   100% { opacity: 1; transform: scale(1); }
 }
 
 .page-layer.has-custom-bg {
   background-color: transparent;
 }
+
+/* #ifdef H5 */
+.mobile-viewport-shell {
+  height: 100dvh;
+}
+
+@media (min-width: 540px) {
+  .layout-container {
+    max-width: 440px;
+    margin: 0 auto;
+    border-left: 1px solid var(--border-subtle);
+    border-right: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-lg);
+  }
+}
+/* #endif */
 </style>

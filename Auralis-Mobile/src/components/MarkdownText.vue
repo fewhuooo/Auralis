@@ -17,6 +17,9 @@ const nodes = computed(() => renderMarkdownHtml(props.content))
 .markdown-rich-text {
   display: block;
   width: 100%;
+  font-size: 14.5px;
+  line-height: 1.72;
+  color: var(--text-primary);
   word-break: break-word;
 }
 </style>

@@ -3,14 +3,14 @@
     <view class="left-nav-column">
       <view class="sidebar">
         <view class="logo-area" @click="navigate('/pages/tablet/dashboard/index')">
-          <BrandLogo size="72rpx" />
+          <BrandLogo size="36px" />
         </view>
 
         <view class="nav-menu">
           <view
             class="active-capsule-indicator"
             :style="{
-              transform: `translateY(${displayIndex >= 0 ? displayIndex * 120 : 0}rpx)`,
+              transform: `translateY(${displayIndex >= 0 ? displayIndex * 70 : 0}px)`,
               opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
             }"
           >
@@ -26,8 +26,8 @@
             <view class="icon-wrap">
               <LineIcon
                 :name="item.icon"
-                size="38rpx"
-                :color="displayIndex === index ? '#8B9A6E' : '#7A7A75'"
+                size="20px"
+                :color="displayIndex === index ? '#6D7D51' : '#76756F'"
               />
             </view>
             <text class="nav-label" :class="{ 'label-active': displayIndex === index }">{{ item.label }}</text>
@@ -41,9 +41,9 @@
         class="tablet-ai-float"
         :class="{ 'is-active': displayIndex === -1 }"
         @click="navigate('/pages/tablet/ai-search/index')"
-        title="Auralis AI 助手"
+        title="AI"
       >
-        <LineIcon name="sparkles" size="46rpx" color="#FFFFFF" />
+        <LineIcon name="sparkles" size="22px" color="#FFFFFF" />
       </view>
     </view>
 
@@ -130,7 +130,7 @@ const navItems = [
   { path: '/pages/tablet/subject-hall/index', icon: 'book', label: '学科' },
   { path: '/pages/tablet/pomodoro/index', icon: 'clock', label: '专注' },
   ...(tabletHandwritingNotesEnabled
-    ? [{ path: '/pages/tablet/handwriting/index', icon: 'edit', label: '随手记' }]
+    ? [{ path: '/pages/tablet/handwriting/index', icon: 'edit', label: '手写' }]
     : []),
   { path: '/pages/tablet/profile/index', icon: 'avatar', label: '我的' },
 ]
@@ -151,7 +151,7 @@ onMounted(() => {
   } else {
     setTimeout(() => {
       isEntering.value = false
-    }, 520)
+    }, 360)
   }
 })
 
@@ -187,13 +187,14 @@ const navigate = (path: string) => {
 }
 
 .left-nav-column {
-  width: var(--tablet-sidebar-width, 136rpx);
-  height: calc(100vh - 48rpx);
-  margin: 24rpx 16rpx 24rpx 24rpx;
+  width: 76px;
+  height: calc(100vh - 28px);
+  margin: 14px 12px 14px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
   flex-shrink: 0;
   z-index: 100;
 }
@@ -203,23 +204,20 @@ const navigate = (path: string) => {
   flex: 1;
   background-color: var(--color-bg-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 40rpx;
+  border-radius: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32rpx 0;
-  margin-bottom: 24rpx;
+  padding: 20px 0;
   box-shadow: var(--shadow-sm);
-  transform: translateZ(0);
-  will-change: transform;
 }
 
 .logo-area {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 36rpx;
-  transition: transform 0.16s ease;
+  margin-bottom: 24px;
+  transition: transform 0.16s var(--ease-out);
   cursor: pointer;
 }
 
@@ -231,7 +229,7 @@ const navigate = (path: string) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 8px;
   width: 100%;
   align-items: center;
   position: relative;
@@ -242,32 +240,26 @@ const navigate = (path: string) => {
   top: 0;
   left: 0;
   right: 0;
-  height: 104rpx;
+  height: 62px;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
   z-index: 1;
   transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
-  transform: translateZ(0);
-  will-change: transform;
 }
 
 .capsule-inner {
-  width: 104rpx;
-  height: 104rpx;
-  border-radius: 32rpx;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
   background-color: var(--color-bg-card);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-sm);
 }
 
 .nav-bottom {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  width: 100%;
-  align-items: center;
+  height: 4px;
 }
 
 .nav-item {
@@ -275,14 +267,14 @@ const navigate = (path: string) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6rpx;
+  gap: 4px;
   cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.2s ease;
-  width: 104rpx;
-  height: 104rpx;
-  border-radius: 32rpx;
+  width: 54px;
+  height: 62px;
+  border-radius: 16px;
   position: relative;
   z-index: 2;
+  transition: background-color 0.18s ease, transform 0.16s var(--ease-out);
 }
 
 .nav-item:hover {
@@ -300,15 +292,15 @@ const navigate = (path: string) => {
 }
 
 .nav-label {
-  font-size: 20rpx;
+  font-size: 11px;
   font-weight: var(--font-weight-medium);
   color: var(--text-muted);
-  font-family: var(--font-family-base);
-  transition: color 0.2s ease;
+  line-height: 1;
+  transition: color 0.18s ease;
 }
 
 .nav-label.label-active {
-  color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
   font-weight: var(--font-weight-bold);
 }
 
@@ -316,32 +308,33 @@ const navigate = (path: string) => {
   flex: 1;
   display: flex;
   min-width: 0;
-  margin: 24rpx 24rpx 24rpx 8rpx;
+  margin: 14px 14px 14px 0;
   position: relative;
   z-index: 1;
-  height: calc(100vh - 48rpx);
+  height: calc(100vh - 28px);
   background-color: var(--color-bg-primary);
-  border-radius: 40rpx;
+  border-radius: 24px;
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   opacity: 1;
   transform: translateY(0) translateX(0) scale(1);
 }
 
 .main-content.is-entering-down {
-  animation: tabletEnterDown 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterDown 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .main-content.is-entering-up {
-  animation: tabletEnterUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .main-content.is-entering-right {
-  animation: tabletEnterRight 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterRight 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .main-content.is-entering-left {
-  animation: tabletEnterLeft 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterLeft 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .main-content.is-exiting-down {
@@ -353,60 +346,60 @@ const navigate = (path: string) => {
 }
 
 @keyframes tabletEnterDown {
-  0% { opacity: 0; transform: translateY(32rpx) scale(0.99); }
+  0% { opacity: 0; transform: translateY(14px) scale(0.994); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes tabletEnterUp {
-  0% { opacity: 0; transform: translateY(-32rpx) scale(0.99); }
+  0% { opacity: 0; transform: translateY(-14px) scale(0.994); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes tabletEnterRight {
-  0% { opacity: 0; transform: translateX(-28rpx) scale(0.99); }
+  0% { opacity: 0; transform: translateX(-14px) scale(0.994); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 @keyframes tabletEnterLeft {
-  0% { opacity: 0; transform: translateX(28rpx) scale(0.99); }
+  0% { opacity: 0; transform: translateX(14px) scale(0.994); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 .main-content.is-returning {
-  animation: returnBreathe 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: returnBreathe 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes returnBreathe {
-  0% { opacity: 0; transform: scale(0.99); }
+  0% { opacity: 0; transform: scale(0.994); }
   100% { opacity: 1; transform: scale(1); }
 }
 
 @keyframes tabletExitDown {
   0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-24rpx) scale(0.99); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.994); }
 }
 
 @keyframes tabletExitUp {
   0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(24rpx) scale(0.99); }
+  100% { opacity: 0; transform: translateY(10px) scale(0.994); }
 }
 
 .tablet-ai-float {
-  width: 112rpx;
-  height: 112rpx;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   background: var(--accent-gradient);
-  box-shadow: var(--shadow-md), 0 8rpx 24rpx rgba(139, 154, 110, 0.28);
+  box-shadow: var(--shadow-md), var(--accent-glow);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.18s ease;
 }
 
 .tablet-ai-float:hover {
-  transform: scale(1.05);
+  transform: scale(1.06);
 }
 
 .tablet-ai-float:active {
@@ -414,6 +407,17 @@ const navigate = (path: string) => {
 }
 
 .tablet-ai-float.is-active {
-  box-shadow: 0 0 0 6rpx var(--color-sage-bg), var(--shadow-md);
+  box-shadow: 0 0 0 4px var(--color-sage-bg), var(--shadow-md);
 }
+
+/* #ifdef H5 */
+.tablet-layout {
+  height: 100dvh;
+}
+
+.left-nav-column,
+.main-content {
+  height: calc(100dvh - 28px);
+}
+/* #endif */
 </style>
