@@ -9,6 +9,7 @@
           active: focusStore.focusMinutes === mins,
           disabled: focusStore.isTaskLocked,
         }"
+        role="button"
         @click="choosePreset(mins)"
       >
         <text>{{ mins }}m</text>
@@ -21,40 +22,25 @@
       :remaining-seconds="focusStore.remainingSeconds"
       :is-running="focusStore.isRunning"
       :color="focusStore.ringColor"
+      :cycle-count="focusStore.cycleCount"
+      :is-break="focusStore.isBreakPhase"
       @center-click="$emit('center-click')"
     />
 
-    <view class="phase-status">
-      <view class="phase-pill" :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }">
-        <view class="phase-beacon"></view>
-        <text>{{ phaseText }}</text>
-      </view>
-    </view>
-
-    <view class="progress-dots">
-      <view
-        v-for="i in 4"
-        :key="i"
-        class="dot"
-        :class="{
-          'is-filled': (focusStore.cycleCount % 4) >= i || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0),
-          'is-break-filled': focusStore.isBreakPhase && ((focusStore.cycleCount % 4) >= i || (focusStore.cycleCount > 0 && focusStore.cycleCount % 4 === 0)),
-        }"
-      ></view>
-    </view>
-
     <view class="controls">
-      <view class="ctrl-btn" @click="focusStore.reset()">
+      <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
         <text>重置</text>
       </view>
       <view
         class="main-btn"
         :class="{ 'is-break': focusStore.isBreakPhase }"
+        role="button"
+        :aria-label="focusStore.isRunning ? '暂停' : '开始'"
         @click="focusStore.toggle()"
       >
         <LineIcon :name="focusStore.isRunning ? 'pause' : 'play'" size="24px" color="#FFFFFF" />
       </view>
-      <view class="ctrl-btn" @click="focusStore.skip()">
+      <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
         <text>跳过</text>
       </view>
     </view>
@@ -62,7 +48,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
 import { FOCUS_PRESETS } from '@/services/focusController'
@@ -72,8 +57,6 @@ defineEmits(['center-click'])
 
 const focusStore = useFocusStore()
 const presets = FOCUS_PRESETS
-
-const phaseText = computed(() => (focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中'))
 
 function choosePreset(minutes: number) {
   if (focusStore.isTaskLocked) {
@@ -92,6 +75,7 @@ function choosePreset(minutes: number) {
   justify-content: center;
   width: 100%;
   height: 100%;
+  gap: 24px;
   user-select: none;
 }
 
@@ -99,7 +83,6 @@ function choosePreset(minutes: number) {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 18px;
 }
 
 .preset-chip {
@@ -111,6 +94,7 @@ function choosePreset(minutes: number) {
   color: var(--text-muted);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
 .preset-chip.active {
@@ -125,103 +109,29 @@ function choosePreset(minutes: number) {
   cursor: not-allowed;
 }
 
-.phase-status {
-  margin-top: 16px;
-}
-
-.phase-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 16px;
-  border-radius: var(--radius-full);
-  font-size: 13px;
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.5px;
-  background-color: rgba(139, 154, 110, 0.12);
-  color: var(--color-sage-ink);
-  border: 1px solid rgba(139, 154, 110, 0.28);
-  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.08);
-}
-
-.phase-beacon {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: #8B9A6E;
-}
-
-.phase-pill.is-active .phase-beacon {
-  animation: beaconPulse 2s ease-in-out infinite;
-  box-shadow: 0 0 6px rgba(139, 154, 110, 0.8);
-}
-
-.phase-pill.is-break {
-  background-color: rgba(200, 155, 109, 0.15);
-  color: #9C7240;
-  border-color: rgba(200, 155, 109, 0.32);
-}
-
-.phase-pill.is-break .phase-beacon {
-  background-color: #C89B6D;
-}
-
-@keyframes beaconPulse {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.4); opacity: 1; }
-}
-
-.progress-dots {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background-color: rgba(139, 154, 110, 0.18);
-  transition: transform 0.25s var(--ease-out), background-color 0.25s ease;
-}
-
-.dot.is-filled {
-  background-color: #8B9A6E;
-  box-shadow: 0 0 10px rgba(139, 154, 110, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
-  transform: scale(1.18);
-}
-
-.dot.is-break-filled {
-  background-color: #C89B6D;
-  box-shadow: 0 0 10px rgba(200, 155, 109, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
 .controls {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 28px;
-  margin-top: 24px;
 }
 
 .ctrl-btn {
   font-size: 13px;
   color: var(--text-secondary);
   font-weight: var(--font-weight-semibold);
-  padding: 9px 20px;
+  padding: 9px 22px;
   border-radius: var(--radius-full);
   background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   transition: transform 0.18s var(--ease-out), border-color 0.18s ease, color 0.18s ease;
 }
 
 .ctrl-btn:hover {
-  border-color: #8B9A6E;
-  color: #556B3D;
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-ink);
   transform: translateY(-1px);
 }
 

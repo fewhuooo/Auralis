@@ -1,40 +1,41 @@
 <template>
-  <view class="rail-card zen-card">
+  <view class="rail-card zen-panel">
     <view class="rail-top">
       <view class="rail-header-row">
-        <view class="ui-icon-btn sm" @click="emit('back')">
+        <view class="ui-icon-btn sm" role="button" aria-label="返回学科大厅" @click="emit('back')">
           <LineIcon name="chevron-left" size="15px" color="var(--text-primary)" />
         </view>
-        <view class="subject-badge">
-          <LineIcon :name="`subj-${safeIcon}`" size="15px" color="var(--color-zen-sage)" />
+        <view class="subject-badge" aria-hidden="true">
+          <LineIcon :name="`subj-${safeIcon}`" size="15px" color="var(--color-sage-ink)" />
         </view>
         <text class="subject-title">{{ subjectName || '学科工作台' }}</text>
-        <view class="ui-icon-btn sm" @click="emit('refresh')">
+        <view
+          class="ui-icon-btn sm"
+          :class="{ 'is-busy': uploading }"
+          role="button"
+          aria-label="上传资料"
+          @click="!uploading && emit('upload')"
+        >
+          <LineIcon name="upload" size="14px" color="var(--color-sage-ink)" />
+        </view>
+        <view class="ui-icon-btn sm" role="button" aria-label="刷新资料" @click="emit('refresh')">
           <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
         </view>
       </view>
-
-      <button
-        class="ui-btn ui-btn-primary sm upload-full"
-        :disabled="uploading"
-        @click="emit('upload')"
-      >
-        <LineIcon name="upload" size="14px" color="#FFFFFF" />
-        <text>{{ uploading ? '上传中...' : '上传资料' }}</text>
-      </button>
     </view>
 
     <scroll-view scroll-y :show-scrollbar="false" class="rail-scroll">
       <view
         class="rail-item overview-item"
         :class="{ active: selectedSourceId === null }"
+        role="button"
         @click="emit('select-overview')"
       >
         <view class="item-icon-box" :class="{ active: selectedSourceId === null }">
           <LineIcon
             name="layers"
             size="15px"
-            :color="selectedSourceId === null ? '#FFFFFF' : 'var(--color-zen-sage)'"
+            :color="selectedSourceId === null ? '#FFFFFF' : 'var(--color-sage-ink)'"
           />
         </view>
         <text class="overview-title">学科总览</text>
@@ -63,6 +64,7 @@
           :key="src.id"
           class="rail-item"
           :class="{ active: src.id === selectedSourceId }"
+          role="button"
           @click="src.id && emit('select-source', src)"
         >
           <view class="item-icon-box" :class="{ active: src.id === selectedSourceId }">
@@ -81,16 +83,17 @@
                 :class="`tone-${getSourceStatusMeta(src.ingestionStatus).tone}`"
               />
               <text
+                v-if="src.ingestionStatus !== 'READY'"
                 class="status-label"
                 :class="`tone-${getSourceStatusMeta(src.ingestionStatus).tone}`"
               >{{ getSourceStatusMeta(src.ingestionStatus).label }}</text>
               <text v-if="formatBytes(src.assetSizeBytes)" class="size-label num-tabular">
-                · {{ formatBytes(src.assetSizeBytes) }}
+                {{ src.ingestionStatus !== 'READY' ? '· ' : '' }}{{ formatBytes(src.assetSizeBytes) }}
               </text>
             </view>
           </view>
 
-          <view class="item-delete" @click.stop="emit('delete-source', src)">
+          <view class="item-delete" role="button" aria-label="删除资料" @click.stop="emit('delete-source', src)">
             <LineIcon name="trash" size="13px" color="var(--text-muted)" />
           </view>
         </view>
@@ -104,12 +107,7 @@ import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import type { SourceView } from '@/api/sourceApi'
 import { formatBytes, getSourceStatusMeta, isImageMedia } from '@/utils/sourceFormat'
-
-const SUBJECT_ICON_KEYS = new Set([
-  'book', 'reading', 'library', 'code', 'computer', 'analysis', 'math',
-  'school', 'art', 'notes', 'idea', 'settings', 'focus', 'achievement',
-  'research', 'laptop',
-])
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 
 const props = defineProps<{
   subjectName: string
@@ -130,12 +128,12 @@ const emit = defineEmits<{
   (event: 'delete-source', source: SourceView): void
 }>()
 
-const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(props.subjectIcon) ? props.subjectIcon : 'book'))
+const safeIcon = computed(() => (props.subjectIcon && isSubjectIconKey(props.subjectIcon) ? props.subjectIcon : 'book'))
 </script>
 
 <style scoped>
 .rail-card {
-  width: 244px;
+  width: 248px;
   height: 100%;
   flex-shrink: 0;
   border-radius: var(--radius-card);
@@ -146,17 +144,25 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
 }
 
 .rail-top {
-  padding: 14px 12px 12px;
+  height: 54px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .rail-header-row {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+}
+
+.is-busy {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .subject-badge {
@@ -175,20 +181,16 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
   min-width: 0;
   font-size: var(--text-md);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.upload-full {
-  width: 100%;
-  height: 36px;
-}
-
 .rail-scroll {
   flex: 1;
+  height: 0;
   min-height: 0;
   padding: 10px;
   box-sizing: border-box;
@@ -211,7 +213,7 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
 }
 
 .rail-item:hover {
-  background: var(--bg-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .rail-item.active {
@@ -223,7 +225,8 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--bg-primary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,6 +236,7 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
 
 .item-icon-box.active {
   background: var(--color-zen-sage);
+  border-color: transparent;
 }
 
 .overview-title {
@@ -253,7 +257,7 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
 }
 
 .count-num {
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .rail-skeletons {
@@ -364,7 +368,7 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  opacity: 0.72;
+  opacity: 0.78;
   transition: opacity 0.14s var(--ease-out), background-color 0.14s var(--ease-out);
 }
 
@@ -375,7 +379,7 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
 
 @media (max-width: 1100px) {
   .rail-card {
-    width: 212px;
+    width: 216px;
   }
 }
 
@@ -384,6 +388,12 @@ const safeIcon = computed(() => (props.subjectIcon && SUBJECT_ICON_KEYS.has(prop
     width: 100%;
     height: auto;
     max-height: 220px;
+  }
+
+  .rail-scroll {
+    flex: none;
+    height: auto;
+    max-height: 164px;
   }
 }
 </style>

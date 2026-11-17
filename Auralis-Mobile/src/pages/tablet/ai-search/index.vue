@@ -1,9 +1,9 @@
 <template>
   <TabletLayout>
     <view class="t-ai-layout">
-      <view class="history-card zen-card">
+      <view class="history-card zen-panel">
         <view class="history-header">
-          <view class="ui-btn ui-btn-primary new-chat-btn" @click="startNewChat">
+          <view class="ui-btn ui-btn-primary new-chat-btn" role="button" @click="startNewChat">
             <LineIcon name="plus" size="15px" color="#FFFFFF" />
             <text>新对话</text>
           </view>
@@ -18,6 +18,7 @@
             :key="item.id"
             class="history-item"
             :class="{ active: currentConversationId === item.id }"
+            role="button"
             @click="item.id && switchConversation(item.id)"
           >
             <view class="history-info">
@@ -27,6 +28,8 @@
             <view
               v-if="item.id"
               class="history-del"
+              role="button"
+              aria-label="删除对话"
               @click.stop="deleteConversation(item.id, item.version ?? 0)"
             >
               <LineIcon name="close" size="13px" color="var(--text-muted)" />
@@ -35,53 +38,59 @@
         </scroll-view>
       </view>
 
-      <view class="chat-card zen-card">
+      <view class="chat-card zen-panel">
         <view class="chat-header">
           <text class="chat-title">{{ currentConversationTitle }}</text>
         </view>
 
+        <view v-if="messages.length === 0" class="welcome-box">
+          <BrandLogo size="44px" />
+          <view class="prompt-chips">
+            <view
+              v-for="prompt in quickPrompts"
+              :key="prompt"
+              class="prompt-chip"
+              role="button"
+              @click="query = prompt; sendMessage()"
+            >
+              <text>{{ prompt }}</text>
+            </view>
+          </view>
+        </view>
+
         <scroll-view
+          v-else
           scroll-y
           :show-scrollbar="false"
           class="chat-scroll"
           :scroll-into-view="scrollTargetId"
         >
-          <view v-if="messages.length === 0" class="welcome-box">
-            <BrandLogo size="44px" />
-            <view class="prompt-chips">
-              <view
-                v-for="prompt in quickPrompts"
-                :key="prompt"
-                class="prompt-chip"
-                @click="query = prompt; sendMessage()"
-              >
-                <text>{{ prompt }}</text>
-              </view>
-            </view>
-          </view>
-
-          <view v-else class="chat-stream">
+          <view class="chat-stream">
             <view
               v-for="(msg, index) in messages"
               :key="index"
               class="chat-row"
               :class="msg.role"
             >
-              <view v-if="msg.role === 'user'" class="user-bubble">
+              <view v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
                 <text class="user-text">{{ msg.content }}</text>
               </view>
 
-              <view v-else class="assistant-bubble">
+              <view v-else class="assistant-bubble zen-chat-assistant-bubble">
                 <view v-if="msg.toolHint" class="tool-pill">
                   <text>{{ msg.toolHint }}</text>
                 </view>
 
                 <MarkdownText v-if="msg.content" :content="msg.content" />
-                <text v-else-if="isTyping" class="typing-dot">···</text>
+                <view v-else-if="isTyping" class="zen-typing-dots" aria-label="思考中">
+                  <view class="zen-typing-dot"></view>
+                  <view class="zen-typing-dot"></view>
+                  <view class="zen-typing-dot"></view>
+                </view>
 
                 <view v-if="msg.content && !(isTyping && index === messages.length - 1)" class="bubble-actions">
-                  <view class="copy-btn" @click="copyText(msg.content)">
-                    <LineIcon name="copy" size="14px" color="var(--text-muted)" />
+                  <view class="copy-btn" role="button" aria-label="复制回答" @click="copyText(msg.content)">
+                    <LineIcon name="copy" size="13px" color="var(--text-muted)" />
                   </view>
                 </view>
               </view>
@@ -96,7 +105,7 @@
             <input
               class="chat-input"
               v-model="query"
-              placeholder="输入问题…"
+              placeholder="提问…"
               confirm-type="send"
               :disabled="isTyping"
               @confirm="sendMessage"
@@ -104,6 +113,8 @@
             <view
               class="send-btn"
               :class="{ disabled: !query.trim() || isTyping }"
+              role="button"
+              aria-label="发送"
               @click="sendMessage"
             >
               <LineIcon name="arrow-up" size="16px" color="#FFFFFF" />
@@ -279,7 +290,7 @@ async function sendMessage() {
       onToolEvent: (ev) => {
         if (!isCurrent()) return
         messages.value[aiIndex].toolHint = ev.phase === 'started'
-          ? `检索 ${ev.name || '资料'}…`
+          ? '检索资料中…'
           : ev.phase === 'completed'
             ? ''
             : '检索未完成'
@@ -312,15 +323,15 @@ onMounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 16px;
+  padding: 14px;
   gap: 14px;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-secondary);
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .history-card {
-  width: 248px;
+  width: 244px;
   flex-shrink: 0;
   padding: 14px;
   display: flex;
@@ -341,6 +352,7 @@ onMounted(() => {
 
 .history-scroll {
   flex: 1;
+  height: 0;
   min-height: 0;
 }
 
@@ -358,16 +370,18 @@ onMounted(() => {
   padding: 10px 12px;
   border-radius: 12px;
   margin-bottom: 4px;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 0.16s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
 .history-item:hover {
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
 }
 
 .history-item.active {
   background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
 }
 
 .history-info {
@@ -393,14 +407,20 @@ onMounted(() => {
 }
 
 .history-del {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  opacity: 0.65;
+  opacity: 0.72;
+  transition: opacity 0.14s ease, background-color 0.14s ease;
+}
+
+.history-del:hover {
+  opacity: 1;
+  background-color: var(--color-danger-bg);
 }
 
 .chat-card {
@@ -414,7 +434,7 @@ onMounted(() => {
 
 .chat-header {
   height: 52px;
-  padding: 0 22px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -430,13 +450,9 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.chat-scroll {
+.welcome-box {
   flex: 1;
   min-height: 0;
-}
-
-.welcome-box {
-  min-height: 100%;
   padding: 40px 24px;
   display: flex;
   flex-direction: column;
@@ -457,26 +473,34 @@ onMounted(() => {
 .prompt-chip {
   padding: 10px 16px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.16s ease, background-color 0.16s ease;
+  transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.14s ease;
 }
 
 .prompt-chip:hover {
   border-color: var(--border-accent);
   background-color: var(--color-sage-bg);
+  transform: translateY(-1px);
+}
+
+.chat-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
 }
 
 .chat-stream {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 20px 24px;
+  width: 100%;
+  padding: 20px clamp(24px, 5vw, 80px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .chat-row {
@@ -494,25 +518,17 @@ onMounted(() => {
 
 .user-bubble {
   max-width: 72%;
-  padding: 10px 16px;
-  background-color: var(--color-zen-graphite);
-  color: #FFFFFF;
-  border-radius: 16px 16px 4px 16px;
 }
 
 .user-text {
   font-size: 14.5px;
   line-height: 1.55;
   color: #FFFFFF;
+  word-break: break-word;
 }
 
 .assistant-bubble {
-  width: 100%;
   padding: 16px 20px;
-  border-radius: 16px;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
-  box-sizing: border-box;
 }
 
 .tool-pill {
@@ -525,12 +541,6 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
-.typing-dot {
-  font-size: 18px;
-  color: var(--text-muted);
-  letter-spacing: 3px;
-}
-
 .bubble-actions {
   display: flex;
   justify-content: flex-end;
@@ -538,14 +548,20 @@ onMounted(() => {
 }
 
 .copy-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background-color: var(--color-bg-card);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.14s ease, background-color 0.14s ease;
+}
+
+.copy-btn:hover {
+  opacity: 1;
+  background-color: rgba(28, 28, 26, 0.05);
 }
 
 .bottom-anchor {
@@ -553,7 +569,7 @@ onMounted(() => {
 }
 
 .input-dock {
-  padding: 12px 24px 18px;
+  padding: 12px clamp(24px, 5vw, 80px) 18px;
   display: flex;
   justify-content: center;
   flex-shrink: 0;
@@ -561,16 +577,24 @@ onMounted(() => {
 
 .input-capsule {
   width: 100%;
-  max-width: 760px;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 6px 6px 16px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-sm);
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+/* #ifdef H5 */
+.input-capsule:focus-within {
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+}
+/* #endif */
 
 .chat-input {
   flex: 1;
@@ -590,6 +614,11 @@ onMounted(() => {
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.send-btn:active {
+  transform: scale(0.92);
 }
 
 .send-btn.disabled {

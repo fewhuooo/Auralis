@@ -1,16 +1,18 @@
 <template>
-  <view class="ai-panel zen-card">
+  <view class="ai-panel zen-panel">
     <view class="ai-header">
       <view class="ai-title-row">
-        <LineIcon name="sparkles" size="15px" color="var(--color-zen-sage)" />
+        <LineIcon name="sparkles" size="15px" color="var(--color-sage-ink)" />
         <text class="ai-title">AI 伴读</text>
-        <text class="ui-tag sage scope-pill">{{ scopeBadgeText }}</text>
+        <text v-if="isSourceScoped && selectedSource?.title" class="ui-tag sage scope-pill">
+          {{ selectedSource.title }}
+        </text>
       </view>
       <view class="ai-header-actions">
-        <view class="ui-icon-btn sm" @click="toggleHistory">
+        <view class="ui-icon-btn sm" role="button" aria-label="历史对话" @click="toggleHistory">
           <LineIcon name="history" size="14px" color="var(--text-secondary)" />
         </view>
-        <view class="ui-icon-btn sm" @click="resetConversation">
+        <view class="ui-icon-btn sm" role="button" aria-label="新对话" @click="resetConversation">
           <LineIcon name="plus" size="14px" color="var(--text-secondary)" />
         </view>
       </view>
@@ -19,13 +21,13 @@
     <view v-if="showHistory" class="history-drawer">
       <view class="history-head">
         <text class="history-head-title">历史对话</text>
-        <view class="ui-icon-btn sm" @click="showHistory = false">
+        <view class="ui-icon-btn sm" role="button" aria-label="关闭历史" @click="showHistory = false">
           <LineIcon name="close" size="13px" color="var(--text-muted)" />
         </view>
       </view>
 
       <scroll-view scroll-y :show-scrollbar="false" class="history-list">
-        <view v-if="loadingSessions" class="history-empty">加载中...</view>
+        <view v-if="loadingSessions" class="history-empty">加载中…</view>
         <view v-else-if="scopedConversations.length === 0" class="history-empty">暂无历史对话</view>
 
         <view
@@ -33,6 +35,7 @@
           :key="item.id"
           class="history-row"
           :class="{ active: item.id === currentConversationId }"
+          role="button"
           @click="item.id && selectConversation(item.id)"
         >
           <view class="history-row-main">
@@ -42,12 +45,31 @@
           <view
             v-if="item.id"
             class="history-row-del"
+            role="button"
+            aria-label="删除对话"
             @click.stop="deleteScopedConversation(item.id, item.version ?? 0)"
           >
             <LineIcon name="trash" size="13px" color="var(--text-muted)" />
           </view>
         </view>
       </scroll-view>
+    </view>
+
+    <view v-else-if="messages.length === 0" class="chat-welcome">
+      <view class="welcome-emblem">
+        <LineIcon name="sparkles" size="20px" color="var(--color-sage-ink)" />
+      </view>
+      <view class="quick-prompts">
+        <view
+          v-for="prompt in quickPrompts"
+          :key="prompt"
+          class="prompt-pill zen-card"
+          role="button"
+          @click="query = prompt; sendMessage()"
+        >
+          <text>{{ prompt }}</text>
+        </view>
+      </view>
     </view>
 
     <scroll-view
@@ -57,66 +79,60 @@
       class="chat-scroll"
       :scroll-into-view="scrollTargetId"
     >
-      <view v-if="messages.length === 0" class="chat-welcome">
-        <view class="quick-prompts">
-          <view
-            v-for="prompt in quickPrompts"
-            :key="prompt"
-            class="prompt-pill"
-            @click="query = prompt; sendMessage()"
-          >
-            <text>{{ prompt }}</text>
-          </view>
-        </view>
-      </view>
-
-      <view v-else class="chat-messages">
+      <view class="chat-messages">
         <view
           v-for="(msg, index) in messages"
           :key="index"
           class="msg-row"
           :class="msg.role"
         >
-          <view v-if="msg.role === 'user'" class="user-bubble">
+          <view v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
             <text>{{ msg.content }}</text>
           </view>
 
-          <view v-else class="assistant-bubble">
+          <view v-else class="assistant-bubble zen-chat-assistant-bubble">
+            <view v-if="isTyping && index === messages.length - 1 && toolStatus" class="tool-pill">
+              <text>{{ toolStatus }}</text>
+            </view>
+
             <MarkdownText v-if="msg.content" :content="msg.content" />
-            <text v-else class="typing-placeholder">{{ toolStatus || '思考中...' }}</text>
+            <view v-else class="zen-typing-dots" aria-label="思考中">
+              <view class="zen-typing-dot"></view>
+              <view class="zen-typing-dot"></view>
+              <view class="zen-typing-dot"></view>
+            </view>
 
             <view v-if="msg.content && !(isTyping && index === messages.length - 1)" class="bubble-actions">
-              <view class="copy-btn" @click="copyText(msg.content)">
-                <LineIcon name="copy" size="12px" color="var(--text-muted)" />
-                <text>复制</text>
+              <view class="copy-btn" role="button" aria-label="复制回答" @click="copyText(msg.content)">
+                <LineIcon name="copy" size="13px" color="var(--text-muted)" />
               </view>
             </view>
           </view>
         </view>
 
-        <view v-if="isTyping && toolStatus" class="tool-status-bar">
-          <text>{{ toolStatus }}</text>
-        </view>
         <view :id="anchorId" class="scroll-anchor"></view>
       </view>
     </scroll-view>
 
     <view class="composer-box">
-      <textarea
-        v-model="query"
-        class="composer-input"
-        :maxlength="2000"
-        auto-height
-        placeholder="提问"
-        @confirm="sendMessage"
-      />
-      <button
-        class="send-btn"
-        :disabled="isTyping || !query.trim() || !subjectId"
-        @click="sendMessage"
-      >
-        <LineIcon name="arrow-up" size="15px" color="#FFFFFF" />
-      </button>
+      <view class="input-capsule">
+        <textarea
+          v-model="query"
+          class="composer-input"
+          :maxlength="2000"
+          auto-height
+          placeholder="提问…"
+          @confirm="sendMessage"
+        />
+        <button
+          class="send-btn"
+          :disabled="isTyping || !query.trim() || !subjectId"
+          aria-label="发送"
+          @click="sendMessage"
+        >
+          <LineIcon name="arrow-up" size="15px" color="#FFFFFF" />
+        </button>
+      </view>
     </view>
   </view>
 </template>
@@ -171,13 +187,6 @@ const scopeKey = computed(() => {
   return `${ctx.subjectId}:${ctx.retrievalMode}:${ctx.currentSourceId || ''}`
 })
 
-const scopeBadgeText = computed(() => {
-  if (isSourceScoped.value && props.selectedSource) {
-    return props.selectedSource.title || '当前资料'
-  }
-  return '全科'
-})
-
 const scopedConversations = computed(() => {
   const ctx = readingContext.value
   return conversations.value.filter(item => doesConversationMatchWorkspaceScope(item, ctx))
@@ -185,7 +194,7 @@ const scopedConversations = computed(() => {
 
 const quickPrompts = computed(() => (
   isSourceScoped.value
-    ? ['提炼这篇资料的核心框架', '列出关键概念与易错点', '出 3 道自测练习题']
+    ? ['提炼核心框架', '列出关键概念与易错点', '生成 3 道自测练习题']
     : [`梳理《${props.subjectName}》重点脉络`, '整理高频复习考点', '对比关键概念异同']
 ))
 
@@ -278,8 +287,8 @@ async function deleteScopedConversation(conversationId: string, baseVersion: num
 }
 
 function formatToolLabel(event: ChatToolEvent): string {
-  if (event.phase === 'started') return `正在调用工具：${event.name}...`
-  if (event.phase === 'error') return `工具调用失败：${event.name}`
+  if (event.phase === 'started') return '检索资料中…'
+  if (event.phase === 'error') return '检索未完成'
   return ''
 }
 
@@ -385,12 +394,15 @@ async function sendMessage() {
 }
 
 .ai-header {
-  padding: 12px 14px;
+  height: 54px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .ai-title-row {
@@ -409,10 +421,12 @@ async function sendMessage() {
 }
 
 .scope-pill {
+  display: inline-block;
   max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .ai-header-actions {
@@ -434,6 +448,7 @@ async function sendMessage() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .history-head-title {
@@ -444,6 +459,7 @@ async function sendMessage() {
 
 .history-list {
   flex: 1;
+  height: 0;
   min-height: 0;
   padding: 0 10px 10px;
   box-sizing: border-box;
@@ -459,7 +475,7 @@ async function sendMessage() {
 .history-row {
   padding: 10px 11px;
   border-radius: 12px;
-  background: var(--bg-primary);
+  background: var(--color-bg-tertiary);
   margin-bottom: 6px;
   display: flex;
   align-items: center;
@@ -505,21 +521,36 @@ async function sendMessage() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  opacity: 0.72;
 }
 
-.chat-scroll {
-  flex: 1;
-  min-height: 0;
-  padding: 14px;
-  box-sizing: border-box;
+.history-row-del:hover {
+  opacity: 1;
+  background: var(--color-danger-bg);
 }
 
 .chat-welcome {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 16px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding: 16px 0;
+  align-items: stretch;
+  justify-content: center;
+  gap: 18px;
+  box-sizing: border-box;
+}
+
+.welcome-emblem {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background-color: var(--color-sage-bg);
+  border: 1px solid var(--border-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
 }
 
 .quick-prompts {
@@ -529,10 +560,8 @@ async function sendMessage() {
 }
 
 .prompt-pill {
-  padding: 10px 13px;
+  padding: 11px 14px;
   border-radius: 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--text-secondary);
@@ -546,7 +575,14 @@ async function sendMessage() {
   transform: translateY(-1px);
 }
 
+.chat-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
 .chat-messages {
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -567,58 +603,46 @@ async function sendMessage() {
 
 .user-bubble {
   max-width: 86%;
-  padding: 10px 13px;
-  border-radius: 14px 14px 4px 14px;
-  background: var(--accent-gradient);
-  color: #FFFFFF;
   font-size: var(--text-sm);
-  line-height: 1.5;
 }
 
 .assistant-bubble {
-  width: 100%;
   padding: 12px 14px;
-  border-radius: 14px;
-  background: var(--bg-primary);
-  box-sizing: border-box;
   font-size: var(--text-sm);
-  line-height: 1.6;
-  color: var(--text-primary);
 }
 
-.typing-placeholder {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
+.tool-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-sage-bg);
+  color: var(--color-sage-ink);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  margin-bottom: 8px;
 }
 
 .bubble-actions {
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid var(--border-subtle);
+  margin-top: 6px;
   display: flex;
   justify-content: flex-end;
 }
 
 .copy-btn {
-  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
+  justify-content: center;
   cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.14s ease, background-color 0.14s ease;
 }
 
 .copy-btn:hover {
-  color: var(--text-primary);
-}
-
-.tool-status-bar {
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--color-sage-bg);
-  color: var(--color-sage-dark);
-  font-size: var(--text-2xs);
-  font-weight: 500;
+  opacity: 1;
+  background-color: rgba(28, 28, 26, 0.05);
 }
 
 .scroll-anchor {
@@ -626,35 +650,48 @@ async function sendMessage() {
 }
 
 .composer-box {
-  padding: 10px 12px;
-  border-top: 1px solid var(--border-subtle);
+  padding: 10px 12px 12px;
+  background: var(--color-bg-primary);
+  flex-shrink: 0;
+}
+
+.input-capsule {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: var(--bg-card);
+  padding: 6px 6px 6px 14px;
+  border-radius: 20px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+/* #ifdef H5 */
+.input-capsule:focus-within {
+  border-color: var(--color-zen-sage);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+}
+/* #endif */
 
 .composer-input {
   flex: 1;
-  min-height: 36px;
-  max-height: 112px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
+  min-width: 0;
+  min-height: 22px;
+  max-height: 96px;
+  padding: 6px 0;
   font-size: var(--text-sm);
+  line-height: 1.45;
   color: var(--text-primary);
+  background: transparent;
   box-sizing: border-box;
 }
 
-.composer-input:focus {
-  border-color: var(--color-zen-sage);
-}
-
 .send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
@@ -662,11 +699,12 @@ async function sendMessage() {
   padding: 0;
   margin: 0;
   flex-shrink: 0;
+  cursor: pointer;
   transition: transform 0.14s var(--ease-out), opacity 0.14s var(--ease-out);
 }
 
 .send-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.92);
 }
 
 .send-btn[disabled] {
@@ -682,7 +720,12 @@ async function sendMessage() {
 @media (max-width: 900px) {
   .ai-panel {
     width: 100%;
-    height: 320px;
+    height: 360px;
+  }
+
+  .chat-scroll {
+    flex: 1;
+    height: 0;
   }
 }
 </style>

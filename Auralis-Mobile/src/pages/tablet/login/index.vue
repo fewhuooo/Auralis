@@ -2,19 +2,31 @@
   <view class="login-page">
     <view class="login-wrapper">
       <view class="brand-side">
-        <view class="brand-content">
-          <BrandLogo size="32px" />
-          <text class="brand-vertical-text">AURALIS</text>
+        <view class="brand-grid" aria-hidden="true"></view>
+        <view class="brand-orbit brand-orbit--outer" aria-hidden="true"></view>
+        <view class="brand-orbit brand-orbit--inner" aria-hidden="true"></view>
+        <view class="brand-top">
+          <BrandLogo size="36px" />
         </view>
-        <view class="side-shape"></view>
+        <view class="brand-content">
+          <text class="brand-wordmark">AURALIS</text>
+        </view>
+        <view class="side-shape" aria-hidden="true"></view>
       </view>
 
       <view class="form-side">
         <view class="login-box">
-          <view v-if="mode !== 'reset'" class="ui-segmented auth-toggle">
+          <view class="compact-brand">
+            <BrandLogo size="30px" />
+            <text class="compact-wordmark">AURALIS</text>
+          </view>
+
+          <view v-if="mode !== 'reset'" class="ui-segmented auth-toggle" role="tablist">
             <view
               class="ui-seg-item"
               :class="{ active: mode === 'login', 'is-disabled': pending }"
+              role="tab"
+              :aria-selected="mode === 'login'"
               @click="show('login')"
             >
               <text>登录</text>
@@ -22,13 +34,15 @@
             <view
               class="ui-seg-item"
               :class="{ active: mode === 'register', 'is-disabled': pending }"
+              role="tab"
+              :aria-selected="mode === 'register'"
               @click="show('register')"
             >
               <text>注册</text>
             </view>
           </view>
           <view v-else class="reset-header">
-            <view class="ui-icon-btn" @click="show('login')">
+            <view class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
               <LineIcon name="back" size="16px" color="var(--text-primary)" />
             </view>
             <text class="form-title">重置密码</text>
@@ -76,7 +90,7 @@
               class="ui-input"
               v-model="form.password"
               password
-              :placeholder="mode === 'login' ? '密码' : '8+位含大小写及符号'"
+              :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
               :disabled="pending"
             />
 
@@ -92,12 +106,12 @@
 
           <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-          <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">
+          <button class="submit-btn ui-btn ui-btn-primary" role="button" :loading="submitting" :disabled="pending" @click="submit">
             {{ actionLabel }}
           </button>
 
           <view v-if="mode === 'login'" class="footer-links">
-            <text class="footer-link" @click="show('reset')">忘记密码？</text>
+            <text class="footer-link" role="button" @click="show('reset')">忘记密码</text>
           </view>
         </view>
       </view>
@@ -131,53 +145,81 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   max-width: 880px;
   min-height: 540px;
   background-color: var(--color-bg-primary);
-  border-radius: 32px;
+  border-radius: 28px;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 24px 60px rgba(28, 28, 26, 0.06), 0 2px 8px rgba(28, 28, 26, 0.03);
+  animation: uiModalIn 0.36s var(--ease-out) both;
 }
 
 .brand-side {
-  width: 350px;
-  background-color: var(--color-bg-primary);
+  width: 360px;
+  background: linear-gradient(155deg, #F7F2EB 0%, #EFE8DC 100%);
   position: relative;
   display: flex;
-  align-items: center;
-  padding: 52px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 44px 44px 48px;
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
   box-sizing: border-box;
   flex-shrink: 0;
 }
 
+.brand-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(28, 28, 26, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(28, 28, 26, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+
+.brand-orbit {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 154, 110, 0.16);
+  pointer-events: none;
+}
+
+.brand-orbit--outer {
+  width: 360px;
+  height: 360px;
+  top: -120px;
+  right: -110px;
+}
+
+.brand-orbit--inner {
+  width: 220px;
+  height: 220px;
+  top: -50px;
+  right: -40px;
+  border-color: rgba(139, 154, 110, 0.24);
+}
+
+.brand-top,
 .brand-content {
   position: relative;
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 28px;
 }
 
-.brand-vertical-text {
-  font-size: 44px;
+.brand-wordmark {
+  font-size: 46px;
   font-weight: 800;
   color: var(--text-primary);
-  line-height: 1;
-  letter-spacing: -2px;
-  opacity: 0.9;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
 }
 
 .side-shape {
   position: absolute;
-  bottom: -50px;
-  right: -50px;
-  width: 200px;
-  height: 200px;
-  background-color: var(--color-zen-sage);
+  bottom: -80px;
+  right: -80px;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(139, 154, 110, 0.34) 0%, transparent 72%);
   border-radius: 50%;
-  filter: blur(40px);
-  opacity: 0.35;
   pointer-events: none;
 }
 
@@ -197,12 +239,27 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   max-width: 320px;
 }
 
+.compact-brand {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.compact-wordmark {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
 .auth-toggle {
   margin-bottom: 24px;
 }
 
 .ui-seg-item.is-disabled {
-  opacity: 0.5;
+  opacity: 0.48;
   pointer-events: none;
 }
 
@@ -217,6 +274,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   font-size: 20px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
 .form-stack {
@@ -234,7 +292,16 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: flex;
   align-items: center;
   box-sizing: border-box;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+/* #ifdef H5 */
+.code-field:focus-within {
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+}
+/* #endif */
 
 .code-input {
   flex: 1;
@@ -250,6 +317,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   padding: 0 12px;
   height: 28px;
   line-height: 28px;
+  margin: 0;
   background: transparent;
   border-left: 1px solid var(--border-subtle);
   border-radius: 0;
@@ -257,6 +325,9 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .code-button[disabled] {
@@ -267,7 +338,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   display: block;
   margin-top: 12px;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   background-color: var(--color-sage-bg);
   color: var(--color-sage-ink);
   font-size: var(--font-size-xs);
@@ -275,20 +346,27 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 }
 
 .submit-btn {
-  margin-top: 20px;
+  margin: 20px 0 0;
+  padding: 0;
   width: 100%;
   height: 44px;
-  background-color: var(--color-zen-sage);
+  line-height: 44px;
+  background: var(--accent-gradient);
   color: #FFFFFF;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.25);
-  transition: transform 0.18s var(--ease-out), filter 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.26);
+  cursor: pointer;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.18s ease;
+}
+
+.submit-btn:hover:not([disabled]) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(110, 128, 82, 0.34);
 }
 
 .submit-btn:active {
@@ -296,7 +374,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 }
 
 .submit-btn[disabled] {
-  opacity: 0.5;
+  opacity: 0.48;
 }
 
 .footer-links {
@@ -309,6 +387,11 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   color: var(--text-muted);
   cursor: pointer;
   padding: 4px 10px;
+  transition: color 0.16s ease;
+}
+
+.footer-link:hover {
+  color: var(--text-primary);
 }
 
 /* #ifdef H5 */
@@ -320,6 +403,10 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 @media (max-width: 760px) {
   .brand-side {
     display: none;
+  }
+
+  .compact-brand {
+    display: flex;
   }
 
   .form-side {

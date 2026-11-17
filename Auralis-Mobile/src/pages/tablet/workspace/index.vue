@@ -21,7 +21,6 @@
         v-model:active-tab="activeTab"
         :subject-id="subjectId"
         :subject-name="subjectName"
-        :sources="sources"
         :selected-source="selectedSource"
         :ai-panel-visible="aiPanelVisible"
         :preview-url="previewUrl"
@@ -51,50 +50,70 @@
 
     <template #modal>
       <view v-if="showBlockModal" class="zen-modal-mask" @click="closeBlockModal">
-        <view class="zen-modal-card" @click.stop>
+        <view class="zen-modal-body block-modal-card" @click.stop>
           <view class="modal-header">
             <text class="modal-title">{{ editingBlockId ? '编辑知识块' : '新建知识块' }}</text>
-            <view class="ui-icon-btn sm" @click="closeBlockModal">
+            <view class="ui-icon-btn sm" role="button" aria-label="关闭" @click="closeBlockModal">
               <LineIcon name="close" size="14px" color="var(--text-muted)" />
             </view>
           </view>
 
           <view class="modal-body">
-            <view class="form-field">
-              <text class="field-label">标题</text>
+            <view class="field-group">
+              <text class="zen-field-label">标题</text>
               <input
                 v-model="blockDraft.title"
                 class="ui-input"
                 maxlength="80"
-                placeholder="拉格朗日中值定理"
+                placeholder="例如：拉格朗日中值定理的辅助函数构造"
               />
             </view>
 
-            <view class="form-field">
-              <text class="field-label">来源</text>
+            <view class="field-group">
+              <text class="zen-field-label">关联资料</text>
               <input
                 v-model="blockDraft.source"
                 class="ui-input"
                 maxlength="80"
-                placeholder="自主整理"
+                placeholder="自主整理或关联资料名称"
               />
+              <view v-if="sources.length > 0" class="source-chip-row">
+                <view
+                  class="chip-item sm"
+                  :class="{ active: blockDraft.source === '自主整理' }"
+                  role="button"
+                  @click="blockDraft.source = '自主整理'"
+                >
+                  <text>自主整理</text>
+                </view>
+                <view
+                  v-for="src in sources"
+                  :key="src.id"
+                  class="chip-item sm"
+                  :class="{ active: blockDraft.source === (src.title || '') }"
+                  role="button"
+                  @click="blockDraft.source = src.title || ''"
+                >
+                  <text class="source-chip-text">{{ src.title || '未命名资料' }}</text>
+                </view>
+              </view>
             </view>
 
-            <view class="form-field">
-              <text class="field-label">内容</text>
+            <view class="field-group">
+              <text class="zen-field-label">正文</text>
               <textarea
                 v-model="blockDraft.preview"
                 class="ui-textarea"
                 :maxlength="4000"
-                placeholder="Markdown 正文"
+                placeholder="Markdown 正文（支持 $...$ 公式）"
               />
             </view>
           </view>
 
           <view class="modal-footer">
-            <button class="ui-btn ui-btn-secondary" :disabled="submittingBlock" @click="closeBlockModal">取消</button>
+            <button class="ui-btn ui-btn-ghost" :disabled="submittingBlock" @click="closeBlockModal">取消</button>
             <button class="ui-btn ui-btn-primary" :disabled="submittingBlock" @click="submitBlockModal">
-              {{ submittingBlock ? '保存中...' : '保存' }}
+              {{ submittingBlock ? '保存中…' : '保存' }}
             </button>
           </view>
         </view>
@@ -114,6 +133,7 @@ import WorkspaceAiPanel from '@/components/tablet/workspace/WorkspaceAiPanel.vue
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
 import { sourceApi, type SourceView } from '@/api/sourceApi'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -328,7 +348,7 @@ function handleDeleteSource(source: SourceView) {
   uni.showModal({
     title: '删除资料',
     content: `确定删除《${source.title || '未命名资料'}》吗？`,
-    confirmColor: '#D14343',
+    confirmColor: '#C93B3B',
     success: async (res) => {
       if (!res.confirm || !source.id || !isFenceValid(fence, false)) return
       try {
@@ -375,6 +395,8 @@ function closeBlockModal() {
   if (submittingBlock.value) return
   showBlockModal.value = false
 }
+
+useEscapeKey(() => showBlockModal.value, closeBlockModal)
 
 async function submitBlockModal() {
   if (submittingBlock.value || !subjectId.value) return
@@ -437,7 +459,7 @@ function handleDeleteBlock(block: KnowledgeBlock) {
   uni.showModal({
     title: '删除知识块',
     content: `确定删除知识块“${block.title}”吗？`,
-    confirmColor: '#D14343',
+    confirmColor: '#C93B3B',
     success: async (res) => {
       if (!res.confirm || !isFenceValid(fence, false)) return
       await blockStore.removeBlock(block.id)
@@ -453,17 +475,20 @@ async function reloadAll() {
     subjectStore.loadSubjects(),
     blockStore.fetchBlocks(undefined, subjectId.value),
     loadSources(),
-    loadOverview(),
   ])
+  await loadOverview()
   if (selectedSource.value) {
     void loadSourcePreview()
   }
 }
 
 onLoad((options) => {
-  if (typeof options?.id === 'string' && options.id) {
-    subjectId.value = options.id
-    subjectStore.setActiveSubject(options.id)
+  const incomingId = typeof options?.id === 'string' && options.id
+    ? options.id
+    : (typeof options?.subjectId === 'string' && options.subjectId ? options.subjectId : '')
+  if (incomingId) {
+    subjectId.value = incomingId
+    subjectStore.setActiveSubject(incomingId)
   }
   const panel = options?.panel || options?.tab
   if (panel === 'overview' || panel === 'blocks' || panel === 'review') {
@@ -492,35 +517,18 @@ onMounted(async () => {
 .t-workspace {
   width: 100%;
   height: 100%;
-  background: var(--color-bg-page);
-  padding: 16px 18px;
+  background: var(--color-bg-secondary);
+  padding: 14px;
   box-sizing: border-box;
   display: flex;
   align-items: stretch;
-  gap: 14px;
+  gap: 12px;
   overflow: hidden;
 }
 
-.zen-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  background: rgba(28, 28, 26, 0.36);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.zen-modal-card {
-  width: 100%;
+.block-modal-card {
   max-width: 480px;
-  background: var(--bg-card);
-  border-radius: 22px;
-  border: 1px solid var(--border-subtle);
   padding: 22px;
-  box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -545,16 +553,43 @@ onMounted(async () => {
   gap: 12px;
 }
 
-.form-field {
+.field-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
-.field-label {
-  font-size: var(--text-xs);
-  font-weight: 600;
+.source-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip-item.sm {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: center;
+  max-width: 180px;
+  font-size: 11.5px;
   color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.chip-item.sm.active {
+  background-color: var(--color-sage-bg);
+  border-color: var(--border-accent);
+  color: var(--color-sage-ink);
+  font-weight: var(--font-weight-semibold);
+}
+
+.source-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modal-footer {
