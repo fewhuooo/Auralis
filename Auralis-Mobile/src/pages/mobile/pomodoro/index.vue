@@ -70,44 +70,36 @@
               </view>
             </view>
 
-            <view class="focus-cards-stack">
-              <view
-                class="panel-card zen-card focus-task-card"
-                :class="{
-                  'is-locked': focusStore.isTaskLocked,
-                  'is-free': displayedTask.isFreeStudy,
-                }"
-                role="button"
-                aria-label="选择专注任务"
-                @click="openTaskPicker"
-              >
-                <view class="focus-card-top">
-                  <text class="card-title">当前专注</text>
-                  <view class="focus-card-badges">
-                    <text
-                      v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
-                      class="focus-time-badge num-tabular"
-                    >
-                      {{ displayedTask.timeStr }}
-                    </text>
-                    <text class="focus-status-tag" :class="{ 'is-free': displayedTask.isFreeStudy }">
-                      {{ displayedTask.statusTag }}
-                    </text>
-                  </view>
-                </view>
-
-                <view class="focus-card-main">
-                  <view class="focus-accent-bar" :class="{ 'is-free': displayedTask.isFreeStudy }"></view>
-                  <text class="focus-task-name">{{ displayedTask.name }}</text>
+            <view
+              class="panel-card zen-card focus-panel-card"
+              :class="{ 'is-locked': focusStore.isTaskLocked }"
+              role="button"
+              aria-label="选择专注任务"
+              @click="openTaskPicker"
+            >
+              <view class="card-header">
+                <text class="card-title">当前专注</text>
+                <view class="card-header-meta">
+                  <text
+                    v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
+                    class="header-time-badge num-tabular"
+                  >
+                    {{ displayedTask.timeStr }}
+                  </text>
                   <LineIcon
                     :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
-                    size="15px"
+                    size="14px"
                     color="var(--text-muted, #7A7A75)"
                   />
                 </view>
               </view>
 
-              <view v-if="focusStore.lastCompletedTask" class="panel-card zen-card complete-card">
+              <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
+                <text class="banner-title">{{ displayedTask.name }}</text>
+                <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
+              </view>
+
+              <view v-if="focusStore.lastCompletedTask" class="complete-prompt" @click.stop>
                 <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
                 <view class="complete-prompt-actions">
                   <view
@@ -595,70 +587,95 @@ async function completeBoundTask() {
   box-sizing: border-box;
 }
 
-.focus-cards-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .panel-card {
   padding: 14px 16px;
-  border-radius: 18px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
 
-.focus-task-card {
-  gap: 10px;
+.focus-panel-card {
   cursor: pointer;
-  transition: transform 0.18s var(--ease-out), border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.18s var(--ease-out), border-color 0.2s ease;
 }
 
-.focus-task-card:active {
+.focus-panel-card:active {
   transform: scale(0.985);
 }
 
-.focus-task-card.is-locked {
+.focus-panel-card.is-locked {
   cursor: default;
 }
 
-.focus-task-card.is-locked:active {
+.focus-panel-card.is-locked:active {
   transform: none;
 }
 
-.focus-card-top {
+.card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin-bottom: 10px;
 }
 
 .card-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: var(--font-weight-bold, 700);
-  color: var(--text-muted, #7A7A75);
-  letter-spacing: -0.1px;
+  color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.2px;
 }
 
-.focus-card-badges {
+.card-header-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.focus-time-badge {
+.header-time-badge {
   font-size: 11px;
   font-weight: var(--font-weight-semibold, 600);
   padding: 2px 8px;
   border-radius: 9999px;
-  background-color: rgba(139, 154, 110, 0.10);
+  background-color: rgba(139, 154, 110, 0.12);
   color: #637748;
   white-space: nowrap;
 }
 
-.focus-status-tag {
+.active-focus-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  border-radius: 13px;
+  background-color: rgba(139, 154, 110, 0.07);
+  border: 0.5px solid rgba(139, 154, 110, 0.2);
+  border-left: 3.5px solid #8B9A6E;
+  transition: all 0.25s ease;
+}
+
+.active-focus-banner.is-free {
+  background-color: rgba(110, 136, 152, 0.07);
+  border-color: rgba(110, 136, 152, 0.2);
+  border-left-color: #6E8898;
+}
+
+.banner-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-primary, #1C1C1A);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner-status-tag {
   font-size: 11px;
   font-weight: var(--font-weight-semibold, 600);
   padding: 2px 9px;
@@ -666,52 +683,22 @@ async function completeBoundTask() {
   background-color: rgba(139, 154, 110, 0.16);
   color: #556B3D;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.focus-status-tag.is-free {
+.active-focus-banner.is-free .banner-status-tag {
   background-color: rgba(110, 136, 152, 0.16);
   color: #486270;
 }
 
-.focus-card-main {
+.complete-prompt {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, rgba(45, 55, 40, 0.06));
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.focus-accent-bar {
-  width: 3.5px;
-  height: 18px;
-  border-radius: 9999px;
-  background-color: #8B9A6E;
-  flex-shrink: 0;
-}
-
-.focus-accent-bar.is-free {
-  background-color: #6E8898;
-}
-
-.focus-task-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 14.5px;
-  font-weight: var(--font-weight-bold, 700);
-  color: var(--text-primary, #1C1C1A);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
-}
-
-.complete-card {
-  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 16px;
 }
 
 .complete-prompt-title {
