@@ -215,15 +215,15 @@ const formattedTime = computed(() => {
 }
 
 .ring-inner.has-bottom-pill .time-text {
-  font-size: clamp(42px, 13.5vw, 54px);
-  letter-spacing: -1.5px;
+  font-size: clamp(48px, 15.5vw, 66px);
+  letter-spacing: -2px;
 }
 
 .ring-pill {
   position: absolute;
-  bottom: 13.5%;
-  width: 38px;
-  height: 19px;
+  bottom: 14%;
+  width: 40px;
+  height: 20px;
   border-radius: 9999px;
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.82));
   background-color: var(--glass-bg, rgba(252, 251, 249, 0.70));
@@ -237,8 +237,8 @@ const formattedTime = computed(() => {
 }
 
 .pill-dot {
-  width: 6.5px;
-  height: 6.5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   transition: background-color 0.3s ease, transform 0.3s ease;
 }

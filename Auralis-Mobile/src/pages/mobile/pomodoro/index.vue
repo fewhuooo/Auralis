@@ -12,169 +12,115 @@
             </view>
           </view>
 
-          <view class="timer-hero">
-            <PomodoroRing
-              size="min(236px, 64vw)"
-              :total-seconds="focusStore.totalSeconds"
-              :remaining-seconds="focusStore.remainingSeconds"
-              :is-running="focusStore.isRunning"
-              :color="focusStore.ringColor"
-              :is-break="focusStore.isBreakPhase"
-              :show-bottom-pill="true"
-              :aria-label="focusStore.isRunning ? '点击暂停专注' : '点击开始专注'"
-              @center-click="focusStore.toggle()"
-            />
+          <view class="focus-stage-body">
+            <view class="timer-hero">
+              <PomodoroRing
+                size="min(284px, 72vw)"
+                :total-seconds="focusStore.totalSeconds"
+                :remaining-seconds="focusStore.remainingSeconds"
+                :is-running="focusStore.isRunning"
+                :color="focusStore.ringColor"
+                :is-break="focusStore.isBreakPhase"
+                :show-bottom-pill="true"
+                :aria-label="focusStore.isRunning ? '点击暂停专注' : '点击开始专注'"
+                @center-click="focusStore.toggle()"
+              />
 
-            <view class="phase-status">
-              <view
-                class="phase-pill"
-                :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
-              >
-                <view class="phase-beacon"></view>
-                <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
+              <view class="phase-status">
+                <view
+                  class="phase-pill"
+                  :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
+                >
+                  <view class="phase-beacon"></view>
+                  <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
+                </view>
+              </view>
+
+              <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
+                <view
+                  v-for="idx in 4"
+                  :key="idx"
+                  class="dot"
+                  :class="{
+                    'is-filled': focusStore.cycleCount >= idx,
+                    'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
+                  }"
+                ></view>
+              </view>
+
+              <view class="controls">
+                <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
+                  <text>重置</text>
+                </view>
+
+                <view
+                  class="main-btn"
+                  :class="{ 'is-break': focusStore.isBreakPhase }"
+                  role="button"
+                  :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
+                  @click="focusStore.toggle()"
+                >
+                  <view v-if="focusStore.isRunning" class="pause-icon"></view>
+                  <view v-else class="play-icon"></view>
+                </view>
+
+                <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
+                  <text>跳过</text>
+                </view>
               </view>
             </view>
 
-            <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
-              <view
-                v-for="idx in 4"
-                :key="idx"
-                class="dot"
-                :class="{
-                  'is-filled': focusStore.cycleCount >= idx,
-                  'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
-                }"
-              ></view>
-            </view>
-
-            <view class="controls">
-              <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
-                <text>重置</text>
-              </view>
-
-              <view
-                class="main-btn"
-                :class="{ 'is-break': focusStore.isBreakPhase }"
-                role="button"
-                :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
-                @click="focusStore.toggle()"
-              >
-                <view v-if="focusStore.isRunning" class="pause-icon"></view>
-                <view v-else class="play-icon"></view>
-              </view>
-
-              <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
-                <text>跳过</text>
-              </view>
-            </view>
-          </view>
-
-          <view class="panel-card zen-card">
-            <view class="card-header">
-              <view class="card-title-row">
+            <view class="panel-card zen-card">
+              <view class="card-header">
                 <text class="card-title">当前专注</text>
-                <view class="preset-row">
-                  <view
-                    v-for="mins in presets"
-                    :key="mins"
-                    class="preset-chip num-tabular"
-                    :class="{
-                      active: focusStore.focusMinutes === mins,
-                      disabled: focusStore.isTaskLocked,
-                    }"
-                    role="button"
-                    :aria-label="`专注 ${mins} 分钟`"
-                    @click="choosePreset(mins)"
+              </view>
+
+              <view
+                class="zen-select-trigger"
+                :class="{ 'is-locked': focusStore.isTaskLocked }"
+                role="button"
+                aria-label="选择专注任务"
+                @click="openTaskPicker"
+              >
+                <text class="trigger-label">{{ displayedTask.name }}</text>
+                <view class="trigger-right">
+                  <text
+                    class="trigger-badge num-tabular"
+                    :class="{ 'is-free-badge': displayedTask.isFreeStudy }"
                   >
-                    <text>{{ mins }}m</text>
-                  </view>
+                    {{ displayedTask.timeStr }}
+                  </text>
+                  <LineIcon
+                    :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
+                    size="14px"
+                    color="var(--text-muted, #7A7A75)"
+                  />
                 </view>
               </view>
-              <text class="card-sub-hint">
-                {{ focusStore.isTaskLocked ? '本轮专注结束后可重新选择任务' : '选择要专注的任务，或开启自由专注' }}
-              </text>
-            </view>
 
-            <view
-              class="zen-select-trigger"
-              :class="{ 'is-locked': focusStore.isTaskLocked }"
-              role="button"
-              aria-label="选择专注任务"
-              @click="openTaskPicker"
-            >
-              <text class="trigger-label">{{ displayedTask.name }}</text>
-              <view class="trigger-right">
-                <text
-                  class="trigger-badge num-tabular"
-                  :class="{ 'is-free-badge': displayedTask.isFreeStudy }"
-                >
-                  {{ displayedTask.timeStr }}
-                </text>
-                <LineIcon
-                  :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
-                  size="14px"
-                  color="var(--text-muted, #7A7A75)"
-                />
-              </view>
-            </view>
-
-            <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
-              <view class="banner-info">
+              <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
                 <text class="banner-title">{{ displayedTask.name }}</text>
-                <view class="banner-meta-row">
-                  <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
-                  <text class="banner-desc num-tabular">{{ displayedTask.bannerDesc }}</text>
-                </view>
-              </view>
-            </view>
-
-            <view v-if="focusStore.lastCompletedTask" class="complete-prompt">
-              <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
-              <view class="complete-prompt-actions">
-                <view
-                  class="ui-btn ui-btn-secondary sm prompt-btn"
-                  role="button"
-                  @click="focusStore.dismissCompletedTaskPrompt()"
-                >
-                  <text>暂不</text>
-                </view>
-                <view
-                  class="ui-btn ui-btn-primary sm prompt-btn"
-                  :class="{ 'is-disabled': completingTask }"
-                  role="button"
-                  @click="completeBoundTask"
-                >
-                  <text>{{ completingTask ? '保存中…' : '标记完成' }}</text>
-                </view>
-              </view>
-            </view>
-          </view>
-
-          <view class="panel-card zen-card">
-            <view class="card-header">
-              <text class="card-title">今日专注看板</text>
-              <text class="card-sub-hint">今日累计专注数据，暂停与休息不计入时长</text>
-            </view>
-
-            <view class="stats-container">
-              <view class="stat-col">
-                <text class="stat-val num-tabular">{{ focusStore.todayRounds }}</text>
-                <view class="stat-label-row">
-                  <LineIcon name="check" size="14px" color="#8B9A6E" />
-                  <text class="stat-label">今日番茄</text>
-                </view>
+                <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
               </view>
 
-              <view class="stat-divider"></view>
-
-              <view class="stat-col">
-                <view class="val-wrapper">
-                  <text class="stat-val num-tabular">{{ formattedFocusMinutes }}</text>
-                  <text class="stat-unit">m</text>
-                </view>
-                <view class="stat-label-row">
-                  <LineIcon name="fire" size="14px" color="#8B9A6E" />
-                  <text class="stat-label">专注时长</text>
+              <view v-if="focusStore.lastCompletedTask" class="complete-prompt">
+                <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
+                <view class="complete-prompt-actions">
+                  <view
+                    class="ui-btn ui-btn-secondary sm prompt-btn"
+                    role="button"
+                    @click="focusStore.dismissCompletedTaskPrompt()"
+                  >
+                    <text>暂不</text>
+                  </view>
+                  <view
+                    class="ui-btn ui-btn-primary sm prompt-btn"
+                    :class="{ 'is-disabled': completingTask }"
+                    role="button"
+                    @click="completeBoundTask"
+                  >
+                    <text>{{ completingTask ? '保存中…' : '标记完成' }}</text>
+                  </view>
                 </view>
               </view>
             </view>
@@ -201,7 +147,6 @@ import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
 import TaskSelectSheet from '@/components/TaskSelectSheet.vue'
 import {
-  FOCUS_PRESETS,
   formatFocusClockDateTime,
   resolveDefaultFocusTask,
   resolveDisplayedFocusTask,
@@ -214,7 +159,6 @@ const authStore = useAuthStore()
 const focusStore = useFocusStore()
 const taskStore = useTaskStore()
 
-const presets = FOCUS_PRESETS
 const showTaskSheet = ref(false)
 const completingTask = ref(false)
 const nowMs = ref(Date.now())
@@ -237,7 +181,11 @@ const displayedTask = computed(() =>
   }),
 )
 
-const formattedFocusMinutes = computed(() => (focusStore.todayFocusSeconds / 60).toFixed(1))
+function ensureStandardFocusMinutes() {
+  if (!focusStore.isTaskLocked && focusStore.focusMinutes !== 25) {
+    focusStore.setFocusMinutes(25)
+  }
+}
 
 function applyDefaultTaskIfNeeded() {
   if (focusStore.isTaskLocked) return
@@ -283,6 +231,7 @@ function stopClock() {
 async function syncFocusState() {
   startClock()
   focusStore.reconcileNow(false)
+  ensureStandardFocusMinutes()
   void focusStore.flushPendingSessions()
 
   const generation = authStore.getLoginGeneration()
@@ -318,6 +267,12 @@ async function syncFocusState() {
 }
 
 watch(
+  () => [focusStore.isTaskLocked, focusStore.focusMinutes],
+  ensureStandardFocusMinutes,
+  { immediate: true },
+)
+
+watch(
   () => [authStore.sessionId, authStore.user?.id, authStore.serverDeviceId],
   () => {
     userManuallySelected = false
@@ -350,14 +305,6 @@ function openTaskPicker() {
     return
   }
   showTaskSheet.value = true
-}
-
-function choosePreset(minutes: number) {
-  if (focusStore.isTaskLocked) {
-    uni.showToast({ title: '重置后可调整时长', icon: 'none' })
-    return
-  }
-  focusStore.setFocusMinutes(minutes)
 }
 
 function onTaskSelected(task: Task | null) {
@@ -422,6 +369,7 @@ async function completeBoundTask() {
 
 .page-inner {
   width: 100%;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -429,10 +377,20 @@ async function completeBoundTask() {
   box-sizing: border-box;
 }
 
+.focus-stage-body {
+  width: 100%;
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.8vh, 26px);
+  padding: 6px 0;
+}
+
 .time-row {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  flex-shrink: 0;
 }
 
 .datetime-pill {
@@ -469,17 +427,17 @@ async function completeBoundTask() {
 }
 
 .phase-status {
-  margin-top: 14px;
+  margin-top: 16px;
   text-align: center;
 }
 
 .phase-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 16px;
+  gap: 8px;
+  padding: 6px 18px;
   border-radius: 9999px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: var(--font-weight-bold, 700);
   letter-spacing: 0.5px;
   background-color: rgba(139, 154, 110, 0.12);
@@ -531,14 +489,14 @@ async function completeBoundTask() {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 11px;
+  margin-top: 14px;
   padding: 2px 8px;
 }
 
 .dot {
-  width: 8.5px;
-  height: 8.5px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background-color: rgba(139, 154, 110, 0.18);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -560,19 +518,19 @@ async function completeBoundTask() {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  margin-top: 20px;
+  gap: 28px;
+  margin-top: 22px;
 }
 
 .ctrl-btn {
-  padding: 9px 20px;
+  padding: 9px 22px;
   border-radius: 9999px;
   background-color: var(--glass-bg, rgba(252, 251, 249, 0.70));
   backdrop-filter: var(--glass-blur-soft, blur(18px));
   -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.82));
   box-shadow: var(--glass-shadow-subtle, 0 2px 10px rgba(45, 55, 40, 0.03));
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: var(--font-weight-semibold, 600);
   color: var(--text-secondary, #2C2C28);
   letter-spacing: 0.3px;
@@ -585,8 +543,8 @@ async function completeBoundTask() {
 }
 
 .main-btn {
-  width: 70px;
-  height: 70px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
   background: var(--accent-gradient, linear-gradient(135deg, #8E9F70 0%, #768758 100%));
   box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
@@ -610,22 +568,23 @@ async function completeBoundTask() {
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 11px 0 11px 18px;
+  border-width: 12px 0 12px 19px;
   border-color: transparent transparent transparent #FFFFFF;
   margin-left: 4px;
 }
 
 .pause-icon {
-  width: 15px;
-  height: 19px;
-  border-left: 4.5px solid #FFFFFF;
-  border-right: 4.5px solid #FFFFFF;
+  width: 16px;
+  height: 20px;
+  border-left: 5px solid #FFFFFF;
+  border-right: 5px solid #FFFFFF;
   border-radius: 1px;
   box-sizing: border-box;
 }
 
 .panel-card {
-  padding: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -633,69 +592,21 @@ async function completeBoundTask() {
 
 .card-header {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 14px;
-}
-
-.card-title-row {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
 .card-title {
-  font-size: var(--font-size-base, 14px);
+  font-size: 13.5px;
   font-weight: var(--font-weight-bold, 700);
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
 }
 
-.card-sub-hint {
-  font-size: var(--font-size-xs, 12px);
-  color: var(--text-muted, #7A7A75);
-  line-height: 1.4;
-}
-
-.preset-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.preset-chip {
-  padding: 4px 10px;
-  border-radius: 9999px;
-  background-color: var(--glass-sub-bg, rgba(255, 255, 255, 0.56));
-  backdrop-filter: var(--glass-blur-soft, blur(18px));
-  -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
-  border: 1px solid var(--glass-border-subtle, rgba(255, 255, 255, 0.72));
-  box-shadow: var(--glass-shadow-subtle, 0 2px 10px rgba(45, 55, 40, 0.03));
-  font-size: 11.5px;
-  font-weight: var(--font-weight-semibold, 600);
-  color: var(--text-muted, #7A7A75);
-  cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
-}
-
-.preset-chip.active {
-  background-color: rgba(139, 154, 110, 0.16);
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
-  color: var(--color-sage-ink, #556B3D);
-  font-weight: var(--font-weight-bold, 700);
-}
-
-.preset-chip.disabled {
-  opacity: 0.45;
-}
-
 .zen-select-trigger {
   width: 100%;
-  min-height: 48px;
-  padding: 8px 16px;
+  min-height: 44px;
+  padding: 6px 14px;
   border-radius: 9999px;
   background-color: var(--glass-sub-bg, rgba(255, 255, 255, 0.56));
   backdrop-filter: var(--glass-blur-soft, blur(18px));
@@ -718,7 +629,7 @@ async function completeBoundTask() {
 .trigger-label {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: var(--font-weight-semibold, 600);
   color: var(--text-primary, #1C1C1A);
   white-space: nowrap;
@@ -734,7 +645,7 @@ async function completeBoundTask() {
 }
 
 .trigger-badge {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: var(--font-weight-semibold, 600);
   padding: 2px 8px;
   border-radius: 9999px;
@@ -749,11 +660,13 @@ async function completeBoundTask() {
 }
 
 .active-focus-banner {
-  margin-top: 12px;
+  margin-top: 9px;
   display: flex;
   align-items: center;
-  padding: 12px 15px;
-  border-radius: 16px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  border-radius: 13px;
   background-color: rgba(139, 154, 110, 0.07);
   border: 0.5px solid rgba(139, 154, 110, 0.2);
   border-left: 3.5px solid #8B9A6E;
@@ -766,35 +679,20 @@ async function completeBoundTask() {
   border-left-color: #6E8898;
 }
 
-.banner-info {
+.banner-title {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.banner-title {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: var(--font-weight-bold, 700);
   color: var(--text-primary, #1C1C1A);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.35;
+  white-space: nowrap;
   overflow: hidden;
-  word-break: break-word;
-}
-
-.banner-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  text-overflow: ellipsis;
 }
 
 .banner-status-tag {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: var(--font-weight-semibold, 600);
   padding: 2px 9px;
   border-radius: 9999px;
@@ -809,14 +707,9 @@ async function completeBoundTask() {
   color: #486270;
 }
 
-.banner-desc {
-  font-size: 12px;
-  color: var(--text-muted, #7A7A75);
-}
-
 .complete-prompt {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-subtle, rgba(45, 55, 40, 0.06));
   display: flex;
   align-items: center;
@@ -845,64 +738,5 @@ async function completeBoundTask() {
 .prompt-btn {
   height: 30px;
   padding: 0 12px;
-}
-
-.stats-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-}
-
-.stat-col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.stat-divider {
-  width: 1px;
-  height: 46px;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    var(--border-default, rgba(45, 55, 40, 0.09)) 20%,
-    var(--border-default, rgba(45, 55, 40, 0.09)) 80%,
-    transparent 100%
-  );
-}
-
-.val-wrapper {
-  display: flex;
-  align-items: baseline;
-}
-
-.stat-val {
-  font-size: 34px;
-  font-weight: 800;
-  color: var(--text-primary, #1C1C1A);
-  line-height: 1;
-  letter-spacing: -1px;
-}
-
-.stat-unit {
-  font-size: 14px;
-  color: var(--text-muted, #7A7A75);
-  margin-left: 4px;
-  font-weight: var(--font-weight-semibold, 600);
-}
-
-.stat-label-row {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-  gap: 5px;
-}
-
-.stat-label {
-  font-size: 12.5px;
-  color: var(--text-muted, #7A7A75);
-  font-weight: var(--font-weight-semibold, 600);
 }
 </style>
