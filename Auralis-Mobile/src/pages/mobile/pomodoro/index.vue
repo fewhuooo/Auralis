@@ -70,40 +70,44 @@
               </view>
             </view>
 
-            <view class="panel-card zen-card">
-              <view class="card-header">
-                <text class="card-title">当前专注</text>
-              </view>
-
+            <view class="focus-cards-stack">
               <view
-                class="zen-select-trigger"
-                :class="{ 'is-locked': focusStore.isTaskLocked }"
+                class="panel-card zen-card focus-task-card"
+                :class="{
+                  'is-locked': focusStore.isTaskLocked,
+                  'is-free': displayedTask.isFreeStudy,
+                }"
                 role="button"
                 aria-label="选择专注任务"
                 @click="openTaskPicker"
               >
-                <text class="trigger-label">{{ displayedTask.name }}</text>
-                <view class="trigger-right">
-                  <text
-                    class="trigger-badge num-tabular"
-                    :class="{ 'is-free-badge': displayedTask.isFreeStudy }"
-                  >
-                    {{ displayedTask.timeStr }}
-                  </text>
+                <view class="focus-card-top">
+                  <text class="card-title">当前专注</text>
+                  <view class="focus-card-badges">
+                    <text
+                      v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
+                      class="focus-time-badge num-tabular"
+                    >
+                      {{ displayedTask.timeStr }}
+                    </text>
+                    <text class="focus-status-tag" :class="{ 'is-free': displayedTask.isFreeStudy }">
+                      {{ displayedTask.statusTag }}
+                    </text>
+                  </view>
+                </view>
+
+                <view class="focus-card-main">
+                  <view class="focus-accent-bar" :class="{ 'is-free': displayedTask.isFreeStudy }"></view>
+                  <text class="focus-task-name">{{ displayedTask.name }}</text>
                   <LineIcon
                     :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
-                    size="14px"
+                    size="15px"
                     color="var(--text-muted, #7A7A75)"
                   />
                 </view>
               </view>
 
-              <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
-                <text class="banner-title">{{ displayedTask.name }}</text>
-                <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
-              </view>
-
-              <view v-if="focusStore.lastCompletedTask" class="complete-prompt">
+              <view v-if="focusStore.lastCompletedTask" class="panel-card zen-card complete-card">
                 <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
                 <view class="complete-prompt-actions">
                   <view
@@ -591,116 +595,70 @@ async function completeBoundTask() {
   box-sizing: border-box;
 }
 
+.focus-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .panel-card {
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 18px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
+.focus-task-card {
+  gap: 10px;
+  cursor: pointer;
+  transition: transform 0.18s var(--ease-out), border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.card-title {
-  font-size: 13.5px;
-  font-weight: var(--font-weight-bold, 700);
-  color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.2px;
+.focus-task-card:active {
+  transform: scale(0.985);
 }
 
-.zen-select-trigger {
-  width: 100%;
-  min-height: 44px;
-  padding: 6px 14px;
-  border-radius: 9999px;
-  background-color: var(--glass-sub-bg, rgba(255, 255, 255, 0.56));
-  backdrop-filter: var(--glass-blur-soft, blur(18px));
-  -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
-  border: 1px solid var(--glass-border-subtle, rgba(255, 255, 255, 0.72));
-  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03) inset, 0 0 0 1px var(--border-subtle, rgba(45, 55, 40, 0.06)) inset;
+.focus-task-card.is-locked {
+  cursor: default;
+}
+
+.focus-task-card.is-locked:active {
+  transform: none;
+}
+
+.focus-card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  box-sizing: border-box;
-  cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.zen-select-trigger.is-locked {
-  opacity: 0.76;
-}
-
-.trigger-label {
-  flex: 1;
-  min-width: 0;
+.card-title {
   font-size: 13px;
-  font-weight: var(--font-weight-semibold, 600);
-  color: var(--text-primary, #1C1C1A);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-muted, #7A7A75);
+  letter-spacing: -0.1px;
 }
 
-.trigger-right {
+.focus-card-badges {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-.trigger-badge {
+.focus-time-badge {
   font-size: 11px;
   font-weight: var(--font-weight-semibold, 600);
   padding: 2px 8px;
   border-radius: 9999px;
-  background-color: rgba(139, 154, 110, 0.12);
+  background-color: rgba(139, 154, 110, 0.10);
   color: #637748;
   white-space: nowrap;
 }
 
-.trigger-badge.is-free-badge {
-  background-color: rgba(110, 136, 152, 0.12);
-  color: #536B79;
-}
-
-.active-focus-banner {
-  margin-top: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 9px 13px;
-  border-radius: 13px;
-  background-color: rgba(139, 154, 110, 0.07);
-  border: 0.5px solid rgba(139, 154, 110, 0.2);
-  border-left: 3.5px solid #8B9A6E;
-  transition: all 0.25s ease;
-}
-
-.active-focus-banner.is-free {
-  background-color: rgba(110, 136, 152, 0.07);
-  border-color: rgba(110, 136, 152, 0.2);
-  border-left-color: #6E8898;
-}
-
-.banner-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: var(--font-weight-bold, 700);
-  color: var(--text-primary, #1C1C1A);
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.banner-status-tag {
+.focus-status-tag {
   font-size: 11px;
   font-weight: var(--font-weight-semibold, 600);
   padding: 2px 9px;
@@ -708,22 +666,52 @@ async function completeBoundTask() {
   background-color: rgba(139, 154, 110, 0.16);
   color: #556B3D;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
-.active-focus-banner.is-free .banner-status-tag {
+.focus-status-tag.is-free {
   background-color: rgba(110, 136, 152, 0.16);
   color: #486270;
 }
 
-.complete-prompt {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-subtle, rgba(45, 55, 40, 0.06));
+.focus-card-main {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.focus-accent-bar {
+  width: 3.5px;
+  height: 18px;
+  border-radius: 9999px;
+  background-color: #8B9A6E;
+  flex-shrink: 0;
+}
+
+.focus-accent-bar.is-free {
+  background-color: #6E8898;
+}
+
+.focus-task-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-primary, #1C1C1A);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.complete-card {
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  padding: 12px 16px;
 }
 
 .complete-prompt-title {
