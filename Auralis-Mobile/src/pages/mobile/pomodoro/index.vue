@@ -367,13 +367,22 @@ async function completeBoundTask() {
   min-height: 0;
 }
 
-.page-inner {
-  width: 100%;
+/* #ifdef H5 */
+.pomodoro-scroll :deep(.uni-scroll-view-content) {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 12px 18px var(--tabbar-clearance);
+}
+/* #endif */
+
+.page-inner {
+  width: 100%;
+  flex: 1;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2.2vh, 22px);
+  padding: clamp(28px, 4.2vh, 42px) 18px var(--tabbar-clearance);
   box-sizing: border-box;
 }
 
@@ -383,7 +392,7 @@ async function completeBoundTask() {
   display: flex;
   flex-direction: column;
   gap: clamp(18px, 2.8vh, 26px);
-  padding: 6px 0;
+  padding: clamp(12px, 2vh, 22px) 0 6px;
 }
 
 .time-row {
