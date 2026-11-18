@@ -3,126 +3,126 @@
     <view class="pomodoro-page">
       <view class="status-bar-spacer"></view>
 
-      <scroll-view scroll-y :show-scrollbar="false" class="pomodoro-scroll">
-        <view class="page-inner">
-          <view class="time-row">
-            <view class="datetime-pill num-tabular">
-              <view class="datetime-dot"></view>
-              <text>{{ clockText.dateText }} {{ clockText.timeText }}</text>
-            </view>
-          </view>
+      <view class="time-row">
+        <view class="datetime-pill num-tabular">
+          <view class="datetime-dot"></view>
+          <text>{{ clockText.dateText }} {{ clockText.timeText }}</text>
+        </view>
+      </view>
 
-          <view class="focus-stage-body">
-            <view class="timer-hero">
-              <PomodoroRing
-                size="min(284px, 72vw)"
-                :total-seconds="focusStore.totalSeconds"
-                :remaining-seconds="focusStore.remainingSeconds"
-                :is-running="focusStore.isRunning"
-                :color="focusStore.ringColor"
-                :is-break="focusStore.isBreakPhase"
-                :show-bottom-pill="true"
-                :aria-label="focusStore.isRunning ? '点击暂停专注' : '点击开始专注'"
-                @center-click="focusStore.toggle()"
-              />
+      <scroll-view scroll-y :show-scrollbar="false" class="timer-scroll">
+        <view class="timer-scroll-inner">
+          <view class="timer-hero">
+            <PomodoroRing
+              size="min(284px, 72vw, 36vh)"
+              :total-seconds="focusStore.totalSeconds"
+              :remaining-seconds="focusStore.remainingSeconds"
+              :is-running="focusStore.isRunning"
+              :color="focusStore.ringColor"
+              :is-break="focusStore.isBreakPhase"
+              :show-bottom-pill="true"
+              :aria-label="focusStore.isRunning ? '点击暂停专注' : '点击开始专注'"
+              @center-click="focusStore.toggle()"
+            />
 
-              <view class="phase-status">
-                <view
-                  class="phase-pill"
-                  :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
-                >
-                  <view class="phase-beacon"></view>
-                  <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
-                </view>
-              </view>
-
-              <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
-                <view
-                  v-for="idx in 4"
-                  :key="idx"
-                  class="dot"
-                  :class="{
-                    'is-filled': focusStore.cycleCount >= idx,
-                    'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
-                  }"
-                ></view>
-              </view>
-
-              <view class="controls">
-                <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
-                  <text>重置</text>
-                </view>
-
-                <view
-                  class="main-btn"
-                  :class="{ 'is-break': focusStore.isBreakPhase }"
-                  role="button"
-                  :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
-                  @click="focusStore.toggle()"
-                >
-                  <view v-if="focusStore.isRunning" class="pause-icon"></view>
-                  <view v-else class="play-icon"></view>
-                </view>
-
-                <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
-                  <text>跳过</text>
-                </view>
+            <view class="phase-status">
+              <view
+                class="phase-pill"
+                :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
+              >
+                <view class="phase-beacon"></view>
+                <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
               </view>
             </view>
 
-            <view
-              class="panel-card zen-card focus-panel-card"
-              :class="{ 'is-locked': focusStore.isTaskLocked }"
-              role="button"
-              aria-label="选择专注任务"
-              @click="openTaskPicker"
-            >
-              <view class="card-header">
-                <text class="card-title">当前专注</text>
-                <view class="card-header-meta">
-                  <text
-                    v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
-                    class="header-time-badge num-tabular"
-                  >
-                    {{ displayedTask.timeStr }}
-                  </text>
-                  <LineIcon
-                    :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
-                    size="14px"
-                    color="var(--text-muted, #7A7A75)"
-                  />
-                </view>
+            <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
+              <view
+                v-for="idx in 4"
+                :key="idx"
+                class="dot"
+                :class="{
+                  'is-filled': focusStore.cycleCount >= idx,
+                  'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
+                }"
+              ></view>
+            </view>
+
+            <view class="controls">
+              <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
+                <text>重置</text>
               </view>
 
-              <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
-                <text class="banner-title">{{ displayedTask.name }}</text>
-                <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
+              <view
+                class="main-btn"
+                :class="{ 'is-break': focusStore.isBreakPhase }"
+                role="button"
+                :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
+                @click="focusStore.toggle()"
+              >
+                <view v-if="focusStore.isRunning" class="pause-icon"></view>
+                <view v-else class="play-icon"></view>
               </view>
 
-              <view v-if="focusStore.lastCompletedTask" class="complete-prompt" @click.stop>
-                <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
-                <view class="complete-prompt-actions">
-                  <view
-                    class="ui-btn ui-btn-secondary sm prompt-btn"
-                    role="button"
-                    @click="focusStore.dismissCompletedTaskPrompt()"
-                  >
-                    <text>暂不</text>
-                  </view>
-                  <view
-                    class="ui-btn ui-btn-primary sm prompt-btn"
-                    :class="{ 'is-disabled': completingTask }"
-                    role="button"
-                    @click="completeBoundTask"
-                  >
-                    <text>{{ completingTask ? '保存中…' : '标记完成' }}</text>
-                  </view>
-                </view>
+              <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
+                <text>跳过</text>
               </view>
             </view>
           </view>
         </view>
       </scroll-view>
+
+      <view class="bottom-card-dock">
+        <view
+          class="panel-card zen-card focus-panel-card"
+          :class="{ 'is-locked': focusStore.isTaskLocked }"
+          role="button"
+          aria-label="选择专注任务"
+          @click="openTaskPicker"
+        >
+          <view class="card-header">
+            <text class="card-title">当前专注</text>
+            <view class="card-header-meta">
+              <text
+                v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
+                class="header-time-badge num-tabular"
+              >
+                {{ displayedTask.timeStr }}
+              </text>
+              <LineIcon
+                :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
+                size="14px"
+                color="var(--text-muted, #7A7A75)"
+              />
+            </view>
+          </view>
+
+          <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
+            <text class="banner-title">{{ displayedTask.name }}</text>
+            <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
+          </view>
+
+          <view v-if="focusStore.lastCompletedTask" class="complete-prompt" @click.stop>
+            <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
+            <view class="complete-prompt-actions">
+              <view
+                class="ui-btn ui-btn-secondary sm prompt-btn"
+                role="button"
+                @click="focusStore.dismissCompletedTaskPrompt()"
+              >
+                <text>暂不</text>
+              </view>
+              <view
+                class="ui-btn ui-btn-primary sm prompt-btn"
+                :class="{ 'is-disabled': completingTask }"
+                role="button"
+                @click="completeBoundTask"
+              >
+                <text>{{ completingTask ? '保存中…' : '标记完成' }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
 
     <template #overlay>
@@ -357,45 +357,45 @@ async function completeBoundTask() {
   flex-shrink: 0;
 }
 
-.pomodoro-scroll {
+.time-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: clamp(18px, 2.6vh, 30px) 14px 4px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.timer-scroll {
   flex: 1;
   height: 0;
   min-height: 0;
 }
 
 /* #ifdef H5 */
-.pomodoro-scroll :deep(.uni-scroll-view-content) {
+.timer-scroll :deep(.uni-scroll-view-content) {
   min-height: 100%;
   display: flex;
   flex-direction: column;
 }
 /* #endif */
 
-.page-inner {
+.timer-scroll-inner {
   width: 100%;
   flex: 1;
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: clamp(16px, 2.2vh, 22px);
-  padding: clamp(28px, 4.2vh, 42px) 18px var(--tabbar-clearance);
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
   box-sizing: border-box;
 }
 
-.focus-stage-body {
-  width: 100%;
-  margin: auto 0;
-  display: flex;
-  flex-direction: column;
-  gap: clamp(18px, 2.8vh, 26px);
-  padding: clamp(12px, 2vh, 22px) 0 6px;
-}
-
-.time-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
+.bottom-card-dock {
   flex-shrink: 0;
+  padding: 6px 14px calc(80px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .datetime-pill {
@@ -425,6 +425,7 @@ async function completeBoundTask() {
 }
 
 .timer-hero {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
