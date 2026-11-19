@@ -607,8 +607,11 @@ function openHandwritingNotebook() {
   height: 34px;
   padding: 0 12px;
   border-radius: 10px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-primary);
@@ -865,8 +868,11 @@ function openHandwritingNotebook() {
   height: 32px;
   padding: 0 10px;
   border-radius: 9px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
   gap: 6px;

@@ -1311,7 +1311,7 @@ export interface components {
             /** Format: int64 */
             baseVersion: number;
             currentPassword: string;
-            /** @description At most 72 UTF-8 bytes */
+            /** @description At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes */
             newPassword: string;
         };
         ProfileUpdateRequest: {
@@ -1728,7 +1728,7 @@ export interface components {
             /** Format: email */
             email: string;
             emailCode: string;
-            /** @description At most 72 UTF-8 bytes */
+            /** @description At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes */
             password: string;
             clientDeviceKey: string;
             deviceName: string;
@@ -1762,7 +1762,7 @@ export interface components {
             /** Format: email */
             email: string;
             emailCode: string;
-            /** @description At most 72 UTF-8 bytes */
+            /** @description At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes */
             newPassword: string;
         };
         LoginRequest: {

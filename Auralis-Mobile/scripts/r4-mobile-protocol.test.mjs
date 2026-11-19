@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
 import { access, readFile } from 'node:fs/promises'
+import { createPinia, setActivePinia } from 'pinia'
 
 import { resolveRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts'
 import {
@@ -25,6 +27,8 @@ import {
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
 import { createSseDecoder } from '../src/api/sse.ts'
+import { createRoutePreloader } from '../src/utils/pagePreload.ts'
+import { useLayoutStore } from '../src/store/useLayoutStore.ts'
 
 test('resolves H5 and mini-program service addresses only from environment values', () => {
   const h5 = resolveRuntimeConfig({
@@ -67,11 +71,23 @@ test('parses RFC Problem Details and preserves field errors', () => {
     detail: 'Request validation failed',
     code: 'VALIDATION_FAILED',
     traceId: 'trace-1',
-    fieldErrors: [{ field: 'password', message: 'size must be between 12 and 200' }],
+    fieldErrors: [{ field: 'password', message: 'password does not meet the new-password policy' }],
   })
   assert.equal(problem.status, 400)
   assert.equal(problem.code, 'VALIDATION_FAILED')
   assert.equal(problem.fieldErrors[0].field, 'password')
+})
+
+test('mobile and tablet registration/reset apply the shared new-password requirements', async () => {
+  const source = await readFile(new URL('../src/composables/useAuthForm.ts', import.meta.url), 'utf8')
+  const loginValidation = source.slice(source.indexOf("if (mode.value === 'login' &&"), source.indexOf("if (mode.value === 'register'"))
+  assert.match(source, /password\.length\s*<\s*8/)
+  assert.match(source, /\\p\{Lu\}/)
+  assert.match(source, /\\p\{Ll\}/)
+  assert.match(source, /\\p\{P\}\\p\{S\}/)
+  assert.match(source, /utf8Length\(password\)\s*>\s*72/)
+  assert.doesNotMatch(loginValidation, /\\p\{(?:Lu|Ll|P|S)\}/, 'Login does not apply the new-password composition rules')
+  assert.match(source, /mode\.value === 'login'\)\s*await auth\.login/)
 })
 
 test('accepts direct DTOs and rejects the legacy Result wrapper', () => {
@@ -165,6 +181,8 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
   assert.deepEqual(calls[1].options.body, { email })
   assert.equal(calls[2].options.body.emailCode, emailCode)
   assert.deepEqual(calls[4].options.body, { email, emailCode, newPassword: 'a-new-long-password' })
+  await auth.deleteAccount({ password: 'a-new-long-password' })
+  assert.deepEqual(calls[5].options.body, { password: 'a-new-long-password' })
   await auth.logout()
   await realtime.issueTicket()
 
@@ -174,6 +192,7 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
     'post /api/auth/register',
     'post /api/auth/password/reset/email-code',
     'post /api/auth/password/reset',
+    'delete /api/auth/me',
     'post /api/auth/logout',
     'post /api/realtime/ticket',
   ])
@@ -194,11 +213,17 @@ test('AI conversation wrapper uses list/detail/delete routes with versioned dele
   await ai.listConversations()
   await ai.getConversation('conversation-1')
   await ai.deleteConversation('conversation-1', 2)
+  await ai.getRunStatus('conversation-1', 'run-1')
+  await ai.recoverRunAttempt('conversation-1', 'run-1', 'attempt-1')
+  await ai.cancelRun('conversation-1', 'run-1')
   assert.deepEqual(calls, [
     { path: '/api/ai/conversations', method: 'post', options: { body: { title: 'New chat', baseVersion: 0, clientRequestId: 'client-request-1' } } },
     { path: '/api/ai/conversations', method: 'get', options: undefined },
     { path: '/api/ai/conversations/{conversationId}', method: 'get', options: { pathParams: { conversationId: 'conversation-1' } } },
     { path: '/api/ai/conversations/{conversationId}', method: 'delete', options: { pathParams: { conversationId: 'conversation-1' }, query: { baseVersion: 2 } } },
+    { path: '/api/ai/conversations/{conversationId}/runs/{runId}', method: 'get', options: { pathParams: { conversationId: 'conversation-1', runId: 'run-1' } } },
+    { path: '/api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover', method: 'post', options: { pathParams: { conversationId: 'conversation-1', runId: 'run-1', attemptId: 'attempt-1' } } },
+    { path: '/api/ai/conversations/{conversationId}/runs/{runId}/cancel', method: 'post', options: { pathParams: { conversationId: 'conversation-1', runId: 'run-1' } } },
   ])
 })
 
@@ -567,4 +592,203 @@ test('task color migration quotes native string ids and bounds invalid warnings 
   assert.match(source, /if \(nativeInvalidTaskPayloadWarningEmitted\) return/)
   assert.match(source, /if \(h5InvalidTaskPayloadWarningEmitted\) return/)
   assert.match(source, /if \(result\.status === 'changed'\)/)
+})
+
+test('connectRealtimeSync passes complete callback for SocketTask and handles disconnect during in-flight ticket without deadlock', async (context) => {
+  const loginGen = Symbol('gen')
+  let triggerSyncCalls = 0
+  let socketOptions = []
+  let ticketResolvers = []
+
+  globalThis.__syncTestAuth = {
+    isAuthenticated: true,
+    user: { id: 'user-1' },
+    serverDeviceId: 'dev-1',
+    getLoginGeneration: () => loginGen,
+  }
+  globalThis.__syncTestSyncStore = {
+    triggerSync: async () => { triggerSyncCalls += 1 },
+  }
+  globalThis.__syncTestRealtimeApi = {
+    issueTicket: () => new Promise((resolve) => {
+      ticketResolvers.push(resolve)
+    }),
+  }
+  globalThis.uni = {
+    connectSocket(opts) {
+      socketOptions.push(opts)
+      let openCb = null
+      return {
+        onOpen(cb) { openCb = cb },
+        onMessage() {},
+        onClose() {},
+        onError() {},
+        close() {},
+        _emitOpen() { openCb?.() },
+      }
+    },
+  }
+
+  const mocks = new Map([
+    ['./realtimeApi', 'export const realtimeApi = globalThis.__syncTestRealtimeApi;'],
+    ['@/config/runtime', 'export const getRuntimeConfig = () => ({ apiBaseUrl: "https://api.auralis.test", websocketBaseUrl: "wss://ws.auralis.test", platform: "h5" }); export const resolveWebsocketUrl = (p, c) => c.websocketBaseUrl + p;'],
+    ['@/store/useAuthStore', 'export const useAuthStore = () => globalThis.__syncTestAuth;'],
+    ['@/store/useSyncStore', 'export const useSyncStore = () => globalThis.__syncTestSyncStore;'],
+  ])
+
+  const loader = registerHooks({
+    resolve(specifier, ctx, nextResolve) {
+      if (mocks.has(specifier)) {
+        return { url: `data:text/javascript,${encodeURIComponent(mocks.get(specifier))}`, shortCircuit: true }
+      }
+      if (ctx.parentURL?.includes('/Auralis-Mobile/src/') && (specifier.startsWith('./') || specifier.startsWith('../')) && !/\.[a-z0-9]+$/i.test(specifier)) {
+        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
+      }
+      return nextResolve(specifier, ctx)
+    },
+  })
+
+  context.after(() => {
+    loader.deregister()
+    delete globalThis.__syncTestAuth
+    delete globalThis.__syncTestSyncStore
+    delete globalThis.__syncTestRealtimeApi
+    delete globalThis.uni
+  })
+
+  const { connectRealtimeSync, disconnectRealtimeSync } = await import('../src/api/sync.ts?realtime-race-test')
+
+  // Disconnect while first issueTicket is still pending, then immediately reconnect
+  const firstAttempt = connectRealtimeSync()
+  assert.equal(ticketResolvers.length, 1)
+  disconnectRealtimeSync()
+  const secondAttempt = connectRealtimeSync()
+  assert.equal(ticketResolvers.length, 2)
+
+  // Stale first ticket resolves after disconnect — must NOT open a socket
+  ticketResolvers[0]({ ticket: 'stale-ticket', websocketUrl: '/ws/events?ticket=stale' })
+  await firstAttempt
+  assert.equal(socketOptions.length, 0)
+
+  // Fresh second ticket resolves — must open socket with complete callback & trigger sync on open
+  const origConnectSocket = globalThis.uni.connectSocket
+  let createdTask = null
+  globalThis.uni.connectSocket = (opts) => {
+    createdTask = origConnectSocket(opts)
+    return createdTask
+  }
+  ticketResolvers[1]({ ticket: 'fresh-ticket', websocketUrl: '/ws/events?ticket=fresh' })
+  await secondAttempt
+  assert.equal(socketOptions.length, 1)
+  assert.equal(typeof socketOptions[0].complete, 'function')
+  assert.equal(socketOptions[0].url, 'wss://ws.auralis.test/ws/events?ticket=fresh')
+
+  createdTask._emitOpen()
+  assert.equal(triggerSyncCalls, 1)
+  disconnectRealtimeSync()
+})
+
+test('createRoutePreloader deduplicates routes, retries after failure, tolerates missing bridge, and cancels sibling preload', async () => {
+  const noBridge = createRoutePreloader(() => undefined)
+  await noBridge.preloadRoute('/pages/mobile/review/index')
+  assert.equal(noBridge.isPreloaded('/pages/mobile/review/index'), true)
+
+  const calls = []
+  let failFirstReview = true
+  const preloader = createRoutePreloader(() => ({
+    preloadPage(options) {
+      calls.push(options.url)
+      if (options.url === '/pages/mobile/review/index' && failFirstReview) {
+        failFirstReview = false
+        options.fail?.()
+        options.complete?.()
+        return
+      }
+      if (options.url === '/pages/mobile/hung/index') {
+        return
+      }
+      setTimeout(() => options.complete?.(), 5)
+    },
+  }))
+
+  // First failure allows subsequent retry, whereas concurrent calls share inFlight
+  await preloader.preloadRoute('/pages/mobile/review/index?tab=1')
+  assert.equal(preloader.isPreloaded('/pages/mobile/review/index'), false)
+  await Promise.all([
+    preloader.preloadRoute('/pages/mobile/review/index'),
+    preloader.preloadRoute('pages/mobile/review/index?tab=2'),
+  ])
+  assert.equal(preloader.isPreloaded('/pages/mobile/review/index'), true)
+  assert.deepEqual(calls, ['/pages/mobile/review/index', '/pages/mobile/review/index'])
+
+  // Already preloaded route does not invoke bridge again
+  await preloader.preloadRoute('/pages/mobile/review/index')
+  assert.equal(calls.length, 2)
+
+  // Hung preload settles cleanly within maxWaitMs
+  await preloader.preloadRoute('/pages/mobile/hung/index', 20)
+  assert.equal(preloader.isPreloaded('/pages/mobile/hung/index'), false)
+
+  // scheduleSiblingPreload skips currentUrl and respects cancellation
+  const stopCancelled = preloader.scheduleSiblingPreload(
+    ['/pages/mobile/home/index', '/pages/mobile/pomodoro/index'],
+    '/pages/mobile/home/index',
+    30,
+  )
+  stopCancelled()
+  await new Promise(resolve => setTimeout(resolve, 45))
+  assert.equal(preloader.isPreloaded('/pages/mobile/pomodoro/index'), false)
+
+  const stopActive = preloader.scheduleSiblingPreload(
+    ['/pages/mobile/home/index', '/pages/mobile/pomodoro/index', '/pages/mobile/profile/index'],
+    '/pages/mobile/home/index',
+    10,
+  )
+  await new Promise(resolve => setTimeout(resolve, 60))
+  stopActive()
+  assert.equal(preloader.isPreloaded('/pages/mobile/pomodoro/index'), true)
+  assert.equal(preloader.isPreloaded('/pages/mobile/profile/index'), true)
+})
+
+test('useLayoutStore holds exit lock across preload window, cancels stale timers on clearExit, and renews returnTimer', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  setActivePinia(createPinia())
+  const store = useLayoutStore()
+
+  store.startExit('right', 140, '/pages/mobile/home/index')
+  assert.equal(store.isExiting, true)
+  assert.equal(store.exitDirection, 'right')
+  assert.equal(store.exitingRoute, '/pages/mobile/home/index')
+
+  // Must not snap back at the old 190ms threshold while route chunk preloads
+  t.mock.timers.tick(500)
+  assert.equal(store.isExiting, true)
+
+  // Renewing startExit cancels the earlier fallback timer
+  store.startExit('left', 200, '/pages/mobile/review/index')
+  t.mock.timers.tick(500)
+  assert.equal(store.isExiting, true)
+  assert.equal(store.exitingRoute, '/pages/mobile/review/index')
+
+  // clearExit immediately releases lock and cancels pending fallback timer
+  store.clearExit()
+  assert.equal(store.isExiting, false)
+  assert.equal(store.exitingRoute, '')
+
+  store.startExit('right', 140, '/pages/mobile/pomodoro/index')
+  t.mock.timers.tick(939)
+  assert.equal(store.isExiting, true)
+  t.mock.timers.tick(1)
+  assert.equal(store.isExiting, false)
+  assert.equal(store.exitingRoute, '')
+
+  // triggerReturn renews timer on repeated invocations
+  store.triggerReturn(550)
+  t.mock.timers.tick(400)
+  assert.equal(store.isReturning, true)
+  store.triggerReturn(550)
+  t.mock.timers.tick(400)
+  assert.equal(store.isReturning, true)
+  t.mock.timers.tick(150)
+  assert.equal(store.isReturning, false)
 })

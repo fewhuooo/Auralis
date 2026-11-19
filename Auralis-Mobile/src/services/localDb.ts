@@ -2,6 +2,7 @@ import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
 import { buildSyncedBlockRecord } from '@/utils/blockSyncMapper';
 import { formatLocalTimeHHmm } from '@/utils/dateKey';
+import { normalizeTaskPosition } from '@/utils/taskSyncMapper';
 import { localDataScope } from './localDataScope';
 
 function databaseIdentity() {
@@ -53,6 +54,44 @@ function warnInvalidTaskPayload(native: boolean): void {
   console.warn(`[SQLite Mobile] Preserving invalid TASK color payload during ${native ? 'native' : 'H5'} migration`)
 }
 
+function parseNumericVersion(record: Record<string, unknown>): number | null {
+  const raw = record.version ?? record.sync_version
+  if (raw === undefined || raw === null || raw === '') return null
+  const num = Number(raw)
+  return Number.isFinite(num) && num >= 0 ? num : null
+}
+
+export function preserveMutationBaseVersion(incoming: unknown, priorRaw: unknown): unknown {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return incoming
+  let prior: Record<string, unknown> | null = null
+  if (typeof priorRaw === 'string') {
+    try {
+      const parsed = JSON.parse(priorRaw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        prior = parsed as Record<string, unknown>
+      }
+    } catch {
+      prior = null
+    }
+  } else if (priorRaw && typeof priorRaw === 'object' && !Array.isArray(priorRaw)) {
+    prior = priorRaw as Record<string, unknown>
+  }
+  if (!prior) return incoming
+  const next = { ...(incoming as Record<string, unknown>) }
+  const priorVer = parseNumericVersion(prior)
+  if (next.sync_version === undefined && prior.sync_version !== undefined) {
+    next.sync_version = prior.sync_version
+  } else if (priorVer !== null && next.sync_version !== undefined && priorVer > Number(next.sync_version)) {
+    next.sync_version = priorVer
+  }
+  if (next.version === undefined && prior.version !== undefined) {
+    next.version = prior.version
+  } else if (priorVer !== null && next.version !== undefined && priorVer > Number(next.version)) {
+    next.version = priorVer
+  }
+  return next
+}
+
 // H5 模式下使用 localStorage 模拟 SQLite 数据表结构
 const h5Db = {
   getTable(name: string): any[] {
@@ -71,6 +110,7 @@ function parseSqlValues(str: string): any[] {
   let current = '';
   let inString = false;
   let stringChar = '';
+  let wasQuoted = false;
   for (let i = 0; i < str.length; i++) {
     const char = str[i];
     if (inString) {
@@ -84,19 +124,20 @@ function parseSqlValues(str: string): any[] {
       } else {
         current += char;
       }
-    } else {
-      if (char === "'" || char === '"') {
-        inString = true;
-        stringChar = char;
-      } else if (char === ',') {
-        result.push(cleanValue(current));
-        current = '';
-      } else {
-        current += char;
-      }
+    } else if (char === "'" || char === '"') {
+      inString = true;
+      stringChar = char;
+      wasQuoted = true;
+      current = '';
+    } else if (char === ',') {
+      result.push(wasQuoted ? current : cleanValue(current));
+      current = '';
+      wasQuoted = false;
+    } else if (!wasQuoted) {
+      current += char;
     }
   }
-  result.push(cleanValue(current));
+  result.push(wasQuoted ? current : cleanValue(current));
   return result;
 }
 
@@ -113,32 +154,120 @@ interface WhereCondition {
   val: any;
 }
 
+function advanceSqlQuote(sql: string, index: number): number {
+  let i = index + 1;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      if (i + 1 < sql.length && sql[i + 1] === "'") {
+        i += 2;
+        continue;
+      }
+      return i;
+    }
+    i++;
+  }
+  return sql.length - 1;
+}
+
+function findTopLevelKeyword(
+  sql: string,
+  pattern: RegExp,
+  startIndex = 0
+): { index: number; length: number } | null {
+  for (let i = startIndex; i < sql.length; i++) {
+    if (sql[i] === "'") {
+      i = advanceSqlQuote(sql, i);
+      continue;
+    }
+    pattern.lastIndex = i;
+    const match = pattern.exec(sql);
+    if (match) {
+      return { index: match.index, length: match[0].length };
+    }
+  }
+  return null;
+}
+
+function splitTopLevel(str: string, delimiter: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "'") {
+      i = advanceSqlQuote(str, i);
+      continue;
+    }
+    if (str[i] === delimiter) {
+      parts.push(str.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+
+function splitTopLevelKeyword(str: string, keyword: string): string[] {
+  const parts: string[] = [];
+  const pattern = new RegExp(`\\s+${keyword}\\s+`, 'iy');
+  let start = 0;
+  while (start <= str.length) {
+    const match = findTopLevelKeyword(str, pattern, start);
+    if (!match) break;
+    parts.push(str.slice(start, match.index));
+    start = match.index + match.length;
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+
+function findTopLevelOperator(str: string, op: string): number {
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "'") {
+      i = advanceSqlQuote(str, i);
+      continue;
+    }
+    if (str.startsWith(op, i)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function parseWhereClause(clause: string | undefined): WhereCondition[] {
   if (!clause) return [];
-  const parts = clause.split(/\s+AND\s+/i);
+  const parts = splitTopLevelKeyword(clause, 'AND');
   const conditions: WhereCondition[] = [];
-  
-  parts.forEach(part => {
-    part = part.trim();
-    if (part.toUpperCase().endsWith('IS NOT NULL')) {
-      const col = part.substring(0, part.toUpperCase().indexOf('IS NOT NULL')).trim();
+
+  parts.forEach(rawPart => {
+    const part = rawPart.trim();
+    if (!part) return;
+    const upper = part.toUpperCase();
+    if (!part.endsWith("'") && upper.endsWith('IS NOT NULL')) {
+      const col = part.substring(0, upper.indexOf('IS NOT NULL')).trim();
       conditions.push({ col: col.toLowerCase(), op: 'IS NOT', val: null });
-    } else if (part.toUpperCase().endsWith('IS NULL')) {
-      const col = part.substring(0, part.toUpperCase().indexOf('IS NULL')).trim();
+    } else if (!part.endsWith("'") && upper.endsWith('IS NULL')) {
+      const col = part.substring(0, upper.indexOf('IS NULL')).trim();
       conditions.push({ col: col.toLowerCase(), op: 'IS', val: null });
-    } else if (part.includes('!=')) {
-      const [col, valStr] = part.split('!=');
-      conditions.push({ col: col.trim().toLowerCase(), op: '!=', val: cleanSqlString(valStr.trim()) });
-    } else if (part.includes('=')) {
-      const [col, valStr] = part.split('=');
-      conditions.push({ col: col.trim().toLowerCase(), op: '=', val: cleanSqlString(valStr.trim()) });
+    } else {
+      const neIdx = findTopLevelOperator(part, '!=');
+      if (neIdx !== -1) {
+        const col = part.slice(0, neIdx).trim().toLowerCase();
+        const valStr = part.slice(neIdx + 2).trim();
+        conditions.push({ col, op: '!=', val: cleanSqlString(valStr) });
+        return;
+      }
+      const eqIdx = findTopLevelOperator(part, '=');
+      if (eqIdx !== -1) {
+        const col = part.slice(0, eqIdx).trim().toLowerCase();
+        const valStr = part.slice(eqIdx + 1).trim();
+        conditions.push({ col, op: '=', val: cleanSqlString(valStr) });
+      }
     }
   });
   return conditions;
 }
 
 function cleanSqlString(valStr: string): any {
-  if (valStr.startsWith("'") && valStr.endsWith("'")) {
+  if (valStr.length >= 2 && valStr.startsWith("'") && valStr.endsWith("'")) {
     return valStr.slice(1, -1).replace(/''/g, "'");
   }
   return cleanValue(valStr);
@@ -178,28 +307,34 @@ function executeH5Query(sql: string) {
     });
     
     const table = h5Db.getTable(tableName);
+    if (tableName === 'local_mutations' && row.id == null) {
+      const maxId = table.reduce((max, item) => Math.max(max, Number(item?.id) || 0), 0);
+      row.id = maxId + 1;
+    }
     table.push(row);
     h5Db.saveTable(tableName, table);
     return;
   }
   if (trimmed.toUpperCase().startsWith('UPDATE')) {
-    const updateMatch = trimmed.match(/UPDATE\s+(\w+)\s+SET\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+))?$/i);
-    if (!updateMatch) throw new Error('Unparseable UPDATE SQL: ' + sql);
-    const tableName = updateMatch[1].toLowerCase();
-    const setClause = updateMatch[2];
-    const whereClause = updateMatch[3];
-    
+    const header = trimmed.match(/^UPDATE\s+(\w+)\s+SET\s+/i);
+    if (!header) throw new Error('Unparseable UPDATE SQL: ' + sql);
+    const tableName = header[1].toLowerCase();
+    const body = trimmed.slice(header[0].length);
+    const whereKeyword = findTopLevelKeyword(body, /\s+WHERE\s+/iy);
+    const setClause = whereKeyword ? body.slice(0, whereKeyword.index) : body;
+    const whereClause = whereKeyword ? body.slice(whereKeyword.index + whereKeyword.length) : undefined;
+
     const sets: { [key: string]: any } = {};
-    const setPairs = setClause.split(/,(?=(?:[^']*'[^']*')*[^']*$)/);
+    const setPairs = splitTopLevel(setClause, ',');
     setPairs.forEach(pair => {
-      const parts = pair.split('=');
-      if (parts.length >= 2) {
-        const col = parts[0].trim().toLowerCase();
-        const valStr = parts.slice(1).join('=').trim();
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const col = pair.slice(0, eqIdx).trim().toLowerCase();
+        const valStr = pair.slice(eqIdx + 1).trim();
         sets[col] = cleanSqlString(valStr);
       }
     });
-    
+
     const where = parseWhereClause(whereClause);
     let table = h5Db.getTable(tableName);
     table = table.map(row => {
@@ -228,11 +363,15 @@ function executeH5Query(sql: string) {
 function selectH5Query(sql: string): any[] {
   const trimmed = sql.trim();
   if (trimmed.toUpperCase().startsWith('SELECT')) {
-    const selectMatch = trimmed.match(/SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+))?$/i);
-    if (!selectMatch) throw new Error('Unparseable SELECT SQL: ' + sql);
-    const tableName = selectMatch[2].toLowerCase();
-    const whereClause = selectMatch[3];
-    const orderByClause = selectMatch[4];
+    const header = trimmed.match(/^SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)/i);
+    if (!header) throw new Error('Unparseable SELECT SQL: ' + sql);
+    const tableName = header[2].toLowerCase();
+    const rest = trimmed.slice(header[0].length);
+    const orderKeyword = findTopLevelKeyword(rest, /\s+ORDER\s+BY\s+/iy);
+    const beforeOrder = orderKeyword ? rest.slice(0, orderKeyword.index) : rest;
+    const orderByClause = orderKeyword ? rest.slice(orderKeyword.index + orderKeyword.length) : undefined;
+    const whereMatch = beforeOrder.match(/^\s*WHERE\s+([\s\S]+)$/i);
+    const whereClause = whereMatch ? whereMatch[1] : undefined;
     
     let table = h5Db.getTable(tableName);
     
@@ -331,6 +470,8 @@ const sqlite = {
     });
   }
 };
+
+const inFlightMutationIds = new Set<string>();
 
 export const localDb = {
   async executeSql(sql: string, params?: any[]): Promise<any> {
@@ -470,15 +611,22 @@ export const localDb = {
         delete currentTask.cognitiveLoad;
         delete currentTask.color;
         delete currentTask.colorOverride;
+        currentTask.position = normalizeTaskPosition(currentTask.position);
+        if (typeof currentTask.name === 'number') currentTask.name = String(currentTask.name);
+        if (typeof currentTask.subject === 'number') currentTask.subject = String(currentTask.subject);
+        if (typeof currentTask.desc === 'number') currentTask.desc = String(currentTask.desc);
         return currentTask;
       });
       h5Db.saveTable('task_blocks', tasks);
-      const mutations = h5Db.getTable('local_mutations').map((mutation: any) => {
-        if (mutation.entity_type !== 'task') return mutation
-        const result = cleanTaskMutationPayload(mutation.payload)
-        if (result.status === 'invalid') warnInvalidTaskPayload(false)
-        if (result.status === 'changed') return { ...mutation, payload: result.payload }
-        return mutation
+      const rawMutations = h5Db.getTable('local_mutations');
+      let nextMutationId = rawMutations.reduce((max, item) => Math.max(max, Number(item?.id) || 0), 0);
+      const mutations = rawMutations.map((mutation: any) => {
+        const withId = mutation?.id == null ? { ...mutation, id: ++nextMutationId } : mutation;
+        if (withId.entity_type !== 'task') return withId;
+        const result = cleanTaskMutationPayload(withId.payload);
+        if (result.status === 'invalid') warnInvalidTaskPayload(false);
+        if (result.status === 'changed') return { ...withId, payload: result.payload };
+        return withId;
       });
       h5Db.saveTable('local_mutations', mutations);
     }
@@ -752,9 +900,9 @@ export const localDb = {
       const scheduledAt = r.scheduled_at || undefined;
       return {
         id: r.id,
-        name: r.name,
-        subject: r.subject || '',
-        desc: r.desc || '',
+        name: r.name != null ? String(r.name) : '',
+        subject: r.subject != null ? String(r.subject) : '',
+        desc: r.desc != null ? String(r.desc) : '',
         duration: r.duration,
         status: r.status,
         scheduledAt,
@@ -763,7 +911,7 @@ export const localDb = {
         sync_status: r.sync_status,
         sync_version: r.sync_version || 0,
         is_deleted: r.is_deleted === 1,
-        position: r.position || '0',
+        position: normalizeTaskPosition(r.position),
         subjectId: r.subject_id || undefined,
       };
     });
@@ -899,13 +1047,129 @@ export const localDb = {
     }
   },
 
+  setInFlightMutationIds(ids: Array<number | string>) {
+    inFlightMutationIds.clear();
+    for (const id of ids) {
+      if (id != null) inFlightMutationIds.add(String(id));
+    }
+  },
+
+  async rebasePendingMutations(
+    entityType: string,
+    entityId: string,
+    options: { appliedMutationType: string; serverVersion: number | null; deleted: boolean }
+  ) {
+    const esc = (val: string) => (val || '').replace(/'/g, "''");
+    const rows = await sqlite.select(
+      `SELECT id, action, payload FROM local_mutations WHERE entity_type = '${esc(entityType)}' AND entity_id = '${esc(entityId)}' AND sync_status = 'pending' ORDER BY id ASC`
+    );
+    for (const row of rows) {
+      if (row.id == null) continue;
+      const currentAction = String(row.action || '').toLowerCase();
+      if (options.deleted) {
+        if (currentAction !== 'create') {
+          await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(row.id)}`);
+        }
+        continue;
+      }
+      const nextAction = currentAction === 'create' ? 'update' : currentAction;
+      let nextPayloadRaw = typeof row.payload === 'string' ? row.payload : JSON.stringify(row.payload ?? {});
+      if (options.serverVersion !== null) {
+        try {
+          const parsed = JSON.parse(nextPayloadRaw);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            parsed.version = options.serverVersion;
+            parsed.sync_version = options.serverVersion;
+            nextPayloadRaw = JSON.stringify(parsed);
+          }
+        } catch {
+          // Keep raw payload when not JSON
+        }
+      }
+      await sqlite.execute(
+        `UPDATE local_mutations SET action = '${esc(nextAction)}', payload = '${esc(nextPayloadRaw)}' WHERE id = ${Number(row.id)}`
+      );
+    }
+  },
+
   async addLocalMutation(clientId: string, entityType: string, entityId: string, action: string, payload: any) {
     const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const payloadStr = JSON.stringify(payload);
+    const normalizedAction = String(action || '').toLowerCase();
     const createdAt = Date.now();
+    const existing = await sqlite.select(
+      `SELECT id, action, payload FROM local_mutations WHERE entity_type = '${esc(entityType)}' AND entity_id = '${esc(entityId)}' AND sync_status = 'pending' ORDER BY id ASC`
+    );
+
+    const preserveFromRows = (base: any, rows: any[]) => {
+      let next = base;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        next = preserveMutationBaseVersion(next, rows[i].payload);
+      }
+      return next;
+    };
+
+    const mutableExisting = existing.filter(item => !inFlightMutationIds.has(String(item.id)));
+    const inFlightExisting = existing.filter(item => inFlightMutationIds.has(String(item.id)));
+
+    if (mutableExisting.length > 0 && normalizedAction !== 'create') {
+      const latest = mutableExisting[mutableExisting.length - 1];
+      const hasPendingCreate = mutableExisting.some(item => String(item.action).toLowerCase() === 'create');
+      const nextPayload = preserveFromRows(preserveFromRows(payload, mutableExisting), inFlightExisting);
+      const nextPayloadStr = JSON.stringify(nextPayload);
+      if (hasPendingCreate && normalizedAction === 'delete') {
+        for (const row of mutableExisting) {
+          if (row.id != null) {
+            await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(row.id)}`);
+          }
+        }
+        if (inFlightExisting.length === 0) return;
+        await sqlite.execute(
+          `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+           VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', 'delete', '${esc(nextPayloadStr)}', ${createdAt}, 'pending')`
+        );
+        return;
+      }
+      if (hasPendingCreate || normalizedAction === 'update') {
+        const coalescedAction = hasPendingCreate ? 'create' : 'update';
+        const targetId = Number(latest.id);
+        await sqlite.execute(
+          `UPDATE local_mutations SET client_id = '${esc(clientId)}', action = '${coalescedAction}', payload = '${esc(nextPayloadStr)}', created_at = ${createdAt} WHERE id = ${targetId}`
+        );
+        for (const extra of mutableExisting.slice(0, -1)) {
+          if (extra.id != null) {
+            await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(extra.id)}`);
+          }
+        }
+        return;
+      }
+      if (normalizedAction === 'delete') {
+        for (const row of mutableExisting) {
+          if (row.id != null) {
+            await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(row.id)}`);
+          }
+        }
+        await sqlite.execute(
+          `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+           VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', 'delete', '${esc(nextPayloadStr)}', ${createdAt}, 'pending')`
+        );
+        return;
+      }
+    }
+
+    if (inFlightExisting.length > 0 && normalizedAction !== 'create') {
+      const nextPayload = preserveFromRows(payload, inFlightExisting);
+      const nextPayloadStr = JSON.stringify(nextPayload);
+      await sqlite.execute(
+        `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+         VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', '${esc(normalizedAction)}', '${esc(nextPayloadStr)}', ${createdAt}, 'pending')`
+      );
+      return;
+    }
+
+    const payloadStr = JSON.stringify(payload);
     await sqlite.execute(
       `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
-       VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', '${esc(action)}', '${esc(payloadStr)}', ${createdAt}, 'pending')`
+       VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', '${esc(normalizedAction)}', '${esc(payloadStr)}', ${createdAt}, 'pending')`
     );
   },
 
@@ -913,8 +1177,16 @@ export const localDb = {
     return sqlite.select("SELECT * FROM local_mutations WHERE sync_status = 'pending' ORDER BY id ASC");
   },
 
-  async markMutationSynced(id: number) {
-    await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${id}`);
+  async markMutationSynced(id: number | string, clientId?: string) {
+    const esc = (val: string) => (val || '').replace(/'/g, "''");
+    const idLiteral = typeof id === 'number' || /^\d+$/.test(String(id))
+      ? Number(id)
+      : `'${esc(String(id))}'`;
+    if (clientId) {
+      await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${idLiteral} AND client_id = '${esc(clientId)}'`);
+      return;
+    }
+    await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${idLiteral}`);
   },
 
   async discardLocalMutations(entityType: string, entityId: string) {

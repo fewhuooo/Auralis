@@ -517,7 +517,7 @@ onMounted(async () => {
 .t-workspace {
   width: 100%;
   height: 100%;
-  background: var(--color-bg-secondary);
+  background: transparent;
   padding: 14px;
   box-sizing: border-box;
   display: flex;
@@ -569,8 +569,11 @@ onMounted(async () => {
   height: 26px;
   padding: 0 10px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: inline-flex;
   align-items: center;
   max-width: 180px;
@@ -580,8 +583,9 @@ onMounted(async () => {
 }
 
 .chip-item.sm.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.16);
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
   color: var(--color-sage-ink);
   font-weight: var(--font-weight-semibold);
 }

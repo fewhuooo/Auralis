@@ -1,32 +1,57 @@
 <template>
   <view class="study-metrics">
-    <view v-if="error && !metrics" class="metrics-error zen-card">
+    <view v-if="error && !metrics" class="metrics-error" :class="{ 'zen-card': variant === 'bento', 'pc-sub-box': variant === 'pc' }">
       <text class="status-text">统计暂不可用</text>
       <view class="ui-btn ui-btn-secondary retry-btn" role="button" @click="load">重试</view>
     </view>
 
     <view v-else-if="loading && !metrics" class="bento-grid">
-      <view v-for="n in 4" :key="n" class="bento-tile zen-card">
+      <view
+        v-for="n in 4"
+        :key="n"
+        :class="variant === 'pc' ? 'pc-stat-cell' : 'bento-tile zen-card'"
+      >
         <view class="ui-shimmer shimmer-val"></view>
         <view class="ui-shimmer shimmer-label"></view>
       </view>
     </view>
 
     <view v-else-if="metrics" class="bento-grid">
-      <view
-        v-for="(metric, idx) in metrics"
-        :key="metric.label"
-        class="bento-tile zen-card"
-        :class="{ 'is-featured': idx === 0 && metrics.length % 2 === 1 }"
-      >
-        <view class="tile-main">
-          <text class="metric-value num-tabular">{{ metric.value }}</text>
-          <text class="metric-label">{{ metric.label }}</text>
+      <template v-if="variant === 'pc'">
+        <view
+          v-for="(metric, idx) in metrics"
+          :key="metric.label"
+          class="pc-stat-cell"
+          :class="{ 'is-wide': idx === metrics.length - 1 && metrics.length % 2 === 1 }"
+        >
+          <view class="pc-stat-top">
+            <view class="pc-stat-icon-wrap" aria-hidden="true">
+              <LineIcon :name="metricIcon(idx)" size="13px" color="var(--color-sage-ink)" />
+            </view>
+            <text class="pc-stat-label">{{ metric.label }}</text>
+          </view>
+          <text class="pc-stat-value num-tabular" :class="{ 'is-accent': idx === 2 }">
+            {{ metric.value }}
+          </text>
         </view>
-        <view v-if="idx === 0 && metrics.length % 2 === 1" class="featured-mark" aria-hidden="true">
-          <LineIcon name="layers" size="18px" color="var(--color-sage-ink)" />
+      </template>
+
+      <template v-else>
+        <view
+          v-for="(metric, idx) in metrics"
+          :key="metric.label"
+          class="bento-tile zen-card"
+          :class="{ 'is-featured': idx === 0 && metrics.length % 2 === 1 }"
+        >
+          <view class="tile-main">
+            <text class="metric-value num-tabular">{{ metric.value }}</text>
+            <text class="metric-label">{{ metric.label }}</text>
+          </view>
+          <view v-if="idx === 0 && metrics.length % 2 === 1" class="featured-mark" aria-hidden="true">
+            <LineIcon name="layers" size="18px" color="var(--color-sage-ink)" />
+          </view>
         </view>
-      </view>
+      </template>
     </view>
   </view>
 </template>
@@ -39,17 +64,34 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { detectLocalTimeZone, getCurrentWeekBounds } from '@/utils/dateKey'
 import { studyMetrics } from '@/utils/studyMetrics'
 
+withDefaults(defineProps<{
+  variant?: 'bento' | 'pc'
+}>(), {
+  variant: 'bento',
+})
+
+const pcIcons = ['file-text', 'checklist', 'clock', 'fire', 'sparkles'] as const
+function metricIcon(idx: number): string {
+  return pcIcons[idx] || 'layers'
+}
+
 const auth = useAuthStore()
 const metrics = ref<ReturnType<typeof studyMetrics> | null>(null)
 const loading = ref(false)
 const error = ref(false)
 let requestId = 0
+let pendingReload = false
 
 async function load() {
   const userId = auth.user?.id
   const deviceId = auth.serverDeviceId
   const generation = auth.getLoginGeneration()
-  if (!auth.isAuthenticated || loading.value) return
+  if (!auth.isAuthenticated) return
+  if (loading.value) {
+    pendingReload = true
+    return
+  }
+  pendingReload = false
   const id = ++requestId
   const isCurrent = () => id === requestId && generation === auth.getLoginGeneration()
     && userId === auth.user?.id && deviceId === auth.serverDeviceId
@@ -69,19 +111,32 @@ async function load() {
     console.error('[StudyMetrics] 统计数据加载失败', cause)
     error.value = true
   } finally {
-    if (isCurrent()) loading.value = false
+    if (isCurrent()) {
+      loading.value = false
+      if (pendingReload) {
+        pendingReload = false
+        void load()
+      }
+    }
   }
 }
 
-watch(() => [auth.sessionId, auth.user?.id, auth.serverDeviceId], () => {
+watch(() => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId], () => {
   requestId++
+  pendingReload = false
   metrics.value = null
   error.value = false
   loading.value = false
-  void load()
+  if (auth.isAuthenticated) {
+    void load()
+  }
 }, { immediate: true })
 
 onScopeDispose(() => { requestId++ })
+
+defineExpose({
+  reload: load,
+})
 </script>
 
 <style scoped>
@@ -101,6 +156,64 @@ onScopeDispose(() => { requestId++ })
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+}
+
+.pc-stat-cell {
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.pc-stat-cell.is-wide {
+  grid-column: 1 / -1;
+}
+
+.pc-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.pc-stat-icon-wrap {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background-color: rgba(139, 154, 110, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pc-stat-label {
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pc-stat-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.pc-stat-value.is-accent {
+  color: var(--color-sage-ink);
 }
 
 .tile-main {
@@ -159,6 +272,12 @@ onScopeDispose(() => { requestId++ })
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.pc-sub-box {
+  background-color: var(--glass-sub-bg);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
 }
 
 .status-text {

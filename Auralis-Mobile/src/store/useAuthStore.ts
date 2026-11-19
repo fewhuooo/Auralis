@@ -174,6 +174,18 @@ export const useAuthStore = defineStore('auth', () => {
     persistSession(session)
   }
 
+  function syncUserProfile(nextUser: UserView): void {
+    user.value = nextUser
+    if (tokens.value && sessionId.value && serverDeviceId.value) {
+      persistSession({
+        user: nextUser,
+        tokens: tokens.value,
+        sessionId: sessionId.value,
+        serverDeviceId: serverDeviceId.value,
+      })
+    }
+  }
+
   async function restoreSession(): Promise<boolean> {
     if (!token.value) return false
     try {
@@ -212,9 +224,11 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     register,
+    syncUserProfile,
     restoreSession,
     refreshAccessToken,
     getLoginGeneration,
+    clearSession,
     expireSession,
     logout,
   }

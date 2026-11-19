@@ -105,7 +105,10 @@ onMounted(() => {
   height: 100%;
   position: relative;
   overflow: hidden;
-  background-color: var(--color-bg-primary);
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
 }
 
 .page-layer {
@@ -116,7 +119,10 @@ onMounted(() => {
   left: 0;
   display: flex;
   flex-direction: column;
-  background-color: var(--color-bg-primary);
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   z-index: 1;
   overflow: hidden;
   opacity: 1;
@@ -177,7 +183,7 @@ onMounted(() => {
 }
 
 .page-layer.has-custom-bg {
-  background-color: transparent;
+  background: transparent;
 }
 
 /* #ifdef H5 */
@@ -189,9 +195,9 @@ onMounted(() => {
   .layout-container {
     max-width: 440px;
     margin: 0 auto;
-    border-left: 1px solid var(--border-subtle);
-    border-right: 1px solid var(--border-subtle);
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.04);
+    border-left: 1px solid var(--glass-border);
+    border-right: 1px solid var(--glass-border);
+    box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
   }
 }
 /* #endif */

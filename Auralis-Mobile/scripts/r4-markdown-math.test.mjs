@@ -58,3 +58,15 @@ test('plainMarkdownExcerpt preserves Unicode math subscripts, unbraced TeX scrip
   const excerpt = plainMarkdownExcerpt('## 核心结论\n在 $x_0$ 与 $x_\\alpha$ 处具有 $n$ 阶导数，$\\xi \\in (a, b)$ 且 $\\{1\\}$ 与 $\\frac{a}{b}$')
   assert.equal(excerpt, '核心结论 在 x₀ 与 x_α 处具有 n 阶导数，ξ ∈ (a, b) 且 {1} 与 (a)/(b)')
 })
+
+test('renderMarkdownHtml styles Markdown tables without corrupting thead tags', () => {
+  const html = renderMarkdownHtml(
+    '| 隔离级别 | 脏读 | 幻读 |\n| :--- | :---: | :---: |\n| Repeatable Read | 不会 | 可能 |',
+  )
+  assert.match(html, /<thead>/)
+  assert.match(html, /<\/thead>/)
+  assert.doesNotMatch(html, /"ead>/)
+  assert.match(html, /<table style="width:100%/)
+  assert.match(html, /<th style="[^"]*"[^>]*>隔离级别<\/th>/)
+  assert.match(html, /<td style="[^"]*"[^>]*>Repeatable Read<\/td>/)
+})

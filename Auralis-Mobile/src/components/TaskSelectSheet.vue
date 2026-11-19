@@ -96,7 +96,7 @@ const taskStore = useTaskStore()
 
 const scheduledTasks = computed(() =>
   taskStore.allTasks
-    .filter(task => !task.is_deleted && task.scheduledAt && Number.isFinite(Date.parse(task.scheduledAt)) && task.status !== 'completed')
+    .filter(task => !task.is_deleted && task.scheduledAt && Number.isFinite(Date.parse(task.scheduledAt)) && task.status !== 'completed' && task.status !== 'cancelled')
     .sort((a, b) => (Date.parse(a.scheduledAt || '') || 0) - (Date.parse(b.scheduledAt || '') || 0)),
 )
 

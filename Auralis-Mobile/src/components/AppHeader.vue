@@ -24,7 +24,7 @@
             v-if="rightIcon"
             class="icon-btn right-action-btn"
             role="button"
-            aria-label="操作"
+            :aria-label="rightAriaLabel"
             @click="handleRightClick"
           >
             <LineIcon :name="rightIcon" size="18px" color="var(--text-primary)" />
@@ -61,6 +61,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  rightAriaLabel: {
+    type: String,
+    default: '操作',
+  },
   showBorder: {
     type: Boolean,
     default: false,
@@ -95,7 +99,7 @@ const headerBarStyle = computed(() => {
 
 const topLevelRoutes = [
   '/pages/mobile/home/index',
-  '/pages/mobile/review/index',
+  '/pages/mobile/learn/index',
   '/pages/mobile/pomodoro/index',
   '/pages/mobile/profile/index',
 ]
@@ -132,7 +136,7 @@ function handleRightClick() {
 <style scoped>
 .app-header-container {
   width: 100%;
-  background-color: var(--color-bg-primary);
+  background-color: transparent;
   position: sticky;
   top: 0;
   z-index: var(--z-index-header, 100);
@@ -140,12 +144,17 @@ function handleRightClick() {
 }
 
 .app-header-container.with-border {
-  border-bottom: 1px solid var(--border-subtle);
+  background-color: rgba(246, 242, 234, 0.68);
+  backdrop-filter: blur(22px) saturate(175%);
+  -webkit-backdrop-filter: blur(22px) saturate(175%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 1px 0 rgba(45, 55, 40, 0.055);
 }
 
 .status-bar-placeholder {
   width: 100%;
   height: var(--status-bar-height, 0px);
+  height: max(var(--status-bar-height, 0px), env(safe-area-inset-top));
 }
 
 .app-header-bar {
@@ -154,7 +163,7 @@ function handleRightClick() {
   justify-content: space-between;
   gap: 12px;
   min-height: var(--phone-header-height);
-  padding: 8px 18px;
+  padding: 14px 18px 8px;
   box-sizing: border-box;
 }
 
@@ -191,15 +200,15 @@ function handleRightClick() {
 }
 
 .icon-btn {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: #FFFFFF;
+  border: 1px solid #EAE6DD;
+  box-shadow: 0 1px 2px rgba(72, 62, 46, 0.03);
   flex-shrink: 0;
   cursor: pointer;
   transition: transform 0.16s var(--ease-out), border-color 0.16s ease, background-color 0.16s ease;

@@ -384,9 +384,9 @@ function applyZenRichTextStyles(html: string): string {
     .replaceAll('<blockquote>', '<blockquote style="margin:12px 0;padding:9px 14px;border-left:3px solid #8B9A6E;background-color:#F7F2EB;color:#5F5E5C;border-radius:0 10px 10px 0;">')
     .replaceAll('<strong>', '<strong style="font-weight:700;color:#1C1C1A;">')
     .replaceAll('<hr>', '<hr style="border:none;border-top:1px solid rgba(28,28,26,0.08);margin:14px 0;" />')
-    .replaceAll('<table>', '<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">')
-    .replaceAll('<th', '<th style="border:1px solid rgba(28,28,26,0.1);padding:7px 9px;background-color:#F4EFE6;text-align:left;font-weight:600;color:#1C1C1A;"')
-    .replaceAll('<td', '<td style="border:1px solid rgba(28,28,26,0.08);padding:7px 9px;color:#2C2C28;"')
+    .replace(/<table(?=[\s>])/g, '<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;"')
+    .replace(/<th(?=[\s>])/g, '<th style="border:1px solid rgba(28,28,26,0.1);padding:7px 9px;background-color:#F4EFE6;text-align:left;font-weight:600;color:#1C1C1A;"')
+    .replace(/<td(?=[\s>])/g, '<td style="border:1px solid rgba(28,28,26,0.08);padding:7px 9px;color:#2C2C28;"')
 }
 
 export function renderMarkdownHtml(markdownText: string): string {

@@ -4,8 +4,11 @@
     :class="{
       'is-completed': task.status === 'completed',
       'is-scheduled': mode === 'scheduled',
+      'is-pending': mode === 'pending',
     }"
   >
+    <view v-if="mode === 'pending'" class="todo-accent-bar" aria-hidden="true"></view>
+
     <view
       class="check-circle"
       :class="{
@@ -14,31 +17,37 @@
       }"
       role="checkbox"
       :aria-checked="task.status === 'completed'"
+      :aria-disabled="locked ? 'true' : undefined"
       :aria-label="task.name"
       @click="task.id && emit('toggle', task.id)"
     >
       <LineIcon v-if="task.status === 'completed'" name="check" size="11px" color="#FFFFFF" />
     </view>
 
-    <view v-if="mode === 'scheduled'" class="time-rail num-tabular" @click="task.id && emit('toggle', task.id)">
-      <text class="rail-start">{{ startLabel }}</text>
-      <text class="rail-dur">{{ task.duration || 30 }}m</text>
-    </view>
-
-    <view class="row-info" @click="task.id && emit('toggle', task.id)">
-      <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
-      <view v-if="hasSubline" class="row-meta num-tabular">
-        <text v-if="task.subject" class="meta-subject">{{ task.subject }}</text>
-        <view v-if="mode === 'pending' && task.dueAt" class="meta-ddl" :class="{ overdue: isOverdue }">
-          <LineIcon name="calendar" size="10px" :color="isOverdue ? 'var(--color-danger)' : 'var(--color-warning-ink)'" />
+    <view class="row-info" :class="{ locked }" @click="task.id && emit('toggle', task.id)">
+      <view v-if="mode === 'pending'" class="pending-title-flow">
+        <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
+        <view v-if="task.dueAt" class="meta-ddl num-tabular" :class="{ overdue: isOverdue }">
+          <LineIcon name="calendar" size="10px" :color="task.status === 'completed' ? 'var(--text-muted)' : (isOverdue ? 'var(--color-danger)' : 'var(--color-warning-ink)')" />
           <text>{{ formatShortDate(task.dueAt) }}</text>
         </view>
       </view>
+      <template v-else>
+        <view class="scheduled-meta-row num-tabular">
+          <text class="scheduled-time-pill">{{ startLabel }} · {{ task.duration || 30 }}m</text>
+          <text v-if="task.subject" class="scheduled-subject-pill">{{ task.subject }}</text>
+        </view>
+        <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
+      </template>
     </view>
 
-    <view class="row-actions">
+    <view v-if="showTrailingSlot" class="row-actions">
+      <text v-if="mode === 'pending' && task.subject" class="todo-subject-pill">
+        {{ task.subject }}
+      </text>
+
       <picker
-        v-if="mode === 'pending' && task.id"
+        v-if="!hideScheduleActions && mode === 'pending' && task.id"
         mode="time"
         value="09:00"
         @change="onTimePicked"
@@ -50,7 +59,7 @@
       </picker>
 
       <view
-        v-if="mode === 'scheduled' && task.id && task.status !== 'completed'"
+        v-if="!hideScheduleActions && mode === 'scheduled' && task.id && task.status !== 'completed'"
         class="row-icon-btn"
         role="button"
         title="移回待办"
@@ -84,6 +93,7 @@ const props = defineProps<{
   task: Task
   mode: 'scheduled' | 'pending'
   locked?: boolean
+  hideScheduleActions?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -101,8 +111,8 @@ const isOverdue = computed(() => {
   return Number.isFinite(ms) && ms < Date.now()
 })
 
-const hasSubline = computed(() => (
-  Boolean(props.task.subject) || (props.mode === 'pending' && Boolean(props.task.dueAt))
+const showTrailingSlot = computed(() => (
+  props.mode === 'pending' || (!props.hideScheduleActions && Boolean(props.task.id) && props.task.status !== 'completed')
 ))
 
 function onTimePicked(event: { detail?: { value?: string } }) {
@@ -115,28 +125,78 @@ function onTimePicked(event: { detail?: { value?: string } }) {
 
 <style scoped>
 .task-row {
-  padding: 12px 14px;
+  padding: 11px 13px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  border-radius: 14px;
+  gap: 11px;
+  border-radius: 13px;
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
   transition: border-color 0.18s ease, transform 0.16s var(--ease-out), box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
+.task-row.is-scheduled {
+  border: 1px solid var(--glass-border-subtle);
+  border-left: 3px solid var(--color-zen-sage);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.16), 0 2px 10px rgba(45, 55, 40, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.task-row.is-pending {
+  border: 1px solid var(--glass-border-subtle);
+  padding: 7px 10px;
+  gap: 7px;
+  border-radius: 11px;
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.15), 0 1px 6px rgba(45, 55, 40, 0.025), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
 .task-row:hover {
-  border-color: var(--border-accent);
-  box-shadow: var(--shadow-md);
+  border-color: rgba(139, 154, 110, 0.45);
 }
 
 .task-row.is-completed {
-  opacity: 0.54;
+  opacity: 0.58;
+  background-color: rgba(28, 28, 26, 0.035);
+}
+
+.task-row.is-completed.is-scheduled {
+  border-left-color: var(--color-gray-300);
+}
+
+.task-row.is-completed .scheduled-time-pill {
+  background-color: rgba(28, 28, 26, 0.05);
+  color: var(--text-muted);
+}
+
+.task-row.is-completed .todo-accent-bar {
+  background: var(--color-gray-300);
+}
+
+.task-row.is-completed .todo-subject-pill {
+  background-color: rgba(28, 28, 26, 0.05);
+  border-color: rgba(28, 28, 26, 0.12);
+  color: var(--text-muted);
+}
+
+.task-row.is-completed .meta-ddl {
+  background-color: rgba(28, 28, 26, 0.05);
+  color: var(--text-muted);
+}
+
+.todo-accent-bar {
+  width: 2.5px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  flex-shrink: 0;
 }
 
 .check-circle {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid rgba(139, 154, 110, 0.5);
+  background-color: rgba(139, 154, 110, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -145,50 +205,23 @@ function onTimePicked(event: { detail?: { value?: string } }) {
   transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.14s ease;
 }
 
+.task-row.is-pending .check-circle {
+  width: 16px;
+  height: 16px;
+}
+
 .check-circle:active {
   transform: scale(0.88);
 }
 
 .check-circle.checked {
-  background-color: var(--color-zen-sage);
-  border-color: var(--color-zen-sage);
+  background: var(--color-zen-stone);
+  border-color: var(--color-zen-stone);
 }
 
 .check-circle.locked {
   opacity: 0.4;
-  pointer-events: none;
-}
-
-.time-rail {
-  width: 44px;
-  padding-right: 10px;
-  border-right: 1.5px solid rgba(139, 154, 110, 0.36);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.task-row.is-completed .time-rail {
-  border-right-color: var(--border-subtle);
-}
-
-.rail-start {
-  font-size: 13px;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-sage-ink);
-  line-height: 1.15;
-}
-
-.task-row.is-completed .rail-start {
-  color: var(--text-muted);
-}
-
-.rail-dur {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.15;
+  cursor: not-allowed;
 }
 
 .row-info {
@@ -196,16 +229,62 @@ function onTimePicked(event: { detail?: { value?: string } }) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   cursor: pointer;
 }
 
-.row-title {
-  font-size: 14px;
+.row-info.locked {
+  cursor: default;
+}
+
+.scheduled-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.scheduled-time-pill {
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-sage-bg);
+  color: var(--color-sage-ink);
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.25;
+}
+
+.scheduled-subject-pill {
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(28, 28, 26, 0.045);
+  color: var(--text-muted);
+  font-size: 11px;
   font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
+}
+
+.row-title {
+  font-size: 13.5px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   line-height: 1.38;
   word-break: break-word;
+  letter-spacing: -0.01em;
+}
+
+.pending-title-flow {
+  display: block;
+  width: 100%;
+  line-height: 1.42;
+}
+
+.task-row.is-pending .row-title {
+  display: inline;
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.42;
+  vertical-align: middle;
 }
 
 .row-title.strike {
@@ -213,29 +292,34 @@ function onTimePicked(event: { detail?: { value?: string } }) {
   color: var(--text-muted);
 }
 
-.row-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 11.5px;
-  line-height: 1.3;
-}
-
-.meta-subject {
-  color: var(--text-muted);
+.todo-subject-pill {
+  max-width: 80px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background-color: rgba(139, 154, 110, 0.14);
+  border: 0.5px solid rgba(139, 154, 110, 0.32);
+  color: var(--color-sage-ink);
+  font-size: 10.5px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meta-ddl {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1px 6px;
+  margin-left: 6px;
+  padding: 1px 5px;
   border-radius: 5px;
   background-color: var(--color-warning-bg);
   color: var(--color-warning-ink);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
+  vertical-align: middle;
 }
 
 .meta-ddl.overdue {
@@ -246,7 +330,7 @@ function onTimePicked(event: { detail?: { value?: string } }) {
 .row-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -257,6 +341,7 @@ function onTimePicked(event: { detail?: { value?: string } }) {
   padding: 5px 10px;
   border-radius: var(--radius-full);
   background-color: var(--color-sage-bg);
+  border: 0.5px solid rgba(139, 154, 110, 0.32);
   color: var(--color-sage-ink);
   font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
@@ -276,8 +361,14 @@ function onTimePicked(event: { detail?: { value?: string } }) {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0.72;
+  opacity: 0.68;
   transition: opacity 0.14s ease, background-color 0.14s ease;
+}
+
+.task-row.is-pending .row-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
 }
 
 .row-icon-btn:hover {
@@ -287,18 +378,25 @@ function onTimePicked(event: { detail?: { value?: string } }) {
 
 @media (max-width: 390px) {
   .task-row {
-    padding: 11px 12px;
+    padding: 10px 11px;
     gap: 8px;
   }
 
-  .time-rail {
-    width: 40px;
-    padding-right: 8px;
+  .task-row.is-pending {
+    padding: 6px 9px;
+    gap: 7px;
+  }
+
+  .todo-subject-pill {
+    max-width: 68px;
   }
 
   .row-title {
-    font-size: 13.5px;
-    letter-spacing: -0.01em;
+    font-size: 13px;
+  }
+
+  .task-row.is-pending .row-title {
+    font-size: 12px;
   }
 }
 </style>

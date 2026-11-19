@@ -7,6 +7,7 @@ export type AiModelListView = components['schemas']['AiModelListView']
 export type AiConnectionTestView = components['schemas']['AiConnectionTestView']
 export type ConversationCommand = components['schemas']['ConversationCommand']
 export type ConversationView = components['schemas']['ConversationView']
+export type ChatRunStatusView = components['schemas']['ChatRunStatusView']
 export type AiProviderType = AiSettingsCommand['provider']
 
 export function createAiApi(client: ApiCallClient = defaultApiCallClient) {
@@ -34,6 +35,21 @@ export function createAiApi(client: ApiCallClient = defaultApiCallClient) {
         query: { baseVersion },
       },
     ) as Promise<void>,
+    getRunStatus: (conversationId: string, runId: string) => client.request(
+      '/api/ai/conversations/{conversationId}/runs/{runId}', 'get', {
+        pathParams: { conversationId, runId },
+      },
+    ) as Promise<ChatRunStatusView>,
+    recoverRunAttempt: (conversationId: string, runId: string, attemptId: string) => client.request(
+      '/api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover', 'post', {
+        pathParams: { conversationId, runId, attemptId },
+      },
+    ) as Promise<ChatRunStatusView>,
+    cancelRun: (conversationId: string, runId: string) => client.request(
+      '/api/ai/conversations/{conversationId}/runs/{runId}/cancel', 'post', {
+        pathParams: { conversationId, runId },
+      },
+    ) as Promise<ChatRunStatusView>,
   }
 }
 

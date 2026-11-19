@@ -88,18 +88,22 @@ function choosePreset(minutes: number) {
 .preset-chip {
   padding: 5px 14px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   font-size: 12.5px;
   color: var(--text-muted);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .preset-chip.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.16);
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
   color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
@@ -122,9 +126,11 @@ function choosePreset(minutes: number) {
   font-weight: var(--font-weight-semibold);
   padding: 9px 22px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-subtle);
   cursor: pointer;
   transition: transform 0.18s var(--ease-out), border-color 0.18s ease, color 0.18s ease;
 }

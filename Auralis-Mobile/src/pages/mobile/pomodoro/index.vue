@@ -189,7 +189,7 @@ function applyDefaultTaskIfNeeded() {
   if (focusStore.selectedTaskId) {
     if (!tasksLoaded.value) return
     const existing = taskStore.allTasks.find(
-      item => item.id === focusStore.selectedTaskId && !item.is_deleted && item.status !== 'completed',
+      item => item.id === focusStore.selectedTaskId && !item.is_deleted && item.status !== 'completed' && item.status !== 'cancelled',
     )
     if (existing) return
     focusStore.selectTask(null)
@@ -313,7 +313,7 @@ async function completeBoundTask() {
   const target = focusStore.lastCompletedTask
   if (!target?.id) return
   const existing = taskStore.allTasks.find(item => item.id === target.id && !item.is_deleted)
-  if (!existing || existing.status === 'completed') {
+  if (!existing || existing.status === 'completed' || existing.status === 'cancelled') {
     focusStore.dismissCompletedTaskPrompt()
     return
   }

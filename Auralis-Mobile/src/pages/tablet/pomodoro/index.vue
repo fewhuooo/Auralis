@@ -110,7 +110,7 @@ const showTaskSelect = ref(false)
 
 const quickPickTasks = computed(() => (
   taskStore.allTasks
-    .filter(task => !task.is_deleted && task.status !== 'completed')
+    .filter(task => !task.is_deleted && task.status !== 'completed' && task.status !== 'cancelled')
     .slice(0, 6)
 ))
 
@@ -139,7 +139,7 @@ async function completeBoundTask() {
   const target = focusStore.lastCompletedTask
   if (!target?.id) return
   const existing = taskStore.allTasks.find(item => item.id === target.id)
-  if (existing && existing.status !== 'completed') {
+  if (existing && existing.status !== 'completed' && existing.status !== 'cancelled') {
     await taskStore.toggleTaskComplete(target.id)
     uni.showToast({ title: '已标记完成', icon: 'none' })
   }
@@ -152,7 +152,7 @@ async function completeBoundTask() {
   display: flex;
   width: 100%;
   height: 100%;
-  background-color: var(--color-bg-secondary);
+  background-color: transparent;
   padding: 16px;
   box-sizing: border-box;
   overflow: hidden;
@@ -227,9 +227,11 @@ async function completeBoundTask() {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 12px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   cursor: pointer;
   flex-shrink: 0;
 }

@@ -33,10 +33,13 @@ export const useLayoutStore = defineStore('layout', () => {
   }
 
   const isReturning = ref(false)
+  let returnTimer: ReturnType<typeof setTimeout> | null = null
 
   const triggerReturn = (duration = 550) => {
+    if (returnTimer) clearTimeout(returnTimer)
     isReturning.value = true
-    setTimeout(() => {
+    returnTimer = setTimeout(() => {
+      returnTimer = null
       isReturning.value = false
     }, duration)
   }
@@ -44,18 +47,25 @@ export const useLayoutStore = defineStore('layout', () => {
   const isExiting = ref(false)
   const exitDirection = ref<'right' | 'left' | 'up' | 'down'>('right')
   const exitingRoute = ref('')
+  let exitTimer: ReturnType<typeof setTimeout> | null = null
 
   const startExit = (dir: 'right' | 'left' | 'up' | 'down', duration = 140, route = '') => {
+    if (exitTimer) clearTimeout(exitTimer)
     exitDirection.value = dir
     exitingRoute.value = route
     isExiting.value = true
-    setTimeout(() => {
+    exitTimer = setTimeout(() => {
+      exitTimer = null
       isExiting.value = false
       exitingRoute.value = ''
-    }, duration + 50)
+    }, Math.max(duration + 800, 900))
   }
 
   const clearExit = () => {
+    if (exitTimer) {
+      clearTimeout(exitTimer)
+      exitTimer = null
+    }
     isExiting.value = false
     exitingRoute.value = ''
   }

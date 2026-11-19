@@ -8,6 +8,7 @@ import {
   type PersistedFocusState,
 } from '@/services/focusController'
 import { localDataScope } from '@/services/localDataScope'
+import { readAutoSyncPreference } from '@/services/syncPreferences'
 import { toLocalDateKey } from '@/utils/dateKey'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -31,6 +32,7 @@ export const useFocusStore = defineStore('focus', () => {
   const state = ref<PersistedFocusState>(createDefaultFocusState())
   const todayRounds = ref(0)
   const todayFocusSeconds = ref(0)
+  const pendingOutboxCount = ref(0)
   const lastCompletedTask = ref<{ id: string; title: string } | null>(null)
 
   let ticker: ReturnType<typeof setInterval> | null = null
@@ -55,6 +57,7 @@ export const useFocusStore = defineStore('focus', () => {
     const summary = controller.readDaily(toLocalDateKey(new Date()))
     todayRounds.value = summary.completedRounds
     todayFocusSeconds.value = summary.focusSeconds
+    pendingOutboxCount.value = controller.readOutbox().length
   }
 
   function stopTicker() {
@@ -75,11 +78,16 @@ export const useFocusStore = defineStore('focus', () => {
     }, 1000)
   }
 
-  async function flushPendingSessions() {
+  async function flushPendingSessions(manual = false) {
     if (flushing || !auth.isAuthenticated) return
+    if (!manual && !readAutoSyncPreference({ get: key => uni.getStorageSync(key) })) {
+      pendingOutboxCount.value = controller.readOutbox().length
+      return
+    }
     flushing = true
     try {
       await controller.flushOutbox()
+      pendingOutboxCount.value = controller.readOutbox().length
     } finally {
       flushing = false
     }
@@ -184,6 +192,7 @@ export const useFocusStore = defineStore('focus', () => {
     todayRounds,
     todayFocusSeconds,
     todayFocusMinutes,
+    pendingOutboxCount,
     lastCompletedTask,
     reconcileNow,
     flushPendingSessions,

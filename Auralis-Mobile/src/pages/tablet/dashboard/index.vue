@@ -20,6 +20,7 @@
           :today-key="todayKey"
           :days="weekDays"
           :scheduled-dates="scheduledDateSet"
+          :show-nav="true"
           @shift-week="shiftWeek"
           @jump-today="jumpToToday"
         />
@@ -58,7 +59,7 @@
                   :key="item.id"
                   :task="item"
                   mode="scheduled"
-                  :locked="item.id ? taskStore.updatingTaskIds.includes(item.id) : false"
+                  :locked="isScheduledTaskLocked(item)"
                   @toggle="toggleTaskItem"
                   @unschedule="unscheduleTaskItem"
                 />
@@ -240,7 +241,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { reviewApi } from '@/api/reviewApi'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
@@ -250,7 +252,8 @@ import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore } from '@/store/useTaskStore'
+import { useTaskStore, type Task } from '@/store/useTaskStore'
+import { isScheduledCompletionLocked } from '@/utils/taskSyncMapper'
 import {
   combineLocalDateAndTime,
   endOfLocalDateIso,
@@ -273,16 +276,23 @@ const greeting = computed(() => {
   return '晚安'
 })
 
-const todayKey = ref(toLocalDateKey(new Date()))
+const nowClock = ref(new Date())
+const todayKey = ref(toLocalDateKey(nowClock.value))
 const selectedDateKey = ref(todayKey.value)
 const weekDays = computed(() => getWeekDays(selectedDateKey.value, todayKey.value))
 const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
+
+function syncClock() {
+  nowClock.value = new Date()
+  todayKey.value = toLocalDateKey(nowClock.value)
+  void taskStore.recoverOverdueTasks()
+}
 
 const scheduledForDay = computed(() => taskStore.getScheduledTasksForDate(selectedDateKey.value))
 const scheduledDateSet = computed(() => {
   const dates = new Set<string>()
   for (const item of taskStore.allTasks) {
-    if (!item.is_deleted && item.scheduledAt) {
+    if (!item.is_deleted && item.status !== 'cancelled' && item.scheduledAt) {
       const key = toLocalDateKey(item.scheduledAt)
       if (key) dates.add(key)
     }
@@ -299,7 +309,17 @@ function jumpToToday() {
   selectedDateKey.value = todayKey.value
 }
 
+function isScheduledTaskLocked(task: Task): boolean {
+  return Boolean((task.id && taskStore.updatingTaskIds.includes(task.id)) || isScheduledCompletionLocked(task, nowClock.value))
+}
+
 async function toggleTaskItem(id: string) {
+  if (taskStore.updatingTaskIds.includes(id)) return
+  const task = taskStore.allTasks.find(item => item.id === id)
+  if (isScheduledCompletionLocked(task, nowClock.value)) {
+    uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
+    return
+  }
   await taskStore.toggleTaskComplete(id)
 }
 
@@ -478,10 +498,22 @@ watch(() => subjectStore.subjects.map(item => item.id).join(','), () => {
   void loadDueCounts()
 })
 
+let clockTimer: ReturnType<typeof setInterval> | null = null
+
+onShow(syncClock)
+
 onMounted(async () => {
+  clockTimer = setInterval(syncClock, 30000)
   await subjectStore.loadSubjects()
   await taskStore.fetchTasks()
   await loadDueCounts()
+})
+
+onUnmounted(() => {
+  if (clockTimer) {
+    clearInterval(clockTimer)
+    clockTimer = null
+  }
 })
 </script>
 
@@ -493,7 +525,7 @@ onMounted(async () => {
   height: 100%;
   padding: 16px;
   gap: 14px;
-  background-color: var(--color-bg-secondary);
+  background-color: transparent;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -689,11 +721,13 @@ onMounted(async () => {
   gap: 10px;
   padding: 11px 13px;
   border-radius: 13px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   cursor: pointer;
-  transition: border-color 0.16s ease, transform 0.14s ease, opacity 0.16s ease;
+  transition: border-color 0.16s ease, transform 0.14s ease, opacity 0.16s ease, box-shadow 0.16s ease;
 }
 
 .due-subject-row.is-quiet {
@@ -788,16 +822,20 @@ onMounted(async () => {
 .chip-item {
   padding: 6px 12px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   font-size: 12.5px;
   color: var(--text-secondary);
   cursor: pointer;
 }
 
 .chip-item.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.16);
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
   color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
@@ -828,8 +866,11 @@ onMounted(async () => {
   height: 40px;
   padding: 0 12px;
   border-radius: var(--radius-md);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
   justify-content: center;

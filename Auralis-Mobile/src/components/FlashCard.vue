@@ -1,39 +1,55 @@
 <template>
-  <view class="flash-card-stage" :class="{ 'has-deck': hasNext }">
-    <view v-if="hasNext" class="deck-underlay" aria-hidden="true"></view>
+  <view class="flash-card-stage" :class="{ 'has-deck': hasNext && showDeck !== false }">
+    <view v-if="hasNext && showDeck !== false" class="deck-underlay" aria-hidden="true"></view>
 
     <view
       class="flash-card-container"
       role="button"
       :aria-label="flipped ? '切换回题目' : '翻看答案'"
-      @click="toggleFlip"
+      @click="handleCardClick"
     >
-      <view v-if="!flipped" class="card-face zen-card front-face">
-        <view class="card-header">
-          <text class="subject-caption">{{ subject || '通用' }}</text>
-          <LineIcon name="rotate" size="15px" color="var(--text-muted)" />
-        </view>
-
-        <view class="card-front-body">
-          <text class="front-text">{{ front }}</text>
-        </view>
-      </view>
-
-      <view v-else class="card-face zen-card back-face">
-        <view class="card-header">
-          <text class="subject-caption active">{{ subject || '通用' }}</text>
-          <LineIcon name="rotate" size="15px" color="var(--color-sage-ink)" />
-        </view>
-
-        <view class="question-recap">
-          <text class="recap-label">{{ front }}</text>
-        </view>
-
-        <scroll-view scroll-y :show-scrollbar="false" class="card-back-scroll" @click.stop>
-          <view class="answer-prose">
-            <MarkdownText :content="back" />
+      <view class="flash-card" :class="{ 'is-flipped': flipped }">
+        <view class="card-face zen-card front-face">
+          <view class="card-header">
+            <view class="card-header-meta">
+              <text class="subject-caption">{{ subject || '通用' }}</text>
+              <text v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</text>
+            </view>
+            <LineIcon name="rotate" size="15px" color="var(--text-muted)" />
           </view>
-        </scroll-view>
+
+          <view class="card-front-body">
+            <text class="front-text">{{ front }}</text>
+          </view>
+
+          <view class="card-footer">
+            <text class="hint-text">轻触卡片翻看答案</text>
+          </view>
+        </view>
+
+        <view class="card-face zen-card back-face">
+          <view class="card-header" @click.stop="handleHeaderClick">
+            <view class="card-header-meta">
+              <text class="subject-caption active">{{ subject || '通用' }}</text>
+              <text v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</text>
+            </view>
+            <LineIcon name="rotate" size="15px" color="var(--color-sage-ink)" />
+          </view>
+
+          <view class="question-recap">
+            <text class="recap-label">{{ front }}</text>
+          </view>
+
+          <scroll-view scroll-y :show-scrollbar="false" class="card-back-scroll" @click.stop>
+            <view class="answer-prose">
+              <MarkdownText :content="back" />
+            </view>
+          </scroll-view>
+
+          <view class="card-footer" @click.stop="handleHeaderClick">
+            <text class="hint-text">轻触顶栏切回题目</text>
+          </view>
+        </view>
       </view>
     </view>
   </view>
@@ -43,20 +59,38 @@
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   front: string
   back: string
   subject?: string
+  statusTag?: string
+  statusTone?: 'warning' | 'sage'
   flipped: boolean
   hasNext?: boolean
-}>()
+  showDeck?: boolean
+  suppressFlip?: boolean
+}>(), {
+  statusTag: '',
+  statusTone: 'warning',
+  showDeck: true,
+  suppressFlip: false,
+})
 
 const emit = defineEmits<{
   (event: 'update:flipped', val: boolean): void
 }>()
 
 function toggleFlip() {
+  if (props.suppressFlip) return
   emit('update:flipped', !props.flipped)
+}
+
+function handleCardClick() {
+  toggleFlip()
+}
+
+function handleHeaderClick() {
+  toggleFlip()
 }
 </script>
 
@@ -81,9 +115,11 @@ function toggleFlip() {
   bottom: 0;
   height: 28px;
   border-radius: 16px;
-  background-color: rgba(250, 247, 242, 0.72);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   z-index: 0;
   pointer-events: none;
 }
@@ -94,30 +130,53 @@ function toggleFlip() {
   width: 100%;
   flex: 1;
   min-height: 280px;
+  perspective: 1400px;
   cursor: pointer;
   display: flex;
 }
 
-.card-face {
+.flash-card {
+  position: relative;
   width: 100%;
   flex: 1;
-  min-height: 0;
-  padding: 24px 28px;
-  border-radius: 20px;
-  box-shadow: var(--shadow-md);
+  min-height: 280px;
+  transform-style: preserve-3d;
+  transition: transform 0.56s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.flash-card.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.flash-card.is-flipped .front-face {
+  pointer-events: none;
+}
+
+.flash-card:not(.is-flipped) .back-face {
+  pointer-events: none;
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  padding: 22px 24px;
+  border-radius: 22px;
+  box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.055), 0 12px 30px rgba(45, 55, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.88);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  animation: cardReveal 0.24s var(--ease-out) both;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.front-face {
+  z-index: 2;
 }
 
 .back-face {
-  border-color: rgba(139, 154, 110, 0.28);
-}
-
-@keyframes cardReveal {
-  0% { opacity: 0.65; transform: translateY(4px) scale(0.985); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  transform: rotateY(180deg);
+  border-color: var(--glass-border);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), 0 12px 30px rgba(45, 55, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
 .card-header {
@@ -125,6 +184,28 @@ function toggleFlip() {
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+}
+
+.card-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-tag {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-warning-ink);
+  background-color: var(--color-warning-bg);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.status-tag.sage {
+  color: var(--color-sage-ink);
+  background-color: var(--color-sage-bg);
 }
 
 .subject-caption {
@@ -158,8 +239,8 @@ function toggleFlip() {
 }
 
 .question-recap {
-  margin-top: 16px;
-  padding-bottom: 14px;
+  margin-top: 14px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
@@ -176,10 +257,26 @@ function toggleFlip() {
   flex: 1;
   height: 0;
   min-height: 0;
-  margin-top: 16px;
+  margin-top: 14px;
+  touch-action: pan-y;
 }
 
 .answer-prose {
   padding-bottom: 8px;
+}
+
+.card-footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hint-text {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
 }
 </style>

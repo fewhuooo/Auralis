@@ -3,6 +3,15 @@ export interface SseEvent {
   data: unknown
 }
 
+export function decodeStreamChunk(value: unknown, decoder: TextDecoder): string {
+  if (typeof value === 'string') return value
+  if (value instanceof ArrayBuffer) return decoder.decode(new Uint8Array(value), { stream: true })
+  if (ArrayBuffer.isView(value)) {
+    return decoder.decode(new Uint8Array(value.buffer, value.byteOffset, value.byteLength), { stream: true })
+  }
+  return ''
+}
+
 function parseData(value: string): unknown {
   try {
     return JSON.parse(value)

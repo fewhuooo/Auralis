@@ -14,6 +14,8 @@ let socketTask: UniApp.SocketTask | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempt = 0
 let explicitlyDisconnected = false
+let connectSeq = 0
+let activeConnectFlight: { seq: number; promise: Promise<void> } | null = null
 const recentEvents = new Set<string>()
 
 function scheduleReconnect() {
@@ -35,45 +37,81 @@ function rememberEvent(event: RealtimeEvent): boolean {
 }
 
 export async function connectRealtimeSync() {
-  if (socketTask || !useAuthStore().isAuthenticated) return
-  explicitlyDisconnected = false
-  try {
-    const auth = useAuthStore()
-    const ticket = await realtimeApi.issueTicket()
-    if (!ticket.ticket && !ticket.websocketUrl) throw new Error('Realtime ticket response is incomplete')
-    const path = ticket.websocketUrl || `/ws/events?ticket=${encodeURIComponent(ticket.ticket!)}`
-    const url = resolveWebsocketUrl(path, getRuntimeConfig())
-    const task = uni.connectSocket({ url }) as unknown as UniApp.SocketTask
-    socketTask = task
-    task.onOpen(() => {
-      reconnectAttempt = 0
-      void useSyncStore().triggerSync()
-    })
-    task.onMessage((message) => {
-      try {
-        const event = JSON.parse(String(message.data)) as RealtimeEvent
-        if (rememberEvent(event) && (event.type === 'SYNC_CHANGED' || event.type === 'REVIEW_UPDATED')) {
-          void useSyncStore().triggerSync()
-        }
-      } catch (error) {
-        console.warn('[Realtime] Ignored malformed event:', error)
-      }
-    })
-    task.onClose(() => {
-      socketTask = null
-      scheduleReconnect()
-    })
-    task.onError(() => {
-      socketTask = null
-      scheduleReconnect()
-    })
-  } catch (error) {
-    console.error('[Realtime] Connection failed:', error)
-    scheduleReconnect()
+  const auth = useAuthStore()
+  if (socketTask || !auth.isAuthenticated) return
+  if (activeConnectFlight && activeConnectFlight.seq === connectSeq) {
+    return activeConnectFlight.promise
   }
+
+  explicitlyDisconnected = false
+  const seq = ++connectSeq
+  const generation = auth.getLoginGeneration()
+  const userId = auth.user?.id
+  const serverDeviceId = auth.serverDeviceId
+  const isCurrentAttempt = () => (
+    seq === connectSeq
+    && !explicitlyDisconnected
+    && auth.isAuthenticated
+    && generation === auth.getLoginGeneration()
+    && userId === auth.user?.id
+    && serverDeviceId === auth.serverDeviceId
+  )
+
+  const flight = (async () => {
+    try {
+      const ticket = await realtimeApi.issueTicket()
+      if (!isCurrentAttempt() || socketTask) return
+      if (!ticket.ticket && !ticket.websocketUrl) throw new Error('Realtime ticket response is incomplete')
+      const path = ticket.websocketUrl || `/ws/events?ticket=${encodeURIComponent(ticket.ticket!)}`
+      const url = resolveWebsocketUrl(path, getRuntimeConfig())
+      const task = uni.connectSocket({ url, complete: () => {} }) as unknown as UniApp.SocketTask
+      socketTask = task
+      task.onOpen(() => {
+        if (socketTask !== task || !isCurrentAttempt()) {
+          task.close({})
+          return
+        }
+        reconnectAttempt = 0
+        void useSyncStore().triggerSync()
+      })
+      task.onMessage((message) => {
+        if (socketTask !== task || !isCurrentAttempt()) return
+        try {
+          const event = JSON.parse(String(message.data)) as RealtimeEvent
+          if (rememberEvent(event) && (event.type === 'SYNC_CHANGED' || event.type === 'REVIEW_UPDATED')) {
+            void useSyncStore().triggerSync()
+          }
+        } catch (error) {
+          console.warn('[Realtime] Ignored malformed event:', error)
+        }
+      })
+      task.onClose(() => {
+        if (socketTask !== task) return
+        socketTask = null
+        if (isCurrentAttempt()) scheduleReconnect()
+      })
+      task.onError(() => {
+        if (socketTask !== task) return
+        socketTask = null
+        if (isCurrentAttempt()) scheduleReconnect()
+      })
+    } catch (error) {
+      console.error('[Realtime] Connection failed:', error)
+      if (isCurrentAttempt()) scheduleReconnect()
+    } finally {
+      if (activeConnectFlight?.seq === seq) {
+        activeConnectFlight = null
+      }
+    }
+  })()
+
+  activeConnectFlight = { seq, promise: flight }
+  return flight
 }
 
 export function disconnectRealtimeSync() {
+  connectSeq += 1
+  activeConnectFlight = null
   explicitlyDisconnected = true
   if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = null

@@ -381,7 +381,7 @@ const goBack = () => {
 .back-btn {
   font-size: 32rpx;
   color: var(--color-zen-graphite, #1C1C1A);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-family-base);
   font-weight: 600;
   cursor: pointer;
 }
@@ -391,7 +391,7 @@ const goBack = () => {
   border: none;
   background: transparent;
   color: var(--color-zen-graphite, #1C1C1A);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-family-base);
   width: 220rpx;
 }
 .save-status {

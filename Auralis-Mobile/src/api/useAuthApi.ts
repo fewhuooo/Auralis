@@ -6,6 +6,8 @@ type LoginRequest = components['schemas']['LoginRequest']
 type RefreshRequest = components['schemas']['RefreshRequest']
 type ProfileUpdateRequest = components['schemas']['ProfileUpdateRequest']
 type PasswordChangeRequest = components['schemas']['PasswordChangeRequest']
+type AccountDeletionRequest = components['schemas']['AccountDeletionRequest']
+type AccountDeletionResponse = components['schemas']['AccountDeletionResponse']
 type AuthResult = components['schemas']['AuthResult']
 type UserView = components['schemas']['UserView']
 type SessionListResponse = components['schemas']['SessionListResponse']
@@ -39,6 +41,9 @@ export function createAuthApi(client: ApiCallClient = defaultApiCallClient) {
     updateProfile: (body: ProfileUpdateRequest) => client.request(
       '/api/auth/me', 'put', { body },
     ) as Promise<UserView>,
+    deleteAccount: (body: AccountDeletionRequest) => client.request(
+      '/api/auth/me', 'delete', { body },
+    ) as Promise<AccountDeletionResponse>,
     changePassword: (body: PasswordChangeRequest) => client.request(
       '/api/auth/password', 'put', { body },
     ) as Promise<void>,

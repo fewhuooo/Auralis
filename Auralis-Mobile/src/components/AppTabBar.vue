@@ -1,116 +1,216 @@
 <template>
-  <view class="app-bar-container" role="navigation" aria-label="主导航">
-    <view class="app-tabbar-float" role="tablist">
-      <view
-        class="active-pill-indicator"
-        :class="{ 'animate-pill': isAnimatePill }"
-        :style="{ transform: `translateX(${displayIndex * 100}%)` }"
-      >
-        <view class="pill-inner"></view>
+  <view class="app-bar-shell">
+    <view class="app-bar-scrim" aria-hidden="true"></view>
+    <view class="app-bar-container" role="navigation" aria-label="主导航">
+      <view class="app-tabbar-float" role="tablist">
+        <view
+          class="active-pill-indicator"
+          :class="{ 'animate-pill': isAnimatePill }"
+          :style="{ transform: `translateX(${displayIndex * 100}%)` }"
+        >
+          <view class="pill-inner"></view>
+        </view>
+
+        <view
+          v-for="(item, idx) in tabItems"
+          :key="item.path"
+          class="tab-item"
+          role="tab"
+          :aria-label="item.label"
+          :aria-selected="displayIndex === idx"
+          @click="switchTab(item.path)"
+        >
+          <LineIcon
+            :name="item.icon"
+            size="19px"
+            :color="displayIndex === idx ? '#556B3D' : '#7A7A75'"
+          />
+          <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
+        </view>
       </view>
 
       <view
-        v-for="(item, idx) in tabItems"
-        :key="item.path"
-        class="tab-item"
-        role="tab"
-        :aria-label="item.label"
-        :aria-selected="displayIndex === idx"
-        @click="switchTab(item.path)"
+        class="app-ai-float"
+        role="button"
+        aria-label="AI 助手"
+        @click="goToAi"
       >
-        <LineIcon
-          :name="item.icon"
-          size="19px"
-          :color="displayIndex === idx ? '#556B3D' : '#7A7A75'"
-        />
-        <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
+        <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
       </view>
-    </view>
-
-    <view
-      class="app-ai-float"
-      role="button"
-      aria-label="AI 助手"
-      @click="goToAi"
-    >
-      <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useLayoutStore } from '@/store/useLayoutStore'
+import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 
+const aiAssistantPath = '/pages/mobile/ai-search/index'
 const tabItems = [
   { path: '/pages/mobile/home/index', icon: 'calendar', label: '今日' },
-  { path: '/pages/mobile/review/index', icon: 'book', label: '学习' },
+  { path: '/pages/mobile/learn/index', icon: 'book', label: '学习' },
   { path: '/pages/mobile/pomodoro/index', icon: 'clock', label: '专注' },
   { path: '/pages/mobile/profile/index', icon: 'avatar', label: '我的' },
 ]
 
 const displayIndex = ref(0)
 const isAnimatePill = ref(false)
+let stopSiblingPreload: (() => void) | null = null
+let pillTimer: ReturnType<typeof setTimeout> | null = null
+let exitDelayTimer: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
+let hasPendingExit = false
 
 function getIndexByUrl(path: string): number {
-  if (path.includes('review/index')) return 1
+  if (path.includes('learn/index') || path.includes('review/index')) return 1
   if (path.includes('pomodoro/index')) return 2
   if (path.includes('profile/index')) return 3
   return 0
 }
 
-onMounted(() => {
+function resolveCurrentRoute(): string {
   const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + (pages[pages.length - 1].route || '') : ''
+  return pages.length > 0 ? '/' + (pages[pages.length - 1].route || '') : ''
+}
+
+onMounted(() => {
+  isUnmounted = false
+  const nowRoute = resolveCurrentRoute()
   isAnimatePill.value = false
   displayIndex.value = getIndexByUrl(nowRoute)
-  setTimeout(() => {
+  pillTimer = setTimeout(() => {
+    pillTimer = null
     isAnimatePill.value = true
   }, 50)
+  stopSiblingPreload = scheduleSiblingPreload(
+    [...tabItems.map(item => item.path), aiAssistantPath],
+    nowRoute,
+  )
 })
 
+onUnmounted(() => {
+  isUnmounted = true
+  if (pillTimer) {
+    clearTimeout(pillTimer)
+    pillTimer = null
+  }
+  if (exitDelayTimer) {
+    clearTimeout(exitDelayTimer)
+    exitDelayTimer = null
+  }
+  stopSiblingPreload?.()
+  stopSiblingPreload = null
+  if (hasPendingExit) {
+    hasPendingExit = false
+    useLayoutStore().clearExit()
+  }
+})
+
+function navigateWithTransition(url: string, dir: 'left' | 'right', nowRoute: string) {
+  const layoutStore = useLayoutStore()
+  layoutStore.setSlideDirection(dir)
+  layoutStore.startExit(dir, 140, nowRoute)
+  hasPendingExit = true
+
+  if (exitDelayTimer) {
+    clearTimeout(exitDelayTimer)
+    exitDelayTimer = null
+  }
+  const preloadTask = preloadRoute(url)
+  const exitDelay = new Promise<void>((resolve) => {
+    exitDelayTimer = setTimeout(() => {
+      exitDelayTimer = null
+      resolve()
+    }, 140)
+  })
+  void Promise.all([exitDelay, preloadTask]).then(() => {
+    if (isUnmounted || (Boolean(nowRoute) && resolveCurrentRoute() !== nowRoute)) {
+      if (hasPendingExit) {
+        hasPendingExit = false
+        layoutStore.clearExit()
+      }
+      return
+    }
+    uni.redirectTo({
+      url,
+      complete: () => {
+        hasPendingExit = false
+        layoutStore.clearExit()
+      },
+    })
+  })
+}
+
 function switchTab(url: string) {
-  const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + (pages[pages.length - 1].route || '') : ''
+  const nowRoute = resolveCurrentRoute()
   const layoutStore = useLayoutStore()
   if (nowRoute === url || layoutStore.isExiting) return
 
   const targetIndex = getIndexByUrl(url)
   const currentIdx = getIndexByUrl(nowRoute)
   const dir = targetIndex > currentIdx ? 'right' : 'left'
-  layoutStore.setSlideDirection(dir)
-  layoutStore.startExit(dir, 140, nowRoute)
 
   isAnimatePill.value = true
   displayIndex.value = targetIndex
-
-  setTimeout(() => {
-    layoutStore.clearExit()
-    uni.redirectTo({ url })
-  }, 140)
+  navigateWithTransition(url, dir, nowRoute)
 }
 
 function goToAi() {
-  uni.redirectTo({ url: '/pages/mobile/ai-search/index' })
+  const nowRoute = resolveCurrentRoute()
+  const layoutStore = useLayoutStore()
+  if (nowRoute === aiAssistantPath || layoutStore.isExiting) return
+
+  navigateWithTransition(aiAssistantPath, 'right', nowRoute)
 }
 </script>
 
 <style scoped>
-.app-bar-container {
+.app-bar-shell {
   pointer-events: none;
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(14px + env(safe-area-inset-bottom));
+  bottom: 0;
   margin: 0 auto;
   max-width: 440px;
-  padding: 0 14px;
+  z-index: var(--z-index-tabbar, 800);
+}
+
+.app-bar-scrim {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(92px + env(safe-area-inset-bottom));
+  z-index: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(239, 235, 226, 0) 0%,
+    rgba(239, 235, 226, 0.72) 24%,
+    rgba(239, 235, 226, 0.94) 56%,
+    #EFEBE2 100%
+  );
+}
+
+.app-bar-container {
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+  padding: 0 20px calc(14px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   gap: 10px;
-  z-index: var(--z-index-tabbar, 800);
   box-sizing: border-box;
+}
+
+@media (max-width: 390px) {
+  .app-bar-container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 
 .app-tabbar-float {
@@ -119,9 +219,9 @@ function goToAi() {
   min-width: 0;
   height: 56px;
   position: relative;
-  background-color: var(--glass-bg);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  background-color: rgba(252, 251, 249, 0.72);
+  backdrop-filter: blur(28px) saturate(185%);
+  -webkit-backdrop-filter: blur(28px) saturate(185%);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-full);
   display: flex;
@@ -195,14 +295,14 @@ function goToAi() {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md), var(--accent-glow);
+  box-shadow: 0 4px 16px rgba(118, 135, 88, 0.22);
   cursor: pointer;
   transition: transform 0.16s var(--ease-out), box-shadow 0.18s ease;
 }
 
 .app-ai-float:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-lg), 0 6px 20px rgba(139, 154, 110, 0.42);
+  box-shadow: 0 6px 20px rgba(118, 135, 88, 0.30);
 }
 
 .app-ai-float:active {

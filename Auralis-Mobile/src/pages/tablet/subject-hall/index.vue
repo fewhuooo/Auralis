@@ -295,7 +295,7 @@ onMounted(async () => {
   width: 100%;
   height: 100%;
   padding: 16px 20px;
-  background-color: var(--color-bg-secondary);
+  background-color: transparent;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -353,9 +353,11 @@ onMounted(async () => {
   height: 36px;
   padding: 0 13px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   width: 220px;
   box-sizing: border-box;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
@@ -423,8 +425,8 @@ onMounted(async () => {
 
 .subject-card:hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--color-zen-sage);
+  border-color: var(--glass-border);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.36), 0 12px 30px rgba(45, 55, 40, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.90);
 }
 
 .subject-card:hover .card-arrow {
@@ -467,8 +469,11 @@ onMounted(async () => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background-color: rgba(28, 28, 26, 0.04);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -527,12 +532,14 @@ onMounted(async () => {
 }
 
 .add-card {
-  border: 1px dashed var(--border-default);
+  border: 1px dashed rgba(139, 154, 110, 0.34);
   border-radius: 16px;
   align-items: center;
   justify-content: center;
-  background-color: rgba(250, 247, 242, 0.56);
-  box-shadow: none;
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
   gap: 10px;
 }
 
@@ -592,8 +599,11 @@ onMounted(async () => {
 .icon-option {
   height: 38px;
   border-radius: 10px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -601,8 +611,9 @@ onMounted(async () => {
 }
 
 .icon-option.selected {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.16);
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
 }
 
 .modal-error {

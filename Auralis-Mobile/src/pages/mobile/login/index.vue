@@ -118,7 +118,10 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 <style scoped>
 .login-viewport {
   min-height: 100vh;
-  background-color: var(--color-bg-secondary);
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   display: flex;
   justify-content: center;
 }
@@ -132,7 +135,7 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   flex-direction: column;
   justify-content: center;
   padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
-  background-color: var(--color-bg-primary);
+  background-color: transparent;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -203,8 +206,11 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 .code-field {
   height: 42px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   border-radius: 12px;
   padding: 0 6px 0 14px;
   display: flex;
@@ -309,9 +315,12 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 @media (min-width: 540px) {
   .login-page {
-    border-left: 1px solid var(--border-subtle);
-    border-right: 1px solid var(--border-subtle);
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.04);
+    background-color: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-left: 1px solid var(--glass-border);
+    border-right: 1px solid var(--glass-border);
+    box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
   }
 }
 /* #endif */

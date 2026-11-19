@@ -330,7 +330,7 @@ async function saveDisplayName() {
 
 async function triggerManualSync() {
   if (syncStore.isSyncing) return
-  await syncStore.triggerSync()
+  await syncStore.syncNow()
   uni.showToast({ title: syncStore.lastError ? '同步未完成' : '同步完成', icon: 'none' })
 }
 
@@ -383,6 +383,9 @@ async function submitPasswordChange() {
       currentPassword: pwdForm.currentPassword,
       newPassword: pwdForm.newPassword,
     })
+    if (generation !== authStore.getLoginGeneration()) return
+    await authStore.refreshAccessToken().catch(() => false)
+    if (generation !== authStore.getLoginGeneration()) return
     await authStore.restoreSession()
     if (generation !== authStore.getLoginGeneration()) return
     pwdForm.currentPassword = ''
@@ -391,9 +394,12 @@ async function submitPasswordChange() {
     showPasswordModal.value = false
     uni.showToast({ title: '密码已更新', icon: 'none' })
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     pwdError.value = err instanceof Error ? err.message : '修改失败'
   } finally {
-    savingPwd.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      savingPwd.value = false
+    }
   }
 }
 
@@ -553,7 +559,7 @@ onMounted(() => {
   height: 100%;
   padding: 20px 24px;
   box-sizing: border-box;
-  background-color: var(--color-bg-secondary);
+  background-color: transparent;
 }
 
 .profile-header {
@@ -751,16 +757,20 @@ onMounted(() => {
 .chip-item {
   padding: 5px 11px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   cursor: pointer;
 }
 
 .chip-item.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.16);
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
   color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
@@ -831,8 +841,11 @@ onMounted(() => {
   gap: 10px;
   padding: 11px 13px;
   border-radius: 12px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
 }
 
 .session-info {

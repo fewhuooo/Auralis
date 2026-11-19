@@ -325,7 +325,7 @@ onMounted(() => {
   height: 100%;
   padding: 14px;
   gap: 14px;
-  background-color: var(--color-bg-secondary);
+  background-color: transparent;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -473,9 +473,11 @@ onMounted(() => {
 .prompt-chip {
   padding: 10px 16px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;
@@ -582,9 +584,11 @@ onMounted(() => {
   gap: 10px;
   padding: 6px 6px 6px 16px;
   border-radius: var(--radius-full);
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--glass-surface-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 

@@ -1,6 +1,6 @@
 <template>
-  <view class="week-card zen-card">
-    <view class="week-nav">
+  <view class="week-card zen-card" :class="{ 'is-compact': !showNav }">
+    <view v-if="showNav" class="week-nav">
       <text class="week-month num-tabular">{{ monthTitle }}</text>
       <view class="week-controls">
         <view
@@ -65,6 +65,7 @@ const props = defineProps<{
   todayKey: string
   days: WeekDayDescriptor[]
   scheduledDates: Set<string>
+  showNav?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -82,11 +83,16 @@ const monthTitle = computed(() => {
 
 <style scoped>
 .week-card {
-  padding: 12px 14px 10px;
+  padding: 13px 14px 11px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
+  border-radius: 18px;
+}
+
+.week-card.is-compact {
+  padding: 12px 12px 9px;
 }
 
 .week-nav {
@@ -131,8 +137,11 @@ const monthTitle = computed(() => {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background-color: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -175,18 +184,20 @@ const monthTitle = computed(() => {
 
 .w-label {
   font-size: 11px;
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
+  letter-spacing: 0.02em;
 }
 
+.week-day.is-today .w-label,
 .week-day.active .w-label {
   color: var(--color-sage-ink);
   font-weight: var(--font-weight-bold);
 }
 
 .w-num-circle {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -195,13 +206,14 @@ const monthTitle = computed(() => {
 }
 
 .w-num {
-  font-size: 13.5px;
-  font-weight: var(--font-weight-bold);
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
 .week-day.is-today:not(.active) .w-num-circle {
-  border: 1.5px solid rgba(139, 154, 110, 0.48);
+  background-color: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.36);
 }
 
 .week-day.is-today:not(.active) .w-num {
@@ -210,7 +222,7 @@ const monthTitle = computed(() => {
 
 .week-day.active .w-num-circle {
   background: var(--accent-gradient);
-  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.34);
+  box-shadow: none;
   animation: dayCirclePop 0.22s var(--ease-out);
 }
 
@@ -222,6 +234,7 @@ const monthTitle = computed(() => {
 
 .week-day.active .w-num {
   color: #FFFFFF;
+  font-weight: var(--font-weight-bold);
 }
 
 .w-dot {

@@ -16,9 +16,16 @@
 			}
 		},
 		{
-			"path": "pages/mobile/review/index",
+			"path": "pages/mobile/learn/index",
 			"style": {
 				"navigationBarTitleText": "学习",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/review/index",
+			"style": {
+				"navigationBarTitleText": "复习",
 				"navigationStyle": "custom"
 			}
 		},

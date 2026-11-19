@@ -55,7 +55,7 @@
             role="button"
             title="点击立即同步"
             aria-label="同步状态"
-            @click.stop="syncStore.triggerSync()"
+            @click.stop="syncStore.syncNow()"
           >
             <view class="avatar-sync-dot"></view>
           </view>
@@ -83,13 +83,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSyncStore } from '@/store/useSyncStore'
+import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 
 const authStore = useAuthStore()
 const layoutStore = useLayoutStore()
@@ -166,6 +167,10 @@ const navItems = [
   { path: '/pages/tablet/ai-search/index', icon: 'sparkles', label: 'AI 助手' },
 ]
 
+let stopSiblingPreload: (() => void) | null = null
+let redirectTimer: ReturnType<typeof setTimeout> | null = null
+let exitResetTimer: ReturnType<typeof setTimeout> | null = null
+
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
@@ -184,6 +189,24 @@ onMounted(() => {
       isEntering.value = false
     }, 360)
   }
+
+  stopSiblingPreload = scheduleSiblingPreload(
+    [...navItems.map(item => item.path), '/pages/tablet/profile/index'],
+    nowRoute,
+  )
+})
+
+onUnmounted(() => {
+  if (redirectTimer) {
+    clearTimeout(redirectTimer)
+    redirectTimer = null
+  }
+  if (exitResetTimer) {
+    clearTimeout(exitResetTimer)
+    exitResetTimer = null
+  }
+  stopSiblingPreload?.()
+  stopSiblingPreload = null
 })
 
 const navigate = (path: string) => {
@@ -203,7 +226,19 @@ const navigate = (path: string) => {
   currentPath.value = path
   layoutStore.setActiveNav(targetIndex, path)
 
-  setTimeout(() => { uni.redirectTo({ url: path }) }, 160)
+  if (redirectTimer) clearTimeout(redirectTimer)
+  if (exitResetTimer) clearTimeout(exitResetTimer)
+  void preloadRoute(path)
+  redirectTimer = setTimeout(() => { uni.redirectTo({ url: path }) }, 160)
+  exitResetTimer = setTimeout(() => {
+    exitResetTimer = null
+    isExiting.value = false
+    if (nowRoute) {
+      currentPath.value = nowRoute
+      displayIndex.value = currentIdx
+      layoutStore.setActiveNav(currentIdx, nowRoute)
+    }
+  }, 600)
 }
 </script>
 
@@ -212,7 +247,10 @@ const navigate = (path: string) => {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background-color: var(--color-bg-secondary);
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   overflow: hidden;
   position: relative;
 }
@@ -220,8 +258,11 @@ const navigate = (path: string) => {
 .sidebar {
   width: 68px;
   height: 100%;
-  background-color: var(--color-bg-primary);
-  border-right: 1px solid var(--border-subtle);
+  background-color: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: 1px 0 0 rgba(45, 55, 40, 0.055), inset -1px 0 0 rgba(255, 255, 255, 0.65);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -238,7 +279,8 @@ const navigate = (path: string) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid rgba(45, 55, 40, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
   margin-bottom: 14px;
   cursor: pointer;
   transition: transform 0.2s var(--ease-out);
@@ -318,7 +360,8 @@ const navigate = (path: string) => {
 .sidebar-footer {
   width: 100%;
   padding: 14px 0 18px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid rgba(45, 55, 40, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -395,7 +438,8 @@ const navigate = (path: string) => {
   min-width: 0;
   height: 100%;
   position: relative;
-  background-color: var(--color-bg-secondary);
+  z-index: 1;
+  background-color: transparent;
   overflow: hidden;
   opacity: 1;
   transform: none;

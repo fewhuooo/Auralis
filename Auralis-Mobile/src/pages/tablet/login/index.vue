@@ -135,7 +135,10 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background-color: var(--color-bg-secondary);
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   box-sizing: border-box;
 }
 
@@ -144,11 +147,13 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
   width: 100%;
   max-width: 880px;
   min-height: 540px;
-  background-color: var(--color-bg-primary);
+  background-color: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-radius: 28px;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 24px 60px rgba(28, 28, 26, 0.06), 0 2px 8px rgba(28, 28, 26, 0.03);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   animation: uiModalIn 0.36s var(--ease-out) both;
 }
 
@@ -285,8 +290,11 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 .code-field {
   height: 42px;
-  background-color: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   border-radius: 12px;
   padding: 0 6px 0 14px;
   display: flex;

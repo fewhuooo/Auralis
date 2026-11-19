@@ -661,9 +661,11 @@ async function sendMessage() {
   gap: 8px;
   padding: 6px 6px 6px 14px;
   border-radius: 20px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  background: var(--glass-surface-strong);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-subtle);
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 

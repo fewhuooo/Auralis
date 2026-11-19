@@ -225,8 +225,11 @@ const safeIcon = computed(() => (props.subjectIcon && isSubjectIconKey(props.sub
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  background: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
   justify-content: center;

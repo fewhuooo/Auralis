@@ -163,11 +163,7 @@ export const useBlockStore = defineStore('block', () => {
     try {
       const existing = recentBlocks.value.find(b => b.id === id)
       await localDb.deleteBlock(id)
-      if (existing?.sync_status === 'pending_create') {
-        await localDb.discardLocalMutations('block', id)
-      } else {
-        await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
-      }
+      await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
       if (isFenceCurrent(fence)) {
         recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
       }
@@ -220,6 +216,7 @@ export const useBlockStore = defineStore('block', () => {
 
   return {
     recentBlocks,
+    updatingBlockIds,
     loadLocalBlocks,
     fetchBlocks,
     addBlock,
