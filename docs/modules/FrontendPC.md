@@ -1,6 +1,6 @@
 # PC 前端模块
 
-更新时间：2026-11-16
+更新时间：2026-11-19
 
 文档状态：现行模块说明
 
@@ -144,14 +144,14 @@ API 包装集中在 `src/api/`：`request.ts` 管理普通请求；`aiClient.ts`
 - Chat 消息正文选区提供「添加到对话」与「保存为知识块」。前者追加到输入区引用并由用户手动发送；后者预填当前学科的知识块编辑器，确认保存后创建。Chat 选文标记为「对话选文」，不自动关联当前打开文件；文件预览选文仍关联其有效文件。
 - FAILED 助手回复隐藏该次残留正文、过程与引用，仅显示错误和重试；已完成轮次和已提交题卡保留，UNKNOWN 与中断回复沿用各自的恢复展示。持久消息及账本不随界面隐藏而删除。
 - 会话绑定资料读取范围；首轮确定范围，后续省略 `readingContext` 继承绑定，显式不同范围交由服务端报告冲突。`selectionText` 在命令顶层，不改变会话范围。
-- `aiStreamReducer` 按 run/attempt/sequence 接收事件，正文、过程和结构化块按到达顺序构成 `ChatContentPart[]`。块 started/item/completed/error 原位更新，失败项保留已有效内容，重试替换对应失败块。
+- `aiStreamReducer` 按 run/attempt/sequence 接收事件，正文、过程和结构化块按到达顺序构成 `ChatContentPart[]` 与交叉时序 `processTimeline`（思考片段与工具胶囊按到达顺序交错挂载）；`projectToolTrace` 对历史/运行快照中的 `toolTrace` 小写与大写状态（`started`/`error`/`completed`）做统一归一化并保留安全 `label`。块 started/item/completed/error 原位更新，失败项保留已有效内容，重试替换对应失败块。
 - 活动题卡从 READY 提交后发布的 `block.completed` 读取规范结构，提交复用稳定 `submissionId`，点评失败可重试回复。重试清理当前轮未完成助手气泡，保留其他已完成轮次。
 - 有 run ID 时，SSE 提前结束或断开都查询原 run。状态仍在执行或暂时查不到时保留停止入口，并在现有上限内继续查询。首帧前结束时保留原命令，供用户显式重试。UNKNOWN 恢复按服务端消息 ID 关联原 run 和 attempt，核对会话和操作世代后再更新消息。题卡按协议 1 的现行字段显示；提交与重试受当前会话绑定及活动状态约束。
 - Store 的加载/创建、流回调、轮询和取消提交均核对操作世代与登录身份。新会话失败恢复仍在当前学科/账号的原活动 run 查询并保留输入。
 - 首帧前断线无 run ID 时，重发原独立命令快照，保留 request ID、范围省略、引用和活动答案；已有 run ID 使用 attempt 重试。既无 run ID 又无快照时明确拒绝重发，不重建新载荷。
 - 断流后只查询原 run；RUNNING 保持占槽，UNKNOWN 停止轮询并提供显式恢复。查询最多 220 次、间隔 1.5 秒；到限保留未确认状态，不伪造终态或自动调用 Provider。
 - 终态历史回读按服务端消息 ID 复原关联。UNKNOWN 恢复只调用服务端恢复入口；409 后重新读取状态，不自动循环恢复或重试。
-- `smoothStreamBuffer`、Chat renderer 与 Markdown 工具负责流式显示；展示缓冲不改变服务端持久化和计费状态。
+- `ChatProcessArea.vue`、`chatProcessFormat.ts`、`smoothStreamBuffer.ts`、`ChatContentRenderer.vue`、`chatSmartScroll.ts` 与 `markdown.ts` 负责过程时间轴与流式显示：`ChatProcessArea.vue` 使用 `#8C887F`（`13px`）低对比思考排版、`sanitizeReasoningText` 过滤内部工具名/规则泄漏（代码块完整保留）、工具完成态在左侧显示浅绿对勾（不渲染末尾“已完成”）；`smoothStreamBuffer.ts` 带 `destroy()` 重入保护并在达到 `fullText.length` 后调用 `finish()` 时取消挂起 rAF 防止重复触发 `onComplete`；`ChatContentRenderer.vue` 在排空完成前保持追踪末尾文本段并与 `isStreamSettling` 协同防闪烁，`wrapTrailingToken` 保护完整 HTML 实体不被拆入 `.token-fade`，正文渲染列表采用标准悬挂缩进（`padding-left: 1.55em; list-style-position: outside;`）与 `11px` 条目间距；`chatSmartScroll.ts` 按 50px 阈值判定吸附并在滚轮/触控上滑时锁定、在程序化滚动帧内免误锁及高卡片跳变时保持未锁态持续跟随。展示缓冲不改变服务端持久化和计费状态。
 
 <a id="2026-10-12-timeline-离线排期命令"></a>
 
