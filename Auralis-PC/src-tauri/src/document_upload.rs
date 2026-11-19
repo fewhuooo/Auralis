@@ -1,4 +1,4 @@
-use crate::document_cache::CacheScope;
+use crate::document_cache::{CacheScope, DecryptedCacheReader};
 use crate::document_packager::DocumentPackagerState;
 use reqwest::blocking::{Body, Client};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_LENGTH};
@@ -349,7 +349,7 @@ fn format_upload_error_diagnostics(flags: &str, summary: &str, causes: &str) -> 
 }
 
 #[tauri::command]
-pub fn document_upload_put(
+pub async fn document_upload_put(
     request: DocumentUploadPutRequest,
     state: State<'_, DocumentPackagerState>,
 ) -> Result<DocumentUploadPutReceipt, String> {
@@ -362,6 +362,15 @@ pub fn document_upload_put(
         ingestion_revision: request.ingestion_revision.clone(),
     };
     let reader = state.open_decrypted_reader(&request.cache_id, &scope)?;
+    tauri::async_runtime::spawn_blocking(move || execute_document_upload_put(request, reader))
+        .await
+        .map_err(|_| "DOCUMENT_UPLOAD_TASK_JOIN_FAILED".to_string())?
+}
+
+fn execute_document_upload_put(
+    request: DocumentUploadPutRequest,
+    reader: DecryptedCacheReader,
+) -> Result<DocumentUploadPutReceipt, String> {
     let metrics = Arc::new(Mutex::new(UploadMetrics::default()));
     let body = Body::sized(
         HashingReader {

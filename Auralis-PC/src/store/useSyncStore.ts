@@ -391,7 +391,10 @@ export const useSyncStore = defineStore('sync', () => {
       cursor.value = result.cursor
       resetRequired.value = false
       if (result.changedResourceTypes.size > 0) {
-        publishProjectionChange({ resourceTypes: result.changedResourceTypes })
+        publishProjectionChange({
+          resourceTypes: result.changedResourceTypes,
+          ...(result.rejectedTaskIds.length > 0 ? { rejectedTaskIds: new Set(result.rejectedTaskIds) } : {}),
+        })
         publishUpdated()
       }
       // This call is deliberately part of the completed core cycle: startup's

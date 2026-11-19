@@ -335,8 +335,9 @@
             :key="'preview-' + selectedFile.id"
             ref="previewPaneWrapperRef"
             class="preview-pane-wrapper"
-            @mouseup="updateSelectionPosition"
-            @keyup="updateSelectionPosition"
+            @mouseup="updateSelectionPosition('preview')"
+            @keyup="updateSelectionPosition('preview')"
+            @scroll.passive="updateSelectionPosition('preview')"
           >
             <div v-if="selectedFile.ingestionStatus === 'FAILED'" class="file-processing-alert-banner">
               <div class="file-processing-alert-text">
@@ -364,36 +365,6 @@
               @page-change="handlePreviewPageChange"
               @text-selected="handleTextSelected"
             />
-
-            <!-- 浮动文字提示操作条：放置在选中文字旁边 -->
-            <Transition name="selection-bubble-pop">
-              <div
-                v-if="selectedText && selectionPosition"
-                class="selection-actions floating-selection-bubble"
-                :style="{
-                  top: `${selectionPosition.top}px`,
-                  left: `${selectionPosition.left}px`,
-                  transform: selectionPosition.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
-                }"
-                role="toolbar"
-                :aria-label="t(messages.selectionActions)"
-                @mousedown.stop.prevent
-              >
-                <span class="selection-summary">{{ t(messages.selectionLength, { count: selectedText.length }) }}</span>
-                <span class="selection-divider" aria-hidden="true"></span>
-                <button type="button" class="selection-btn action-quote" @click="addSelectionToChat">
-                  <IconMessageCircle :size="13" :stroke-width="2" />
-                  <span>{{ t(messages.addToQuestion) }}</span>
-                </button>
-                <button type="button" class="selection-btn action-save" @click="saveSelection">
-                  <IconNotes :size="13" :stroke-width="2" />
-                  <span>{{ t(messages.saveAsBlock) }}</span>
-                </button>
-                <button type="button" class="selection-dismiss" :aria-label="t(messages.clearSelection)" :title="t(messages.clearSelection)" @click="clearSelection">
-                  <IconX :size="13" />
-                </button>
-              </div>
-            </Transition>
 
             <footer class="preview-page-footer" :aria-label="t(messages.documentPages)">
               <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">{{ t(messages.previousPage) }}</button>
@@ -628,6 +599,9 @@
         <div
           class="ai-messages"
           ref="chatScrollRef"
+          @mouseup="updateSelectionPosition('chat')"
+          @keyup="updateSelectionPosition('chat')"
+          @scroll.passive="updateSelectionPosition('chat')"
           @wheel="handleChatWheel"
           @touchstart.passive="handleTouchStart"
           @touchmove.passive="handleTouchMove"
@@ -676,42 +650,45 @@
                   <span class="bubble-quote-bar"></span>
                   <span class="bubble-quote-content">“{{ msg.quoteText }}”</span>
                 </div>
-                <div>{{ msg.content }}</div>
+                <div class="chat-message-text-selection">{{ msg.content }}</div>
               </div>
               <div class="chat-content ai-reply" v-else>
-                <ChatProcessArea
-                  v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0)"
-                  :reasoning="msg.reasoningText"
-                  :tools="msg.tools"
-                  :streaming="false"
-                  :has-content="true"
-                />
-                <ChatContentRenderer
-                  :parts="msg.parts"
-                  :streaming="false"
-                  :busy="!canSendWorkspaceChat"
-                  @submit="submitChatActivity"
-                />
-                <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
-                  <div class="citation-title">
-                    <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
-                    <span>{{ t(messages.references) }}</span>
-                    <span class="citation-count">{{ msg.citationFileNames.length }}</span>
+                <template v-if="msg.status !== 'FAILED'">
+                  <ChatProcessArea
+                    v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0)"
+                    :reasoning="msg.reasoningText"
+                    :tools="msg.tools"
+                    :streaming="false"
+                    :has-content="true"
+                  />
+                  <ChatContentRenderer
+                    class="chat-message-text-selection"
+                    :parts="msg.parts"
+                    :streaming="false"
+                    :busy="!canSendWorkspaceChat"
+                    @submit="submitChatActivity"
+                  />
+                  <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
+                    <div class="citation-title">
+                      <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
+                      <span>{{ t(messages.references) }}</span>
+                      <span class="citation-count">{{ msg.citationFileNames.length }}</span>
+                    </div>
+                    <div class="citation-chips">
+                      <button
+                        v-for="(fileName, idx) in msg.citationFileNames"
+                        :key="fileName"
+                        type="button"
+                        class="citation-chip"
+                        :title="t(messages.openSource, { name: fileName })"
+                        @click="handleCitationClick(fileName)"
+                      >
+                        <span class="citation-idx">[{{ idx + 1 }}]</span>
+                        <span class="citation-name">{{ fileName }}</span>
+                      </button>
+                    </div>
                   </div>
-                  <div class="citation-chips">
-                    <button
-                      v-for="(fileName, idx) in msg.citationFileNames"
-                      :key="fileName"
-                      type="button"
-                      class="citation-chip"
-                      :title="t(messages.openSource, { name: fileName })"
-                      @click="handleCitationClick(fileName)"
-                    >
-                      <span class="citation-idx">[{{ idx + 1 }}]</span>
-                      <span class="citation-name">{{ fileName }}</span>
-                    </button>
-                  </div>
-                </div>
+                </template>
 
                 <div v-if="chatStore.recoverableTarget && chatStore.recoverableTarget.attemptId === msg.attemptId" class="chat-msg-interrupted-bar is-unknown">
                   <span class="interrupted-hint">{{ t(messages.unknownRun) }}</span>
@@ -872,6 +849,37 @@
       @cancel="showKnowledgeEditor = false"
       @save="saveKnowledgeBlock"
     />
+
+    <Teleport to="body">
+      <Transition name="selection-bubble-pop">
+        <div
+          v-if="selectedText && selectionPosition"
+          class="selection-actions floating-selection-bubble"
+          :style="{
+            top: `${selectionPosition.top}px`,
+            left: `${selectionPosition.left}px`,
+            transform: selectionPosition.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+          }"
+          role="toolbar"
+          :aria-label="t(messages.selectionActions)"
+          @mousedown.stop.prevent
+        >
+          <span class="selection-summary">{{ t(messages.selectionLength, { count: selectedText.length }) }}</span>
+          <span class="selection-divider" aria-hidden="true"></span>
+          <button type="button" class="selection-btn action-quote" @click="addSelectionToChat">
+            <IconMessageCircle :size="13" :stroke-width="2" />
+            <span>{{ t(selectionScope === 'chat' ? messages.addToNextQuestion : messages.addToQuestion) }}</span>
+          </button>
+          <button type="button" class="selection-btn action-save" @click="saveSelection">
+            <IconNotes :size="13" :stroke-width="2" />
+            <span>{{ t(messages.saveAsBlock) }}</span>
+          </button>
+          <button type="button" class="selection-dismiss" :aria-label="t(messages.clearSelection)" :title="t(messages.clearSelection)" @click="clearSelection">
+            <IconX :size="13" />
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Register File Modal -->
     <FileRegisterDialog
@@ -1173,6 +1181,7 @@ const selectedFileId = ref<string | null>(null)
 const selectedText = ref('')
 const quotedSelection = ref('')
 const previewPaneWrapperRef = ref<HTMLElement | null>(null)
+const selectionScope = ref<'preview' | 'chat' | null>(null)
 const selectionPosition = ref<{ top: number; left: number; showBelow: boolean } | null>(null)
 const showNotReadyDialog = ref(false)
 const showKnowledgeEditor = ref(false)
@@ -1204,6 +1213,7 @@ watch(selectedFileId, () => {
   previewZoomLabel.value = '100%'
   previewRotation.value = 0
   selectedText.value = ''
+  selectionScope.value = null
   selectionPosition.value = null
   quotedSelection.value = ''
 })
@@ -2970,12 +2980,13 @@ const handleCitationClick = (fileName: string) => {
   }
 }
 
-const updateSelectionPosition = () => {
+const updateSelectionPosition = (scope: 'preview' | 'chat') => {
   nextTick(() => {
     const selection = typeof window !== 'undefined' ? window.getSelection() : null
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
       if (!showKnowledgeEditor.value) {
         selectedText.value = ''
+        selectionScope.value = null
         selectionPosition.value = null
       }
       return
@@ -2984,38 +2995,33 @@ const updateSelectionPosition = () => {
     if (!text) {
       if (!showKnowledgeEditor.value) {
         selectedText.value = ''
+        selectionScope.value = null
         selectionPosition.value = null
       }
       return
     }
-    selectedText.value = text
-
     const range = selection.getRangeAt(0)
+    const anchor = range.commonAncestorContainer
+    const anchorElement = anchor.nodeType === Node.ELEMENT_NODE ? anchor as Element : anchor.parentElement
+    const chatSelection = anchorElement?.closest('.chat-message-text-selection')
+    const wrapper = scope === 'chat' ? chatScrollRef.value : previewPaneWrapperRef.value
+    if (!wrapper || (scope === 'chat' && !chatSelection) || (scope === 'preview' && chatSelection)) {
+      selectionScope.value = null
+      selectionPosition.value = null
+      return
+    }
     const rangeRect = range.getBoundingClientRect()
     if (!rangeRect || (rangeRect.width === 0 && rangeRect.height === 0)) {
       selectionPosition.value = null
       return
     }
-
-    const wrapper = previewPaneWrapperRef.value
-    if (!wrapper) return
-    const wrapperRect = wrapper.getBoundingClientRect()
-
-    if (rangeRect.bottom < wrapperRect.top || rangeRect.top > wrapperRect.bottom) {
-      selectionPosition.value = null
-      return
-    }
-
-    const relativeTop = rangeRect.top - wrapperRect.top
-    const relativeBottom = rangeRect.bottom - wrapperRect.top
-    const relativeLeft = (rangeRect.left - wrapperRect.left) + (rangeRect.width / 2)
-
-    const showBelow = relativeTop < 48
+    selectedText.value = text
+    selectionScope.value = scope
+    const showBelow = rangeRect.top < 56
     const top = showBelow
-      ? Math.min(relativeBottom + 8, wrapperRect.height - 44)
-      : Math.max(8, relativeTop - 8)
-
-    const clampedLeft = Math.max(140, Math.min(relativeLeft, wrapperRect.width - 140))
+      ? Math.min(rangeRect.bottom + 8, window.innerHeight - 44)
+      : Math.max(8, rangeRect.top - 8)
+    const clampedLeft = Math.max(140, Math.min(rangeRect.left + rangeRect.width / 2, window.innerWidth - 140))
 
     selectionPosition.value = {
       top,
@@ -3027,11 +3033,12 @@ const updateSelectionPosition = () => {
 
 const handleTextSelected = (text: string) => {
   selectedText.value = text.slice(0, 4000)
-  updateSelectionPosition()
+  updateSelectionPosition('preview')
 }
 
 const clearSelection = () => {
   selectedText.value = ''
+  selectionScope.value = null
   selectionPosition.value = null
   if (typeof window !== 'undefined') {
     window.getSelection()?.removeAllRanges()
@@ -3040,7 +3047,7 @@ const clearSelection = () => {
 
 const addSelectionToChat = () => {
   if (!selectedText.value) return
-  quotedSelection.value = selectedText.value
+  quotedSelection.value = [quotedSelection.value, selectedText.value].filter(Boolean).join('\n\n').slice(0, 4000)
   clearSelection()
   nextTick(() => {
     chatInputRef.value?.focus()
@@ -3074,10 +3081,15 @@ const askSelection = () => {
 }
 void explainSelection
 void askSelection
-const saveSelection = () => { showKnowledgeEditor.value = true }
+const saveSelection = () => {
+  selectionPosition.value = null
+  showKnowledgeEditor.value = true
+}
 const saveKnowledgeBlock = async (value: { title: string; content: string }) => {
   if (!showKnowledgeEditor.value || !activeSubject.value) return
-  const validSourceFileId = activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
+  const isPreviewSelection = selectionScope.value === 'preview'
+  const validSourceFileId = isPreviewSelection
+    && activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
     ? (selectedFileId.value || undefined)
     : undefined
   const newId = await createKnowledgeBlock({
@@ -3086,7 +3098,7 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
     subject: activeSubject.value.name,
     title: value.title,
     content: value.content,
-    source: selectedFile.value?.name || '选中文本',
+    source: isPreviewSelection ? selectedFile.value?.name || '选中文本' : t(messages.chatSelectionSource),
   })
   if (!newId) return
   showKnowledgeEditor.value = false
@@ -3177,6 +3189,7 @@ const handleDocSelectionChange = () => {
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
     if (!showKnowledgeEditor.value) {
       selectedText.value = ''
+      selectionScope.value = null
       selectionPosition.value = null
     }
   }
@@ -3214,12 +3227,13 @@ onMounted(async () => {
   const id = subjectId.value
   if (id) {
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    subjectStore.setActiveSubject(id)
+    subjectStore.setActiveSubject(id, { skipSourceLoad: true })
+    const blocksPromise = blockStore.fetchBlocks(undefined, id).catch((error) => {
+      console.warn('[SubjectWorkspace] blocks load deferred', error)
+    })
     await subjectStore.loadSourceFiles(id)
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    await ensureOverviewRuntime()
-    if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    await blockStore.fetchBlocks(undefined, id)
+    await Promise.all([ensureOverviewRuntime(), blocksPromise])
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     if (route.query.view === 'review' || route.query.view === 'stats') {
       centerView.value = route.query.view
@@ -3275,18 +3289,18 @@ watch(subjectId, async (newId) => {
     subjectOverviewGenerating.value = false
     generatingFileIds.value = new Set()
 
-    subjectStore.setActiveSubject(newId)
+    subjectStore.setActiveSubject(newId, { skipSourceLoad: true })
 
     const chatInitialization = startFreshChatSession()
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
 
+    const blocksPromise = blockStore.fetchBlocks(undefined, newId).catch((error) => {
+      console.warn('[SubjectWorkspace] blocks load deferred', error)
+    })
     await subjectStore.loadSourceFiles(newId)
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
 
-    await ensureOverviewRuntime()
-    if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
-
-    await blockStore.fetchBlocks(undefined, newId)
+    await Promise.all([ensureOverviewRuntime(), blocksPromise])
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
     if (route.query.view === 'review' || route.query.view === 'stats') {
       centerView.value = route.query.view
@@ -3716,7 +3730,7 @@ html.dark .drawer-item:hover {
 }
 
 .selection-actions.floating-selection-bubble {
-  position: absolute;
+  position: fixed;
   z-index: 100;
   display: inline-flex;
   align-items: center;

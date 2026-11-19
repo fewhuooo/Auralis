@@ -1,5 +1,5 @@
 import type { LocalEntity, LocalMutation } from '@/types/api'
-import type { LocalRepository } from '@/services/localRepository'
+import { asTaskConflictSnapshot, type LocalRepository } from '@/services/localRepository'
 import type { SyncRequestScopeTicket } from '@/api/request'
 import { orderMutationsForPush } from '@/services/syncOrdering'
 import type {
@@ -17,7 +17,7 @@ type SyncRepository = Pick<LocalRepository,
   'claimPending' | 'settleMutation' | 'releaseInflight' | 'getSyncState' | 'saveCursor'
   | 'listUnresolved' | 'read' | 'upsertFromSync' | 'replaceSnapshotPreservingPending'>
   & Pick<LocalRepository, 'resolveScheduleMutation'>
-  & Partial<Pick<LocalRepository, 'resolveRejectedSubjectDelete'>>
+  & Partial<Pick<LocalRepository, 'resolveRejectedSubjectDelete' | 'resolveRejectedTaskMutation'>>
 
 type SyncApi = {
   pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }, scope?: SyncRequestScopeTicket): Promise<SyncPushResponse>
@@ -42,6 +42,7 @@ export interface SyncCycleResult {
   ordinarySettled: number
   scheduleApplied: number
   scheduleErrors: ScheduleSyncError[]
+  rejectedTaskIds: string[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -407,6 +408,7 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
   let claimed: LocalMutation[] = []
   let claimedScheduleIds: string[] = []
   const changedResourceTypes = new Set<SyncResourceType>()
+  const rejectedTaskIds = new Set<string>()
   let ordinarySettled = 0
   let scheduleApplied = 0
   const scheduleErrors: ScheduleSyncError[] = []
@@ -437,9 +439,56 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
         }
         if (!result.resourceType || result.resourceType !== claimedMutation.resourceType
           || result.resourceId !== claimedMutation.resourceId) continue
+        if (claimedMutation.resourceType === 'TASK' && claimedMutation.mutationType !== 'CREATE'
+          && (result.decision === 'CONFLICT' || result.decision === 'REJECTED')
+          && result.mutationType === claimedMutation.mutationType) {
+          const isNotFoundOrDeleted = result.code === 'RESOURCE_NOT_FOUND' || result.code === 'RESOURCE_DELETED'
+          if (result.decision === 'REJECTED' && !isNotFoundOrDeleted) {
+            rejectedTaskIds.add(claimedMutation.resourceId)
+          }
+          if (!isNotFoundOrDeleted && input.repository.resolveRejectedTaskMutation) {
+            const [currentRow, unresolvedForTask] = await Promise.all([
+              input.repository.read('TASK', claimedMutation.resourceId),
+              input.repository.listUnresolved('TASK'),
+            ])
+            checkCurrent()
+            const inlineSnapshot = asTaskConflictSnapshot(result.current, claimedMutation.resourceId)
+            const canConvergeInlineCode = (result.decision === 'CONFLICT' && result.code === 'RESOURCE_VERSION_CONFLICT')
+              || (result.decision === 'REJECTED' && result.code === 'MUTATION_REJECTED')
+            const hasInlineConvergence = Boolean(
+              canConvergeInlineCode && inlineSnapshot && inlineSnapshot.version >= (currentRow?.version ?? 0),
+            )
+            const hasQueuedSuccessor = unresolvedForTask.some(
+              (item) => item.resourceId === claimedMutation.resourceId && item.clientMutationId !== claimedMutation.clientMutationId,
+            )
+            if (!hasInlineConvergence && !hasQueuedSuccessor) {
+              const snapshot = await input.api.getSnapshot(input.scope)
+              checkCurrent()
+              const items = snapshotItems(snapshot)
+              const snapshotTask = items.find(
+                (item) => item.resourceType === 'TASK' && item.resourceId === claimedMutation.resourceId,
+              ) ?? null
+              const reconciled = await input.repository.resolveRejectedTaskMutation({
+                clientMutationId: claimedMutation.clientMutationId,
+                error: result.code ?? 'MUTATION_REJECTED',
+                snapshotTask,
+              })
+              checkCurrent()
+              if (reconciled) {
+                ordinarySettled += 1
+                await input.repository.replaceSnapshotPreservingPending(items)
+                checkCurrent()
+                await input.repository.saveCursor(snapshot.snapshotCursor, false)
+                checkCurrent()
+                for (const type of SYNC_RESOURCE_TYPES) changedResourceTypes.add(type)
+              }
+              continue
+            }
+          }
+        }
         if (!await settlePushResult(input.repository, claimedMutation, result, checkCurrent)) continue
         ordinarySettled += 1
-        if (result.decision === 'APPLIED' || (result.resourceType === 'KNOWLEDGE_BLOCK'
+        if (result.decision === 'APPLIED' || result.resourceType === 'TASK' || (result.resourceType === 'KNOWLEDGE_BLOCK'
           && (claimedMutation.mutationType === 'UPDATE' || claimedMutation.mutationType === 'DELETE'))) {
           changedResourceTypes.add(result.resourceType)
         }
@@ -490,5 +539,12 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
   }
   checkCurrent()
   for (const resourceType of pulled.changedResourceTypes) changedResourceTypes.add(resourceType)
-  return { changedResourceTypes, cursor: pulled.cursor, ordinarySettled, scheduleApplied, scheduleErrors }
+  return {
+    changedResourceTypes,
+    cursor: pulled.cursor,
+    ordinarySettled,
+    scheduleApplied,
+    scheduleErrors,
+    rejectedTaskIds: [...rejectedTaskIds],
+  }
 }

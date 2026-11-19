@@ -1169,48 +1169,54 @@ fn reconcile_files_with_known(
 }
 
 #[tauri::command]
-pub fn import_local_asset(
+pub async fn import_local_asset(
     command: ImportLocalAssetCommand,
     app: AppHandle,
 ) -> Result<LocalAssetDescriptor, String> {
     let root = crate::local_database::canonical_app_data_dir(&app)?;
-    import_file(
-        &root,
-        &command.user_scope,
-        &command.device_id,
-        &command.local_asset_id,
-        &command.source_path,
-        &command.safe_extension,
-        command.expected_size,
-        &command.expected_sha256,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        import_file(
+            &root,
+            &command.user_scope,
+            &command.device_id,
+            &command.local_asset_id,
+            &command.source_path,
+            &command.safe_extension,
+            command.expected_size,
+            &command.expected_sha256,
+        )
+    })
+    .await
+    .map_err(|_| "LOCAL_ASSET_IMPORT_TASK_JOIN_FAILED".to_string())?
 }
 
 #[tauri::command]
-pub fn import_local_asset_bytes(
+pub async fn import_local_asset_bytes(
     command: ImportLocalAssetBytesCommand,
     app: AppHandle,
 ) -> Result<LocalAssetDescriptor, String> {
     let root = crate::local_database::canonical_app_data_dir(&app)?;
-    import_bytes(
-        &root,
-        &command.user_scope,
-        &command.device_id,
-        &command.local_asset_id,
-        &command.safe_extension,
-        command.expected_size,
-        &command.expected_sha256,
-        &command.content,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        import_bytes(
+            &root,
+            &command.user_scope,
+            &command.device_id,
+            &command.local_asset_id,
+            &command.safe_extension,
+            command.expected_size,
+            &command.expected_sha256,
+            &command.content,
+        )
+    })
+    .await
+    .map_err(|_| "LOCAL_ASSET_IMPORT_BYTES_TASK_JOIN_FAILED".to_string())?
 }
 
-#[tauri::command]
-pub fn resolve_local_asset(
+fn resolve_local_asset_sync(
+    root: &Path,
     command: ResolveLocalAssetCommand,
-    app: AppHandle,
 ) -> Result<LocalAssetDescriptor, String> {
-    let root = crate::local_database::canonical_app_data_dir(&app)?;
-    let Some(asset) = existing_asset_dir(&root, &command.user_scope, &command.local_asset_id)?
+    let Some(asset) = existing_asset_dir(root, &command.user_scope, &command.local_asset_id)?
     else {
         return Err("LOCAL_ASSET_FILE_MISSING".to_string());
     };
@@ -1227,7 +1233,7 @@ pub fn resolve_local_asset(
     }
     let name = entry.file_name().to_string_lossy().to_string();
     let extension = normalize_extension(name.strip_prefix("content.").unwrap_or_default())?;
-    ensure_contained(&root, &entry.path())?;
+    ensure_contained(root, &entry.path())?;
     let descriptor = descriptor_for(entry.path(), &command.local_asset_id, extension)?;
     if command
         .expected_size
@@ -1244,6 +1250,17 @@ pub fn resolve_local_asset(
     Ok(descriptor)
 }
 
+#[tauri::command]
+pub async fn resolve_local_asset(
+    command: ResolveLocalAssetCommand,
+    app: AppHandle,
+) -> Result<LocalAssetDescriptor, String> {
+    let root = crate::local_database::canonical_app_data_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || resolve_local_asset_sync(&root, command))
+        .await
+        .map_err(|_| "LOCAL_ASSET_RESOLVE_TASK_JOIN_FAILED".to_string())?
+}
+
 /// Reads a verified managed asset through raw IPC.
 ///
 /// The response is a binary envelope: a 4-byte big-endian JSON receipt length,
@@ -1251,29 +1268,36 @@ pub fn resolve_local_asset(
 /// This deliberately avoids serializing a 50 MiB `Vec<u8>` as JSON and never
 /// exposes the managed absolute path to the renderer.
 #[tauri::command]
-pub fn read_local_asset_bytes(
+pub async fn read_local_asset_bytes(
     command: ReadLocalAssetCommand,
     app: AppHandle,
 ) -> Result<Response, String> {
     let root = crate::local_database::canonical_app_data_dir(&app)?;
-    let result = read_managed_asset(
-        &root,
-        &command.user_scope,
-        &command.device_id,
-        &command.local_asset_id,
-        command.expected_size,
-        &command.expected_sha256,
-    )?;
-    Ok(Response::new(result.frame))
+    let frame = tauri::async_runtime::spawn_blocking(move || {
+        read_managed_asset(
+            &root,
+            &command.user_scope,
+            &command.device_id,
+            &command.local_asset_id,
+            command.expected_size,
+            &command.expected_sha256,
+        )
+        .map(|result| result.frame)
+    })
+    .await
+    .map_err(|_| "LOCAL_ASSET_READ_TASK_JOIN_FAILED".to_string())??;
+    Ok(Response::new(frame))
 }
 
 #[tauri::command]
-pub fn local_asset_upload_put(
+pub async fn local_asset_upload_put(
     command: LocalAssetUploadPutCommand,
     app: AppHandle,
 ) -> Result<LocalAssetUploadPutReceipt, String> {
     let root = crate::local_database::canonical_app_data_dir(&app)?;
-    upload_managed_asset(&root, &command)
+    tauri::async_runtime::spawn_blocking(move || upload_managed_asset(&root, &command))
+        .await
+        .map_err(|_| "LOCAL_ASSET_UPLOAD_TASK_JOIN_FAILED".to_string())?
 }
 
 #[tauri::command]
@@ -1355,16 +1379,21 @@ pub async fn download_local_asset(
     let hash = hex::encode(hasher.finalize());
     validate_expected(size, &hash, command.expected_size, &command.expected_sha256)?;
     if destination.exists() {
-        return resolve_local_asset(
-            ResolveLocalAssetCommand {
-                user_scope: command.user_scope,
-                device_id: command.device_id,
-                local_asset_id: command.local_asset_id,
-                expected_size: Some(command.expected_size),
-                expected_sha256: Some(command.expected_sha256),
-            },
-            app,
-        );
+        let root_for_resolve = root.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            resolve_local_asset_sync(
+                &root_for_resolve,
+                ResolveLocalAssetCommand {
+                    user_scope: command.user_scope,
+                    device_id: command.device_id,
+                    local_asset_id: command.local_asset_id,
+                    expected_size: Some(command.expected_size),
+                    expected_sha256: Some(command.expected_sha256),
+                },
+            )
+        })
+        .await
+        .map_err(|_| "LOCAL_ASSET_RESOLVE_TASK_JOIN_FAILED".to_string())?;
     }
     fs::rename(&part, &destination).map_err(|_| "LOCAL_ASSET_RENAME_FAILED".to_string())?;
     part_guard.disarm();
@@ -1372,16 +1401,14 @@ pub async fn download_local_asset(
     descriptor_for(destination, &command.local_asset_id, extension)
 }
 
-#[tauri::command]
-pub fn delete_local_asset(command: DeleteLocalAssetCommand, app: AppHandle) -> Result<(), String> {
-    let root = crate::local_database::canonical_app_data_dir(&app)?;
+fn delete_local_asset_sync(root: &Path, command: DeleteLocalAssetCommand) -> Result<(), String> {
     validate_logical_segment(&command.device_id)?;
     validate_logical_segment(&command.local_asset_id)?;
-    let Some(scope) = existing_asset_scope(&root, &command.user_scope)? else {
+    let Some(scope) = existing_asset_scope(root, &command.user_scope)? else {
         return Ok(());
     };
     let _lock = acquire_asset_lock(&scope.join(format!(".{}.lock", command.local_asset_id)))?;
-    let Some(asset) = existing_asset_dir(&root, &command.user_scope, &command.local_asset_id)?
+    let Some(asset) = existing_asset_dir(root, &command.user_scope, &command.local_asset_id)?
     else {
         return Ok(());
     };
@@ -1395,14 +1422,25 @@ pub fn delete_local_asset(command: DeleteLocalAssetCommand, app: AppHandle) -> R
     if entries.next().is_some() {
         return Err("LOCAL_ASSET_FILE_AMBIGUOUS".to_string());
     }
-    ensure_contained(&root, &entry.path())?;
+    ensure_contained(root, &entry.path())?;
     fs::remove_file(entry.path()).map_err(|_| "LOCAL_ASSET_DELETE_FAILED".to_string())?;
     let _ = fs::remove_dir(asset);
     Ok(())
 }
 
 #[tauri::command]
-pub fn reconcile_local_assets(
+pub async fn delete_local_asset(
+    command: DeleteLocalAssetCommand,
+    app: AppHandle,
+) -> Result<(), String> {
+    let root = crate::local_database::canonical_app_data_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || delete_local_asset_sync(&root, command))
+        .await
+        .map_err(|_| "LOCAL_ASSET_DELETE_TASK_JOIN_FAILED".to_string())?
+}
+
+#[tauri::command]
+pub async fn reconcile_local_assets(
     command: ReconcileLocalAssetsCommand,
     app: AppHandle,
 ) -> Result<ReconcileReport, String> {
@@ -1410,12 +1448,16 @@ pub fn reconcile_local_assets(
     for local_asset_id in &command.known_local_asset_ids {
         validate_logical_segment(local_asset_id)?;
     }
-    reconcile_files_with_known(
-        &root,
-        &command.user_scope,
-        &command.device_id,
-        Some(&command.known_local_asset_ids),
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        reconcile_files_with_known(
+            &root,
+            &command.user_scope,
+            &command.device_id,
+            Some(&command.known_local_asset_ids),
+        )
+    })
+    .await
+    .map_err(|_| "LOCAL_ASSET_RECONCILE_TASK_JOIN_FAILED".to_string())?
 }
 
 #[cfg(test)]

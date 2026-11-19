@@ -73,7 +73,7 @@
           <div :key="selectedSubjectId || '__all__'" class="stream-view-pane">
             <div class="stream-body" v-if="filteredBlocks.length > 0">
               <div
-                v-for="(block, index) in filteredBlocks.slice(0, 20)"
+                v-for="(block, index) in visibleBlocks"
                 :key="block.id"
                 class="stream-row"
                 :style="{ '--row-delay': `${Math.min(index * 20, 160)}ms` }"
@@ -89,7 +89,7 @@
                     {{ timeAgo(block.time) }}
                   </span>
                 </div>
-                <div class="row-preview" v-if="block.content" v-html="renderMarkdown(block.content)"></div>
+                <div class="row-preview" v-if="block.content" v-html="renderedBlockPreviewMap[block.id]"></div>
               </div>
             </div>
             <div class="empty-stream" v-else>
@@ -149,7 +149,7 @@
                 >
                   <span class="db-day-week">{{ formatTimelineDate(day, { weekday: 'short' }) }}</span>
                   <span class="db-day-date-circle">
-                    <span class="db-day-date">{{ formatTimelineDate(day, { day: 'numeric' }) }}</span>
+                    <span class="db-day-date">{{ day.dayLabel }}</span>
                   </span>
                 </button>
               </div>
@@ -497,6 +497,26 @@ const filteredBlocks = computed(() => {
   return blocksList.filter(b => b.subjectId === selectedSubjectId.value || b.subject === selectedSubjectId.value)
 })
 
+const visibleBlocks = computed(() => filteredBlocks.value.slice(0, 20))
+const markdownPreviewCache = new Map<string, string>()
+
+const renderedBlockPreviewMap = computed<Record<string, string>>(() => {
+  const rendered: Record<string, string> = {}
+  for (const block of visibleBlocks.value) {
+    if (!block.content) continue
+    let html = markdownPreviewCache.get(block.content)
+    if (html === undefined) {
+      html = renderMarkdown(block.content)
+      if (markdownPreviewCache.size >= 100) {
+        markdownPreviewCache.clear()
+      }
+      markdownPreviewCache.set(block.content, html)
+    }
+    rendered[block.id] = html
+  }
+  return rendered
+})
+
 const currentSubjectTitle = computed(() => {
   if (!selectedSubjectId.value) return t({ 'zh-CN': '全部知识', en: 'All knowledge', ja: 'すべての知識' })
   const target = subjectStore.subjects.find(s => s.id === selectedSubjectId.value)
@@ -686,9 +706,11 @@ const toggleTaskCompletion = async (task: Task, event?: Event) => {
 onMounted(async () => {
   window.addEventListener('open-block-detail', handleOpenBlockDetailEvent)
   resetToToday()
-  await knowledgeStore.fetchBlocks()
-  await taskStore.fetchTasks()
-  await subjectStore.loadSubjects()
+  await Promise.all([
+    knowledgeStore.fetchBlocks(),
+    taskStore.fetchTasks(),
+    subjectStore.loadSubjects(),
+  ])
 })
 
 onActivated(() => {

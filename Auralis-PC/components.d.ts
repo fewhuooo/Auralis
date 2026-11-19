@@ -42,6 +42,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SearchPalette: typeof import('./src/components/SearchPalette.vue')['default']
+    StartupSplashScreen: typeof import('./src/components/StartupSplashScreen.vue')['default']
     SubjectCreateModal: typeof import('./src/components/subject/SubjectCreateModal.vue')['default']
     SubjectOverviewSection: typeof import('./src/components/subject/SubjectOverviewSection.vue')['default']
     SubjectReviewPane: typeof import('./src/components/subject/SubjectReviewPane.vue')['default']

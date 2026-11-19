@@ -33,6 +33,8 @@ export const localDb = {
       await initializeLocalDatabasePool();
       const loaded = serializeLocalSqlDatabase(rawDatabase, localSqlQueue);
       await loaded.execute('PRAGMA journal_mode = WAL');
+      await loaded.execute('PRAGMA synchronous = NORMAL');
+      await loaded.execute('PRAGMA temp_store = MEMORY');
       await loaded.execute('PRAGMA busy_timeout = 5000');
       await createVersionedLocalSchema(loaded);
       console.log('[SQLite PC] Database initialized and tables verified.');

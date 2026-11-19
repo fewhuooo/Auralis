@@ -1,5 +1,6 @@
-use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::sqlite::{SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{Pool, Sqlite};
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_sql::{DbInstances, DbPool};
 
@@ -14,13 +15,19 @@ pub fn canonical_app_data_dir(app: &AppHandle) -> Result<std::path::PathBuf, Str
 async fn build_single_connection_pool(
     original: &Pool<Sqlite>,
 ) -> Result<Pool<Sqlite>, sqlx::Error> {
-    let connect_options = original.connect_options();
+    let connect_options = original
+        .connect_options()
+        .as_ref()
+        .clone()
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_millis(5000));
     SqlitePoolOptions::new()
         .max_connections(1)
         .min_connections(1)
         .idle_timeout(None)
         .max_lifetime(None)
-        .connect_with(connect_options.as_ref().clone())
+        .connect_with(connect_options)
         .await
 }
 

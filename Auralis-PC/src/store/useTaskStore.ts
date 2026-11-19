@@ -270,9 +270,43 @@ export const useTaskStore = defineStore('task', () => {
     if (conflict) throw new Error(`与任务“${conflict.title}”的排期时间重叠`)
   }
 
+  const suppressedOverdueFingerprints = new Map<string, string>()
+  const pendingRejectedOverdueTokens = new Map<string, number>()
+  let suppressedOverdueScopeKey = ''
+
+  function currentOverdueScopeKey(): string {
+    const auth = useAuthStore()
+    return `${auth.user?.id ?? ''}:${auth.serverDeviceId ?? ''}`
+  }
+
+  function syncOverdueSuppressionScope(): string {
+    const scopeKey = currentOverdueScopeKey()
+    if (suppressedOverdueScopeKey !== scopeKey) {
+      suppressedOverdueFingerprints.clear()
+      pendingRejectedOverdueTokens.clear()
+      suppressedOverdueScopeKey = scopeKey
+    }
+    return scopeKey
+  }
+
+  function overdueFingerprint(task: Pick<Task, 'version' | 'scheduledAt' | 'dueAt' | 'durationMinutes' | 'title'>): string {
+    return JSON.stringify([task.version ?? 0, task.scheduledAt ?? null, task.dueAt ?? null, task.durationMinutes ?? 30, task.title])
+  }
+
+  function isOverdueSuppressed(task: Task): boolean {
+    const expected = suppressedOverdueFingerprints.get(task.id)
+    if (!expected) return false
+    if (expected === overdueFingerprint(task)) return true
+    suppressedOverdueFingerprints.delete(task.id)
+    return false
+  }
+
   async function recoverOverdueTasks(): Promise<void> {
     if (!isLoading.value && useAuthStore().isAuthenticated) {
-      const endedTaskIds = allTasks.value.filter((task) => isOverdueTask(task)).map((task) => task.id)
+      syncOverdueSuppressionScope()
+      const endedTaskIds = allTasks.value
+        .filter((task) => isOverdueTask(task) && !pendingRejectedOverdueTokens.has(task.id) && !isOverdueSuppressed(task))
+        .map((task) => task.id)
       for (const taskId of endedTaskIds) {
         try {
           await withScheduleMutation(async () => {
@@ -429,6 +463,26 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   subscribeProjectionChange((change) => {
+    if (change.rejectedTaskIds && change.rejectedTaskIds.size > 0) {
+      const eventScopeKey = syncOverdueSuppressionScope()
+      const ids = [...change.rejectedTaskIds]
+      for (const id of ids) {
+        pendingRejectedOverdueTokens.set(id, (pendingRejectedOverdueTokens.get(id) ?? 0) + 1)
+      }
+      void loadLocalTasks().then(() => {
+        if (syncOverdueSuppressionScope() === eventScopeKey) {
+          for (const id of ids) {
+            const rejectedTask = allTasks.value.find((task) => task.id === id)
+            if (rejectedTask) suppressedOverdueFingerprints.set(id, overdueFingerprint(rejectedTask))
+            const count = pendingRejectedOverdueTokens.get(id) ?? 0
+            if (count <= 1) pendingRejectedOverdueTokens.delete(id)
+            else pendingRejectedOverdueTokens.set(id, count - 1)
+          }
+        }
+        return recoverOverdueTasks()
+      })
+      return
+    }
     if (change.resourceTypes.has('TASK')) {
       void loadLocalTasks().then(() => recoverOverdueTasks())
     }

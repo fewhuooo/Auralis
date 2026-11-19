@@ -1,6 +1,7 @@
 export type ProjectionChange = {
   resourceTypes: ReadonlySet<string>
   suppressSubjectHydration?: boolean
+  rejectedTaskIds?: ReadonlySet<string>
 }
 
 const listeners = new Set<(change: ProjectionChange) => void>()

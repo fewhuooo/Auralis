@@ -41,9 +41,22 @@ test('Profile connects real identity endpoints for avatar and password change', 
   assert.match(profileSource, /const accountName = computed\(\(\) => authStore\.username/, 'Profile displays the login username')
   assert.doesNotMatch(profileSource, /useAuthApi\.updateProfile\(/, 'Profile has no display-name editing action')
 
-  assert.match(passwordDialog, /newPassword\.length\s*<\s*12/, 'The password dialog enforces the minimum length')
-  assert.match(passwordDialog, /new TextEncoder\(\)\.encode\(form\.newPassword\)\.byteLength\s*>\s*72/, 'The password dialog checks the UTF-8 byte limit')
+  assert.match(passwordDialog, /validateNewPassword\(form\.newPassword\)/, 'The password dialog uses the shared password policy')
+  assert.match(passwordDialog, /messages\.passwordRequirements/, 'The password dialog explains the composition requirements')
   assert.match(profileSource, /useAuthApi\.changePassword\(\{/, 'Must call changePassword')
+})
+
+test('new passwords require eight characters, uppercase, lowercase, and punctuation or symbols within 72 UTF-8 bytes', async () => {
+  const { validateNewPassword } = await import('../src/utils/passwordPolicy.ts')
+
+  assert.equal(validateNewPassword('Aa!bcdef'), null, 'An eight character password without digits is valid')
+  assert.equal(validateNewPassword('Aa!\nbcde'), null, 'A newline may appear alongside the required character classes')
+  assert.equal(validateNewPassword('Aa bcdef'), 'requirements', 'Whitespace does not count as a symbol')
+  assert.equal(validateNewPassword('Aa汉字abcd'), 'requirements', 'Letters alone do not count as a symbol')
+  assert.equal(validateNewPassword('abcdefgh!'), 'requirements', 'An uppercase letter is required')
+  assert.equal(validateNewPassword('ABCDEFGH!'), 'requirements', 'A lowercase letter is required')
+  assert.equal(validateNewPassword('Abcdefgh'), 'requirements', 'A punctuation or symbol character is required')
+  assert.equal(validateNewPassword(`Aa!${'b'.repeat(70)}`), 'tooLong', 'Passwords over 72 UTF-8 bytes are rejected')
 })
 
 test('avatar blob request accepts PNG success and Problem Details errors', async () => {

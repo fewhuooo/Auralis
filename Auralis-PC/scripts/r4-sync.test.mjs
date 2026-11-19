@@ -2372,3 +2372,363 @@ test('rejected SCHEDULE_UNSCHEDULE recovers a remote tombstone before advancing 
   assert.equal((await repository.read('TASK', removed.id)).deletedAt, tombstone.deletedAt);
   assert.equal((await repository.read('TASK', later.id)).value.scheduledAt, null);
 });
+
+test('ordinary TASK UPDATE conflict and null-snapshot rejection auto-converge in runSyncCycle without blocking later pulls', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('task-race-converge', 'device', { storage: createMemoryStorage() });
+  await repository.saveCursor('cursor-0');
+  await repository.upsert('TASK', 't-race', { id: 't-race', title: 'Scheduled Task', status: 'IN_PROGRESS', version: 1 }, { version: 1 });
+  await repository.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 't-race',
+    value: { id: 't-race', title: 'Scheduled Task', status: 'DONE', version: 1 },
+    version: 1,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'pc-overdue-complete',
+      resourceType: 'TASK',
+      resourceId: 't-race',
+      mutationType: 'UPDATE',
+      baseVersion: 1,
+      payload: { status: 'DONE', baseVersion: 1 },
+    },
+  });
+
+  let pullPass = 0;
+  const firstCycle = await runSyncCycle({
+    repository,
+    serverDeviceId: 'device',
+    api: {
+      async pushChanges({ mutations }) {
+        return {
+          results: [{
+            clientMutationId: mutations[0].clientMutationId,
+            decision: 'CONFLICT',
+            resourceType: 'TASK',
+            resourceId: 't-race',
+            mutationType: 'UPDATE',
+            code: 'RESOURCE_VERSION_CONFLICT',
+            current: { id: 't-race', title: 'Mobile Won', status: 'DONE', version: 2, deletedAt: null },
+          }],
+          serverCursor: 'cursor-1',
+        };
+      },
+      async pullChanges() {
+        pullPass += 1;
+        return {
+          changes: [{
+            cursor: 'cursor-2',
+            resourceType: 'TASK',
+            resourceId: 't-race',
+            mutationType: 'UPDATE',
+            version: 3,
+            deletedAt: null,
+            payload: { id: 't-race', title: 'Later Cloud Edit', status: 'DONE', version: 3 },
+            createdAt: null,
+          }],
+          nextCursor: 'cursor-2',
+          hasMore: false,
+          resetRequired: false,
+        };
+      },
+      async getSnapshot() {
+        assert.fail('valid CONFLICT current must converge without snapshot fallback');
+      },
+    },
+  });
+
+  assert.equal(pullPass, 1);
+  assert.equal(firstCycle.changedResourceTypes.has('TASK'), true);
+  assert.deepEqual(await repository.listUnresolved('TASK'), []);
+  const pulledRow = await repository.read('TASK', 't-race');
+  assert.equal(pulledRow.version, 3);
+  assert.equal(pulledRow.syncStatus, 'synced');
+  assert.equal(pulledRow.value.title, 'Later Cloud Edit');
+
+  // Ordinary non-CREATE TASK rejection with null current falls back to snapshot while preserving unrelated pending writes
+  await repository.upsert('TASK', 't-keep', { id: 't-keep', title: 'Pending Local', status: 'TODO', version: 1 }, { version: 1 });
+  await repository.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 't-keep',
+    value: { id: 't-keep', title: 'Pending Local Edit', status: 'DONE', version: 1 },
+    version: 1,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'pc-keep-proc',
+      resourceType: 'TASK',
+      resourceId: 't-keep',
+      mutationType: 'UPDATE',
+      baseVersion: 1,
+      payload: { title: 'Pending Local Edit', baseVersion: 1 },
+    },
+  });
+  await repository.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 't-race',
+    value: { id: 't-race', title: 'Invalid Edit', status: 'DONE', version: 3 },
+    version: 3,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'pc-val-fail',
+      resourceType: 'TASK',
+      resourceId: 't-race',
+      mutationType: 'UPDATE',
+      baseVersion: 3,
+      payload: { title: 'Invalid Edit', baseVersion: 3 },
+    },
+  });
+
+  let snapshotCalls = 0;
+  await runSyncCycle({
+    repository,
+    serverDeviceId: 'device',
+    api: {
+      async pushChanges({ mutations }) {
+        return {
+          results: mutations.map((m) => (m.clientMutationId === 'pc-val-fail'
+            ? {
+                clientMutationId: m.clientMutationId,
+                decision: 'REJECTED',
+                resourceType: 'TASK',
+                resourceId: 't-race',
+                mutationType: 'UPDATE',
+                code: 'VALIDATION_FAILED',
+                current: null,
+              }
+            : {
+                clientMutationId: m.clientMutationId,
+                decision: 'PROCESSING',
+                resourceType: m.resourceType,
+                resourceId: m.resourceId,
+                mutationType: m.mutationType,
+              })),
+          serverCursor: 'cursor-3',
+        };
+      },
+      async getSnapshot() {
+        snapshotCalls += 1;
+        return {
+          snapshotCursor: 'cursor-snap',
+          subjects: [],
+          sources: [],
+          knowledgeBlocks: [],
+          relations: [],
+          tasks: [
+            { id: 't-race', title: 'Authoritative Task', status: 'DONE', version: 4 },
+            { id: 't-keep', title: 'Server Older Task', status: 'TODO', version: 1 },
+          ],
+        };
+      },
+      async pullChanges({ cursor }) {
+        assert.equal(cursor, 'cursor-snap');
+        return { changes: [], nextCursor: 'cursor-snap', hasMore: false, resetRequired: false };
+      },
+    },
+  });
+
+  assert.equal(snapshotCalls, 1);
+  assert.equal((await repository.read('TASK', 't-race')).value.title, 'Authoritative Task');
+  assert.equal((await repository.read('TASK', 't-race')).syncStatus, 'synced');
+  assert.equal((await repository.read('TASK', 't-keep')).value.title, 'Pending Local Edit');
+  assert.equal((await repository.listUnresolved('TASK')).length, 1);
+});
+
+test('runSyncCycle defers settlement until snapshot succeeds, preserves mid-snapshot successors, and recovers stale-version CONFLICT', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('task-deferred-snapshot', 'device', { storage: createMemoryStorage() });
+  await repository.saveCursor('c-0');
+  await repository.upsert('TASK', 't-err', { id: 't-err', title: 'Initial', status: 'TODO', version: 2 }, { version: 2 });
+  await repository.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 't-err',
+    value: { id: 't-err', title: 'Rejected Update', status: 'DONE', version: 2 },
+    version: 2,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'm-err-1',
+      resourceType: 'TASK',
+      resourceId: 't-err',
+      mutationType: 'UPDATE',
+      baseVersion: 2,
+      payload: { title: 'Rejected Update', baseVersion: 2 },
+    },
+  });
+
+  // 1. Transient getSnapshot() failure must keep m-err-1 inflight so the retry reclaims and reconciles it
+  let snapshotAttempts = 0;
+  let midSnapshotEnqueue = false;
+  await assert.rejects(
+    runSyncCycle({
+      repository,
+      serverDeviceId: 'device',
+      api: {
+        async pushChanges({ mutations }) {
+          return {
+            results: [{
+              clientMutationId: mutations[0].clientMutationId,
+              decision: 'REJECTED',
+              resourceType: 'TASK',
+              resourceId: 't-err',
+              mutationType: 'UPDATE',
+              code: 'VALIDATION_FAILED',
+              current: null,
+            }],
+          };
+        },
+        async getSnapshot() {
+          snapshotAttempts += 1;
+          throw new Error('snapshot unreachable');
+        },
+        async pullChanges() {
+          assert.fail('pull must not run when snapshot reconcile failed');
+        },
+      },
+    }),
+    /snapshot unreachable/,
+  );
+  assert.equal(snapshotAttempts, 1);
+  assert.deepEqual((await repository.listUnresolved('TASK')).map(m => [m.clientMutationId, m.status]), [['m-err-1', 'inflight']]);
+
+  // 2. Retry succeeds while a successor m-succ-2 arrives mid-snapshot -> m-err-1 archives without clobbering m-succ-2
+  const retryResult = await runSyncCycle({
+    repository,
+    serverDeviceId: 'device',
+    api: {
+      async pushChanges({ mutations }) {
+        assert.equal(mutations[0].clientMutationId, 'm-err-1');
+        return {
+          results: [{
+            clientMutationId: 'm-err-1',
+            decision: 'REJECTED',
+            resourceType: 'TASK',
+            resourceId: 't-err',
+            mutationType: 'UPDATE',
+            code: 'VALIDATION_FAILED',
+            current: null,
+          }],
+        };
+      },
+      async getSnapshot() {
+        if (!midSnapshotEnqueue) {
+          midSnapshotEnqueue = true;
+          await repository.commitMutation({
+            resourceType: 'TASK',
+            resourceId: 't-err',
+            value: { id: 't-err', title: 'Newer Successor Edit', status: 'IN_PROGRESS', version: 2 },
+            version: 2,
+            deletedAt: null,
+            mutation: {
+              clientMutationId: 'm-succ-2',
+              resourceType: 'TASK',
+              resourceId: 't-err',
+              mutationType: 'UPDATE',
+              baseVersion: 2,
+              payload: { title: 'Newer Successor Edit', baseVersion: 2 },
+            },
+          });
+        }
+        return {
+          snapshotCursor: 'c-snap-1',
+          subjects: [],
+          sources: [],
+          knowledgeBlocks: [],
+          relations: [],
+          tasks: [{ id: 't-err', title: 'Server V3', status: 'TODO', version: 3 }],
+        };
+      },
+      async pullChanges({ cursor }) {
+        return { changes: [], nextCursor: cursor, hasMore: false, resetRequired: false };
+      },
+    },
+  });
+
+  assert.deepEqual(retryResult.rejectedTaskIds, ['t-err']);
+  assert.equal((await repository.read('TASK', 't-err')).value.title, 'Newer Successor Edit');
+  assert.equal((await repository.read('TASK', 't-err')).syncStatus, 'pending');
+  assert.deepEqual((await repository.listUnresolved('TASK')).map(m => [m.clientMutationId, m.status]), [['m-succ-2', 'pending']]);
+
+  // Settle m-succ-2 cleanly first, then test stale-version inline CONFLICT fallback to getSnapshot
+  await runSyncCycle({
+    repository,
+    serverDeviceId: 'device',
+    api: {
+      async pushChanges({ mutations }) {
+        assert.equal(mutations[0].clientMutationId, 'm-succ-2');
+        return {
+          results: [{
+            clientMutationId: 'm-succ-2',
+            decision: 'APPLIED',
+            resourceType: 'TASK',
+            resourceId: 't-err',
+            mutationType: 'UPDATE',
+            current: { id: 't-err', title: 'Newer Successor Edit', status: 'IN_PROGRESS', version: 4 },
+          }],
+        };
+      },
+      async pullChanges({ cursor }) {
+        return { changes: [], nextCursor: cursor, hasMore: false, resetRequired: false };
+      },
+      async getSnapshot() { assert.fail('unexpected snapshot'); },
+    },
+  });
+
+  await repository.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 't-err',
+    value: { id: 't-err', title: 'Concurrent Local', status: 'DONE', version: 4 },
+    version: 4,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'm-stale-conf',
+      resourceType: 'TASK',
+      resourceId: 't-err',
+      mutationType: 'UPDATE',
+      baseVersion: 4,
+      payload: { title: 'Concurrent Local', baseVersion: 4 },
+    },
+  });
+
+  let staleFallbackCalls = 0;
+  await runSyncCycle({
+    repository,
+    serverDeviceId: 'device',
+    api: {
+      async pushChanges({ mutations }) {
+        return {
+          results: [{
+            clientMutationId: mutations[0].clientMutationId,
+            decision: 'CONFLICT',
+            resourceType: 'TASK',
+            resourceId: 't-err',
+            mutationType: 'UPDATE',
+            code: 'RESOURCE_VERSION_CONFLICT',
+            current: { id: 't-err', title: 'Stale Inline Payload', status: 'TODO', version: 2 },
+          }],
+        };
+      },
+      async getSnapshot() {
+        staleFallbackCalls += 1;
+        return {
+          snapshotCursor: 'c-snap-2',
+          subjects: [],
+          sources: [],
+          knowledgeBlocks: [],
+          relations: [],
+          tasks: [{ id: 't-err', title: 'Snapshot V5 Winner', status: 'DONE', version: 5 }],
+        };
+      },
+      async pullChanges({ cursor }) {
+        return { changes: [], nextCursor: cursor, hasMore: false, resetRequired: false };
+      },
+    },
+  });
+
+  assert.equal(staleFallbackCalls, 1);
+  const finalRow = await repository.read('TASK', 't-err');
+  assert.equal(finalRow.version, 5);
+  assert.equal(finalRow.syncStatus, 'synced');
+  assert.equal(finalRow.value.title, 'Snapshot V5 Winner');
+  assert.deepEqual(await repository.listUnresolved('TASK'), []);
+});

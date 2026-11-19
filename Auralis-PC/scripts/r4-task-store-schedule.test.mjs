@@ -1956,3 +1956,60 @@ test('deleting a future scheduled task preserves its canonical date instead of c
   assert.equal(row.value.scheduledAt, scheduledAt)
   assert.ok(row.deletedAt)
 })
+
+test('subscribeProjectionChange suppresses rejected overdue tasks across concurrent reloads and resumes when version changes', async () => {
+  const { publishProjectionChange } = await import('../src/services/localProjectionEvents.ts')
+  // Seed future task initially, then advance to overdue after initial fetch so we control rejection reload timing
+  const futureTask = deadlineTask('rejected-overdue', {
+    status: 'TODO',
+    dueAt: '2099-10-06T18:00:00.000Z',
+    version: 1,
+  })
+  const fixture = await createTaskStoreFixture([futureTask])
+  await fixture.taskStore.fetchTasks()
+
+  const overdueV2 = {
+    ...futureTask,
+    dueAt: new Date(Date.now() - 60_000).toISOString(),
+    version: 2,
+  }
+  await fixture.repository.upsert('TASK', overdueV2.id, overdueV2, { version: 2, syncStatus: 'synced' })
+
+  // Intercept repository.list once to simulate an overlapping recoverOverdueTasks() call while loadLocalTasks() awaits
+  const origList = fixture.repository.list.bind(fixture.repository)
+  let releaseList
+  let gateList = true
+  fixture.repository.list = async (...args) => {
+    if (gateList) {
+      gateList = false
+      await new Promise((resolve) => { releaseList = resolve })
+    }
+    return origList(...args)
+  }
+
+  publishProjectionChange({
+    resourceTypes: new Set(['TASK']),
+    rejectedTaskIds: new Set([overdueV2.id]),
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  // Overlapping fetchTasks() while rejected-event loadLocalTasks() is awaiting must NOT queue a retry mutation
+  await fixture.taskStore.fetchTasks()
+  assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+
+  // Release post-snapshot v2 reload: authoritative v2 is fingerprinted after reload and stays suppressed
+  releaseList?.()
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+
+  // When server advances the task to v3 without a rejection event, suppression lifts cleanly
+  const overdueV3 = { ...overdueV2, version: 3 }
+  await fixture.repository.upsert('TASK', overdueV3.id, overdueV3, { version: 3, syncStatus: 'synced' })
+  publishProjectionChange({ resourceTypes: new Set(['TASK']) })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const pendingAfterBump = await fixture.repository.listPending('TASK')
+  assert.equal(pendingAfterBump.length, 1)
+  assert.equal(pendingAfterBump[0].resourceId, overdueV3.id)
+  assert.equal(pendingAfterBump[0].baseVersion, 3)
+  assert.equal(pendingAfterBump[0].payload.status, 'DONE')
+})

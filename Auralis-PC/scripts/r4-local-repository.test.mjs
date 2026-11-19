@@ -1772,3 +1772,239 @@ for (const backend of ['browser', 'sqlite']) {
     }
   });
 }
+
+for (const backend of ['browser', 'sqlite']) {
+  test(`${backend}: ordinary TASK conflict/rejection settlements converge to cloud state without blocking future sync`, async () => {
+    const sqlite = backend === 'sqlite' ? new TemporarySqlite() : null;
+    const options = sqlite ? { sql: sqlite, now: () => '2026-11-19T01:00:00Z' } : { storage: createMemoryStorage(), now: () => '2026-11-19T01:00:00Z' };
+    const repository = new LocalRepository('task-converge-user', 'device-1', options);
+    try {
+      // 1. TASK UPDATE CONFLICT with valid remote TaskView converges cleanly and empties unresolved queue
+      const initialTask = { id: 't-conf', title: 'Review Notes', status: 'IN_PROGRESS', version: 1 };
+      const mobileDone = { id: 't-conf', title: 'Review Notes', status: 'DONE', version: 2, deletedAt: null };
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-conf',
+        value: { ...initialTask, status: 'DONE' },
+        version: 1,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'pc-overdue-done',
+          resourceType: 'TASK',
+          resourceId: 't-conf',
+          mutationType: 'UPDATE',
+          baseVersion: 1,
+          payload: { status: 'DONE', baseVersion: 1 },
+        },
+      });
+      await repository.claimPending(10);
+      await repository.settleMutation({
+        clientMutationId: 'pc-overdue-done',
+        resourceType: 'TASK',
+        resourceId: 't-conf',
+        mutationType: 'UPDATE',
+        status: 'conflict',
+        error: 'RESOURCE_VERSION_CONFLICT',
+        remoteValue: mobileDone,
+        remoteVersion: 2,
+      });
+      const converged = await repository.read('TASK', 't-conf');
+      assert.equal(converged.version, 2);
+      assert.equal(converged.syncStatus, 'synced');
+      assert.equal(converged.value.status, 'DONE');
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+
+      // 2. TASK UPDATE/DELETE RESOURCE_DELETED and TASK CREATE rejection tombstone locally
+      await repository.upsert('TASK', 't-del', { id: 't-del', title: 'Removed', status: 'TODO', version: 3 }, { version: 3 });
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-del',
+        value: { id: 't-del', title: 'Removed', status: 'DONE', version: 3 },
+        version: 3,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'pc-del-err',
+          resourceType: 'TASK',
+          resourceId: 't-del',
+          mutationType: 'UPDATE',
+          baseVersion: 3,
+          payload: { status: 'DONE', baseVersion: 3 },
+        },
+      });
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-phantom',
+        value: { id: 't-phantom', title: 'Bad Create', status: 'TODO', version: 0 },
+        version: 0,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'pc-bad-create',
+          resourceType: 'TASK',
+          resourceId: 't-phantom',
+          mutationType: 'CREATE',
+          baseVersion: 0,
+          payload: { title: 'Bad Create' },
+        },
+      });
+      await repository.claimPending(10);
+      await repository.settleMutation({
+        clientMutationId: 'pc-del-err',
+        resourceType: 'TASK',
+        resourceId: 't-del',
+        mutationType: 'UPDATE',
+        status: 'error',
+        error: 'RESOURCE_DELETED',
+      });
+      await repository.settleMutation({
+        clientMutationId: 'pc-bad-create',
+        resourceType: 'TASK',
+        resourceId: 't-phantom',
+        mutationType: 'CREATE',
+        status: 'error',
+        error: 'VALIDATION_FAILED',
+      });
+      assert.ok((await repository.read('TASK', 't-del')).deletedAt);
+      assert.equal((await repository.read('TASK', 't-del')).syncStatus, 'synced');
+      assert.ok((await repository.read('TASK', 't-phantom')).deletedAt);
+      assert.equal((await repository.read('TASK', 't-phantom')).syncStatus, 'synced');
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+
+      // 3. resolveRejectedTaskMutation reconciles UPDATE stuck on error with null current from snapshot
+      await repository.upsert('TASK', 't-err', { id: 't-err', title: 'Before Error', status: 'TODO', version: 4 }, { version: 4 });
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-err',
+        value: { id: 't-err', title: 'Bad Schedule Edit', status: 'IN_PROGRESS', version: 4 },
+        version: 4,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'pc-val-err',
+          resourceType: 'TASK',
+          resourceId: 't-err',
+          mutationType: 'UPDATE',
+          baseVersion: 4,
+          payload: { title: 'Bad Schedule Edit', baseVersion: 4 },
+        },
+      });
+      await repository.claimPending(10);
+      await repository.settleMutation({
+        clientMutationId: 'pc-val-err',
+        resourceType: 'TASK',
+        resourceId: 't-err',
+        mutationType: 'UPDATE',
+        status: 'error',
+        error: 'VALIDATION_FAILED',
+      });
+      assert.equal((await repository.listUnresolved('TASK')).length, 1);
+      const staleIgnored = await repository.resolveRejectedTaskMutation({
+        clientMutationId: 'pc-val-err',
+        snapshotTask: { resourceType: 'TASK', resourceId: 't-err', version: 3, deletedAt: null, value: { id: 't-err', title: 'Stale', version: 3 } },
+      });
+      assert.equal(staleIgnored, false);
+      const reconciled = await repository.resolveRejectedTaskMutation({
+        clientMutationId: 'pc-val-err',
+        snapshotTask: { resourceType: 'TASK', resourceId: 't-err', version: 5, deletedAt: null, value: { id: 't-err', title: 'Cloud Task', status: 'DONE', version: 5 } },
+      });
+      assert.equal(reconciled, true);
+      const afterSnapshot = await repository.read('TASK', 't-err');
+      assert.equal(afterSnapshot.version, 5);
+      assert.equal(afterSnapshot.syncStatus, 'synced');
+      assert.equal(afterSnapshot.value.title, 'Cloud Task');
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+
+      // 4. Rejected TASK UPDATE with queued successor archives predecessor cleanly without stranding or clobbering successor
+      await repository.upsert('TASK', 't-succ', { id: 't-succ', title: 'Base', status: 'TODO', version: 6 }, { version: 6 });
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-succ',
+        value: { id: 't-succ', title: 'Bad First', status: 'DONE', version: 6 },
+        version: 6,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'm1-bad',
+          resourceType: 'TASK',
+          resourceId: 't-succ',
+          mutationType: 'UPDATE',
+          baseVersion: 6,
+          payload: { title: 'Bad First', baseVersion: 6 },
+        },
+      });
+      await repository.claimPending(10);
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-succ',
+        value: { id: 't-succ', title: 'Good Successor', status: 'DONE', version: 6 },
+        version: 6,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'm2-good',
+          resourceType: 'TASK',
+          resourceId: 't-succ',
+          mutationType: 'UPDATE',
+          baseVersion: 6,
+          payload: { title: 'Good Successor', baseVersion: 6 },
+        },
+      });
+      await repository.settleMutation({
+        clientMutationId: 'm1-bad',
+        resourceType: 'TASK',
+        resourceId: 't-succ',
+        mutationType: 'UPDATE',
+        status: 'error',
+        error: 'VALIDATION_FAILED',
+      });
+      const claimedSuccessor = await repository.claimPending(10);
+      assert.deepEqual(claimedSuccessor.map(m => m.clientMutationId), ['m2-good']);
+      await repository.settleMutation({
+        clientMutationId: 'm2-good',
+        resourceType: 'TASK',
+        resourceId: 't-succ',
+        mutationType: 'UPDATE',
+        status: 'applied',
+        remoteValue: { id: 't-succ', title: 'Good Successor', status: 'DONE', version: 7 },
+        remoteVersion: 7,
+      });
+      const finalSucc = await repository.read('TASK', 't-succ');
+      assert.equal(finalSucc.version, 7);
+      assert.equal(finalSucc.syncStatus, 'synced');
+      assert.equal(finalSucc.value.title, 'Good Successor');
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+
+      // 5. TASK UPDATE REJECTED (MUTATION_REJECTED e.g. hashMismatchResponse) with valid inline snapshot converges immediately
+      await repository.upsert('TASK', 't-hash', { id: 't-hash', title: 'Local Old', status: 'TODO', version: 2 }, { version: 2 });
+      await repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 't-hash',
+        value: { id: 't-hash', title: 'Local Mismatch', status: 'DONE', version: 2 },
+        version: 2,
+        deletedAt: null,
+        mutation: {
+          clientMutationId: 'm-hash',
+          resourceType: 'TASK',
+          resourceId: 't-hash',
+          mutationType: 'UPDATE',
+          baseVersion: 2,
+          payload: { title: 'Local Mismatch', baseVersion: 2 },
+        },
+      });
+      await repository.claimPending(10);
+      await repository.settleMutation({
+        clientMutationId: 'm-hash',
+        resourceType: 'TASK',
+        resourceId: 't-hash',
+        mutationType: 'UPDATE',
+        status: 'error',
+        error: 'MUTATION_REJECTED',
+        remoteValue: { id: 't-hash', title: 'Authoritative Hash', status: 'DONE', version: 3 },
+        remoteVersion: 3,
+      });
+      const convergedHash = await repository.read('TASK', 't-hash');
+      assert.equal(convergedHash.version, 3);
+      assert.equal(convergedHash.syncStatus, 'synced');
+      assert.equal(convergedHash.value.title, 'Authoritative Hash');
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+    } finally {
+      sqlite?.close();
+    }
+  });
+}

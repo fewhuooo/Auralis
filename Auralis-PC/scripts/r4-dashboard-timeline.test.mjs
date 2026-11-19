@@ -338,38 +338,29 @@ test('Timeline new task accepts one write and retains a failed draft for retry',
   assert.equal(page.taskDialogVisible.value, false)
 })
 
-test('Timeline delete captures the confirmed task and reports only actual save failures', async (t) => {
-  const confirmations = []
-  const deletes = []
-  let onDeleteStarted
-  const deleteStarted = new Promise((resolve) => { onDeleteStarted = resolve })
+test('Timeline move-to-pending uses unscheduling, blocks duplicate clicks and keeps failures visible', async (t) => {
+  const writes = []
   const { page, notifications } = await setupTimeline(t, {
-    deleteTask: (id) => new Promise((resolve, reject) => {
-      deletes.push({ id, reject })
-      onDeleteStarted()
-    }),
-  }, () => new Promise((resolve, reject) => confirmations.push({ resolve, reject })))
-
-  const task = { id: 'original', name: 'Review notes' }
-  const cancelled = page.handleDeleteTask(task)
-  confirmations[0].reject('close')
-  await cancelled
-  assert.equal(deletes.length, 0)
-  assert.equal(notifications.length, 0)
-
-  const failed = page.handleDeleteTask(task)
-  await page.handleDeleteTask({ id: 'other', name: 'Other task' })
-  assert.equal(confirmations.length, 2)
-  task.id = 'changed'
-  task.name = 'Changed name'
-  confirmations[1].resolve()
-  await deleteStarted
-  assert.equal(deletes[0].id, 'original')
-  assert.equal(notifications.length, 0)
-  deletes[0].reject(new Error('local delete failed'))
+    unscheduleTask: (id) => new Promise((resolve, reject) => writes.push({ id, resolve, reject })),
+    deleteTask: () => assert.fail('Moving to pending must preserve the task'),
+  })
+  const { content: template } = parse(timeline).descriptor.template
+  assert.equal((template.match(/@click\.stop="handleUnscheduleTask\(/g) ?? []).length, 2)
+  const task = { id: 'original', status: 'scheduled', scheduledAt: '2026-11-14T09:00:00Z' }
+  await page.handleUnscheduleTask({ ...task, status: 'completed' })
+  assert.equal(writes.length, 0)
+  const failed = page.handleUnscheduleTask(task)
+  await page.handleUnscheduleTask(task)
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].id, 'original')
+  writes[0].reject(new Error('local schedule failed'))
   await failed
-  assert.equal(notifications.at(-1).message, 'local delete failed')
-  assert.equal(page.deletingTaskId.value, null)
+  assert.equal(notifications.at(-1).message, 'local schedule failed')
+  assert.equal(page.unschedulingTaskId.value, null)
+  const retried = page.handleUnscheduleTask(task)
+  writes[1].resolve()
+  await retried
+  assert.equal(page.unschedulingTaskId.value, null)
 })
 
 function dragEvent() {

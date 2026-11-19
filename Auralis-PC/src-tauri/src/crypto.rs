@@ -25,15 +25,14 @@ pub(crate) fn ensure_master_key_bytes() -> Result<Vec<u8>, String> {
     match get_master_key_bytes() {
         Ok(key_bytes) => Ok(key_bytes),
         Err(error) if error == MASTER_KEY_NOT_FOUND => {
-            crypto_generate_master_key()?;
+            crypto_generate_master_key_sync()?;
             get_master_key_bytes()
         }
         Err(error) => Err(error),
     }
 }
 
-#[tauri::command]
-pub fn crypto_generate_master_key() -> Result<bool, String> {
+fn crypto_generate_master_key_sync() -> Result<bool, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring access failed: {e}"))?;
     match entry.get_password() {
@@ -51,7 +50,13 @@ pub fn crypto_generate_master_key() -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn crypto_has_master_key() -> Result<bool, String> {
+pub async fn crypto_generate_master_key() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(crypto_generate_master_key_sync)
+        .await
+        .map_err(|_| "CRYPTO_MASTER_KEY_GENERATE_TASK_JOIN_FAILED".to_string())?
+}
+
+fn crypto_has_master_key_sync() -> Result<bool, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring access failed: {e}"))?;
     match entry.get_password() {
@@ -59,6 +64,13 @@ pub fn crypto_has_master_key() -> Result<bool, String> {
         Err(keyring::Error::NoEntry) => Ok(false),
         Err(error) => Err(format!("Keyring read failed: {error}")),
     }
+}
+
+#[tauri::command]
+pub async fn crypto_has_master_key() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(crypto_has_master_key_sync)
+        .await
+        .map_err(|_| "CRYPTO_MASTER_KEY_CHECK_TASK_JOIN_FAILED".to_string())?
 }
 
 #[cfg(test)]

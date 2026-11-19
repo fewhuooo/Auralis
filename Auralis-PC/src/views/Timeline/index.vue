@@ -148,7 +148,7 @@
                   <span class="task-tag">
                     {{ slot.task.subject }}
                   </span>
-                  <button class="task-delete-btn" :disabled="deletingTaskId === slot.task.id" @click.stop="handleDeleteTask(slot.task)" :title="t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' })"><IconX :size="12" :stroke-width="1.8" /></button>
+                  <button class="task-delete-btn" :disabled="unschedulingTaskId !== null || isCompletedScheduledTask(slot.task)" @click.stop="handleUnscheduleTask(slot.task)" :title="t({ 'zh-CN': '移回待办', en: 'Move to pending', ja: '未予定に戻す' })"><IconX :size="12" :stroke-width="1.8" /></button>
                 </div>
                 <div class="task-detail">{{ getCleanDesc(slot.task.description) }}</div>
                 <span v-if="dragOverTarget?.type === 'swap' && dragOverTarget.targetTaskId === slot.task.id" class="task-body-drop-hint">
@@ -262,7 +262,7 @@
             >
               <div class="weekly-task-header">
                 <span class="weekly-task-name">{{ task.title }}</span>
-                <button class="card-delete-btn" :disabled="deletingTaskId === task.id" @click.stop="handleDeleteTask(task)" :title="t({ 'zh-CN': '删除任务', en: 'Delete task', ja: 'タスクを削除' })"><IconX :size="12" :stroke-width="1.8" /></button>
+                <button class="card-delete-btn" :disabled="unschedulingTaskId !== null || isCompletedScheduledTask(task)" @click.stop="handleUnscheduleTask(task)" :title="t({ 'zh-CN': '移回待办', en: 'Move to pending', ja: '未予定に戻す' })"><IconX :size="12" :stroke-width="1.8" /></button>
               </div>
               <div class="weekly-task-meta">
                 <span class="weekly-task-time"><IconClock :size="12" :stroke-width="1.8" style="vertical-align: -1.5px; margin-right: 2px;" />{{ getTaskTimeStr(task.startTime) }} ({{ task.durationMinutes }}m)</span>
@@ -324,9 +324,8 @@ import { locale, t } from '@/i18n'
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { ElNotification, ElMessageBox } from 'element-plus'
+import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
-import 'element-plus/theme-chalk/el-message-box.css'
 import {
   IconListCheck,
   IconCircleCheck,
@@ -652,7 +651,7 @@ const copyBlockContent = (text: string) => {
 const router = useRouter()
 const taskDialogVisible = ref(false)
 const isCreatingTask = ref(false)
-const deletingTaskId = ref<string | null>(null)
+const unschedulingTaskId = ref<string | null>(null)
 
 const triggerImport = () => {
   router.push('/asset?focus=unassigned-tasks')
@@ -695,40 +694,18 @@ const handleCreateTask = async (taskData: {
   }
 }
 
-const handleDeleteTask = async (task: Task) => {
-  if (deletingTaskId.value) return
-  const { id, name } = task
-  deletingTaskId.value = id
+const handleUnscheduleTask = async (task: Task) => {
+  if (unschedulingTaskId.value || isCompletedScheduledTask(task)) return
+  unschedulingTaskId.value = task.id
   try {
-    await ElMessageBox.confirm(
-      t({ 'zh-CN': '确定要删除任务「{name}」吗？', en: 'Delete the task “{name}”?', ja: 'タスク「{name}」を削除しますか？' }, { name }),
-      t({ 'zh-CN': '删除提示', en: 'Confirm deletion', ja: '削除の確認' }),
-      {
-        confirmButtonText: t({ 'zh-CN': '确定', en: 'Confirm', ja: '確定' }),
-        cancelButtonText: t({ 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル' }),
-        distinguishCancelAndClose: true,
-        type: 'warning',
-      }
-    )
-    await taskStore.deleteTask(id)
-    ElNotification({
-      title: t({ 'zh-CN': '任务已删除', en: 'Task deleted', ja: 'タスクを削除しました' }),
-      message: t({ 'zh-CN': '任务「{name}」已移除。', en: 'The task “{name}” was removed.', ja: 'タスク「{name}」を削除しました。' }, { name }),
-      type: 'success',
-      position: 'top-right',
-    })
+    await taskStore.unscheduleTask(task.id)
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return
-    ElNotification({
-      title: t({ 'zh-CN': '删除任务失败', en: 'Could not delete task', ja: 'タスクを削除できませんでした' }),
-      message: error instanceof Error ? error.message : t({ 'zh-CN': '任务删除失败，请重试。', en: 'Could not delete the task. Try again.', ja: 'タスクを削除できませんでした。もう一度お試しください。' }),
-      type: 'error',
-      position: 'top-right',
-    })
+    reportDragFailure(error)
   } finally {
-    deletingTaskId.value = null
+    unschedulingTaskId.value = null
   }
 }
+
 </script>
 
 <style scoped>

@@ -118,14 +118,14 @@ function formatScheduledTime(scheduledAt?: string): string {
   if (!scheduledAt) return ''
   const date = new Date(scheduledAt)
   if (isNaN(date.getTime())) return ''
-  const now = new Date()
-  const isToday = date.toDateString() === now.toDateString()
-  const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-  if (isToday) {
-    return t({ 'zh-CN': '今日 {time}', en: 'Today at {time}', ja: '今日 {time}' }, { time: timeStr })
-  }
-  const dayName = new Intl.DateTimeFormat(locale.value, { weekday: 'short' }).format(date)
-  return `${dayName} ${timeStr}`
+  return new Intl.DateTimeFormat(locale.value, {
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
 }
 
 // 仅获取在时间轴上的任务（有 scheduledAt，未完成且未取消）

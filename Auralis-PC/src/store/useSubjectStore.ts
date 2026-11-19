@@ -139,10 +139,15 @@ export const useSubjectStore = defineStore('subject', () => {
     }
   })
 
-  function setActiveSubject(id: string | null): void {
+  function setActiveSubject(id: string | null, options?: { skipSourceLoad?: boolean }): void {
     activeSubjectId.value = id
-    if (id) void sourceStore.loadSourceFiles(id)
-    else sourceStore.clearActiveSourceFiles()
+    if (!id) {
+      sourceStore.clearActiveSourceFiles()
+      return
+    }
+    if (!options?.skipSourceLoad) {
+      void sourceStore.loadSourceFiles(id)
+    }
   }
 
   async function addSubject(name: string, description: string, icon: string): Promise<string> {
