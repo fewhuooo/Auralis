@@ -613,7 +613,7 @@ test('mobileAiChat maintains interleaved processTimeline, sanitizes reasoning, g
   }, false, true)
   assert.equal(programmaticUnlocked.locked, false)
 
-  // 4) restoreConversationMessages + applyRunStatusSnapshot preserve activeRun progress & labels
+  // 4) restoreConversationMessages + applyRunStatusSnapshot normalize lowercase statuses and update processTimeline across incremental polls
   const restored = restoreConversationMessages({
     id: 'conv-r',
     chatScopeState: 'BOUND',
@@ -627,15 +627,20 @@ test('mobileAiChat maintains interleaved processTimeline, sanitizes reasoning, g
       currentReplyMessageId: 'a-1',
       status: 'RUNNING',
       executionActive: true,
-      publicSnapshot: [{ id: 'a-1:text', kind: 'text', text: '可重复读通过 MVCC 实现。' }],
-      toolTrace: [{ id: 'tc-r', name: '检索资料', label: '检索「MVCC」', status: 'COMPLETED' }],
+      publicSnapshot: [{ id: 'a-1:text', kind: 'text', text: '正在整理 MVCC。' }],
+      toolTrace: [
+        { id: 'tc-r', name: '检索资料', label: '检索「MVCC」', status: 'started' },
+        { id: 'tc-err', name: '查看资料总览', label: '查看《缺失》总览', status: 'error' },
+      ],
     },
   })
   assert.equal(restored.length, 2)
   assert.equal(restored[1].status, 'streaming')
   assert.equal(restored[1].runId, 'run-r')
   assert.equal(restored[1].tools[0].label, '检索「MVCC」')
-  assert.equal(restored[1].processTimeline.length, 1)
+  assert.equal(restored[1].tools[0].status, 'RUNNING')
+  assert.equal(restored[1].tools[1].status, 'FAILED')
+  assert.equal(restored[1].processTimeline.length, 2)
 
   const polled = applyRunStatusSnapshot(restored, {
     runId: 'run-r',
@@ -643,10 +648,31 @@ test('mobileAiChat maintains interleaved processTimeline, sanitizes reasoning, g
     status: 'COMPLETED',
     executionActive: false,
     publicSnapshot: [{ id: 'a-1:text', kind: 'text', text: '完整回答完毕。' }],
-    toolTrace: [{ id: 'tc-r', name: '检索资料', label: '检索「MVCC」', status: 'COMPLETED' }],
+    toolTrace: [
+      { id: 'tc-r', name: '检索资料', label: '检索「MVCC」', status: 'completed' },
+      { id: 'tc-err', name: '查看资料总览', label: '查看《缺失》总览', status: 'error' },
+      { id: 'tc-2', name: '生成对比卡片', status: 'completed' },
+    ],
   })
   assert.equal(polled[1].status, 'completed')
   assert.equal(polled[1].content, '完整回答完毕。')
+  assert.equal(polled[1].tools[0].status, 'COMPLETED')
+  assert.equal(polled[1].processTimeline.length, 3)
+  assert.equal(polled[1].processTimeline[0].kind === 'tool' && polled[1].processTimeline[0].tool.status, 'COMPLETED')
+  assert.equal(polled[1].processTimeline[2].kind === 'tool' && polled[1].processTimeline[2].tool.label, '生成对比卡片')
+
+  // Matches in-flight placeholder slot by runId when recovered replyMessageId differs from temporary local id
+  const localSlot = [{ ...createAssistantPlaceholder('assistant-temp'), runId: 'run-slot' }]
+  const recoveredByRunId = applyRunStatusSnapshot(localSlot, {
+    runId: 'run-slot',
+    currentReplyMessageId: 'server-msg-uuid',
+    status: 'COMPLETED',
+    executionActive: false,
+    publicSnapshot: [{ id: 'server-msg-uuid:text', kind: 'text', text: '断线恢复完成。' }],
+  })
+  assert.equal(recoveredByRunId.length, 1)
+  assert.equal(recoveredByRunId[0].status, 'completed')
+  assert.equal(recoveredByRunId[0].content, '断线恢复完成。')
 
   // 5) smoothStreamBuffer drains push-then-finish and prevents callbacks after destroy()
   const scheduled = new Map()

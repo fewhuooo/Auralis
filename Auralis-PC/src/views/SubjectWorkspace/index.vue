@@ -2879,6 +2879,7 @@ const isAutoScrollLocked = ref(false)
 let touchStartY = 0
 let prevChatScrollTop = 0
 let isProgrammaticScroll = false
+let userScrolledUpIntent = false
 let programmaticScrollFrame: number | null = null
 
 const cancelProgrammaticScrollFrame = () => {
@@ -2892,11 +2893,13 @@ const cancelProgrammaticScrollFrame = () => {
 const handleTouchStart = (e: TouchEvent) => {
   if (e.touches[0]) {
     touchStartY = e.touches[0].clientY
+    userScrolledUpIntent = false
   }
 }
 
 const handleTouchMove = (e: TouchEvent) => {
   if (e.touches[0] && e.touches[0].clientY > touchStartY + 12) {
+    userScrolledUpIntent = true
     cancelProgrammaticScrollFrame()
     isAutoScrollLocked.value = true
   }
@@ -2904,12 +2907,15 @@ const handleTouchMove = (e: TouchEvent) => {
 
 const handleChatWheel = (e: WheelEvent) => {
   if (e.deltaY < 0) {
-    // 物理滚轮向上：意图查阅上方内容，立即解除编程式滚动护栏并断开自动跟随
+    // 物理滚轮向上：意图查阅上方内容，立即解除编程式滚动护栏并保持锁定
+    userScrolledUpIntent = true
     cancelProgrammaticScrollFrame()
     isAutoScrollLocked.value = true
-  } else if (e.deltaY > 0 && isNearBottom()) {
-    // 滚轮滑至底部：恢复自动跟随
-    isAutoScrollLocked.value = false
+  } else if (e.deltaY > 0) {
+    userScrolledUpIntent = false
+    if (isNearBottom()) {
+      isAutoScrollLocked.value = false
+    }
   }
 }
 
@@ -2918,11 +2924,19 @@ const handleChatScroll = () => {
   if (!el) return
   const nextState = evaluatePcScrollEvent(
     { locked: isAutoScrollLocked.value, prevScrollTop: prevChatScrollTop },
-    { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight },
+    {
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      userPullUpActive: userScrolledUpIntent,
+    },
     isProgrammaticScroll,
   )
   isAutoScrollLocked.value = nextState.locked
   prevChatScrollTop = nextState.prevScrollTop
+  if (!nextState.locked) {
+    userScrolledUpIntent = false
+  }
 }
 
 const handleChatContainerScroll = () => {
@@ -2931,6 +2945,7 @@ const handleChatContainerScroll = () => {
 }
 
 const resumeAutoScroll = () => {
+  userScrolledUpIntent = false
   isAutoScrollLocked.value = false
   scrollChatToBottom()
 }
@@ -2966,7 +2981,7 @@ const isNearBottom = () => {
 }
 
 const autoScrollChatIfNeeded = () => {
-  if (shouldPcAutoScroll(isAutoScrollLocked.value) && isNearBottom()) {
+  if (shouldPcAutoScroll(isAutoScrollLocked.value)) {
     scrollChatToBottom()
   }
 }
@@ -3028,6 +3043,7 @@ watch(() => chatStore.activeSession?.id, () => {
   isActiveRendererDraining.value = false
   isStreamSettling.value = false
   isAutoScrollLocked.value = false
+  userScrolledUpIntent = false
 })
 
 const isCitationsExpanded = (msgId: string) => Boolean(expandedCitationsMap.value[msgId])

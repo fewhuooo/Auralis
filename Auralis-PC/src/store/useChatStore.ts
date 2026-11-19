@@ -19,12 +19,13 @@ import { SyncScopeChangedError } from '@/api/request'
 import { uuidv7 } from '@/utils/uuid'
 import { AiStreamController } from '@/services/aiStreamController'
 import {
+  buildFallbackProcessTimeline,
   createChatStreamState,
+  projectToolTrace,
   reduceChatStreamEvent,
   setPart,
   type ChatProcessTimelineItem,
   type ChatStreamState,
-  type ChatToolActivity,
 } from '@/services/aiStreamReducer'
 import { projectChatContentParts } from '@/services/chatContentProjection'
 import type { ChatActivityAnswer, ChatActivityDraft, ChatBlockPart, ChatContentPart } from '@/types/chatContent'
@@ -167,36 +168,6 @@ export const useChatStore = defineStore('chat', () => {
   const sessions = ref<ChatSession[]>([])
   const activeSessionId = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
-function projectToolTrace(rawTools: unknown): ChatToolActivity[] {
-  if (!Array.isArray(rawTools)) return []
-  return rawTools.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return []
-    const item = entry as Record<string, unknown>
-    const id = String(item.id || item.toolCallId || '')
-    const name = String(item.name || '工具')
-    const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
-    const status = item.status === 'FAILED' ? 'FAILED' : item.status === 'RUNNING' ? 'RUNNING' : 'COMPLETED'
-    if (!id && !name) return []
-    const tool: ChatToolActivity = rawLabel ? { id, name, label: rawLabel, status } : { id, name, status }
-    return [tool]
-  })
-}
-
-function buildFallbackProcessTimeline(
-  reasoningText?: string,
-  tools?: readonly ChatToolActivity[]
-): ChatProcessTimelineItem[] {
-  const items: ChatProcessTimelineItem[] = []
-  if (reasoningText) {
-    items.push({ id: 'reasoning:0', kind: 'reasoning', text: reasoningText })
-  }
-  if (tools && tools.length > 0) {
-    for (const tool of tools) {
-      items.push({ id: `tool:${tool.id || items.length}`, kind: 'tool', tool })
-    }
-  }
-  return items
-}
 
   const isStreaming = ref(false)
   const streamingContent = ref('')

@@ -9,6 +9,49 @@ export interface ChatToolActivity {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
 }
 
+export function normalizeToolTraceStatus(raw: unknown): ChatToolActivity['status'] {
+  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (normalized === 'failed' || normalized === 'error') return 'FAILED'
+  if (normalized === 'running' || normalized === 'started') return 'RUNNING'
+  return 'COMPLETED'
+}
+
+export function projectToolTrace(rawTools: unknown): ChatToolActivity[] {
+  if (!Array.isArray(rawTools)) return []
+  const tools: ChatToolActivity[] = []
+  for (let i = 0; i < rawTools.length; i += 1) {
+    const entry = rawTools[i]
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const rawId = typeof item.id === 'string' && item.id
+      ? item.id
+      : (typeof item.toolCallId === 'string' && item.toolCallId ? item.toolCallId : '')
+    const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '工具'
+    if (!rawId && typeof item.name !== 'string') continue
+    const id = rawId || `trace-${i}`
+    const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
+    const status = normalizeToolTraceStatus(item.status)
+    tools.push(rawLabel ? { id, name, label: rawLabel, status } : { id, name, status })
+  }
+  return tools
+}
+
+export function buildFallbackProcessTimeline(
+  reasoningText?: string,
+  tools?: readonly ChatToolActivity[],
+): ChatProcessTimelineItem[] {
+  const items: ChatProcessTimelineItem[] = []
+  if (reasoningText) {
+    items.push({ id: 'reasoning:0', kind: 'reasoning', text: reasoningText })
+  }
+  if (tools && tools.length > 0) {
+    for (const tool of tools) {
+      items.push({ id: `tool:${tool.id || items.length}`, kind: 'tool', tool })
+    }
+  }
+  return items
+}
+
 export type ChatProcessTimelineItem =
   | {
       id: string

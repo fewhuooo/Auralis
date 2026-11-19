@@ -120,6 +120,13 @@ export function sanitizeMobileReasoningText(raw: string): string {
   return out
 }
 
+export function normalizeMobileToolTraceStatus(raw: unknown): MobileChatToolStep['status'] {
+  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (normalized === 'failed' || normalized === 'error') return 'FAILED'
+  if (normalized === 'running' || normalized === 'started') return 'RUNNING'
+  return 'COMPLETED'
+}
+
 export function buildFallbackProcessTimeline(
   reasoningText: string,
   tools: readonly MobileChatToolStep[],
@@ -134,6 +141,47 @@ export function buildFallbackProcessTimeline(
   return timeline
 }
 
+export function mergeProcessTimelineTools(
+  existingTimeline: readonly MobileChatProcessItem[],
+  reasoningText: string,
+  tools: readonly MobileChatToolStep[],
+): MobileChatProcessItem[] {
+  if (tools.length === 0) {
+    return existingTimeline.length > 0
+      ? [...existingTimeline]
+      : buildFallbackProcessTimeline(reasoningText, tools)
+  }
+  if (existingTimeline.length === 0) {
+    return buildFallbackProcessTimeline(reasoningText, tools)
+  }
+  const byId = new Map<string, MobileChatToolStep>()
+  for (const tool of tools) {
+    byId.set(tool.id, tool)
+  }
+  const seenIds = new Set<string>()
+  const nextTimeline: MobileChatProcessItem[] = []
+  for (const item of existingTimeline) {
+    if (item.kind === 'reasoning') {
+      nextTimeline.push(item)
+      continue
+    }
+    const updated = byId.get(item.tool.id)
+    if (updated) {
+      seenIds.add(updated.id)
+      nextTimeline.push({ id: `tool:${updated.id}`, kind: 'tool', tool: updated })
+    } else {
+      seenIds.add(item.tool.id)
+      nextTimeline.push(item)
+    }
+  }
+  for (const tool of tools) {
+    if (!seenIds.has(tool.id)) {
+      nextTimeline.push({ id: `tool:${tool.id}`, kind: 'tool', tool })
+    }
+  }
+  return nextTimeline
+}
+
 export function projectToolTraceSteps(rawTrace: unknown): MobileChatToolStep[] {
   if (!Array.isArray(rawTrace)) return []
   const steps: MobileChatToolStep[] = []
@@ -143,11 +191,7 @@ export function projectToolTraceSteps(rawTrace: unknown): MobileChatToolStep[] {
     const item = entry as Record<string, unknown>
     const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '工具'
     const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
-    const status: MobileChatToolStep['status'] = item.status === 'FAILED'
-      ? 'FAILED'
-      : item.status === 'RUNNING'
-        ? 'RUNNING'
-        : 'COMPLETED'
+    const status = normalizeMobileToolTraceStatus(item.status)
     const id = typeof item.id === 'string' && item.id
       ? item.id
       : (typeof item.toolCallId === 'string' && item.toolCallId ? item.toolCallId : `trace-${i}`)
@@ -596,7 +640,10 @@ export function applyRunStatusSnapshot(
         ? 'cancelled'
         : 'failed'
 
-  const existingIndex = messages.findIndex(item => item.id === replyId)
+  const existingIndex = messages.findIndex(item => (
+    item.id === replyId
+    || (Boolean(statusView.runId) && item.role === 'assistant' && item.runId === statusView.runId)
+  ))
   if (existingIndex < 0) {
     return [
       ...messages,
@@ -628,14 +675,14 @@ export function applyRunStatusSnapshot(
     parts: finalParts,
     tools: finalTools,
     content: snapshotContent || existing.content,
-    processTimeline: existing.processTimeline.length > 0
-      ? existing.processTimeline
-      : buildFallbackProcessTimeline(existing.reasoningText, finalTools),
+    processTimeline: mergeProcessTimelineTools(existing.processTimeline, existing.reasoningText, finalTools),
     status: nextStatus,
     processExpanded: isRunning && !snapshotContent && !existing.processManuallyToggled
       ? true
       : (!isRunning && !existing.processManuallyToggled ? false : existing.processExpanded),
-    errorMessage: nextStatus === 'failed' ? '该条回答未能完成' : undefined,
+    errorMessage: nextStatus === 'failed'
+      ? (statusView.status === 'UNKNOWN' ? '连接状态未知，请点击重试或重新打开对话' : '该条回答未能完成')
+      : undefined,
   }
   return next
 }

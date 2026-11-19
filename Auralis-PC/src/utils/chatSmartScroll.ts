@@ -4,6 +4,7 @@ export interface PcScrollMetrics {
   scrollTop: number
   scrollHeight: number
   clientHeight: number
+  userPullUpActive?: boolean
 }
 
 export interface PcSmartScrollState {
@@ -18,7 +19,7 @@ export function isPcNearBottom(metrics: PcScrollMetrics, thresholdPx = PC_SMART_
 
 /**
  * Evaluates user scroll events against the 50px bottom threshold.
- * Ignores non-user downward/layout shifts during programmatic scroll unless the user explicitly scrolled up.
+ * Preserves upward wheel/touch intent inside 50px and ignores programmatic scroll growth unless unlocked at bottom.
  */
 export function evaluatePcScrollEvent(
   state: PcSmartScrollState,
@@ -30,6 +31,12 @@ export function evaluatePcScrollEvent(
   if (isProgrammatic) {
     return {
       locked: state.locked && !nearBottom,
+      prevScrollTop: metrics.scrollTop,
+    }
+  }
+  if (metrics.userPullUpActive) {
+    return {
+      locked: true,
       prevScrollTop: metrics.scrollTop,
     }
   }

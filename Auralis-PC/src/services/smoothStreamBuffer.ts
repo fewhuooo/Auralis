@@ -159,7 +159,12 @@ export function createSmoothStreamBuffer(
       }
       isStreamFinished = true
       if (displayedLength >= fullText.length) {
+        if (rafId !== null && typeof cancelAnimationFrame !== 'undefined') {
+          cancelAnimationFrame(rafId)
+          rafId = null
+        }
         isDrained = true
+        lastTimestamp = 0
         options.onComplete?.()
       } else {
         startLoop()

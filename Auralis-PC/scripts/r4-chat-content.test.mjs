@@ -479,6 +479,25 @@ test('createSmoothStreamBuffer drains push-then-finish and prevents rAF or onCom
     assert.equal(reentrantUpdates, 1)
     assert.equal(scheduledCallbacks.size, 0)
     assert.equal(reentrantCompleted, 0)
+
+    // Reaching fullText.length inside tick then calling finish() must cancel pending rAF and fire onComplete once
+    let onceCompleted = 0
+    const finishAfterReachBuffer = createSmoothStreamBuffer(() => {}, {
+      baseSpeed: 100,
+      maxSpeed: 100,
+      onComplete: () => { onceCompleted += 1 },
+    })
+    finishAfterReachBuffer.push('AB')
+    const rTick1 = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(rTick1[0])
+    rTick1[1](100)
+    const rTick2 = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(rTick2[0])
+    rTick2[1](180)
+    assert.equal(scheduledCallbacks.size, 1)
+    finishAfterReachBuffer.finish('AB')
+    assert.equal(scheduledCallbacks.size, 0)
+    assert.equal(onceCompleted, 1)
   } finally {
     globalThis.window = originalWindow
     globalThis.requestAnimationFrame = originalRaf
@@ -486,11 +505,33 @@ test('createSmoothStreamBuffer drains push-then-finish and prevents rAF or onCom
   }
 })
 
-test('chatSmartScroll enforces 50px threshold and ignores programmatic scroll growth', async () => {
+test('projectToolTrace normalizes lowercase server statuses alongside explicit labels', async () => {
+  const { projectToolTrace } = await import('../src/services/aiStreamReducer.ts')
+
+  const projected = projectToolTrace([
+    { id: 't1', name: '检索资料', label: '检索「MVCC」', status: 'started' },
+    { id: 't2', name: '查看资料总览', label: '查看《数据库》总览', status: 'error' },
+    { id: 't3', name: '生成对比卡片', status: 'completed' },
+  ])
+  assert.deepEqual(projected, [
+    { id: 't1', name: '检索资料', label: '检索「MVCC」', status: 'RUNNING' },
+    { id: 't2', name: '查看资料总览', label: '查看《数据库》总览', status: 'FAILED' },
+    { id: 't3', name: '生成对比卡片', status: 'COMPLETED' },
+  ])
+})
+
+test('chatSmartScroll enforces 50px threshold and preserves upward wheel intent near bottom', async () => {
   const { evaluatePcScrollEvent, isPcNearBottom, shouldPcAutoScroll } = await import('../src/utils/chatSmartScroll.ts')
 
   assert.equal(isPcNearBottom({ scrollTop: 560, scrollHeight: 1000, clientHeight: 400 }), true)
   assert.equal(isPcNearBottom({ scrollTop: 550, scrollHeight: 1000, clientHeight: 400 }), false)
+
+  const upwardWithin50Px = evaluatePcScrollEvent(
+    { locked: true, prevScrollTop: 600 },
+    { scrollTop: 575, scrollHeight: 1000, clientHeight: 400, userPullUpActive: true },
+    false,
+  )
+  assert.equal(upwardWithin50Px.locked, true)
 
   const lockedState = evaluatePcScrollEvent(
     { locked: false, prevScrollTop: 560 },

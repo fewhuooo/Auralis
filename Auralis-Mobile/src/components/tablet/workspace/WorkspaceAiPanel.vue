@@ -154,7 +154,7 @@
                 <text class="footer-action-label">复制</text>
               </view>
               <view
-                v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && !isConversationUnsupported"
+                v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && !isConversationUnsupported && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
                 class="footer-action-chip"
                 role="button"
                 aria-label="重新生成"
@@ -564,14 +564,55 @@ function toggleHistory() {
   }
 }
 
+async function recoverUnknownRun(
+  conversationId: string,
+  runId: string,
+  attemptId: string,
+  viewToken: number,
+  generation: symbol,
+  capturedScope: string,
+) {
+  try {
+    const recovered = await aiApi.recoverRunAttempt(conversationId, runId, attemptId)
+    if (
+      viewToken !== activeViewToken
+      || generation !== authStore.getLoginGeneration()
+      || capturedScope !== scopeKey.value
+    ) return
+    messages.value = applyRunStatusSnapshot(messages.value, recovered)
+    scrollToBottom(false)
+    if (recovered.executionActive && recovered.runId && recovered.status !== 'UNKNOWN') {
+      activeRunId.value = recovered.runId
+      activeAttemptId.value = recovered.currentAttemptId || attemptId
+      isTyping.value = true
+      scheduleRunPolling(conversationId, recovered.runId, viewToken, generation, capturedScope)
+      return
+    }
+    isTyping.value = false
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+  } catch {
+    if (
+      viewToken !== activeViewToken
+      || generation !== authStore.getLoginGeneration()
+      || capturedScope !== scopeKey.value
+    ) return
+    isTyping.value = false
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+  }
+}
+
 function scheduleRunPolling(
   conversationId: string,
   runId: string,
   viewToken: number,
   generation: symbol,
   capturedScope: string,
+  failureCount = 0,
 ) {
   stopRunPolling()
+  const delayMs = failureCount > 0 ? 2000 : 1500
   runPollTimer = setTimeout(() => {
     void (async () => {
       if (
@@ -589,11 +630,19 @@ function scheduleRunPolling(
         messages.value = applyRunStatusSnapshot(messages.value, statusView)
         scrollToBottom(false)
         if (statusView.executionActive && statusView.status !== 'UNKNOWN') {
-          scheduleRunPolling(conversationId, runId, viewToken, generation, capturedScope)
+          scheduleRunPolling(conversationId, runId, viewToken, generation, capturedScope, 0)
           return
         }
         if (statusView.status === 'UNKNOWN' && statusView.currentAttemptId) {
-          void aiApi.recoverRunAttempt(conversationId, runId, statusView.currentAttemptId).catch(() => {})
+          await recoverUnknownRun(
+            conversationId,
+            runId,
+            statusView.currentAttemptId,
+            viewToken,
+            generation,
+            capturedScope,
+          )
+          return
         }
         isTyping.value = false
         activeRunId.value = ''
@@ -604,12 +653,21 @@ function scheduleRunPolling(
           || generation !== authStore.getLoginGeneration()
           || capturedScope !== scopeKey.value
         ) return
+        if (failureCount < 2) {
+          scheduleRunPolling(conversationId, runId, viewToken, generation, capturedScope, failureCount + 1)
+          return
+        }
+        messages.value = messages.value.map(item => (
+          item.role === 'assistant' && item.status === 'streaming' && (!item.runId || item.runId === runId)
+            ? applyTerminalState(item, 'failed', '网络波动，暂未获取到最新生成状态，请点击重试')
+            : item
+        ))
         isTyping.value = false
         activeRunId.value = ''
         activeAttemptId.value = ''
       }
     })()
-  }, 1500)
+  }, delayMs)
 }
 
 async function selectConversation(conversationId: string) {
@@ -648,7 +706,14 @@ async function selectConversation(conversationId: string) {
 
     if (detail.activeRun?.executionActive && detail.activeRun.runId) {
       if (detail.activeRun.status === 'UNKNOWN' && detail.activeRun.currentAttemptId) {
-        void aiApi.recoverRunAttempt(currentConversationId.value, detail.activeRun.runId, detail.activeRun.currentAttemptId).catch(() => {})
+        void recoverUnknownRun(
+          currentConversationId.value,
+          detail.activeRun.runId,
+          detail.activeRun.currentAttemptId,
+          viewToken,
+          generation,
+          capturedScope,
+        )
       } else {
         activeRunId.value = detail.activeRun.runId
         activeAttemptId.value = detail.activeRun.currentAttemptId || ''
@@ -834,7 +899,30 @@ async function runStreamIntoSlot(params: {
     && capturedScope === scopeKey.value
   )
   let admittedTurn = false
+  let resumedPolling = false
   let terminalStatus: 'COMPLETED' | 'CANCELLED' | 'UNKNOWN' | 'FAILED' | null = null
+
+  const recoverInterruptedSlot = async (convId: string): Promise<'resolved' | 'polling' | 'none'> => {
+    if (!activeRunId.value || !activeAttemptId.value) return 'none'
+    try {
+      const recovered = await aiApi.recoverRunAttempt(convId, activeRunId.value, activeAttemptId.value)
+      if (!isCurrent()) return 'resolved'
+      messages.value = applyRunStatusSnapshot(messages.value, recovered)
+      if (recovered.executionActive && recovered.runId && recovered.status !== 'UNKNOWN') {
+        activeRunId.value = recovered.runId
+        activeAttemptId.value = recovered.currentAttemptId || activeAttemptId.value
+        resumedPolling = true
+        scheduleRunPolling(convId, recovered.runId, activeViewToken, generation, capturedScope)
+        return 'polling'
+      }
+      if (recovered.status === 'COMPLETED' || recovered.status === 'FAILED' || recovered.status === 'CANCELLED') {
+        return 'resolved'
+      }
+      return 'none'
+    } catch {
+      return 'none'
+    }
+  }
 
   try {
     const conversationId = await params.resolveConversationId()
@@ -890,9 +978,8 @@ async function runStreamIntoSlot(params: {
       return
     }
     if (terminalStatus === 'UNKNOWN') {
-      if (activeRunId.value && activeAttemptId.value) {
-        void aiApi.recoverRunAttempt(conversationId, activeRunId.value, activeAttemptId.value).catch(() => {})
-      }
+      const recovery = await recoverInterruptedSlot(conversationId)
+      if (!isCurrent() || recovery !== 'none') return
       messages.value[aiIndex] = applyTerminalState(
         messages.value[aiIndex],
         'failed',
@@ -901,9 +988,8 @@ async function runStreamIntoSlot(params: {
       return
     }
     if (terminalStatus === null) {
-      if (activeRunId.value && activeAttemptId.value) {
-        void aiApi.recoverRunAttempt(conversationId, activeRunId.value, activeAttemptId.value).catch(() => {})
-      }
+      const recovery = await recoverInterruptedSlot(conversationId)
+      if (!isCurrent() || recovery !== 'none') return
       if (params.restoreDraftText && !admittedTurn && !query.value.trim()) {
         query.value = params.restoreDraftText
       }
@@ -922,8 +1008,9 @@ async function runStreamIntoSlot(params: {
     messages.value[aiIndex] = applyTerminalState(messages.value[aiIndex], 'completed')
   } catch (error) {
     if (!isCurrent()) return
-    if ((terminalStatus === 'UNKNOWN' || terminalStatus === null) && currentConversationId.value && activeRunId.value && activeAttemptId.value) {
-      void aiApi.recoverRunAttempt(currentConversationId.value, activeRunId.value, activeAttemptId.value).catch(() => {})
+    if ((terminalStatus === 'UNKNOWN' || terminalStatus === null) && currentConversationId.value) {
+      const recovery = await recoverInterruptedSlot(currentConversationId.value)
+      if (!isCurrent() || recovery !== 'none') return
     }
     if (params.restoreDraftText && !admittedTurn && !query.value.trim()) {
       query.value = params.restoreDraftText
@@ -939,10 +1026,12 @@ async function runStreamIntoSlot(params: {
     messages.value[aiIndex] = applyTerminalState(messages.value[aiIndex], 'failed', errMsg)
   } finally {
     if (isCurrent()) {
-      isTyping.value = false
-      activeRunId.value = ''
-      activeAttemptId.value = ''
       abortLocalStream = null
+      if (!resumedPolling) {
+        isTyping.value = false
+        activeRunId.value = ''
+        activeAttemptId.value = ''
+      }
       scrollToBottom(false)
     }
   }
@@ -1034,7 +1123,7 @@ async function regenerateAssistantMessage(msgId: string) {
     return
   }
 
-  if (target.originatingKind === 'activity_submission' && !target.runId) return
+  if (target.originatingKind === 'activity_submission') return
 
   let promptText = ''
   for (let i = msgIndex - 1; i >= 0; i -= 1) {
