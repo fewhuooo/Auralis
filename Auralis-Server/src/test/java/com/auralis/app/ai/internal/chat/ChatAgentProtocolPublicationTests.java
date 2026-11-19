@@ -406,6 +406,72 @@ class ChatAgentProtocolPublicationTests {
         assertThat(status.accountingSummary()).containsEntry("currentAttemptToolCalls", 1L);
         assertThat(events).extracting(ChatSseEnvelope::event)
                 .containsSubsequence("reasoning.delta", "tool.started", "tool.completed", "reasoning.delta", "text.delta");
+        assertThat(events).filteredOn(e -> "tool.started".equals(e.event()) || "tool.completed".equals(e.event()))
+                .hasSize(2)
+                .allSatisfy(event -> {
+                    assertThat(event.payload()).containsEntry("name", "阅读资料摘录")
+                            .containsEntry("label", "阅读资料摘录");
+                    assertThat(event.payload().toString())
+                            .doesNotContain("PRIVATE_FACT_9C31", "chunk-private", "read_source_excerpt");
+                });
+        for (int requestIndex : List.of(0, 1, 2)) {
+            assertThat(providerRequests.get(requestIndex).messages())
+                    .anySatisfy(message -> {
+                        assertThat(message.role()).isEqualTo(AiMessageRole.SYSTEM);
+                        assertThat(message.content()).contains(
+                                "避免提及 search、list_sources、read_source_excerpt、read_source_overview、render_*",
+                                "不要在开场白机械声明",
+                                "通常不超过 10 个字");
+                    });
+        }
+    }
+
+    @Test
+    void chineseToolPresentationIncludesSafeSearchQueryAndCatalogTitleWithoutLeakingSecrets() throws Exception {
+        ChatReadTools.ReadScope scope = mock(ChatReadTools.ReadScope.class);
+        UUID sourceId = UUID.randomUUID();
+        when(scope.titleFor(sourceId)).thenReturn("  星校园_中国国际大学生创新大赛_V24.5.docx  ");
+        ObjectMapper testMapper = new ObjectMapper();
+
+        ChatToolPresentation.ToolDisplay searchDisplay = ChatToolPresentation.describe(
+                ChatReadTools.SEARCH,
+                "{\"query\":\"  对比   实验  \"}",
+                scope,
+                testMapper);
+        assertThat(searchDisplay.name()).isEqualTo("检索资料");
+        assertThat(searchDisplay.label()).isEqualTo("检索「对比 实验」");
+
+        ChatToolPresentation.ToolDisplay longSearch = ChatToolPresentation.describe(
+                ChatReadTools.SEARCH,
+                "{\"query\":\"1234567890123456789012345678\"}",
+                scope,
+                testMapper);
+        assertThat(longSearch.label()).isEqualTo("检索「123456789012345678901234…」");
+
+        ChatToolPresentation.ToolDisplay excerptDisplay = ChatToolPresentation.describe(
+                ChatReadTools.READ_EXCERPT,
+                "{\"sourceId\":\"" + sourceId + "\",\"chunkId\":\"secret-chunk-id\"}",
+                scope,
+                testMapper);
+        assertThat(excerptDisplay.name()).isEqualTo("阅读资料摘录");
+        assertThat(excerptDisplay.label()).isEqualTo("阅读《星校园_中国国际大学生创新大赛_V2…》片段");
+        assertThat(excerptDisplay.label()).doesNotContain("secret-chunk-id");
+
+        ChatToolPresentation.ToolDisplay malformedDisplay = ChatToolPresentation.describe(
+                ChatReadTools.READ_SOURCE_OVERVIEW,
+                "{not-json",
+                scope,
+                testMapper);
+        assertThat(malformedDisplay.name()).isEqualTo("查看资料总览");
+        assertThat(malformedDisplay.label()).isEqualTo("查看资料总览");
+
+        ChatToolPresentation.ToolDisplay stepsDisplay = ChatToolPresentation.describe(
+                DisplayToolRegistry.RENDER_STEPS,
+                "{}",
+                scope,
+                testMapper);
+        assertThat(stepsDisplay.name()).isEqualTo("生成流程卡片");
+        assertThat(stepsDisplay.label()).isEqualTo("生成流程卡片");
     }
 
     @Test

@@ -361,6 +361,15 @@ public final class ChatReadTools {
         }
         public void validateCurrent() { validateSources(revisions.keySet().stream().sorted().toList()); }
         public Map<UUID, UUID> revisionSnapshot() { return revisions; }
+        String titleFor(UUID id) {
+            if (id == null) return null;
+            return catalog.stream()
+                    .filter(item -> id.equals(item.id()))
+                    .map(CatalogSource::title)
+                    .filter(title -> title != null && !title.isBlank())
+                    .findFirst()
+                    .orElse(null);
+        }
         public void validateSources(List<UUID> ids) {
             ids.forEach(id -> {
                 if (!revisions.containsKey(id)) {
