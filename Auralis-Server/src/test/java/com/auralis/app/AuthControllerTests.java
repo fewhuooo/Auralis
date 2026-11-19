@@ -148,7 +148,7 @@ class AuthControllerTests {
 
         MvcResult login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson(email.toUpperCase(Locale.ROOT), "correct horse battery staple", "browser-1")))
+                        .content(loginJson(email.toUpperCase(Locale.ROOT), "Aa!bcdef", "browser-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user.username").value("alice"))
                 .andReturn();
@@ -162,10 +162,46 @@ class AuthControllerTests {
     }
 
     @Test
+    void newPasswordRulesApplyToRegisterResetAndChangeWithoutAffectingLegacyLogin() throws Exception {
+        String email = AuthTestAccounts.newEmail();
+        String registrationFields = AuthTestAccounts.registrationFields(mockMvc, email);
+        mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                        .content(registerJson("policy-register", "Abcdefg ", "policy-register", registrationFields)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'password')]").exists());
+
+        JsonNode account = json(mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                        .content(registerJson("policy-reset", "Aa!bcdef", "policy-device", registrationFields)))
+                .andExpect(status().isCreated()).andReturn());
+        String accessToken = bearer(account.path("tokens").path("accessToken").asText());
+        mockMvc.perform(post("/api/auth/password/reset/email-code").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\"}"))
+                .andExpect(status().isNoContent());
+        String emailCode = AuthTestAccounts.awaitCode(email);
+        mockMvc.perform(post("/api/auth/password/reset").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\",\"emailCode\":\"" + emailCode
+                                + "\",\"newPassword\":\"Abcdefg \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'newPassword')]").exists());
+        mockMvc.perform(put("/api/auth/password").header(HttpHeaders.AUTHORIZATION, accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"Aa!bcdef\",\"newPassword\":\"Abcdefg \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'newPassword')]").exists());
+
+        String legacyUsername = "legacy-" + UUID.randomUUID();
+        AuthTestAccounts.register(identityService, legacyUsername, "legacy password",
+                new DeviceCommand("legacy-device", "Legacy device", DevicePlatform.WEB));
+        mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(legacyUsername, "legacy password", "legacy-login")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void registrationRequiresVerificationAndLocksCodeAfterFiveWrongAttempts() throws Exception {
         String email = AuthTestAccounts.newEmail();
         String verification = AuthTestAccounts.registrationFields(mockMvc, email);
-        String valid = registerJson("alice", "correct horse battery staple", "browser-1", verification);
+        String valid = registerJson("alice", "Aa!bcdef", "browser-1", verification);
         String wrong = valid.replaceFirst(
                 "\"emailCode\":\"[0-9]", "\"emailCode\":\"" + (verification.contains("\"emailCode\":\"0") ? "1" : "0"));
         for (int attempt = 0; attempt < 5; attempt++) {
@@ -185,7 +221,7 @@ class AuthControllerTests {
         String email = AuthTestAccounts.newEmail();
         JsonNode original = registerWithEmail("alice", "browser-1", email);
         JsonNode another = login("alice", "browser-2");
-        String newPassword = "replacement password";
+        String newPassword = "Abcdefg!";
         mockMvc.perform(post("/api/auth/password/reset/email-code").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + AuthTestAccounts.newEmail() + "\"}"))
                 .andExpect(status().isNoContent())
@@ -197,7 +233,7 @@ class AuthControllerTests {
         String code = AuthTestAccounts.awaitCode(email);
 
         mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson("a-different-user", "correct horse battery staple", "browser-3",
+                        .content(registerJson("a-different-user", "Aa!bcdef", "browser-3",
                                 "\"email\":\"" + email + "\",\"emailCode\":\"" + code + "\",")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'emailCode')]").exists());
@@ -219,7 +255,7 @@ class AuthControllerTests {
                     .andExpect(status().isUnauthorized());
         }
         mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson(email, "correct horse battery staple", "browser-1")))
+                        .content(loginJson(email, "Aa!bcdef", "browser-1")))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(loginJson(email, newPassword, "browser-1")))
@@ -253,7 +289,7 @@ class AuthControllerTests {
         mockMvc.perform(post("/api/auth/register")
                         .header("X-Trace-Id", "duplicate-check")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson("alice", "another password", "browser-2", invalidVerificationFields())))
+                        .content(registerJson("alice", "Aa!bcdef", "browser-2", invalidVerificationFields())))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("MUTATION_REJECTED"))
@@ -512,7 +548,7 @@ class AuthControllerTests {
         mockMvc.perform(put("/api/auth/password")
                         .header(HttpHeaders.AUTHORIZATION, bearer(currentAccess))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"baseVersion\":0,\"currentPassword\":\"wrong password\",\"newPassword\":\"a longer new password\"}"))
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"wrong password\",\"newPassword\":\"Abcdefg!\"}"))
                 .andExpect(status().isUnauthorized());
         for (String accessToken : List.of(currentAccess, otherAccess)) {
             mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
@@ -525,7 +561,7 @@ class AuthControllerTests {
         mockMvc.perform(put("/api/auth/password")
                         .header(HttpHeaders.AUTHORIZATION, bearer(rotatedCurrent.path("tokens").path("accessToken").asText()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"baseVersion\":0,\"currentPassword\":\"correct horse battery staple\",\"newPassword\":\"a longer new password\"}"))
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"Aa!bcdef\",\"newPassword\":\"Abcdefg!\"}"))
                 .andExpect(status().isNoContent());
         for (JsonNode rotated : List.of(rotatedCurrent, rotatedOther)) {
             mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION,
@@ -546,18 +582,18 @@ class AuthControllerTests {
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("alice", "correct horse battery staple", "password-alice-next")))
+                        .content(loginJson("alice", "Aa!bcdef", "password-alice-next")))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("alice", "a longer new password", "password-alice-next")))
+                        .content(loginJson("alice", "Abcdefg!", "password-alice-next")))
                 .andExpect(status().isOk());
     }
 
     @Test
     void registerAndPasswordChangeEnforceTheEncoderByteLimit() throws Exception {
         String username = "password-limit";
-        String maxLength = "界".repeat(24);
+        String maxLength = "A" + "界".repeat(23) + "a!";
         for (String tooLong : new String[] {"a".repeat(73), maxLength + "界"}) {
             mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
                             .content(registerJson(username, tooLong, "browser-1", invalidVerificationFields())))
@@ -572,14 +608,14 @@ class AuthControllerTests {
         mockMvc.perform(put("/api/auth/password").header(HttpHeaders.AUTHORIZATION, accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"baseVersion\":0,\"currentPassword\":\"" + maxLength
-                                + "\",\"newPassword\":\"" + maxLength + "a\"}"))
+                                + "\",\"newPassword\":\"" + maxLength + "!\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.detail").value("Password must not exceed 72 UTF-8 bytes"));
         mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(loginJson(username, maxLength, "browser-2")))
                 .andExpect(status().isOk());
-        String newPassword = "b".repeat(72);
+        String newPassword = "A" + "b".repeat(70) + "!";
         mockMvc.perform(put("/api/auth/password").header(HttpHeaders.AUTHORIZATION, accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"baseVersion\":0,\"currentPassword\":\"" + maxLength
@@ -686,7 +722,7 @@ class AuthControllerTests {
         MvcResult requested = mockMvc.perform(delete("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"password\":\"correct horse battery staple\"}"))
+                        .content("{\"password\":\"Aa!bcdef\"}"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andReturn();
@@ -732,7 +768,7 @@ class AuthControllerTests {
         MvcResult requested = mockMvc.perform(delete("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"password\":\"correct horse battery staple\"}"))
+                        .content("{\"password\":\"Aa!bcdef\"}"))
                 .andExpect(status().isAccepted())
                 .andReturn();
         UUID jobId = UUID.fromString(json(requested).path("id").asText());
@@ -771,7 +807,7 @@ class AuthControllerTests {
             Future<?> upload = executor.submit(() -> assetService.createUploadIntent(userId, command));
             assertThat(inMemoryAssetStorage.awaitUploadIntentStarted()).isTrue();
             Future<?> deletion = executor.submit(() ->
-                    identityService.requestAccountDeletion(userId, "correct horse battery staple"));
+                    identityService.requestAccountDeletion(userId, "Aa!bcdef"));
             assertThatThrownBy(() -> deletion.get(300, TimeUnit.MILLISECONDS))
                     .isInstanceOf(TimeoutException.class);
             inMemoryAssetStorage.releaseUploadIntent();
@@ -815,7 +851,7 @@ class AuthControllerTests {
                 assertThat(userRepository.findForUpdateById(userId)).isPresent();
                 Future<AuthResult> login = executor.submit(() -> {
                     started.countDown();
-                    return identityService.login("alice", "correct horse battery staple",
+                    return identityService.login("alice", "Aa!bcdef",
                             new DeviceCommand("stale-login", "Stale login", DevicePlatform.WEB));
                 });
                 loginRef.set(login);
@@ -828,7 +864,7 @@ class AuthControllerTests {
                     throw new IllegalStateException(exception);
                 }
                 identityService.changePassword(userId, UUID.fromString(alice.path("serverDeviceId").asText()), 0,
-                        "correct horse battery staple", "a different long password");
+                        "Aa!bcdef", "a different long password");
                 return null;
             });
             Future<AuthResult> login = loginRef.get();
@@ -885,7 +921,7 @@ class AuthControllerTests {
     void disabledAccountCannotCreateAnAssetUploadIntent() throws Exception {
         JsonNode alice = register("alice", "disabled-upload", "Alice's browser");
         UUID userId = UUID.fromString(alice.path("user").path("id").asText());
-        identityService.requestAccountDeletion(userId, "correct horse battery staple");
+        identityService.requestAccountDeletion(userId, "Aa!bcdef");
 
         assertThatThrownBy(() -> assetService.createUploadIntent(userId,
                 new AssetUploadIntentCommand(0, UUID.randomUUID(), "file.txt", 4,
@@ -906,7 +942,7 @@ class AuthControllerTests {
     private JsonNode registerWithEmail(String username, String clientDeviceKey, String email) throws Exception {
         return json(mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson(username, "correct horse battery staple", clientDeviceKey,
+                        .content(registerJson(username, "Aa!bcdef", clientDeviceKey,
                                 AuthTestAccounts.registrationFields(mockMvc, email))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION, org.hamcrest.Matchers.startsWith("/api/auth/sessions/")))
@@ -923,7 +959,7 @@ class AuthControllerTests {
     private JsonNode login(String username, String clientDeviceKey) throws Exception {
         return json(mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson(username, "correct horse battery staple", clientDeviceKey)))
+                        .content(loginJson(username, "Aa!bcdef", clientDeviceKey)))
                 .andExpect(status().isOk())
                 .andReturn());
     }
