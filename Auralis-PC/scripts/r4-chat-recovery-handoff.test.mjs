@@ -773,3 +773,141 @@ test('Chat does not invent a replay command when neither run identity nor origin
     globalThis.fetch = originalFetch
   }
 })
+
+test('Chat stream disconnect reconciliation preserves interleaved processTimeline, enriched labels, and settles tools', async () => {
+  setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-rec-1', username: 'recuser', displayName: 'Rec', version: 1, hasAvatar: false }
+
+  const chatStore = useChatStore()
+  chatStore.sessions = [
+    {
+      id: 'session-rec-1',
+      remoteId: 'conv-rec-1',
+      title: '断线过程态对账',
+      version: 1,
+      chatProtocolVersion: 1,
+      chatSupported: true,
+      chatScopeState: 'BOUND',
+      chatScope: { retrievalMode: 'SUBJECT', subjectId: 'sub-rec-1', currentSourceId: null, sourceIds: [] },
+    },
+  ]
+  chatStore.activeSessionId = 'session-rec-1'
+
+  const origFetch = globalThis.fetch
+  const origGet = request.get
+  const origPost = request.post
+  let lastRequestId = 'req-rec-1'
+
+  const buildStatus = () => ({
+    protocolVersion: 1,
+    conversationId: 'conv-rec-1',
+    runId: 'run-rec-1',
+    requestId: lastRequestId,
+    status: 'COMPLETED',
+    executionActive: false,
+    currentAttemptId: 'att-rec-1',
+    userMessageId: 'user-rec-1',
+    currentReplyMessageId: 'reply-rec-1',
+    toolTrace: [
+      { id: 't-1', name: 'search', status: 'COMPLETED' },
+      { id: 't-2', name: 'read', label: '读取课程节选', status: 'RUNNING' },
+    ],
+  })
+
+  try {
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body)
+      lastRequestId = body.requestId
+      let seq = 0
+      const env = (event, payload) => ({
+        protocolVersion: 1,
+        conversationId: 'conv-rec-1',
+        requestId: body.requestId,
+        runId: 'run-rec-1',
+        attemptId: 'att-rec-1',
+        userMessageId: 'user-rec-1',
+        replyMessageId: 'reply-rec-1',
+        sequence: ++seq,
+        event,
+        payload,
+      })
+      const chunks = [
+        env('run.started', { status: 'RUNNING' }),
+        env('reasoning.delta', { text: '先查目录。' }),
+        env('tool.started', { toolCallId: 't-1', name: 'search', label: '检索课程资料' }),
+        env('reasoning.delta', { text: '再查正文。' }),
+      ]
+      const sseText = chunks.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e)}\n\n`).join('')
+      return new Response(sseText, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }
+
+    request.get = async (url) => {
+      if (url.includes('/runs/run-rec-1')) {
+        return buildStatus()
+      }
+      if (url.includes('/api/ai/conversations/conv-rec-1')) {
+        return {
+          id: 'conv-rec-1',
+          title: '断线过程态对账',
+          version: 1,
+          chatProtocolVersion: 1,
+          chatSupported: true,
+          messages: [
+            { id: 'user-rec-1', role: 'USER', status: 'COMPLETED', content: '请帮我总结', parts: [] },
+            {
+              id: 'reply-rec-1',
+              role: 'ASSISTANT',
+              status: 'COMPLETED',
+              content: '总结完成',
+              reasoningText: '先查目录。再查正文。补充尾段。',
+              parts: [{ id: 'reply-rec-1:text', kind: 'text', text: '总结完成' }],
+            },
+          ],
+        }
+      }
+      return origGet(url)
+    }
+
+    request.post = async (url) => {
+      if (url.includes('/recover')) {
+        return buildStatus()
+      }
+      return origPost(url)
+    }
+
+    await chatStore.sendMessage('请帮我总结', { subjectId: 'sub-rec-1', retrievalMode: 'SUBJECT' }).catch(() => null)
+    if (chatStore.recoverableTarget) {
+      await chatStore.recoverUnknownAttempt()
+    }
+
+    assert.equal(chatStore.activeRun, null)
+    assert.equal(chatStore.isStreaming, false)
+    const assistant = chatStore.messages.find((m) => m.id === 'reply-rec-1')
+    assert.ok(assistant, 'reconciled assistant message should exist')
+    assert.equal(assistant.reasoningText, '先查目录。再查正文。补充尾段。')
+    assert.deepEqual(assistant.tools, [
+      { id: 't-1', name: 'search', label: '检索课程资料', status: 'COMPLETED' },
+      { id: 't-2', name: 'read', label: '读取课程节选', status: 'COMPLETED' },
+    ])
+    assert.deepEqual(
+      assistant.processTimeline?.map((item) => (
+        item.kind === 'reasoning' ? `R:${item.text}` : `T:${item.tool.id}:${item.tool.status}:${item.tool.label}`
+      )),
+      [
+        'R:先查目录。',
+        'T:t-1:COMPLETED:检索课程资料',
+        'R:再查正文。',
+        'T:t-2:COMPLETED:读取课程节选',
+        'R:补充尾段。',
+      ],
+    )
+  } finally {
+    globalThis.fetch = origFetch
+    request.get = origGet
+    request.post = origPost
+  }
+})

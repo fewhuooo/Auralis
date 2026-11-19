@@ -36,28 +36,32 @@
           class="reasoning-rich-text"
           :nodes="group.nodes"
         />
-        <view v-else class="inline-tools-row">
+        <view v-else class="process-tool-steps">
           <view
             v-for="tool in group.tools"
             :key="tool.id"
-            class="tool-capsule"
+            class="process-tool-step"
             :class="`is-${tool.status.toLowerCase()}`"
           >
-            <LineIcon
-              v-if="tool.status === 'COMPLETED'"
-              name="check"
-              size="11px"
-              color="#6E8552"
-            />
-            <LineIcon
-              v-else-if="tool.status === 'FAILED'"
-              name="alert"
-              size="11px"
-              color="var(--color-warning, #d9822b)"
-            />
-            <view v-else class="tool-dot is-running" aria-hidden="true"></view>
-            <text class="tool-capsule-label">{{ formatAiToolLabel(tool.name, tool.label) }}</text>
-            <text v-if="tool.status === 'FAILED'" class="tool-capsule-failed">未完成</text>
+            <view class="tool-step-icon" aria-hidden="true">
+              <LineIcon
+                v-if="tool.status === 'COMPLETED'"
+                name="check"
+                size="12px"
+                color="#6E8552"
+              />
+              <LineIcon
+                v-else-if="tool.status === 'FAILED'"
+                name="alert"
+                size="12px"
+                color="#9C500C"
+              />
+              <view v-else class="tool-dot is-running"></view>
+            </view>
+            <view class="tool-step-text">
+              <text class="tool-step-label">{{ formatAiToolLabel(tool.name, tool.label) }}</text>
+              <text v-if="tool.status === 'FAILED'" class="tool-step-failed">· 未完成</text>
+            </view>
           </view>
         </view>
       </template>
@@ -73,10 +77,11 @@ import LineIcon from '@/components/LineIcon.vue'
 import { renderMarkdownHtml } from '@/utils/markdown'
 import {
   buildFallbackProcessTimeline,
+  buildVisibleMobileTimelineGroups,
   formatAiToolLabel,
+  resolveMobileProcessDrawerOpen,
   resolveProcessSummary,
   resolveWaitingStatusText,
-  sanitizeMobileReasoningText,
   type MobileChatProcessItem,
   type MobileChatToolStep,
 } from '@/utils/mobileAiChat'
@@ -111,7 +116,10 @@ const emit = defineEmits<{
 
 const localExpanded = ref(false)
 const localManuallyToggled = ref(false)
+const holdOpenForDrain = ref(false)
+const userClosedDuringDrain = ref(false)
 const smoothedReasoning = ref('')
+const isReasoningDraining = ref(false)
 
 const reasoningBuffer: SmoothStreamController = createSmoothStreamBuffer(
   (text) => {
@@ -119,10 +127,17 @@ const reasoningBuffer: SmoothStreamController = createSmoothStreamBuffer(
     emit('progress')
   },
   {
-    minSpeed: 20,
-    baseSpeed: 32,
-    maxSpeed: 75,
-    finishSpeed: 55,
+    minSpeed: 32,
+    baseSpeed: 64,
+    maxSpeed: 260,
+    finishSpeed: 200,
+    onComplete: () => {
+      isReasoningDraining.value = false
+      holdOpenForDrain.value = false
+      if (!localManuallyToggled.value) {
+        localExpanded.value = false
+      }
+    },
   },
 )
 
@@ -141,51 +156,86 @@ const cumulativeReasoningSource = computed(() => {
   return joined || props.reasoning || ''
 })
 
-const isReasoningStreaming = computed(() => Boolean(props.streaming && !props.hasContent))
+const isReasoningStreaming = computed(() => Boolean((props.streaming && !props.hasContent) || isReasoningDraining.value))
 const isThinkingActive = computed(() => Boolean(props.streaming && !props.hasContent))
 
-watch(cumulativeReasoningSource, (nextText) => {
-  if (props.streaming && !props.hasContent) {
-    reasoningBuffer.push(nextText || '')
-  } else {
-    reasoningBuffer.flush(nextText || '')
-    smoothedReasoning.value = nextText || ''
+watch(() => props.expanded, (expanded, prevExpanded) => {
+  if (expanded === true && prevExpanded === false) {
+    userClosedDuringDrain.value = false
   }
+})
+
+watch(cumulativeReasoningSource, (nextText) => {
+  const safeText = nextText || ''
+  if (props.streaming && !props.hasContent) {
+    reasoningBuffer.push(safeText)
+    isReasoningDraining.value = !reasoningBuffer.isDrained()
+    return
+  }
+  if (isReasoningDraining.value || holdOpenForDrain.value) {
+    reasoningBuffer.finish(safeText)
+    isReasoningDraining.value = !reasoningBuffer.isDrained()
+    if (!isReasoningDraining.value) {
+      holdOpenForDrain.value = false
+    }
+    return
+  }
+  reasoningBuffer.flush(safeText)
+  smoothedReasoning.value = safeText
 }, { immediate: true })
 
 watch(() => props.streaming, (streaming) => {
   if (streaming) {
     localManuallyToggled.value = false
+    userClosedDuringDrain.value = false
+    holdOpenForDrain.value = false
     if (!props.hasContent) {
       localExpanded.value = true
     }
+    isReasoningDraining.value = false
     reasoningBuffer.reset()
     smoothedReasoning.value = ''
     if (!props.hasContent && cumulativeReasoningSource.value) {
       reasoningBuffer.push(cumulativeReasoningSource.value)
+      isReasoningDraining.value = !reasoningBuffer.isDrained()
     }
   } else {
-    if (!localManuallyToggled.value) {
-      localExpanded.value = false
-    }
     const finalText = cumulativeReasoningSource.value
-    reasoningBuffer.flush(finalText)
-    smoothedReasoning.value = finalText
+    if (isReasoningDraining.value || !reasoningBuffer.isDrained()) {
+      isReasoningDraining.value = true
+      holdOpenForDrain.value = !userClosedDuringDrain.value
+      reasoningBuffer.finish(finalText)
+    } else {
+      holdOpenForDrain.value = false
+      if (!localManuallyToggled.value) {
+        localExpanded.value = false
+      }
+      smoothedReasoning.value = finalText
+      isReasoningDraining.value = false
+    }
   }
 }, { immediate: true })
 
 watch(() => props.hasContent, (hasContent) => {
-  if (hasContent) {
+  if (!hasContent) return
+  const finalText = cumulativeReasoningSource.value
+  if (isReasoningDraining.value || !reasoningBuffer.isDrained()) {
+    isReasoningDraining.value = true
+    holdOpenForDrain.value = !userClosedDuringDrain.value
+    reasoningBuffer.finish(finalText)
+  } else {
+    holdOpenForDrain.value = false
     if (!localManuallyToggled.value) {
       localExpanded.value = false
     }
-    const finalText = cumulativeReasoningSource.value
-    reasoningBuffer.flush(finalText)
     smoothedReasoning.value = finalText
+    isReasoningDraining.value = false
   }
 }, { immediate: true })
 
 onBeforeUnmount(() => {
+  isReasoningDraining.value = false
+  holdOpenForDrain.value = false
   reasoningBuffer.destroy()
 })
 
@@ -194,9 +244,12 @@ const hasTools = computed(() => Boolean(props.tools && props.tools.length > 0))
 const hasExpandableBody = computed(() => hasReasoningContent.value || hasTools.value)
 const showProcessBlock = computed(() => isThinkingActive.value || hasExpandableBody.value)
 
-const isOpen = computed(() => (
-  typeof props.expanded === 'boolean' ? props.expanded : localExpanded.value
-))
+const isOpen = computed(() => resolveMobileProcessDrawerOpen({
+  controlledExpanded: props.expanded,
+  localExpanded: localExpanded.value,
+  holdOpenForDrain: holdOpenForDrain.value,
+  userClosedDuringDrain: userClosedDuringDrain.value,
+}))
 
 const summaryText = computed(() => {
   if (isThinkingActive.value) {
@@ -211,49 +264,39 @@ const summaryText = computed(() => {
 })
 
 const visibleTimelineGroups = computed<TimelineRenderGroup[]>(() => {
-  const revealedLimit = isReasoningStreaming.value && !reasoningBuffer.isDrained()
+  const revealedLimit = isReasoningStreaming.value
     ? smoothedReasoning.value.length
     : Number.POSITIVE_INFINITY
 
-  const groups: TimelineRenderGroup[] = []
-  let consumedReasoningChars = 0
-
-  for (const item of normalizedTimeline.value) {
-    if (item.kind === 'tool') {
-      const prev = groups[groups.length - 1]
-      if (prev && prev.kind === 'tools') {
-        groups[groups.length - 1] = { id: prev.id, kind: 'tools', tools: [...prev.tools, item.tool] }
-      } else {
-        groups.push({ id: item.id, kind: 'tools', tools: [item.tool] })
-      }
-      continue
-    }
-
-    const available = Math.max(0, Math.min(item.text.length, revealedLimit - consumedReasoningChars))
-    consumedReasoningChars += item.text.length
-    if (available <= 0) continue
-
-    const sanitized = sanitizeMobileReasoningText(item.text.slice(0, available))
-    if (!sanitized.trim()) continue
-
-    groups.push({
-      id: item.id,
-      kind: 'reasoning',
-      nodes: renderMarkdownHtml(sanitized, { isStreaming: false, mutedReasoning: true }),
-    })
-  }
-
-  return groups
+  return buildVisibleMobileTimelineGroups(normalizedTimeline.value, revealedLimit).map(group => (
+    group.kind === 'reasoning'
+      ? { id: group.id, kind: 'reasoning', nodes: renderMarkdownHtml(group.text, { isStreaming: false, mutedReasoning: true }) }
+      : group
+  ))
 })
 
 function handleToggle() {
   if (!hasExpandableBody.value) return
   if (typeof props.expanded === 'boolean') {
+    if (!props.expanded && holdOpenForDrain.value && !userClosedDuringDrain.value) {
+      userClosedDuringDrain.value = true
+      holdOpenForDrain.value = false
+      return
+    }
+    userClosedDuringDrain.value = isOpen.value
+    if (isOpen.value) {
+      holdOpenForDrain.value = false
+    }
     emit('toggle')
     return
   }
   localManuallyToggled.value = true
-  localExpanded.value = !localExpanded.value
+  const nextOpen = !isOpen.value
+  userClosedDuringDrain.value = !nextOpen
+  if (!nextOpen) {
+    holdOpenForDrain.value = false
+  }
+  localExpanded.value = nextOpen
   emit('toggle')
 }
 </script>
@@ -271,17 +314,17 @@ function handleToggle() {
   align-items: center;
   align-self: flex-start;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: var(--radius-full);
-  background-color: rgba(28, 28, 26, 0.045);
+  padding: 3px 6px 3px 0;
+  border-radius: 6px;
+  background-color: transparent;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .process-toggle.is-static {
   cursor: default;
   background-color: transparent;
-  padding-left: 2px;
+  padding-left: 0;
 }
 
 .process-dot {
@@ -330,31 +373,30 @@ function handleToggle() {
   color: #8C887F;
 }
 
-.inline-tools-row {
+.process-tool-steps {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 2px 0;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 4px;
 }
 
-.tool-capsule {
+.process-tool-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 1px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.tool-step-icon {
+  width: 14px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 9px 3px 7px;
-  border-radius: 8px;
-  background-color: rgba(139, 154, 110, 0.08);
-  border: 1px solid rgba(139, 154, 110, 0.2);
-}
-
-.tool-capsule.is-running {
-  background-color: rgba(139, 154, 110, 0.14);
-  border-color: rgba(139, 154, 110, 0.45);
-}
-
-.tool-capsule.is-failed {
-  background-color: rgba(217, 130, 43, 0.08);
-  border-color: rgba(217, 130, 43, 0.3);
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .tool-dot {
@@ -371,15 +413,35 @@ function handleToggle() {
   animation: processPulse 1.2s ease-in-out infinite;
 }
 
-.tool-capsule-label {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-secondary, #57534E);
+.tool-step-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
 }
 
-.tool-capsule-failed {
-  font-size: 10.5px;
-  color: var(--color-warning, #d9822b);
+.tool-step-label {
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 500;
+  color: #6D6A62;
+  word-break: break-word;
+}
+
+.process-tool-step.is-running .tool-step-label {
+  color: var(--color-sage-ink, #556B3D);
+}
+
+.process-tool-step.is-failed .tool-step-label {
+  color: #9C500C;
+}
+
+.tool-step-failed {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #9C500C;
 }
 
 .process-cursor-dot {

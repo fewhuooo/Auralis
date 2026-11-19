@@ -2,7 +2,11 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { createSmoothStreamBuffer, type SmoothStreamController } from '@/services/smoothStreamBuffer'
 import { renderMarkdown } from '@/utils/markdown'
-import { formatToolCapsuleLabel, sanitizeReasoningText } from '@/utils/chatProcessFormat'
+import {
+  buildVisibleProcessTimelineGroups,
+  formatToolCapsuleLabel,
+  sanitizeReasoningText,
+} from '@/utils/chatProcessFormat'
 import type { ChatProcessTimelineItem, ChatToolActivity } from '@/services/aiStreamReducer'
 
 type RenderTimelineGroup =
@@ -26,9 +30,10 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   complete: []
   progress: []
+  drainChange: [draining: boolean]
 }>()
 
-// 展开状态：流式生成中默认自动展开；正文输出完/非流式自动收起回胶囊
+// 展开状态：流式生成中默认自动展开；正文输出完/非流式自动收起
 const isOpen = ref(false)
 // 用户是否主动手动干预过展开/收起
 const userManuallyToggled = ref(false)
@@ -38,12 +43,20 @@ if (props.streaming) {
 }
 
 const smoothedReasoning = ref('')
+const isReasoningDraining = ref(false)
 let reasoningBuffer: SmoothStreamController | null = null
 let hasEmittedComplete = false
 
 // 最低展示时长的温和流光保持期：当模型极快出字或思考过短时，若有思考过程则至少优雅展示 1.2 秒以上
 const minimumThinkingActive = ref(false)
 let minThinkingTimer: ReturnType<typeof setTimeout> | null = null
+
+function updateReasoningDraining(active: boolean): void {
+  if (isReasoningDraining.value !== active) {
+    isReasoningDraining.value = active
+    emit('drainChange', active)
+  }
+}
 
 const normalizedTimeline = computed<readonly ChatProcessTimelineItem[]>(() => {
   if (props.timeline && props.timeline.length > 0) {
@@ -82,13 +95,12 @@ function triggerMinThinkingWindow() {
   }
 }
 
-function checkAndEmitComplete() {
+function checkAndEmitComplete(reasoningFinished = !isReasoningDraining.value) {
   if (hasEmittedComplete) return
-  const isReasoningDrained = !cumulativeReasoningSource.value.trim() || (reasoningBuffer ? reasoningBuffer.isDrained() : true)
-  const areToolsDrained = !props.tools || props.tools.filter((t) => t.status === 'RUNNING').length === 0
+  const isReasoningDrained = (!cumulativeReasoningSource.value.trim() || (reasoningBuffer ? reasoningBuffer.isDrained() : true)) && reasoningFinished
   const isBackendDoneThinking = props.hasContent || !props.streaming
 
-  if (isReasoningDrained && areToolsDrained && isBackendDoneThinking) {
+  if (isReasoningDrained && isBackendDoneThinking) {
     hasEmittedComplete = true
     emit('complete')
   }
@@ -100,12 +112,16 @@ reasoningBuffer = createSmoothStreamBuffer(
     emit('progress')
   },
   {
-    minSpeed: 20,
-    baseSpeed: 32,
-    maxSpeed: 75,
-    finishSpeed: 55,
+    minSpeed: 32,
+    baseSpeed: 64,
+    maxSpeed: 260,
+    finishSpeed: 200,
     onComplete: () => {
-      checkAndEmitComplete()
+      if (!props.streaming && !userManuallyToggled.value) {
+        isOpen.value = false
+      }
+      checkAndEmitComplete(true)
+      updateReasoningDraining(false)
     },
   },
 )
@@ -115,17 +131,22 @@ onBeforeUnmount(() => {
     clearTimeout(minThinkingTimer)
     minThinkingTimer = null
   }
+  updateReasoningDraining(false)
   reasoningBuffer?.destroy()
   reasoningBuffer = null
 })
 
 watch(cumulativeReasoningSource, (newVal) => {
+  const nextVal = newVal || ''
   if (props.streaming && !props.hasContent) {
     triggerMinThinkingWindow()
-    reasoningBuffer?.push(newVal || '')
+    reasoningBuffer?.push(nextVal)
+    updateReasoningDraining(Boolean(reasoningBuffer && !reasoningBuffer.isDrained()))
+  } else if (isReasoningDraining.value) {
+    reasoningBuffer?.finish(nextVal)
   } else {
-    reasoningBuffer?.flush(newVal || '')
-    smoothedReasoning.value = newVal || ''
+    reasoningBuffer?.flush(nextVal)
+    smoothedReasoning.value = nextVal
   }
   checkAndEmitComplete()
 }, { immediate: true })
@@ -142,13 +163,13 @@ watch(() => props.streaming, (isStreaming) => {
     hasEmittedComplete = false
     userManuallyToggled.value = false
     isOpen.value = true
+    updateReasoningDraining(false)
     reasoningBuffer?.reset()
     smoothedReasoning.value = ''
-    if (!props.hasContent) {
+    if (!props.hasContent && cumulativeReasoningSource.value) {
       triggerMinThinkingWindow()
-      if (cumulativeReasoningSource.value) {
-        reasoningBuffer?.push(cumulativeReasoningSource.value)
-      }
+      reasoningBuffer?.push(cumulativeReasoningSource.value)
+      updateReasoningDraining(Boolean(reasoningBuffer && !reasoningBuffer.isDrained()))
     }
   } else {
     if (minThinkingTimer) {
@@ -156,12 +177,17 @@ watch(() => props.streaming, (isStreaming) => {
       minThinkingTimer = null
     }
     minimumThinkingActive.value = false
-    if (!userManuallyToggled.value) {
-      isOpen.value = false
-    }
     const finalText = cumulativeReasoningSource.value
-    reasoningBuffer?.flush(finalText)
-    smoothedReasoning.value = finalText
+    if (isReasoningDraining.value || (reasoningBuffer && !reasoningBuffer.isDrained())) {
+      updateReasoningDraining(true)
+      reasoningBuffer?.finish(finalText)
+    } else {
+      if (!userManuallyToggled.value) {
+        isOpen.value = false
+      }
+      smoothedReasoning.value = finalText
+      updateReasoningDraining(false)
+    }
   }
   checkAndEmitComplete()
 }, { immediate: true })
@@ -174,48 +200,29 @@ watch(() => props.hasContent, (hasContent) => {
     }
     minimumThinkingActive.value = false
     const finalText = cumulativeReasoningSource.value
-    reasoningBuffer?.flush(finalText)
-    smoothedReasoning.value = finalText
+    if (isReasoningDraining.value || (reasoningBuffer && !reasoningBuffer.isDrained())) {
+      updateReasoningDraining(true)
+      reasoningBuffer?.finish(finalText)
+    } else {
+      smoothedReasoning.value = finalText
+      updateReasoningDraining(false)
+    }
   }
   checkAndEmitComplete()
 }, { immediate: true })
 
-const isReasoningStreaming = computed(() => Boolean(props.streaming && !props.hasContent))
+const isReasoningStreaming = computed(() => Boolean((props.streaming && !props.hasContent) || isReasoningDraining.value))
 
 const visibleTimelineGroups = computed<RenderTimelineGroup[]>(() => {
-  const revealedLimit = isReasoningStreaming.value && reasoningBuffer && !reasoningBuffer.isDrained()
+  const revealedLimit = isReasoningStreaming.value
     ? smoothedReasoning.value.length
     : Number.POSITIVE_INFINITY
 
-  const groups: RenderTimelineGroup[] = []
-  let consumedReasoningChars = 0
-
-  for (const item of normalizedTimeline.value) {
-    if (item.kind === 'tool') {
-      const prev = groups[groups.length - 1]
-      if (prev && prev.kind === 'tools') {
-        groups[groups.length - 1] = { id: prev.id, kind: 'tools', tools: [...prev.tools, item.tool] }
-      } else {
-        groups.push({ id: item.id, kind: 'tools', tools: [item.tool] })
-      }
-      continue
-    }
-
-    const available = Math.max(0, Math.min(item.text.length, revealedLimit - consumedReasoningChars))
-    consumedReasoningChars += item.text.length
-    if (available <= 0) continue
-
-    const sanitized = sanitizeReasoningText(item.text.slice(0, available))
-    if (!sanitized.trim()) continue
-    // Disable token-fade & streaming green cursor inside muted reasoning markdown
-    groups.push({
-      id: item.id,
-      kind: 'reasoning',
-      html: renderMarkdown(sanitized, false),
-    })
-  }
-
-  return groups
+  return buildVisibleProcessTimelineGroups(normalizedTimeline.value, revealedLimit).map((group) => (
+    group.kind === 'reasoning'
+      ? { id: group.id, kind: 'reasoning', html: renderMarkdown(group.text, false) }
+      : group
+  ))
 })
 
 const hasReasoning = computed(() => Boolean(cumulativeReasoningSource.value.trim()))
@@ -311,32 +318,42 @@ function toggleOpen(): void {
         <div class="timeline-track">
           <template v-for="group in visibleTimelineGroups" :key="group.id">
             <div v-if="group.kind === 'reasoning'" class="reasoning-markdown" v-html="group.html" />
-            <div v-else class="inline-thinking-tools">
+            <div v-else class="process-tool-steps">
               <div
                 v-for="tool in group.tools"
                 :key="tool.id"
-                class="thinking-tool-pill"
+                class="process-tool-step"
                 :data-status="tool.status"
               >
-                <svg
-                  v-if="tool.status === 'COMPLETED'"
-                  class="tool-check-icon"
-                  width="11"
-                  height="11"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path d="M2.5 6.2L5 8.6L9.5 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                <span
-                  v-else
-                  class="tool-status-dot"
-                  :class="`is-${tool.status.toLowerCase()}`"
-                  aria-hidden="true"
-                />
-                <span class="tool-label">{{ formatToolCapsuleLabel(tool) }}</span>
-                <span v-if="tool.status === 'FAILED'" class="tool-state-tag">未完成</span>
+                <span class="tool-step-icon" aria-hidden="true">
+                  <svg
+                    v-if="tool.status === 'COMPLETED'"
+                    class="tool-check-icon"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                  >
+                    <path d="M2.4 6.2L4.9 8.7L9.6 3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                  <svg
+                    v-else-if="tool.status === 'FAILED'"
+                    class="tool-failed-icon"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                  >
+                    <circle cx="6" cy="6" r="4.6" stroke="currentColor" stroke-width="1.3" />
+                    <path d="M6 3.7V6.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                    <circle cx="6" cy="8.4" r="0.7" fill="currentColor" />
+                  </svg>
+                  <span v-else class="tool-status-dot is-running" />
+                </span>
+                <span class="tool-step-text">
+                  <span class="tool-label">{{ formatToolCapsuleLabel(tool) }}</span>
+                  <span v-if="tool.status === 'FAILED'" class="tool-state-tag">· 未完成</span>
+                </span>
               </div>
             </div>
           </template>
@@ -595,43 +612,62 @@ function toggleOpen(): void {
   border-bottom: none;
 }
 
-/* 组装在思考链内部的工具调用微卡片 */
-.inline-thinking-tools {
+/* 组装在思考链内部的工具调用无框竖向步骤行 */
+.process-tool-steps {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 4px;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 8px;
 }
 
-.thinking-tool-pill {
+.process-tool-steps:first-child {
+  margin-top: 2px;
+}
+
+.process-tool-steps:last-child {
+  margin-bottom: 2px;
+}
+
+.process-tool-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 1px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6d6a62;
+  user-select: none;
+}
+
+.tool-step-icon {
+  width: 14px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2.5px 8px 2.5px 6px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 6%, var(--color-bg-card, #ffffff));
-  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 20%, var(--border-subtle, #e2e8f0));
-  font-size: 11px;
-  color: var(--text-muted, #78716c);
-  line-height: 1.2;
-  user-select: none;
-  transition: all 0.2s ease;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.thinking-tool-pill[data-status="RUNNING"] {
-  border-color: var(--color-zen-sage, #8b9a6e);
-  background: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 12%, var(--color-bg-card, #ffffff));
-  color: var(--color-sage-dark, #5c6b44);
-}
-
-.thinking-tool-pill[data-status="FAILED"] {
-  border-color: color-mix(in srgb, var(--color-warning, #d9822b) 35%, var(--border-subtle));
-  color: var(--color-warning, #d9822b);
+.tool-step-text {
+  min-width: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  overflow-wrap: anywhere;
 }
 
 .tool-check-icon {
   flex-shrink: 0;
   color: #6e8552;
+}
+
+.tool-failed-icon {
+  flex-shrink: 0;
+  color: #9C500C;
 }
 
 .tool-status-dot {
@@ -648,19 +684,23 @@ function toggleOpen(): void {
   animation: micro-breathe 1.4s infinite ease-in-out;
 }
 
-.tool-status-dot.is-failed {
-  background-color: var(--color-warning, #d9822b);
-}
-
 .tool-label {
   font-weight: 500;
-  color: var(--text-secondary, #57534e);
+  color: inherit;
+}
+
+.process-tool-step[data-status="RUNNING"] .tool-label {
+  color: var(--color-sage-ink, #556B3D);
+}
+
+.process-tool-step[data-status="FAILED"] {
+  color: #9C500C;
 }
 
 .tool-state-tag {
-  font-size: 10px;
-  color: var(--color-warning, #d9822b);
-  opacity: 0.9;
+  font-size: 11px;
+  color: #9C500C;
+  opacity: 0.92;
 }
 
 .timeline-cursor-dot {
@@ -679,6 +719,20 @@ html.dark .reasoning-markdown :deep(h2),
 html.dark .reasoning-markdown :deep(h3),
 html.dark .reasoning-markdown :deep(h4) {
   color: #8e8a80;
+}
+
+html.dark .process-tool-step {
+  color: #a39f95;
+}
+
+html.dark .process-tool-step[data-status="RUNNING"] .tool-label {
+  color: #9eb784;
+}
+
+html.dark .process-tool-step[data-status="FAILED"],
+html.dark .tool-failed-icon,
+html.dark .tool-state-tag {
+  color: #e59a4c;
 }
 
 html.dark .tool-check-icon {

@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 import {
   cancelChatRun,
   createConversation,
@@ -22,6 +22,7 @@ import {
   buildFallbackProcessTimeline,
   createChatStreamState,
   projectToolTrace,
+  reconcileProcessMetadata,
   reduceChatStreamEvent,
   setPart,
   type ChatProcessTimelineItem,
@@ -321,14 +322,47 @@ export const useChatStore = defineStore('chat', () => {
     const detail = await getConversation(conversationId).catch(() => null)
     if (!isCurrent()) return false
     if (detail) {
+      const existingById = new Map<string, ChatMessage>()
+      for (const existingMsg of messages.value) {
+        existingById.set(existingMsg.id, existingMsg)
+        if (existingMsg.serverMessageId) {
+          existingById.set(existingMsg.serverMessageId, existingMsg)
+        }
+      }
       const session = activeSession.value
       if (session && detail.chatScopeState) {
         session.chatScopeState = detail.chatScopeState
         session.chatScope = detail.chatScope ?? null
       }
+      const statusTools = projectToolTrace(status.toolTrace)
+      const isTerminal = status.status !== 'UNKNOWN'
+      const terminalFailed = status.status === 'FAILED'
       messages.value = (detail.messages || []).map((message) => {
         const mapped = mapMessage(message, targetSessionId)
-        if (message.id === status.userMessageId || message.id === status.currentReplyMessageId) {
+        const existing = existingById.get(message.id)
+        const isCurrentReply = message.id === status.currentReplyMessageId
+        if (existing || isCurrentReply) {
+          const reconciled = reconcileProcessMetadata({
+            mappedReasoning: mapped.reasoningText,
+            existingReasoning: existing?.reasoningText,
+            mappedTools: mapped.tools,
+            statusTools: isCurrentReply ? statusTools : undefined,
+            existingTools: existing?.tools,
+            existingTimeline: existing?.processTimeline,
+            isTerminal,
+            terminalFailed,
+          })
+          if (reconciled.reasoningText !== undefined) {
+            mapped.reasoningText = reconciled.reasoningText
+          }
+          if (reconciled.tools !== undefined) {
+            mapped.tools = reconciled.tools
+          }
+          if (reconciled.processTimeline !== undefined) {
+            mapped.processTimeline = reconciled.processTimeline
+          }
+        }
+        if (message.id === status.userMessageId || isCurrentReply) {
           mapped.runId = status.runId
           mapped.attemptId = status.currentAttemptId
           mapped.executionActive = false
@@ -1224,3 +1258,7 @@ export const useChatStore = defineStore('chat', () => {
     deleteSession,
   }
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useChatStore, import.meta.hot))
+}

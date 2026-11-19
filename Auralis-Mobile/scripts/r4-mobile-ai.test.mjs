@@ -10,6 +10,7 @@ import {
   applyToolEvent,
   buildMobileReadingContext,
   buildMobileStarterPrompts,
+  buildVisibleMobileTimelineGroups,
   canSelectMobileScope,
   createAssistantPlaceholder,
   extractHistoryMessageContent,
@@ -731,4 +732,207 @@ test('mobileAiChat maintains interleaved processTimeline, sanitizes reasoning, g
     globalThis.requestAnimationFrame = origRaf
     globalThis.cancelAnimationFrame = origCancel
   }
+})
+
+test('buildVisibleMobileTimelineGroups gates tools behind unfinished reasoning and keeps leading tools visible', () => {
+  const leadTool = { id: 'tc-0', name: '查看资料目录', label: '查看资料目录', status: 'COMPLETED' }
+  const searchTool = { id: 'tc-1', name: '检索资料', label: '检索「335次咨询」', status: 'COMPLETED' }
+  const excerptTool = { id: 'tc-2', name: '阅读资料摘录', label: '阅读《讲义》片段', status: 'RUNNING' }
+  const r0Text = '先列出本学科目录并检索关键词。'
+  const r1Text = '阅读核心片段后再组织回答。'
+
+  const timeline = [
+    { id: 'tool:tc-0', kind: 'tool', tool: leadTool },
+    { id: 'reasoning:1', kind: 'reasoning', text: r0Text },
+    { id: 'tool:tc-1', kind: 'tool', tool: searchTool },
+    { id: 'reasoning:3', kind: 'reasoning', text: r1Text },
+    { id: 'tool:tc-2', kind: 'tool', tool: excerptTool },
+  ]
+
+  // Leading tool before any reasoning stays visible at revealedLimit 0 while later segments wait
+  assert.deepEqual(buildVisibleMobileTimelineGroups(timeline, 0), [
+    { id: 'tool:tc-0', kind: 'tools', tools: [leadTool] },
+  ])
+
+  // Mid-stream inside r0 hides tc-1 and r1
+  assert.deepEqual(buildVisibleMobileTimelineGroups(timeline, 5), [
+    { id: 'tool:tc-0', kind: 'tools', tools: [leadTool] },
+    { id: 'reasoning:1', kind: 'reasoning', text: r0Text.slice(0, 5) },
+  ])
+
+  // Finishing r0 reveals tc-1 while r1 and tc-2 remain gated
+  assert.deepEqual(buildVisibleMobileTimelineGroups(timeline, r0Text.length), [
+    { id: 'tool:tc-0', kind: 'tools', tools: [leadTool] },
+    { id: 'reasoning:1', kind: 'reasoning', text: r0Text },
+    { id: 'tool:tc-1', kind: 'tools', tools: [searchTool] },
+  ])
+
+  // Infinity reveals full interleaved sequence without clumping tools across reasoning
+  assert.deepEqual(buildVisibleMobileTimelineGroups(timeline, Number.POSITIVE_INFINITY), [
+    { id: 'tool:tc-0', kind: 'tools', tools: [leadTool] },
+    { id: 'reasoning:1', kind: 'reasoning', text: r0Text },
+    { id: 'tool:tc-1', kind: 'tools', tools: [searchTool] },
+    { id: 'reasoning:3', kind: 'reasoning', text: r1Text },
+    { id: 'tool:tc-2', kind: 'tools', tools: [excerptTool] },
+  ])
+})
+
+test('mobile smoothStreamBuffer keeps monotonic speed scaling and drains long tails across frames on finish()', async () => {
+  const { computeSmoothStreamTargetSpeed, createSmoothStreamBuffer } = await import('../src/utils/smoothStreamBuffer.ts')
+
+  const speedConfig = { minSpeed: 32, baseSpeed: 64, maxSpeed: 260, finishSpeed: 200 }
+  const samples = [1, 4, 16, 30, 40, 41, 48, 120, 300]
+  let prev = 0
+  for (const remaining of samples) {
+    const rate = computeSmoothStreamTargetSpeed(remaining, false, speedConfig)
+    assert.ok(rate >= prev, `expected monotonic rate at remaining=${remaining}, got ${rate} < ${prev}`)
+    assert.ok(rate <= speedConfig.maxSpeed)
+    prev = rate
+  }
+  assert.equal(computeSmoothStreamTargetSpeed(500, false, speedConfig), 260)
+  assert.equal(computeSmoothStreamTargetSpeed(10, true, speedConfig), 200)
+
+  const scheduled = new Map()
+  let nextId = 1
+  const origRaf = globalThis.requestAnimationFrame
+  const origCancel = globalThis.cancelAnimationFrame
+  globalThis.requestAnimationFrame = (cb) => {
+    const id = nextId++
+    scheduled.set(id, cb)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id) => {
+    scheduled.delete(id)
+  }
+
+  try {
+    const lengths = []
+    let completed = 0
+    const longReasoning = '先梳理移动端思考阶段，再验证平滑排空不会瞬间整段弹出。'.repeat(2)
+    const buffer = createSmoothStreamBuffer((val) => {
+      lengths.push(val.length)
+    }, {
+      minSpeed: 32,
+      baseSpeed: 64,
+      maxSpeed: 260,
+      finishSpeed: 200,
+      onComplete: () => {
+        completed += 1
+      },
+    })
+
+    buffer.finish(longReasoning)
+    assert.equal(completed, 0)
+
+    let frames = 0
+    while (scheduled.size > 0 && frames < 120) {
+      frames += 1
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      entry[1](frames * 16)
+    }
+
+    assert.ok(frames >= 3, `expected multi-frame smooth drain, got ${frames} frame(s)`)
+    assert.equal(completed, 1)
+    assert.equal(buffer.isDrained(), true)
+    assert.ok(lengths[0] < longReasoning.length)
+    assert.equal(lengths[lengths.length - 1], longReasoning.length)
+  } finally {
+    globalThis.requestAnimationFrame = origRaf
+    globalThis.cancelAnimationFrame = origCancel
+  }
+})
+
+test('resolveMobileProcessDrawerOpen holds controlled drawer open while draining and collapses immediately on tap', async () => {
+  const { resolveMobileProcessDrawerOpen } = await import('../src/utils/mobileAiChat.ts')
+
+  assert.equal(
+    resolveMobileProcessDrawerOpen({
+      controlledExpanded: false,
+      localExpanded: false,
+      holdOpenForDrain: true,
+      userClosedDuringDrain: false,
+    }),
+    true,
+  )
+  assert.equal(
+    resolveMobileProcessDrawerOpen({
+      controlledExpanded: false,
+      localExpanded: false,
+      holdOpenForDrain: true,
+      userClosedDuringDrain: true,
+    }),
+    false,
+  )
+  assert.equal(
+    resolveMobileProcessDrawerOpen({
+      controlledExpanded: false,
+      localExpanded: false,
+      holdOpenForDrain: false,
+      userClosedDuringDrain: false,
+    }),
+    false,
+  )
+})
+
+test('resolveMobileTextDrainAction and animateOnMount animate fresh replies while keeping history instant', async () => {
+  const {
+    createAssistantPlaceholder,
+    restoreConversationMessages,
+    resolveMobileTextDrainAction,
+  } = await import('../src/utils/mobileAiChat.ts')
+
+  const livePlaceholder = createAssistantPlaceholder('msg-live')
+  assert.equal(livePlaceholder.animateOnMount, true)
+
+  const history = restoreConversationMessages({
+    id: 'conv-hist',
+    chatScopeState: 'BOUND',
+    chatScope: null,
+    messages: [
+      { id: 'msg-hist', role: 'ASSISTANT', status: 'COMPLETED', content: '历史回答', parts: [] },
+    ],
+  })
+  assert.equal(history.length, 1)
+  assert.equal(Boolean(history[0].animateOnMount), false)
+
+  assert.equal(
+    resolveMobileTextDrainAction({
+      streaming: false,
+      settling: true,
+      partId: 'part-1',
+      partKind: 'text',
+      partText: '单包快速回复内容',
+      activeTextId: null,
+      isActive: false,
+      lastCompletedTextId: null,
+    }),
+    'finish_drain',
+  )
+  assert.equal(
+    resolveMobileTextDrainAction({
+      streaming: false,
+      settling: true,
+      partId: 'part-1',
+      partKind: 'text',
+      partText: '单包快速回复内容',
+      activeTextId: null,
+      isActive: false,
+      lastCompletedTextId: 'part-1',
+    }),
+    'sync_immediate',
+  )
+  assert.equal(
+    resolveMobileTextDrainAction({
+      streaming: false,
+      settling: false,
+      partId: 'part-hist',
+      partKind: 'text',
+      partText: '历史回答',
+      activeTextId: null,
+      isActive: false,
+      lastCompletedTextId: null,
+    }),
+    'sync_immediate',
+  )
 })

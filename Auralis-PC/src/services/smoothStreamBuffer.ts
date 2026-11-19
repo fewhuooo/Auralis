@@ -35,6 +35,35 @@ export interface SmoothStreamController {
   isDrained(): boolean
 }
 
+export interface SmoothStreamSpeedConfig {
+  minSpeed: number
+  baseSpeed: number
+  maxSpeed: number
+  finishSpeed: number
+}
+
+/** Computes a continuous, monotonic character drain rate from backlog size and terminal state. */
+export function computeSmoothStreamTargetSpeed(
+  remaining: number,
+  isStreamFinished: boolean,
+  config: SmoothStreamSpeedConfig,
+): number {
+  const { minSpeed, baseSpeed, maxSpeed, finishSpeed } = config
+  if (isStreamFinished) {
+    return Math.min(maxSpeed, Math.max(finishSpeed, remaining * 3.5))
+  }
+  if (remaining <= 4) {
+    return minSpeed
+  }
+  if (remaining <= 16) {
+    return Math.min(maxSpeed, baseSpeed + (remaining - 4) * 1.5)
+  }
+  if (remaining <= 48) {
+    return Math.min(maxSpeed, baseSpeed + 18 + (remaining - 16) * 2.0)
+  }
+  return Math.min(maxSpeed, baseSpeed + 82 + (remaining - 48) * 1.8)
+}
+
 export function createSmoothStreamBuffer(
   onUpdate: (displayedText: string) => void,
   options: SmoothStreamOptions = {},
@@ -70,25 +99,12 @@ export function createSmoothStreamBuffer(
     if (remaining > 0) {
       isDrained = false
 
-      // 动态目标速度计算（蓄水池消峰填谷算法）：
-      let targetSpeed: number
-
-      if (isStreamFinished) {
-        // 后台推流已完成，平滑加速收尾，不让用户漫长等待，但保持舒缓连贯
-        targetSpeed = Math.min(maxSpeed, Math.max(finishSpeed, remaining * 2.2))
-      } else if (remaining <= 4) {
-        // 低水位区（1~4 字）：以保底拉伸速度（约 18 字/秒）缓缓出字，用时间拉伸覆盖网络延迟，避免池子空置骤停
-        targetSpeed = minSpeed
-      } else if (remaining <= 12) {
-        // 最佳巡航区（5~12 字）：保持在自然舒适的黄金阅读速率（24~32 字/秒）
-        targetSpeed = baseSpeed + (remaining - 5) * 1.0
-      } else if (remaining <= 30) {
-        // 中度积压区（13~30 字）：柔和提速（32~50 字/秒）消峰
-        targetSpeed = baseSpeed + 7 + (remaining - 12) * 1.0
-      } else {
-        // 重度积压区（30+ 字）：加速消化积压文本，严格封顶于 maxSpeed
-        targetSpeed = Math.min(maxSpeed, 50 + (remaining - 30) * 0.6)
-      }
+      const targetSpeed = computeSmoothStreamTargetSpeed(remaining, isStreamFinished, {
+        minSpeed,
+        baseSpeed,
+        maxSpeed,
+        finishSpeed,
+      })
 
       // 速度连续性滤波（指数衰减平滑阻尼，避免瞬时速度突变）：
       const blend = Math.min(1, deltaSeconds * damping)
@@ -147,10 +163,16 @@ export function createSmoothStreamBuffer(
   return {
     push(targetText: string) {
       if (destroyed) return
+      if (targetText.length < fullText.length) {
+        currentCursor = Math.min(currentCursor, targetText.length)
+        displayedLength = Math.min(displayedLength, targetText.length)
+      }
       fullText = targetText
       isStreamFinished = false
       isDrained = displayedLength >= fullText.length
-      startLoop()
+      if (!isDrained) {
+        startLoop()
+      }
     },
     finish(targetText?: string) {
       if (destroyed) return

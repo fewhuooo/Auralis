@@ -5,15 +5,17 @@ import ChatContentBlock from '@/components/chat/ChatContentBlock.vue'
 import { createChatContentProjectionState, getChatActivityDraft, projectChatContentParts, updateChatActivityDraft } from '@/services/chatContentProjection'
 import { createSmoothStreamBuffer, type SmoothStreamController } from '@/services/smoothStreamBuffer'
 import { useChatStore } from '@/store/useChatStore'
+import { resolveStreamTextDrainAction } from '@/utils/chatProcessFormat'
 import { renderMarkdown } from '@/utils/markdown'
 import type { ChatActivityAnswer, ChatActivityDraft, ChatContentPart, ChatContentProjectionState } from '@/types/chatContent'
 
 const props = withDefaults(defineProps<{
   parts: readonly ChatContentPart[]
   streaming?: boolean
+  settling?: boolean
   busy?: boolean
   readOnly?: boolean
-}>(), { streaming: false, busy: false, readOnly: false })
+}>(), { streaming: false, settling: false, busy: false, readOnly: false })
 
 const emit = defineEmits<{
   draftChange: [componentId: string, draft: ChatActivityDraft]
@@ -29,6 +31,7 @@ const projection = reactive<ChatContentProjectionState>(createChatContentProject
 const smoothedActiveText = ref('')
 const isTextStreamingActive = ref(false)
 const currentStreamingTextId = ref<string | null>(null)
+let lastCompletedTextId: string | null = null
 let smoothBuffer: SmoothStreamController | null = null
 
 function updateDrainingState(active: boolean): void {
@@ -44,11 +47,14 @@ smoothBuffer = createSmoothStreamBuffer(
     emit('textProgress')
   },
   {
-    minSpeed: 18, // 蓄水池偏低时的保底拉伸速度（约 55ms/字），以时间换空间跨越网络空窗
-    baseSpeed: 28, // 黄金阅读巡航速度（约 35ms/字），极度连贯自然的打字节奏
-    maxSpeed: 70, // 最大消峰追赶上限，杜绝文字瞬闪
-    finishSpeed: 48, // 结束收尾平稳过渡
+    minSpeed: 24, // 蓄水池偏低时的保底拉伸速度，以时间换空间跨越网络空窗
+    baseSpeed: 42, // 自然阅读巡航速度
+    maxSpeed: 240, // 适配高吞吐模型峰值追赶，避免末尾大量堆积
+    finishSpeed: 160, // 流结束收尾平滑排空速度
     onComplete: () => {
+      if (currentStreamingTextId.value) {
+        lastCompletedTextId = currentStreamingTextId.value
+      }
       currentStreamingTextId.value = null
       updateDrainingState(false)
     },
@@ -62,30 +68,47 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  [() => props.parts, () => props.streaming] as const,
-  ([parts, isStreaming]) => {
+  [() => props.parts, () => props.streaming, () => props.settling] as const,
+  ([parts, isStreaming, isSettling]) => {
     projection.parts = projectChatContentParts(parts)
     const lastIndex = projection.parts.length - 1
     const lastPart = projection.parts[lastIndex]
+    const action = resolveStreamTextDrainAction({
+      streaming: isStreaming,
+      settling: isSettling,
+      partId: lastPart?.id ?? null,
+      partKind: !lastPart ? 'none' : lastPart.kind === 'text' ? 'text' : 'non_text',
+      partText: lastPart?.kind === 'text' ? lastPart.text : '',
+      activeTextId: currentStreamingTextId.value,
+      isActive: isTextStreamingActive.value,
+      lastCompletedTextId,
+    })
 
-    if (isStreaming && lastPart && lastPart.kind === 'text') {
+    if (action === 'stream_push' && lastPart?.kind === 'text') {
       // 文本 -> 块 -> 文本交错防御：切换到新文本段前清零展示态与缓冲，避免闪旧文及多余完成回调
       if (currentStreamingTextId.value !== lastPart.id) {
         smoothedActiveText.value = ''
         smoothBuffer?.reset()
         currentStreamingTextId.value = lastPart.id
       }
+      lastCompletedTextId = null
       updateDrainingState(true)
       smoothBuffer?.push(lastPart.text)
       return
     }
 
-    if (!isStreaming && lastPart && lastPart.kind === 'text') {
-      // 流结束时若仍追踪同一末尾文本段且在排空，保持 currentStreamingTextId 至 onComplete，防止末尾文本瞬跳
-      if (isTextStreamingActive.value && currentStreamingTextId.value === lastPart.id) {
-        smoothBuffer?.finish(lastPart.text)
-        return
+    if (action === 'finish_drain' && lastPart?.kind === 'text') {
+      if (currentStreamingTextId.value !== lastPart.id) {
+        smoothedActiveText.value = ''
+        smoothBuffer?.reset()
+        currentStreamingTextId.value = lastPart.id
       }
+      updateDrainingState(true)
+      smoothBuffer?.finish(lastPart.text)
+      return
+    }
+
+    if (action === 'sync_immediate' && lastPart?.kind === 'text') {
       currentStreamingTextId.value = null
       smoothBuffer?.reset()
       smoothedActiveText.value = lastPart.text
@@ -95,7 +118,7 @@ watch(
 
     // 末尾非文本（例如推入结构化块或无内容）：先 flush 前序文本确保全部内容平稳落定
     currentStreamingTextId.value = null
-    if (isTextStreamingActive.value) {
+    if (action === 'flush_and_clear') {
       smoothBuffer?.flush()
     } else {
       smoothBuffer?.reset()

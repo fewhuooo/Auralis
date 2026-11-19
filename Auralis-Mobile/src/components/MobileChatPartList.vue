@@ -274,6 +274,7 @@ import {
   type MobileChatCompareEntry,
   type MobileChatContentPart,
 } from '@/utils/mobileChatParts'
+import { resolveMobileTextDrainAction } from '@/utils/mobileAiChat'
 import { createSmoothStreamBuffer, type SmoothStreamController } from '@/utils/smoothStreamBuffer'
 
 const CHART_PALETTE = ['#556B3D', '#8B9A6E', '#C89B6D', '#6B8290', '#B4BEA0'] as const
@@ -282,11 +283,13 @@ const props = withDefaults(defineProps<{
   parts: readonly MobileChatContentPart[]
   fallbackText?: string
   streaming?: boolean
+  settling?: boolean
   busy?: boolean
   readOnly?: boolean
 }>(), {
   fallbackText: '',
   streaming: false,
+  settling: false,
   busy: false,
   readOnly: false,
 })
@@ -308,6 +311,7 @@ const effectiveParts = computed<readonly MobileChatContentPart[]>(() => {
 const smoothedActiveText = ref('')
 const isTextStreamingActive = ref(false)
 const currentStreamingTextId = ref<string | null>(null)
+let lastCompletedTextId: string | null = null
 const localDrafts = reactive<Record<string, MobileChatActivityDraft>>({})
 
 const smoothBuffer: SmoothStreamController = createSmoothStreamBuffer(
@@ -318,9 +322,12 @@ const smoothBuffer: SmoothStreamController = createSmoothStreamBuffer(
   {
     minSpeed: 24,
     baseSpeed: 42,
-    maxSpeed: 120,
-    finishSpeed: 84,
+    maxSpeed: 240,
+    finishSpeed: 160,
     onComplete: () => {
+      if (currentStreamingTextId.value) {
+        lastCompletedTextId = currentStreamingTextId.value
+      }
       currentStreamingTextId.value = null
       setDraining(false)
     },
@@ -335,24 +342,41 @@ function setDraining(active: boolean) {
 }
 
 watch(
-  () => [effectiveParts.value, props.streaming] as const,
-  ([parts, isStreaming]) => {
+  () => [effectiveParts.value, props.streaming, props.settling] as const,
+  ([parts, isStreaming, isSettling]) => {
     const lastPart = parts[parts.length - 1]
-    if (isStreaming && lastPart && lastPart.kind === 'text') {
+    const action = resolveMobileTextDrainAction({
+      streaming: isStreaming,
+      settling: isSettling,
+      partId: lastPart?.id ?? null,
+      partKind: !lastPart ? 'none' : lastPart.kind === 'text' ? 'text' : 'non_text',
+      partText: lastPart?.kind === 'text' ? lastPart.text : '',
+      activeTextId: currentStreamingTextId.value,
+      isActive: isTextStreamingActive.value,
+      lastCompletedTextId,
+    })
+    if (action === 'stream_push' && lastPart?.kind === 'text') {
+      if (currentStreamingTextId.value !== lastPart.id) {
+        smoothedActiveText.value = ''
+        smoothBuffer.reset()
+        currentStreamingTextId.value = lastPart.id
+      }
+      lastCompletedTextId = null
+      setDraining(true)
+      smoothBuffer.push(lastPart.text)
+      return
+    }
+    if (action === 'finish_drain' && lastPart?.kind === 'text') {
       if (currentStreamingTextId.value !== lastPart.id) {
         smoothedActiveText.value = ''
         smoothBuffer.reset()
         currentStreamingTextId.value = lastPart.id
       }
       setDraining(true)
-      smoothBuffer.push(lastPart.text)
+      smoothBuffer.finish(lastPart.text)
       return
     }
-    if (!isStreaming && lastPart && lastPart.kind === 'text') {
-      if (isTextStreamingActive.value && currentStreamingTextId.value === lastPart.id) {
-        smoothBuffer.finish(lastPart.text)
-        return
-      }
+    if (action === 'sync_immediate' && lastPart?.kind === 'text') {
       currentStreamingTextId.value = null
       smoothBuffer.reset()
       smoothedActiveText.value = lastPart.text
@@ -360,7 +384,7 @@ watch(
       return
     }
     currentStreamingTextId.value = null
-    if (isTextStreamingActive.value) {
+    if (action === 'flush_and_clear') {
       smoothBuffer.flush()
     } else {
       smoothBuffer.reset()

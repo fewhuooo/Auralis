@@ -40,6 +40,7 @@ export interface MobileChatMessage {
   processTimeline: MobileChatProcessItem[]
   processExpanded: boolean
   processManuallyToggled: boolean
+  animateOnMount?: boolean
   status: 'streaming' | 'completed' | 'cancelled' | 'failed'
   originatingKind?: 'turn' | 'activity_submission'
   errorMessage?: string
@@ -180,6 +181,105 @@ export function mergeProcessTimelineTools(
     }
   }
   return nextTimeline
+}
+
+export type VisibleMobileTimelineGroup =
+  | { id: string; kind: 'reasoning'; text: string }
+  | { id: string; kind: 'tools'; tools: readonly MobileChatToolStep[] }
+
+/** Splits interleaved reasoning and tool steps into renderable groups gated by smoothed char progress. */
+export function buildVisibleMobileTimelineGroups(
+  timeline: readonly MobileChatProcessItem[],
+  revealedLimit: number,
+): VisibleMobileTimelineGroup[] {
+  const groups: VisibleMobileTimelineGroup[] = []
+  let consumedReasoningChars = 0
+
+  for (const item of timeline) {
+    if (item.kind === 'tool') {
+      const prev = groups[groups.length - 1]
+      if (prev && prev.kind === 'tools') {
+        groups[groups.length - 1] = { id: prev.id, kind: 'tools', tools: [...prev.tools, item.tool] }
+      } else {
+        groups.push({ id: item.id, kind: 'tools', tools: [item.tool] })
+      }
+      continue
+    }
+
+    const remaining = revealedLimit - consumedReasoningChars
+    if (remaining <= 0) {
+      break
+    }
+
+    const available = Math.min(item.text.length, remaining)
+    consumedReasoningChars += item.text.length
+
+    const sanitized = sanitizeMobileReasoningText(item.text.slice(0, available))
+    if (sanitized.trim()) {
+      groups.push({
+        id: item.id,
+        kind: 'reasoning',
+        text: sanitized,
+      })
+    }
+
+    if (available < item.text.length) {
+      break
+    }
+  }
+
+  return groups
+}
+
+export interface MobileProcessDrawerOpenState {
+  controlledExpanded?: boolean
+  localExpanded: boolean
+  holdOpenForDrain: boolean
+  userClosedDuringDrain: boolean
+}
+
+export function resolveMobileProcessDrawerOpen(state: MobileProcessDrawerOpenState): boolean {
+  if (typeof state.controlledExpanded === 'boolean') {
+    if (state.controlledExpanded) {
+      return true
+    }
+    return state.holdOpenForDrain && !state.userClosedDuringDrain
+  }
+  return state.localExpanded || (state.holdOpenForDrain && !state.userClosedDuringDrain)
+}
+
+export type MobileTextDrainAction =
+  | 'stream_push'
+  | 'finish_drain'
+  | 'sync_immediate'
+  | 'flush_and_clear'
+  | 'reset_and_clear'
+
+export interface MobileTextDrainState {
+  streaming: boolean
+  settling?: boolean
+  partId: string | null
+  partKind: 'text' | 'non_text' | 'none'
+  partText: string
+  activeTextId: string | null
+  isActive: boolean
+  lastCompletedTextId: string | null
+}
+
+export function resolveMobileTextDrainAction(state: MobileTextDrainState): MobileTextDrainAction {
+  if (state.partKind !== 'text' || !state.partId) {
+    return state.isActive ? 'flush_and_clear' : 'reset_and_clear'
+  }
+  if (state.streaming) {
+    return 'stream_push'
+  }
+  if (state.isActive && state.activeTextId === state.partId) {
+    return 'finish_drain'
+  }
+  if (state.settling && Boolean(state.partText) && state.lastCompletedTextId !== state.partId) {
+    return 'finish_drain'
+  }
+  return 'sync_immediate'
 }
 
 export function projectToolTraceSteps(rawTrace: unknown): MobileChatToolStep[] {
@@ -360,6 +460,7 @@ export function createAssistantPlaceholder(
     processTimeline: [],
     processExpanded: false,
     processManuallyToggled: false,
+    animateOnMount: true,
     status: 'streaming',
     originatingKind,
   }

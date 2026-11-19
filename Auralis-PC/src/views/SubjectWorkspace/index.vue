@@ -759,12 +759,14 @@
                   :streaming="isAiStreaming"
                   :has-content="Boolean(streamingContent || streamingParts.length > 0)"
                   @complete="handleThinkingComplete"
+                  @drain-change="handleProcessDrainChange"
                   @progress="handleRendererProgress"
                 />
                 <template v-if="isThinkingComplete && (streamingContent || streamingParts.length > 0)">
                   <ChatContentRenderer
                     :parts="streamingParts"
                     :streaming="isAiStreaming"
+                    :settling="isStreamSettling"
                     :busy="isAiDisplayStreaming"
                     @submit="submitChatActivity"
                     @drain-change="handleRendererDrainChange"
@@ -1024,6 +1026,7 @@ import FilePreview from '@/components/FilePreview.vue'
 import ChatContentRenderer from '@/components/chat/ChatContentRenderer.vue'
 import ChatProcessArea from '@/components/chat/ChatProcessArea.vue'
 import type { ChatProcessTimelineItem, ChatToolActivity } from '@/services/aiStreamReducer'
+import { canFinishStreamSettling } from '@/utils/chatProcessFormat'
 import { evaluatePcScrollEvent, isPcNearBottom, shouldPcAutoScroll } from '@/utils/chatSmartScroll'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
@@ -2373,15 +2376,53 @@ interface ChatMsg {
   attemptId?: string
 }
 const isStreamSettling = ref(false)
+const isActiveProcessDraining = ref(false)
 const isActiveRendererDraining = ref(false)
 let settleTimerDone = true
 let streamSettleTimer: ReturnType<typeof setTimeout> | null = null
+let thinkingFallbackTimer: ReturnType<typeof setTimeout> | null = null
 const isAiStreaming = computed(() => storedChatStreaming.value)
 const isAiDisplayStreaming = computed(() => storedChatStreaming.value || isStreamSettling.value)
 
+function clearThinkingFallbackTimer() {
+  if (thinkingFallbackTimer) {
+    clearTimeout(thinkingFallbackTimer)
+    thinkingFallbackTimer = null
+  }
+}
+
+function restartSettleTimer(delayMs = 450) {
+  settleTimerDone = false
+  if (streamSettleTimer) {
+    clearTimeout(streamSettleTimer)
+  }
+  streamSettleTimer = setTimeout(() => {
+    settleTimerDone = true
+    streamSettleTimer = null
+    maybeFinishStreamSettling()
+  }, delayMs)
+}
+
 function maybeFinishStreamSettling() {
-  if (!isAiStreaming.value && settleTimerDone && !isActiveRendererDraining.value) {
+  if (canFinishStreamSettling({
+    streaming: isAiStreaming.value,
+    settleTimerDone,
+    processDraining: isActiveProcessDraining.value,
+    rendererDraining: isActiveRendererDraining.value,
+  })) {
     isStreamSettling.value = false
+  }
+}
+
+function handleProcessDrainChange(draining: boolean) {
+  isActiveProcessDraining.value = draining
+  if (!draining) {
+    if (!isAiStreaming.value && isStreamSettling.value) {
+      // 思考尾段在流结束后才排空收起，重新给收起动效留出 450ms，避免气泡骤然切换到历史态
+      restartSettleTimer(450)
+      return
+    }
+    maybeFinishStreamSettling()
   }
 }
 
@@ -2469,6 +2510,7 @@ const streamingProcessTimeline = computed(() => {
 const isThinkingComplete = ref(true)
 
 function handleThinkingComplete() {
+  clearThinkingFallbackTimer()
   isThinkingComplete.value = true
 }
 const chatScrollRef = ref<HTMLElement | null>(null)
@@ -2998,34 +3040,45 @@ watch([streamingContent, streamingReasoning, () => streamingParts.value.length],
   }
 })
 
+function scheduleThinkingFallback() {
+  if (thinkingFallbackTimer || isThinkingComplete.value) return
+  thinkingFallbackTimer = setTimeout(() => {
+    thinkingFallbackTimer = null
+    isThinkingComplete.value = true
+  }, 1500)
+}
+
 watch(isAiStreaming, (streaming, oldVal) => {
   if (oldVal && !streaming) {
-    // 正文输出完，流式结束：等待 450ms 收起动效与文本蓄洪池完全排空，保留用户主动上滑锁定态
+    // 正文输出完，流式结束：等待收起动效、思考尾段排空与文本蓄洪池完全排空，保留用户主动上滑锁定态
     isStreamSettling.value = true
-    settleTimerDone = false
-    if (streamSettleTimer) clearTimeout(streamSettleTimer)
-    streamSettleTimer = setTimeout(() => {
-      settleTimerDone = true
-      streamSettleTimer = null
-      maybeFinishStreamSettling()
-    }, 450)
-    isThinkingComplete.value = true
+    restartSettleTimer(450)
+    if (!isActiveProcessDraining.value) {
+      handleThinkingComplete()
+    } else {
+      scheduleThinkingFallback()
+    }
   } else if (streaming) {
     if (streamSettleTimer) {
       clearTimeout(streamSettleTimer)
       streamSettleTimer = null
     }
+    clearThinkingFallbackTimer()
     settleTimerDone = true
+    isActiveProcessDraining.value = false
+    isActiveRendererDraining.value = false
     isStreamSettling.value = false
     isThinkingComplete.value = false
   }
 })
 
 watch([streamingReasoning, streamingTools, streamingContent, () => streamingParts.value.length], ([_reasoning, _tools, content, partsLen]) => {
-  if (isAiStreaming.value && !isThinkingComplete.value) {
-    // 只要有正文内容或结构化块到达，思考阶段已经结束，立即放行正文渲染，杜绝被延时或竞争卡死
-    if (content || partsLen > 0) {
-      isThinkingComplete.value = true
+  if (isAiStreaming.value && !isThinkingComplete.value && (content || partsLen > 0)) {
+    // 只要思考蓄洪池不再排空即放行正文；仍在平滑排空时让思考区优雅吐完末尾数帧（上限 1.5s）
+    if (!isActiveProcessDraining.value) {
+      handleThinkingComplete()
+    } else {
+      scheduleThinkingFallback()
     }
   }
 })
@@ -3038,8 +3091,10 @@ watch(() => chatStore.activeSession?.id, () => {
     clearTimeout(streamSettleTimer)
     streamSettleTimer = null
   }
+  clearThinkingFallbackTimer()
   cancelProgrammaticScrollFrame()
   settleTimerDone = true
+  isActiveProcessDraining.value = false
   isActiveRendererDraining.value = false
   isStreamSettling.value = false
   isAutoScrollLocked.value = false
@@ -3653,6 +3708,7 @@ onUnmounted(() => {
     clearTimeout(streamSettleTimer)
     streamSettleTimer = null
   }
+  clearThinkingFallbackTimer()
   cancelProgrammaticScrollFrame()
   if (typeof window !== 'undefined') {
     document.removeEventListener('selectionchange', handleDocSelectionChange)
@@ -3668,7 +3724,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.chat-tool-capsule{display:inline-flex;align-items:center;margin:8px 8px 0 0;padding:5px 9px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--color-bg-card);color:var(--text-muted);font-size:11px;line-height:1.3}.chat-tool-capsule[data-status="RUNNING"]{border-color:color-mix(in srgb,var(--color-zen-sage) 50%,var(--border-subtle));color:var(--color-sage-dark)}.chat-tool-capsule[data-status="FAILED"]{color:var(--color-warning)}
 /* ===== File Processing Alert Banner ===== */
 .file-processing-alert-banner {
   display: flex;

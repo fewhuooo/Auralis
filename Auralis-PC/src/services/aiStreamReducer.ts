@@ -52,6 +52,141 @@ export function buildFallbackProcessTimeline(
   return items
 }
 
+export interface ReconcileProcessMetadataInput {
+  mappedReasoning?: string
+  existingReasoning?: string
+  mappedTools?: readonly ChatToolActivity[]
+  statusTools?: readonly ChatToolActivity[]
+  existingTools?: readonly ChatToolActivity[]
+  existingTimeline?: readonly ChatProcessTimelineItem[]
+  isTerminal?: boolean
+  terminalFailed?: boolean
+}
+
+export interface ReconcileProcessMetadataResult {
+  reasoningText?: string
+  tools?: ChatToolActivity[]
+  processTimeline?: ChatProcessTimelineItem[]
+}
+
+function settleToolStatus(
+  tool: ChatToolActivity,
+  isTerminal: boolean,
+  terminalFailed: boolean,
+): ChatToolActivity {
+  if (!isTerminal || tool.status !== 'RUNNING') return tool
+  return {
+    ...tool,
+    status: terminalFailed ? 'FAILED' : 'COMPLETED',
+  }
+}
+
+function pickPreferredToolLabel(
+  prev: ChatToolActivity,
+  incoming: ChatToolActivity,
+): string | undefined {
+  const incomingLabel = incoming.label?.trim()
+  const prevLabel = prev.label?.trim()
+  if (prevLabel && prevLabel !== prev.name && (!incomingLabel || incomingLabel === incoming.name)) {
+    return prev.label
+  }
+  return incomingLabel ? incoming.label : prev.label
+}
+
+function mergeProcessToolLists(
+  lists: ReadonlyArray<readonly ChatToolActivity[] | undefined>,
+): ChatToolActivity[] {
+  const merged = new Map<string, ChatToolActivity>()
+  for (const list of lists) {
+    if (!list) continue
+    for (const tool of list) {
+      const prev = merged.get(tool.id)
+      if (!prev) {
+        merged.set(tool.id, tool)
+        continue
+      }
+      const nextStatus = tool.status !== 'RUNNING' || prev.status === 'RUNNING'
+        ? tool.status
+        : prev.status
+      merged.set(tool.id, {
+        ...prev,
+        ...tool,
+        name: tool.name || prev.name,
+        label: pickPreferredToolLabel(prev, tool),
+        status: nextStatus,
+      })
+    }
+  }
+  return Array.from(merged.values())
+}
+
+/** 断线恢复或切会话对账时，合并已有过程时间线、补全工具标签与终态，并保留断点续接的思考尾段。 */
+export function reconcileProcessMetadata(
+  input: ReconcileProcessMetadataInput,
+): ReconcileProcessMetadataResult {
+  const isTerminal = Boolean(input.isTerminal)
+  const terminalFailed = Boolean(input.terminalFailed)
+  const mappedReasoning = input.mappedReasoning ?? ''
+  const existingReasoning = input.existingReasoning ?? ''
+  const bestReasoning = mappedReasoning.length >= existingReasoning.length
+    ? mappedReasoning
+    : existingReasoning
+  const reasoningText = bestReasoning || undefined
+
+  const mergedTools = mergeProcessToolLists([
+    input.existingTools,
+    input.mappedTools,
+    input.statusTools,
+  ])
+  const settledTools = mergedTools.map((tool) =>
+    settleToolStatus(tool, isTerminal, terminalFailed),
+  )
+  const toolsById = new Map(settledTools.map((tool) => [tool.id, tool]))
+
+  let processTimeline: ChatProcessTimelineItem[] | undefined
+  if (input.existingTimeline && input.existingTimeline.length > 0) {
+    const seenToolIds = new Set<string>()
+    const nextTimeline: ChatProcessTimelineItem[] = input.existingTimeline.map((item) => {
+      if (item.kind !== 'tool') return item
+      seenToolIds.add(item.tool.id)
+      const matched = toolsById.get(item.tool.id)
+      return {
+        id: item.id,
+        kind: 'tool',
+        tool: matched ?? settleToolStatus(item.tool, isTerminal, terminalFailed),
+      }
+    })
+    for (const tool of settledTools) {
+      if (!seenToolIds.has(tool.id)) {
+        nextTimeline.push({ id: `tool:${tool.id}`, kind: 'tool', tool })
+      }
+    }
+    const existingTimelineReasoning = nextTimeline
+      .filter((item): item is Extract<ChatProcessTimelineItem, { kind: 'reasoning' }> => item.kind === 'reasoning')
+      .map((item) => item.text)
+      .join('')
+    if (reasoningText && reasoningText.length > existingTimelineReasoning.length) {
+      if (!existingTimelineReasoning) {
+        nextTimeline.push({ id: `reasoning:${nextTimeline.length}`, kind: 'reasoning', text: reasoningText })
+      } else if (reasoningText.startsWith(existingTimelineReasoning)) {
+        const suffix = reasoningText.slice(existingTimelineReasoning.length)
+        if (suffix) {
+          nextTimeline.push({ id: `reasoning:${nextTimeline.length}`, kind: 'reasoning', text: suffix })
+        }
+      }
+    }
+    processTimeline = nextTimeline
+  } else if (reasoningText || settledTools.length > 0) {
+    processTimeline = buildFallbackProcessTimeline(reasoningText, settledTools)
+  }
+
+  return {
+    reasoningText,
+    tools: settledTools.length > 0 ? settledTools : undefined,
+    processTimeline,
+  }
+}
+
 export type ChatProcessTimelineItem =
   | {
       id: string

@@ -76,6 +76,7 @@
                 :parts="msg.parts"
                 :fallback-text="msg.content"
                 :streaming="msg.status === 'streaming'"
+                :settling="Boolean(msg.animateOnMount && msg.status === 'completed')"
                 :busy="isTyping || isStopping"
                 :read-only="isConversationUnsupported"
                 @submit="handleSubmitActivity"

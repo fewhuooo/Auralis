@@ -1,3 +1,5 @@
+import type { ChatProcessTimelineItem, ChatToolActivity } from '../services/aiStreamReducer.ts'
+
 const ASCII_TOOL_LABELS: Record<string, string> = {
   search: '检索资料',
   list_sources: '查看资料目录',
@@ -72,4 +74,98 @@ export function sanitizeReasoningText(raw: string): string {
     out += sanitizeReasoningSegment(raw.slice(lastIndex))
   }
   return out
+}
+
+export type VisibleProcessTimelineGroup =
+  | { id: string; kind: 'reasoning'; text: string }
+  | { id: string; kind: 'tools'; tools: readonly ChatToolActivity[] }
+
+/** Splits interleaved reasoning and tool steps into renderable groups gated by smoothed char progress. */
+export function buildVisibleProcessTimelineGroups(
+  timeline: readonly ChatProcessTimelineItem[],
+  revealedLimit: number,
+): VisibleProcessTimelineGroup[] {
+  const groups: VisibleProcessTimelineGroup[] = []
+  let consumedReasoningChars = 0
+
+  for (const item of timeline) {
+    if (item.kind === 'tool') {
+      const prev = groups[groups.length - 1]
+      if (prev && prev.kind === 'tools') {
+        groups[groups.length - 1] = { id: prev.id, kind: 'tools', tools: [...prev.tools, item.tool] }
+      } else {
+        groups.push({ id: item.id, kind: 'tools', tools: [item.tool] })
+      }
+      continue
+    }
+
+    const remaining = revealedLimit - consumedReasoningChars
+    if (remaining <= 0) {
+      break
+    }
+
+    const available = Math.min(item.text.length, remaining)
+    consumedReasoningChars += item.text.length
+
+    const sanitized = sanitizeReasoningText(item.text.slice(0, available))
+    if (sanitized.trim()) {
+      groups.push({
+        id: item.id,
+        kind: 'reasoning',
+        text: sanitized,
+      })
+    }
+
+    if (available < item.text.length) {
+      break
+    }
+  }
+
+  return groups
+}
+
+export type StreamTextDrainAction =
+  | 'stream_push'
+  | 'finish_drain'
+  | 'sync_immediate'
+  | 'flush_and_clear'
+  | 'reset_and_clear'
+
+export interface StreamTextDrainState {
+  streaming: boolean
+  settling?: boolean
+  partId: string | null
+  partKind: 'text' | 'non_text' | 'none'
+  partText: string
+  activeTextId: string | null
+  isActive: boolean
+  lastCompletedTextId: string | null
+}
+
+/** 统一裁决正文平滑缓冲动作，防止 settling 期内已完成片段反复从头重排或单包直出。 */
+export function resolveStreamTextDrainAction(state: StreamTextDrainState): StreamTextDrainAction {
+  if (state.partKind !== 'text' || !state.partId) {
+    return state.isActive ? 'flush_and_clear' : 'reset_and_clear'
+  }
+  if (state.streaming) {
+    return 'stream_push'
+  }
+  if (state.isActive && state.activeTextId === state.partId) {
+    return 'finish_drain'
+  }
+  if (state.settling && Boolean(state.partText) && state.lastCompletedTextId !== state.partId) {
+    return 'finish_drain'
+  }
+  return 'sync_immediate'
+}
+
+export interface StreamSettlingState {
+  streaming: boolean
+  settleTimerDone: boolean
+  processDraining: boolean
+  rendererDraining: boolean
+}
+
+export function canFinishStreamSettling(state: StreamSettlingState): boolean {
+  return !state.streaming && state.settleTimerDone && !state.processDraining && !state.rendererDraining
 }

@@ -28,6 +28,35 @@ function currentTimestampMs(): number {
   return Date.now()
 }
 
+export interface SmoothStreamSpeedConfig {
+  minSpeed: number
+  baseSpeed: number
+  maxSpeed: number
+  finishSpeed: number
+}
+
+/** Computes a continuous, monotonic character drain rate from backlog size and terminal state. */
+export function computeSmoothStreamTargetSpeed(
+  remaining: number,
+  isStreamFinished: boolean,
+  config: SmoothStreamSpeedConfig,
+): number {
+  const { minSpeed, baseSpeed, maxSpeed, finishSpeed } = config
+  if (isStreamFinished) {
+    return Math.min(maxSpeed, Math.max(finishSpeed, remaining * 3.5))
+  }
+  if (remaining <= 4) {
+    return minSpeed
+  }
+  if (remaining <= 16) {
+    return Math.min(maxSpeed, baseSpeed + (remaining - 4) * 1.5)
+  }
+  if (remaining <= 48) {
+    return Math.min(maxSpeed, baseSpeed + 18 + (remaining - 16) * 2.0)
+  }
+  return Math.min(maxSpeed, baseSpeed + 82 + (remaining - 48) * 1.8)
+}
+
 export function createSmoothStreamBuffer(
   onUpdate: (displayedText: string) => void,
   options: SmoothStreamOptions = {},
@@ -104,18 +133,12 @@ export function createSmoothStreamBuffer(
     }
 
     drained = false
-    let targetSpeed = baseSpeed
-    if (isStreamFinished) {
-      targetSpeed = Math.min(maxSpeed, Math.max(finishSpeed, remaining * 3.0))
-    } else if (remaining <= 4) {
-      targetSpeed = minSpeed
-    } else if (remaining <= 16) {
-      targetSpeed = baseSpeed + (remaining - 4) * 1.4
-    } else if (remaining <= 40) {
-      targetSpeed = baseSpeed + 16 + (remaining - 16) * 1.2
-    } else {
-      targetSpeed = Math.min(maxSpeed, 76 + (remaining - 40) * 0.8)
-    }
+    const targetSpeed = computeSmoothStreamTargetSpeed(remaining, isStreamFinished, {
+      minSpeed,
+      baseSpeed,
+      maxSpeed,
+      finishSpeed,
+    })
 
     const blend = Math.min(1, deltaSeconds * damping)
     currentSpeed += (targetSpeed - currentSpeed) * blend
