@@ -3,7 +3,7 @@
 
 # Auralis 历史文档归档
 
-更新时间：2026-11-15
+更新时间：2026-11-16
 
 文档状态：历史归档入口
 
@@ -13,23 +13,16 @@
 
 ## 现行入口
 
-当前工程文档统一从 [文档中心](../README.md) 进入。任何归档内容与现行文档或代码冲突时，必须忽略归档判断。
+当前工程文档统一从[文档中心](../README.md)进入。任何归档内容与现行文档或代码冲突时，必须忽略归档判断。
 
 ## 归档分类
 
-| 路径 | 内容 | 使用限制 |
+| 目录 | 内容 | 使用限制 |
 | --- | --- | --- |
-| [2026-11-15 已替代方案与历史检查](superseded-2026-11-15/README.md) | 旧 Chat、Overview 方案、对象迁移矩阵及功能审计，保留原文与 SHA-256 | 只追溯当时决策与检查，不作为当前契约或待办 |
-| [2026-11-15 运维与计划整合](maintenance-2026-11-15/README.md) | 部署、排障和计划入口的原文及 SHA-256 | 旧步骤、旧配置和任务状态仅用于追溯，现行操作以对应文档为准 |
-| [2026-11-13 状态与模块整理](maintenance-2026-11-13/README.md) | 六份文档整理前的完整工作树原文及 SHA-256 | 仅追溯历史证据；未关闭风险仍由现行问题登记维护 |
+| [设计方案与实施方案](design-and-plans/README.md) | 原 `design/`（36 份）、`plans/`（92 份）按领域归类的专题设计与单次实施计划，以及[2026-11-15 已替代方案](design-and-plans/superseded-2026-11-15/README.md) | 只追溯当时设计决策、实施步骤与过程验证，不作为现行契约或待办；待实施要点已并入现行 `current/` 文档 |
+| `snapshots/` | 历次文档整理与阶段快照：2026-07-10 重构前镜像（`2026-07-10-pre-reorganization/`）、[2026-07-10 文档架构设计](snapshots/2026-07-10-documentation-architecture.md)、[2026-07-10 重构记录](snapshots/2026-07-10-documentation-reorganization.md)、[2026-11-13 状态与模块整理](snapshots/maintenance-2026-11-13/README.md)、[2026-11-15 运维与计划整合](snapshots/maintenance-2026-11-15/README.md)、[阶段状态记录](snapshots/stages-2026-10-28/2026-10-28-status-stage-records.md)、[阶段问题记录](snapshots/stages-2026-10-28/2026-10-28-issues-stage-records.md)、[2026-08-16 综合审计](snapshots/audits/2026-08-16-overall-project-completion-audit.md) | 保留历史原文与 SHA-256 校验，仅供追溯当时证据与演进，不推断当前实现或关闭风险 |
 | [Overview 实验归档](overview-experiments/README.md) | 按实验轮次整理的方案、输入输出、结果、用量与证据清单 | 用于历史方案对比；实验结果不代表当前实现或业务验收 |
-| `snapshots/2026-07-10-pre-reorganization/` | 2026-07-10 文档体系重构前的完整工作树镜像 | 仅用于追溯旧结构和旧表述 |
-| `legacy-project/` | StudyCore 阶段的项目全景材料 | 禁止作为 Auralis 当前目录、接口或技术栈依据 |
-| `legacy-demand/` | StudyCore 阶段的原始 PRD 与任务总表 | 禁止恢复旧需求、旧页面或旧任务状态 |
-| [文档维护历史](maintenance/2026-07-10-documentation-reorganization.md) | 2026-07-10 文档体系重构执行计划，保留归档时的工作树正文 | 仅追溯当时的迁移步骤，不作为现行待办或命令指南 |
-| [状态阶段历史](stages/2026-10-28-status-stage-records.md) | 从当前状态中提取的明确阶段历史区 | 保留当时证据；归档不关闭验收项 |
-| [问题与审查阶段历史](stages/2026-10-28-issues-stage-records.md) | 从问题登记中提取的明确阶段历史区 | 当前风险以现行登记为准，未验收边界继续保留 |
-| [2026-08-16 综合审计](audits/2026-08-16-overall-project-completion-audit.md) | 当时的全项目未完成项和验证快照 | 不作为当前缺口或现行实现依据 |
+| `legacy/` | StudyCore 阶段历史需求（`legacy-demand/`）、早期项目全景（`legacy-project/`）与[比赛展示材料](legacy/TraeCompetitionApplication.md) | 禁止作为 Auralis 当前目录、接口、技术栈或完成度依据 |
 
 ## Agent 禁止事项
 
@@ -40,4 +33,4 @@
 
 ## 历史保真
 
-归档文件顶部的警告属于归档元数据。警告之后的原始正文保持历史原貌，不进行事实修正。
+归档文件顶部的警告属于归档元数据。带 `<!-- ORIGINAL WORKTREE CONTENT -->` 标记的快照文件及其后原始字节保持历史原貌，不进行事实修正。

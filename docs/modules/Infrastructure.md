@@ -1,6 +1,6 @@
 # 基础设施与数据服务模块
 
-更新时间：2026-11-15
+更新时间：2026-11-16
 
 文档状态：现行模块说明
 
@@ -12,7 +12,7 @@
 
 本页描述仓库配置，不声明容器此刻运行正常。部署步骤见[部署指南](../operations/Deployment.md)，排障和恢复见 [Runbook](../operations/Runbook.md)，最近实际验证和未关闭风险由 [Status](../current/Status.md) / [IssuesAndReview](../current/IssuesAndReview.md) 维护。
 
-逐轮配置试验、镜像与测试记录保存在[整理前记录](../archive/maintenance-2026-11-13/Infrastructure.md)，仅供追溯。新增配置更新下方主题，不追加日期流水。
+逐轮配置试验、镜像与测试记录保存在[整理前记录](../archive/snapshots/maintenance-2026-11-13/Infrastructure.md)，仅供追溯。新增配置更新下方主题，不追加日期流水。
 
 ## Compose 服务与持久化
 
@@ -43,7 +43,7 @@
 | 对象存储 | `AURALIS_MINIO_*`、`AURALIS_UPLOAD_*` | 内部 endpoint 与浏览器可达 public endpoint 分开；检查 CORS、签名 TTL、大小与保留期 |
 | 身份与加密 | `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` | 生产关键配置缺失时拒绝启动，密钥变更须单独规划 |
 | 验证码邮件 | `AURALIS_MAIL_*` | 根 `.env` 由 Compose 传给后端，默认要求 STARTTLS。见 [SMTP 配置](../operations/Deployment.md#2026-11-15-验证码邮件配置) |
-| 地址与跨域 | `AURALIS_PUBLIC_BASE_URL`、`AURALIS_CORS_ALLOWED_ORIGINS` | 明确实际客户端来源与公网暴露边界 |
+| 跨域 | `AURALIS_CORS_ALLOWED_ORIGINS` | 明确允许访问 API 的实际客户端来源 |
 | 平台生成 | `AURALIS_AI_GENERATION_BASE_URL/MODEL/API_KEY` | 一组完整 OpenAI-compatible 配置；账号 BYOK 按当前选择规则生效 |
 | 平台向量 | `AURALIS_AI_EMBEDDING_BASE_URL/MODEL/API_KEY` | 入库和检索共用平台配置，模型须返回 1024 维；换模型要核对已有向量空间 |
 | AI 启用与摄入 | `AURALIS_AI_ENABLED`、`AURALIS_AI_INGESTION_WORKER_ENABLED` | 配置存在不等于供应商、存储与 worker 已联通 |
@@ -55,7 +55,7 @@
 
 平台 Overview 需要 `AURALIS_AI_GENERATION_CONTEXT_TOKENS` 和 `AURALIS_AI_GENERATION_MAX_OUTPUT_TOKENS`；两项未提供有效能力时在派发前报 MODEL_UNAVAILABLE。BYOK 使用服务端 `overview-model-capacities` 中精确匹配的 Provider、端点和模型能力，配置方法见部署指南。
 
-`AURALIS_AI_OVERVIEW_MAX_*` 现行限制覆盖请求字符/字节、输入/输出 Token、响应/正式结果、输入快照、来源清单、作业请求、来源数和标题。0 表示不施加该项额外上限，模型容量和任务额度仍有效。单次输入过大可触发当前分批路径，不保证任何规模都能完成。
+`AURALIS_AI_OVERVIEW_MAX_*` 现行限制覆盖请求字符/字节、输入/输出 Token、响应/正式结果、输入快照、来源清单、来源数和标题。0 表示不施加该项额外上限，模型容量和任务额度仍有效。单次输入过大可触发当前分批路径，不保证任何规模都能完成。
 
 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS` 控制 Provider 响应窗口，`AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS` 控制直接请求整任务期限。`AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS=0` 只关闭该次数帽；Token、并发和其他期限仍有效。前端 `VITE_OVERVIEW_SSE_DEADLINE_MS` 为构建参数，修改须重建前端。
 
@@ -101,6 +101,8 @@ PC `scripts/verify-ocr-bundle.mjs` 检查包、sidecar、模型哈希和许可�
 ## 自动检查与生产待办
 
 仓库已有 `.github/workflows/openapi-contract.yml`：Java 21、Node 24 下运行 `scripts/check-openapi.ps1`，检查运行时 OpenAPI 与生成 SDK 漂移。它不等于完整构建、业务测试、镜像扫描、部署和回滚流水线。
+
+Server 全量测试可从仓库根运行 `scripts/test-server.ps1`，定向重试可传 `-Tests 'AiFeaturePolicyParityTests,AiUsageGuardPostgresLockTests,OverviewDeadlineSlowDripTests'`。脚本为 PostgreSQL 集成测试创建带唯一 ownership label 的临时 pgvector 容器，绑定随机宿主 loopback 端口，并生成只用于测试的 localhost PKCS12 证书；测试通过 `auralis.usage.postgres.url`、`AURALIS_TEST_POSTGRES_URL` 和 `auralis.test.tls.keystore` 接收夹具。结束时脚本只停止标签仍匹配本次运行的容器，并删除本次临时证书目录。它不连接 Compose 业务数据库，也不重启现有服务。该入口需要 Docker daemon 与 Java 21 JDK；完整测试中的 Testcontainers 测试仍按各自夹具运行。
 
 | 边界 | 后续验收要求 |
 | --- | --- |

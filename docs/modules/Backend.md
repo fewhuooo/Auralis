@@ -1,6 +1,6 @@
 # Spring Boot 后端模块
 
-更新时间：2026-11-15
+更新时间：2026-11-16
 
 文档状态：现行模块说明
 
@@ -12,7 +12,7 @@
 
 本页描述当前源码，不以源码存在推断部署或业务验收。接口字段与错误语义见 [API](../contracts/API.md)、[Chat 协议](../contracts/chat-runtime-api.md)，表与迁移见 [数据库契约](../contracts/Database.md)，部署和测试进度见 [当前状态](../current/Status.md)，未关闭项见 [问题登记](../current/IssuesAndReview.md)。
 
-逐轮实现、测试数量和部署记录已完整保存在[整理前记录](../archive/maintenance-2026-11-13/Backend.md)，仅供历史追溯。维护本页时更新对应主题，不再把日期流水插到标题与元数据之间。
+逐轮实现、测试数量和部署记录已完整保存在[整理前记录](../archive/snapshots/maintenance-2026-11-13/Backend.md)，仅供历史追溯。维护本页时更新对应主题，不再把日期流水插到标题与元数据之间。
 
 ## 技术与目录
 
@@ -48,7 +48,7 @@
 
 登录设备列表以活动 refresh session 为边界；同一用户/设备重复登录替换旧活动会话。提供登录、刷新、退出、改密、会话管理与异步账号注销。账号删除作业暂未提供进度查询接口。
 
-注册要求邮箱验证码，登录可使用用户名或已验证邮箱，忘记密码可通过已验证邮箱重置。验证码按用途隔离，带有有效期及发送和校验次数限制。已登录改密在用户行锁内递增凭据代次，并撤销其他设备的刷新会话。当前设备可自动续期。邮箱重置撤销全部刷新会话。两种操作都会使已签发的访问凭证在后续认证时失效。发信使用 [SMTP 配置](../operations/Deployment.md#2026-11-15-验证码邮件配置)。
+注册要求邮箱验证码，登录可使用用户名或已验证邮箱，忘记密码可通过已验证邮箱重置。注册、改密与重置的新密码统一要求至少 8 个 UTF-16 代码单元、最多 72 个 UTF-8 字节，包含 Unicode 大写、小写字母及标点或符号；登录和原密码验证保持原有凭据校验。验证码按用途隔离，带有有效期及发送和校验次数限制。已登录改密在用户行锁内递增凭据代次，并撤销其他设备的刷新会话。当前设备可自动续期。邮箱重置撤销全部刷新会话。两种操作都会使已签发的访问凭证在后续认证时失效。发信使用 [SMTP 配置](../operations/Deployment.md#2026-11-15-验证码邮件配置)。
 
 涉及学科所属资源的写事务先收集 Subject ID，去重并按 UUID 顺序经 `SubjectLockCoordinator` 加锁，再锁具体资源，最后重新读取和校验归属、活动状态、版本及关系端点。首次未加锁读取仅用于发现锁集合，不直接据其值写入。
 
@@ -66,11 +66,11 @@ REST 与 Sync 共用 Task 排期事务。周列跨天以 `placementMode: "STRICT
 
 Sync 按用户、设备、mutation ID 和指纹幂等处理，批次逐条执行。预期业务异常回滚该条领域事务后，在独立事务保存 CONFLICT/REJECTED 回执并继续；未知基础设施错误继续传播。创建主键冲突不得覆盖已有资源。pull/snapshot 保留用户独立高水位、墓碑与过期 cursor 重置语义；保留清理入口自身建立事务。
 
-Review 使用独立生命周期命令、冻结回执和有效结果投影。owner、活动知识块、正文 hash、版本及因果目标共同约束写入；同块锁序为 Subject → KnowledgeBlock → ReviewState。正文变化失效对应学习进度；同正文元信息更新保留有效目标，移科保留已生效历史但清除旧因果 ID 和未确认初选。旧复习事件只作历史读取，不恢复退役写入接口。离线补传、首次学习判定和协议版本详见 API 契约。
+Review 使用独立生命周期命令、冻结回执和有效结果投影。命令指纹采用包含可空 occurredAt/expectedStateAbsent 的统一结构，省略字段仍允许；不保留旧回执指纹格式。owner、活动知识块、正文 hash、版本及因果目标共同约束写入；同块锁序为 Subject → KnowledgeBlock → ReviewState。正文变化失效对应学习进度；同正文元信息更新保留有效目标，移科保留已生效历史但清除旧因果 ID 和未确认初选。复习统计只读取生命周期有效结果，不再读取旧事件表。离线补传、首次学习判定和协议版本详见 API 契约。
 
 `GET /api/reviews/lifecycle/history` 在只读 `REPEATABLE_READ` 事务中读取知识块、状态、命令和有效结果。另一事务提交核对时，本次响应仍以同一数据库快照构成。
 
-Focus 通过稳定 session ID 在用户范围内幂等记录实际秒数及自然完成标记。Stats 按 owner 聚合，学科统计使用同一读取快照与 IANA 自然日，不通过多表 fanout 重复计数。
+Focus 通过稳定 session ID 在用户范围内幂等记录实际秒数及自然完成标记。Stats 按 owner 聚合；全局完成次数、每周复习次数与耗时只计 effective_rating 非空的生命周期结果，日期归属 selected_at。学科统计使用同一读取快照与 IANA 自然日，学习完成从独立命令计量，不通过多表 fanout 重复计数。
 
 用户级统计概览和周统计在可重复读事务中计算。同一响应的专注时长、完成轮次和其他计数使用同一数据库快照。
 
@@ -81,6 +81,8 @@ Focus 通过稳定 session ID 在用户范围内幂等记录实际秒数及自�
 资料目录可在请求中指定活动学科，资料状态、版本和资产引用复用现有 Source DTO。
 
 入库 worker 仍按学科、资料、任务的顺序锁定。资料或所属学科已删除时，旧任务按失效处理，结算任务自身的状态并释放队列。资料状态及恢复流程继续由现行 Source 契约控制。
+
+MinIO 元数据直接使用 SDK 规范化后的键；可选 SHA 的新上传仍通过实际内容校验与补算路径处理。
 
 Asset upload intent 使用用户范围 `clientImportId` 幂等键，并校验不可变元信息；complete 通过存储 HEAD、大小/MIME/hash 等边界验证。download-url 返回原始文件名和 MIME，Source 标题不作为文件格式依据。
 
@@ -116,9 +118,9 @@ Chat 协议 1 使用持久化 run/attempt、会话资料范围及私有工具证
 
 输入规划和 Gateway 使用同一 `unicode-category-v1` 估算；阶段输出按材料规模估最低需求并增加 50% 目标裕量，再受模型、上下文、可选上限和平台余额限制。Provider `max_tokens` 与预留一致，实际用量由账本结算。平台容量来自生成模型配置，BYOK 容量需精确匹配 Provider/端点/模型；未知容量拒绝派发。
 
-公开内容为 schemaVersion 2 的 `outlineMarkdown` / `summaryMarkdown`。生成与正式保存分离；保存继续校验 inputDescriptor、来源 revision/fingerprint、baseVersion CAS 和 clientWriteId 回执。旧 schemaVersion 1 内容保留但不自动转换，替换须遵循现行 ALL/CAS 契约。旧 INDEX/ROUTE/分节 WRITER、preview/publication 和 candidateInput 不属于现行生成或接口。
+学科正式结果仅接受 SOURCE_OVERVIEW_PARTS 输入绑定，以文件总览分项版本复核；不再支持 SOURCE_CONTENT 原文绑定。公开内容为 schemaVersion 2 的 `outlineMarkdown` / `summaryMarkdown`。生成与正式保存分离；保存由服务端推导来源描述，继续校验来源 revision/fingerprint、baseVersion CAS 和 clientWriteId 回执。正常读写只支持 schemaVersion 2，不提供 v1 内容或版本元数据的兼容覆盖流程。旧 INDEX/ROUTE/分节 WRITER、preview/publication 和 candidateInput 不属于现行生成或接口。
 
-后台作业仍保留创建、查询、候选、控制、租约及生命周期清理能力；不能由直接入口通过推断后台学科输入路径已验收，相关未关闭问题见问题登记。历史表及安全保留清理不等于兼容旧生成。
+Overview 持久后台作业的 Controller、worker、控制与候选执行路径已移除。文件和学科直接生成及正式结果保存继续使用现行链路，PC 自动生成文件概览也沿用直接接口。直接生成的调用关联与安全重试校验保留；不再读取旧执行账本、计划、节点或 checkpoint，也不保留旧作业私有载荷清理服务；迁移文件不改写。现行调用账本及资源删除边界不因退役作业而绕过，具体存储边界见 Database。
 
 ## 配置、安全与诊断
 
@@ -132,7 +134,9 @@ Realtime 使用 `POST /api/realtime/ticket` 获取一次性 ticket，再连接 `
 
 ## 开发与验证
 
-在 `Auralis-Server` 目录执行：
+完整套件在仓库根目录执行 `./scripts/test-server.ps1`，由脚本准备独立 PostgreSQL 与 TLS 证书，并在结束后清理本次资源。定向运行可传 `-Tests`（Surefire 类名选择器）。直接执行 Maven 测试时须自行提供对应隔离测试前置条件。
+
+在 `Auralis-Server` 目录执行定向 Maven 命令或打包：
 
 ```powershell
 .\mvnw.cmd -B -ntp test
@@ -141,7 +145,7 @@ Realtime 使用 `POST /api/realtime/ticket` 获取一次性 ticket，再连接 `
 
 从仓库根目录运行 `scripts/check-openapi.ps1` 检查运行时 OpenAPI 与双端 SDK 漂移；仓库已有对应 GitHub workflow。H2/MockMvc、PostgreSQL/MinIO Testcontainers、受控 Provider 网络测试各自证明不同边界；容器、TLS fixture 等前置条件与真实 Provider/GUI 验收不能互相替代。
 
-本次仅整理文档，未执行以上测试、构建、部署或服务重启。最新实际命令结果由 current 文档维护，不在本页重复测试数量与镜像状态。
+最新实际测试、构建与运行环境结果由 current 文档维护，不在本页重复测试数量与镜像状态。
 
 ## 回写规则
 

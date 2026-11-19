@@ -3541,9 +3541,10 @@
           },
           "newPassword" : {
             "type" : "string",
-            "description" : "At most 72 UTF-8 bytes",
+            "description" : "At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes",
             "maxLength" : 72,
-            "minLength" : 12
+            "minLength" : 8,
+            "pattern" : "(?s)(?=.*\\p{Lu})(?=.*\\p{Ll})(?=.*[\\p{P}\\p{S}]).*"
           }
         },
         "required" : [ "baseVersion", "currentPassword", "newPassword" ]
@@ -4574,9 +4575,10 @@
           },
           "password" : {
             "type" : "string",
-            "description" : "At most 72 UTF-8 bytes",
+            "description" : "At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes",
             "maxLength" : 72,
-            "minLength" : 12
+            "minLength" : 8,
+            "pattern" : "(?s)(?=.*\\p{Lu})(?=.*\\p{Ll})(?=.*[\\p{P}\\p{S}]).*"
           },
           "clientDeviceKey" : {
             "type" : "string",
@@ -4671,9 +4673,10 @@
           },
           "newPassword" : {
             "type" : "string",
-            "description" : "At most 72 UTF-8 bytes",
+            "description" : "At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes",
             "maxLength" : 72,
-            "minLength" : 12
+            "minLength" : 8,
+            "pattern" : "(?s)(?=.*\\p{Lu})(?=.*\\p{Ll})(?=.*[\\p{P}\\p{S}]).*"
           }
         },
         "required" : [ "email", "emailCode", "newPassword" ]

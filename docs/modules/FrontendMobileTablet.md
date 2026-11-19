@@ -1,14 +1,14 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-11-15
+更新时间：2026-11-19
 
 文档状态：现行模块说明
 
-权威范围：手机/平板页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
+权威范围：手机/平板页面、条件编译、Store、API、页面数据边界、端侧服务、手写开关、构建方式与限制
 
-事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/api/`、`src/store/`、`src/services/` 与页面 API 映射
+事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/api/`、`src/store/`、`src/services/` 与页面实现
 
-本文维护模块边界；逐轮验证与变更原文保存在[整理前记录](../archive/maintenance-2026-11-13/FrontendMobileTablet.md)，仅供追溯。新增实现更新对应章节，当前风险进入 current，不在顶部追加日期流水。
+本文维护模块边界；逐轮验证与变更原文保存在[整理前记录](../archive/snapshots/maintenance-2026-11-13/FrontendMobileTablet.md)，仅供追溯。新增实现更新对应章节，当前风险进入 current，不在顶部追加日期流水。
 
 ## 模块定位
 
@@ -16,7 +16,22 @@
 
 共享的鉴权、请求、Sync/Realtime、AI、Asset 和 Stats 使用生成契约。手机、平板的独立复习页和平板学科工作区共用现行到期队列和复习生命周期。当前验收与测试状态见[当前状态](../current/Status.md)和[问题登记](../current/IssuesAndReview.md)。
 
+学科图标统一使用语义图标键，缺省显示 book；平板工作区与学科大厅不再提供旧 Emoji 字符串渲染分支。
+
 Task 契约不包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Store、同步映射、本地存储、新建任务入口和页面展示不再读写 `cognitiveLoad`、`load` 或 `loadText`。
+
+## 已确认目标与收口状态
+
+2026-11-16 已确认三端职责与设计目标（2026-11-17 完成代码层首轮重构与静态/单测/双端打包闭环，真机与实端联调待验收）。范围内 PC 集中管理资料与任务编排，手机负责随身执行，平板作为完整学习工作台。
+
+| 领域 | 现行实现与已落地收口（2026-11-17） | 剩余边界 / 待真机验收 |
+| --- | --- | --- |
+| 视觉与导航 | 双端统一对齐 `Auralis-PC` 浅色燕麦禅意令牌（`#EEEEEE`/`#F7F2EB`/`#FAF7F2`/`#8B9A6E`），移除暗黑覆盖；Mobile 底部悬浮胶囊收缩为「今日 / 学习 / 专注 / 我的」+ 右侧独立 `AI` 入口（`AppTabBar.vue` 边距对齐 `20px`/`16px` 卡片栅格并衬贴 `92px` 透明到 `#EFEBE2` 非阻塞渐变遮罩）；退役 6 个孤岛页（`mobile/settings`、`mobile/timeline`、`mobile/handwriting`、`mobile/asset`、`mobile/stats`、`tablet/review`）；新增 `utils/pagePreload.ts` 路由空闲预热与切换前预加载、卸载/complete 离场锁安全复位及 `#F7F2EB` 根画布防切页白闪 | 微信开发者工具、H5 浏览器与平板真机视觉走查 |
+| 排期与任务 | 新增 `dateKey.ts` 与 `taskSyncMapper.ts` 保留完整本地日期与非整点时间语义，`unschedule` 清空 `scheduledAt` 为 null；对齐 PC 端过期任务自动完成（`recoverOverdueTasks`，含拉取重读、在途同步让步与拒收指纹防循环）及已结束排期完成锁定（`isScheduledCompletionLocked`，手机首页与平板仪表盘 30s 刷新与锁态轻提示）；待办持久化先行 + 账号切换同步清表 + `localDb` 写前作用域围栏；H5 `local_mutations` 自增 ID/历史补全、同实体离线变更合并与在途变更围栏重基、`CONFLICT`/`REJECTED`/`RESOURCE_DELETED` 本地收敛及拉取/快照挂起实体保护 | 真实后端双设备并发冲突实测 |
+| 专注与统计 | 新增 `useFocusStore.ts` + `focusController.ts` 基于墙钟 `phaseEndEpochMs` 持久化跨页/锁屏倒计时，仅自然完成写入 `focus_outbox` 并调用 `POST /api/focus-sessions`（终态 4xx 不阻塞队列头）；登录启动先 Sync 再 flush outbox；`statsApi.ts` 传本地 IANA `timeZone` | 微信后台挂起 / 锁屏跨日真机走查 |
+| 复习与知识 | Mobile「学习」拆分为两页直达式：`pages/mobile/learn/index` 为底部 Tab 主页（单行顶栏 + 横向学科胶囊〔唯一激活态 `activeSubjectId`、切换与挂载自动左对齐滚动、`mask-image` 左右边缘透明渐隐及右侧卡片栅格对齐的网格展开按钮，点击呼出顶部下拉双列选科弹窗〕+ 「学科记忆规划卡」〔3 段分布进度条、左卡浅橄榄绿整卡可点大号「待学习」、右卡浅暖米动态合入「待复习 / 自由自测」、底栏无外框 `5 个 / 10 个` 分组切换、仅依赖 `syncStore.lastSyncedAt` 刷新与 404 容错〕+ 舒展间距的分科知识块列表/搜索 + Markdown/TeX 阅读抽屉及复制/新建/编辑/删除；已移除「新建学科」入口与知识块「自主整理」冗余来源标注，`mobile/home` 与 `tablet/subject-hall` 及 Tablet `WorkspaceCenterReader` 保持不变）；`pages/mobile/review/index` 为二级无底栏全屏生命周期复习页（通过 `useMobileLifecycleReview` + `reviewApi` 完整承载 PC 端 `LEARNING_READ/RECALL/CHECK`、`REVIEW_RECALL/CHECK`（`GOOD`/`HARD`/`AGAIN`/「记错了」/`mastered` 重学）、`FUZZY_RECALL/CHECK`（本地「想起来了」与纠偏 `REVIEW_CORRECTED`/重复 `LEARNING_REOPENED`）、`GROUP_COMPLETE`/`ROUND_COMPLETE`、`pendingReviewId` 历史恢复、防剧透遮罩、冻结命令持久化与 `409 RESOURCE_VERSION_CONFLICT` 恢复，并在 `useSyncStore` 重置本地作用域时同步清理 `auralis:review:lifecycle:pending:<userId>:<serverDeviceId>`）；Tablet Workspace「学科复习」（`useDueReview`）保持原有双步抽卡独立不受影响；Workspace 与 Mobile 均支持真实创建/编辑/删除知识块，`blockSyncMapper.ts` 修复推送 `APPLIED` 后 `sync_version` 落盘 | 真实登录态下新 Mobile「学习 → 复习 → 自测」完整联调、微信开发者工具与真机双端交互及版本冲突界面走查 |
+| 资料、Overview 与 AI | 新增 `filePicker.ts`（纯文件选择，无相机）+ `sourceApi.ts` + `overviewApi.ts`；Workspace 拆分为 `WorkspaceSourceRail` / `WorkspaceCenterReader` / `WorkspaceAiPanel`，按 `ChatConversationScope` 4 字段匹配并强制 `SUBJECT` 模式省略 `currentSourceId`/`sourceIds`；非 `READY` 资料跳过 `getSource` 避免 409；AI 气泡仅保留「复制」，移除存为知识块；Chat 请求带登录世代/作用域围栏并在失败时保留草稿 | 真实 MinIO 上传/下载域名、SSE 断流、弱网恢复、PC→平板 Overview 自动回读联调 |
+| 手写 | `tabletHandwritingNotesEnabled` 继续默认关闭，workspace 不暴露笔记按钮与标尺底纹；既有底层模型保留 | 自由画布多端联动与真机触控压感单独排期 |
 
 ## 共享业务接入边界
 
@@ -24,7 +39,7 @@ Task 契约不包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Sto
 - 两端 Profile 共用 `useAiUsage`，展示认证额度接口的已结算、预留、剩余及当地重置时间。切换账号/离页/新请求使旧响应失效，加载和失败不伪造零额度；预算错误只提示显式重试，不自动补发。
 - KnowledgeBlock 同步使用 `content`，本地完整 `preview` 与之映射，不向 Server 发送旧 `summary/tags`。端侧标签存储仍保留，未据此新增专注历史或 Overview 展示。
 - Asset upload-intent 使用 `clientImportId`，每次操作生成 ID，调用方可提供稳定 ID 重试；未新增持久队列。
-- 共享 SDK 提供任务 schedule insertion、复习生命周期与 Overview 类型。实际页面调用以[页面 API 映射](../contracts/MobilePagesAPIMap.md)为准。
+- 共享 SDK 提供任务 schedule insertion、复习生命周期与 Overview 类型。实际页面调用以[下方页面 API 与数据边界](#手机页面-api-与数据边界)为准。
 
 ## 当前技术栈
 
@@ -56,17 +71,15 @@ Auralis-Mobile/src/
 | 页面 | 路径 |
 | --- | --- |
 | 启动分流 | `pages/launch/index` |
-| 首页 | `pages/mobile/home/index` |
+| 首页（今日） | `pages/mobile/home/index` |
+| 学习（学科与知识块） | `pages/mobile/learn/index` |
+| 复习（二级抽卡） | `pages/mobile/review/index` |
 | 专注 | `pages/mobile/pomodoro/index` |
+| 个人资料（我的） | `pages/mobile/profile/index` |
 | AI | `pages/mobile/ai-search/index` |
-| 统计 | `pages/mobile/stats/index` |
-| 设置 | `pages/mobile/settings/index` |
 | 登录 | `pages/mobile/login/index` |
-| 时间线 | `pages/mobile/timeline/index` |
-| 复习 | `pages/mobile/review/index` |
-| 资产 | `pages/mobile/asset/index` |
-| 个人资料 | `pages/mobile/profile/index` |
-| 手写 | `pages/mobile/handwriting/index` |
+
+（已按 2026-11-16 规划移除 `mobile/settings`、`mobile/timeline`、`mobile/handwriting`、`mobile/asset`、`mobile/stats` 五个孤岛/重复页。）
 
 ### 平板页面
 
@@ -75,20 +88,52 @@ Auralis-Mobile/src/
 | 仪表盘 | `pages/tablet/dashboard/index` |
 | 学科大厅 | `pages/tablet/subject-hall/index` |
 | 工作区 | `pages/tablet/workspace/index` |
-| 手写 | `pages/tablet/handwriting/index` |
+| 手写（默认 flag 关闭） | `pages/tablet/handwriting/index` |
 | 专注 | `pages/tablet/pomodoro/index` |
-| 复习 | `pages/tablet/review/index` |
 | 个人资料 | `pages/tablet/profile/index` |
 | AI | `pages/tablet/ai-search/index` |
 | 登录 | `pages/tablet/login/index` |
 
-`pages.json` 使用 `#ifndef MP-WEIXIN` 包裹 Tablet 页面，因此微信产物只包含 launch 与 mobile 页面。微信下 launch 固定进入手机首页。
+（已移除独立 `tablet/review`，统一并入工作区「学科复习」面板；`pages.json` 继续以 `#ifndef MP-WEIXIN` 包裹 Tablet 页面。）
+
+### 手机页面 API 与数据边界
+
+| 页面 | 远程 API / 数据入口 | 当前边界 |
+| --- | --- | --- |
+| Login | Auth 登录/邮箱验证码/注册/找回密码/刷新、`/api/auth/me` | 用户名与已验证邮箱均可登录；表单执行共享新密码规则预校验 |
+| Home（今日） | Task/Subject/Block Store → Sync + `+` 面板（任务 / 知识块 / 纯文件上传→`uploadSubjectFile` + `POST /api/sources`） | 7 日真实日期条、完整当日日程与待办 DDL；待办在当前会话内勾选完成后暂时原地变灰保留（`homePendingTasks`，不计入剩余待办计数与专注选择器，支持再次点击取消恢复），离线待同步任务不可删改伪造统计 |
+| Review（学习） | 到期队列、`states`、`reviewApi`（块详情 / `history` / `attempt` / `confirm` / `correct` / `learning-completions` / `learning-reopen`） | 仅针对单学科（默认选中首个/当前学科，不设“全部学科”）；由 `composables/useMobileLifecycleReview.ts` 驱动与 PC 同源的「学习 · 巩固 · 复习 · 自测」全流程状态机：按 `5 个 / 10 个` 分组顺序进入「待学习（初学阅读→遮罩回忆→核对入队列）」「待复习（遮罩回忆→`GOOD`/`HARD` 转巩固/`AGAIN`/「记错了」/重学）」与「巩固（`FUZZY` 本地通过或二次重学）」；支持 `GROUP_COMPLETE` / `ROUND_COMPLETE` 里程碑、无待办时抽取 `5/10` 个已学块进入「自测复习」、路由参数就绪门禁与冷启动本地块水合，以及账号切换/并发 `409` 冲突自动恢复（Tablet Workspace 仍沿用原有 `useDueReview` 双步抽卡） |
+| Pomodoro（专注） | `useFocusStore`（墙钟持久化 + `focus_outbox`）→ `POST /api/focus-sessions`、Task Store | 对齐 PC 固定 25 分钟计时核心与原样式「当前专注」单卡（顶部日期胶囊、中间计时区在余下视口空间内自适应居中、底部单卡紧贴导航栏与左右边距并支持点击整卡弹出 `TaskSelectSheet` 切换任务及完成后标记完成；无时长预设、顶部重复选择条与今日看板）；`TaskSelectSheet` 沿用 PC 暖米白配色（`#F7F2EB` / `#FAF7F2`）；自动优先匹配进行中或 10 分钟内排期任务，否则自由学习；进行中锁定，跳过与重置不计数 |
+| Profile（我的） | Auth（昵称更新 `PATCH /api/auth/me`、改密、`DELETE /api/auth/me` 注销） / Sync Store（`syncController.ts` + `syncPreferences.ts`）、Device Sessions、Local Subjects/Blocks、`GET/PUT /api/ai/settings` & `POST /api/ai/settings/test` & `GET /api/ai/usage`、`StudyMetrics`（`variant="pc"`） | 对齐 PC 个人页结构与燕麦玻璃态风格，仅保留移动端所需设置：资料卡（头像、显示名称与用户名，无专注天数/设备徽标及右侧编辑按钮）、5 项核心学习指标、学科知识分布（Top 5）、同步与数据（手动同步、`auralis.settings.autoSync`、本地离线重置）、AI 模型与额度（`AI 服务商`输入框与 `normalizeAiProvider` 归一，无预设分段切换与右侧模型胶囊）、账号与安全凭证（内联设备会话、显示名称/密码修改、密码确认注销）及退出登录；省略 PC 桌面解析中心/自动概览/未接线外观字号开关与二进制头像上传 |
+| AI Search | `POST /api/ai/conversations`、`GET/DELETE /api/ai/conversations`、`/api/ai/messages/stream`、`POST /api/ai/conversations/{conversationId}/runs/{runId}/cancel`、`useSubjectStore`、`useBlockStore` | Claude 极简无框正文 + DeepSeek/PC 思考/检索折叠条（实时接收 `reasoning.delta` 与 `tool.*`，历史对话不回放过程）；采用纯色 `#F7F2EB` 底板（无径向色带）、`AppHeader` 统一 `40×40px` 对称圆形返回/历史按钮（`1px solid #EAE6DD` 细描边）；空态去掉星芒装饰改以具体学科/知识块数量锚点（`formatMobileAiScopeAnchor`）+ 竖向左对齐纯文字引导卡呈现；底部升级为带暖色悬浮阴影的纯白双层 `20px` 输入面板（`z-index: 120` 防遮挡），下半区左侧下沉范围胶囊（`6px` 状态圆点 + 向上弹出菜单，发送前自选「全部资料」或单科，受理/绑定后锁定）及活跃会话 `+` 新对话键，右侧深橄榄绿发送键 / 生成中停止键；右上历史入口改为右侧滑出抽屉菜单；不支持图片上传，预受理失败保留草稿 |
+
+### Tablet 页面组数据边界
+
+Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
+
+| 页面组 | 当前数据边界 | 剩余缺口 |
+| --- | --- | --- |
+| Dashboard | `useTaskStore` + `useDueReview` + `StudyMetrics`（`statsApi` 传本地 `timeZone`）；移除“继续上次学习”卡片，右栏提供分学科复习快捷入口跳转 `?id=&panel=review` | 真机触控滚动与弱网态待验 |
+| Subject Hall | Subject Store → Sync；3 列禅意卡片、大小写去重校验与提交锁 | 多设备新增/改名并发验证 |
+| Workspace | `WorkspaceSourceRail`（`sourceApi` 分页与删除、`uploadSubjectFile` 上传）+ `WorkspaceCenterReader`（`assetApi.downloadUrl` 签名预览、`overviewApi` 正式 Markdown、`useBlockStore` 增改删无 `difficulty`、翻面复习）+ `WorkspaceAiPanel`（严格 `ReadingContext` + 4 字段 `chatScope` 历史隔离，仅复制） | 真实 MinIO 预览域名、SSE 断流恢复与横屏长时使用待验 |
+| Pomodoro | 与手机共享 `useFocusStore` / `focusController`，通过 `TimerCore` 渲染 | 锁屏与息屏恢复真机走查 |
+| Profile / AI Search | 2 栏禅意个人中心（改昵称/改密/会话/同步/额度/BYOK，移除 7 个伪开关）；双栏 AI 会话历史与 Markdown 对话 | 真实 Provider 流式稳定性与长会话切换待验 |
+| Handwriting | `tablet_notes`、`NoteDocument`、repository、`handwritingEngine` | feature flag 默认关闭；独立保留待后续验收 |
+
+### 启动、会话存储与同步生命周期
+
+- `VITE_API_BASE_URL` 与 `VITE_WS_BASE_URL` 是必填运行时配置；微信只接受 HTTPS/WSS。生产代码不提供 localhost fallback。
+- `requestCore.ts` 发送 Bearer token、接收直接 DTO/RFC Problem Details，并对并发 401 共享一次 refresh；refresh 请求本身禁止递归刷新。
+- Auth 会话保存在 `auralis:auth:v2`，客户端注册标识保存在 `auralis:device:id:v2` 并作为 `clientDeviceKey` 发送；服务端返回的 canonical ID 为 `serverDeviceId`，注册成功直接建立会话并进入对应端首页。
+- H5 表键、Pomodoro 今日计数和原生 SQLite 文件按 `userId/serverDeviceId` 使用独立 scope；reset 切换到新的 generation scope 后重建。用户已授权一次性删除旧全局 `h5_db_*`/`_doc/auralis.db` 业务表。
+- Sync 使用 `/api/sync/push`、`/api/sync/pull?cursor=<opaque>`、`/api/sync/snapshot`；Realtime 先请求 `/api/realtime/ticket`，再连接 `/ws/events`，URL 和心跳不携带 access token。
+- `App.vue` 在已认证会话恢复后初始化当前 scope 数据库，先执行 snapshot/增量 Sync（确保本地任务先落库），再将 `focusController` 待传记录冲刷至 `/api/focus-sessions`，最后连接 Realtime；登录后启动，退出或隐藏时断开，重新显示时同步并重连。网络恢复和 Realtime 的 `SYNC_CHANGED`/`REVIEW_UPDATED` 触发幂等同步。
 
 ## 设备分流
 
 - `pages/launch/index` 负责首次选择手机或平板入口。
 - 进入某一端后，应用不根据窗口变化自动在两套路由间 reLaunch。
-- 手机和平板共用登录、注册和找回密码表单。注册需用户名、邮箱、验证码和密码。登录可使用用户名或已验证邮箱，找回密码需验证邮箱。个人资料直接显示用户名。
+- 手机和平板共用登录、注册和找回密码表单。注册需用户名、邮箱、验证码和密码。注册/重置的新密码至少 8 个 UTF-16 代码单元，包含 Unicode 大写、小写字母及标点或符号，最多 72 个 UTF-8 字节；登录不应用新复杂度校验。登录可使用用户名或已验证邮箱，找回密码需验证邮箱。个人资料直接显示用户名。
 - 登录、注册和邮箱验证接口独立反馈输入错误。受保护请求明确续期失效时返回当前端登录页，暂时性网络或服务故障保留本机会话。
 - 物理分包当前未作为完成条件，微信依赖条件编译控制页面集合。
 
@@ -101,6 +146,7 @@ Auralis-Mobile/src/
 | `useTaskStore.ts` | 任务、排期、状态 |
 | `useSubjectStore.ts` | 学科与当前上下文 |
 | `useSyncStore.ts` | mutation、cursor 与同步 |
+| `useFocusStore.ts` | 专注计时墙钟状态、本地日计数与受 `auralis.settings.autoSync` 约束的后台 outbox 冲刷 |
 | `useDeviceStore.ts` | 设备与端类型 |
 | `useLayoutStore.ts` | 当前端导航和布局状态 |
 | `useSettingsStore.ts` | 偏好和主题 |
@@ -111,9 +157,9 @@ Auralis-Mobile/src/
 ### API
 
 - `api/request.ts`、`requestCore.ts`：环境基址、Bearer、Problem Details 和共享单次 refresh。
-- `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation 和 `/api/ai/messages/stream`。
-- `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset 和 `/ws/events` 一次性 ticket。
-- `api/assetApi.ts`、`reviewApi.ts`、`statsApi.ts`、`aiApi.ts`：预签名上传、到期复习与正式命令、强类型统计和 Conversation 列表/详情/删除。
+- `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation、`/api/ai/messages/stream`、`getRunStatus`/`recoverRunAttempt`、`decodeStreamChunk`（兼容 `Uint8Array`/`ArrayBuffer`/字符串流式 UTF-8 解码）与 401 重试异常透传；`mobileAiChat.ts` 提供 `isConversationProtocolSupported` 拦截旧协议会话写入。
+- `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset、`/ws/events` 一次性 ticket，`uni.connectSocket` 传入 `complete` 回调以返回 `SocketTask`，并以 `connectSeq` + `activeConnectFlight` 围栏隔离建连/断开与登录世代切换。
+- `api/assetApi.ts`、`sourceApi.ts`、`overviewApi.ts`、`focusApi.ts`、`reviewApi.ts`、`statsApi.ts`：预签名上传与下载链接、学科资料分页与删除、正式结构大纲/精炼总结读取、幂等专注记录上传、到期复习与强类型本地时区统计。
 - `api/device.ts`：设备相关能力。
 - `api/e2ee.ts`：加密辅助。
 - `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。
@@ -129,10 +175,18 @@ Auralis-Mobile/src/
 
 | 服务 | 职责 |
 | --- | --- |
-| `localDb.ts` | 端侧 SQLite 表与访问入口；原生/H5 迁移清洗 TASK 颜色键，保留 KnowledgeBlock 颜色和无效 JSON 原文 |
+| `localDb.ts` | 端侧 SQLite 表与访问入口；原生/H5 迁移清洗 TASK 颜色键、保留 KnowledgeBlock 颜色与无效 JSON 原文；H5 `parseSqlValues` 保持 SQL 字符串字面量类型并修复缓存数字字段 |
 | `localDataScope.ts` | 按 userId/serverDeviceId 选择独立 H5/SQLite namespace |
 | `legacyDataPurge.ts` | 用户授权后一次性删除旧全局 `h5_db_*`/`auralis.db` 业务表 |
 | `assetUpload.ts` | upload-intent、预签名 PUT、complete |
+| `focusController.ts` | 纯 TS 专注墙钟状态机、作用域隔离 outbox 与终态 4xx 跳过冲刷 |
+| `utils/dateKey.ts` | 本地自然日键、`HH:mm` 格式化及本地 IANA 时区识别 |
+| `utils/taskSyncMapper.ts` | Task 同步指令、取消状态（`cancelled`）与本地排期语义映射（支持 `unschedule` 与码点序 `compareTaskPosition`） |
+| `utils/blockSyncMapper.ts` | KnowledgeBlock 服务端版本（`sync_version`）与时间戳保真映射 |
+| `utils/workspaceChatScope.ts` | Workspace `ReadingContext` 构建与 4 字段 `chatScope` 匹配 |
+| `composables/useEscapeKey.ts` | H5 端弹窗与抽屉 `Escape` 键关闭钩子（卸载自动解绑） |
+| `syncController.ts` / `syncPreferences.ts`（`services/`） | 纯 TS 同步/离线重置状态机（同步互斥锁、登录世代与账户切换取消）及 `auralis.settings.autoSync` 持久化读写 |
+| `utils/filePicker.ts`、`markdown.ts`、`mobileAiChat.ts`、`mobileLearning.ts`、`sha256.ts`、`sourceFormat.ts`、`profileHelpers.ts` | 跨平台纯文件选择/上传、安全的 `<rich-text>` Markdown 与 TeX 数学公式转译（含链接/图片协议过滤、代码隔离与 `plainMarkdownExcerpt`）、手机端 AI 学科范围规约/锁定、空态数量锚点（`formatMobileAiScopeAnchor`）与流式思考步骤状态机、手机端学习阶段归一化/规划卡汇总/候选队列挑选/来源清洗（`formatBlockMeta`）与左对齐滚动定位（`computeLeadingScrollLeft`）/路由解析、与 Java `StandardCharsets.UTF_8` 严格对齐的纯 TS `sha256Utf8Hex`（兼容局域网非安全上下文）、资料状态展示与个人页纯函数计算（学科分布 Top 5、`normalizeAiProvider` 归一、AI 默认 Base URL 与表单校验） |
 | `notebookStorage.ts` | 笔记存储兼容层 |
 | `tabletNoteModel.ts` | `NoteDocument` 模型与序列化 |
 | `tabletNoteRepository.ts` | 平台仓库入口 |
@@ -151,14 +205,14 @@ Auralis-Mobile/src/
 
 ## Tablet 布局实现要点
 
+- `AppPageLayout.vue` 新增 `#overlay` 插槽并位于 `AppTabBar.vue` 之后，确保手机端全部 `zen-sheet-mask` 与 `TaskSelectSheet` 稳居浮动底部栏（`z-index: 800`）之上；`ZenWeekStrip.vue` 与 `ZenTaskRow.vue` 抽取手机首页与平板仪表盘共用的周历条及左时间轨任务行。
 - `TabletLayout.vue` 提供左侧导航、AI 入口和 modal 插槽。
 - 侧栏指示器动画当前目标为 `120ms`，路由切换延迟为 `160ms`，脚本检查至少两帧余量。
-- workspace 默认文件面板，总结栏通过 CSS 折叠联动。
-- AI 浮窗通过 modal 插槽脱离 transform 堆叠上下文。
-- 手机统计页和平板仪表盘共用 `StudyMetrics.vue`，展示知识块、本周完成任务、累计专注、完成番茄、本周新增知识块。两端使用与 PC 相同的 UTC 周一到周日周期，完成任务使用周统计的完成数，累计专注和完成番茄使用概览中的实际专注时长与自然完成轮次。平板复习页只显示本轮复习进度。手机和平板的个人资料页集中展示账号与设置。
-- 三处复习入口均先翻面核对，再上滑“认识”或下滑“不熟”。“认识”收到有效确认后计数。下滑“不熟”提交后进入待学习状态，左滑跳过本轮，右滑取消手势。未确认的请求按用户和设备保存在本机，可从任一复习入口按原命令 ID 重试；工作区仅将属于当前学科的有效提交纳入“已完成”。缺少正文哈希的旧卡片可跳过。
+- 工作区拆分为三栏组件：`WorkspaceSourceRail.vue`（学科总览 + 资料分页列表）、`WorkspaceCenterReader.vue`（预览 / 大纲 / 知识块 / 复习单头四标签，兼容 `?id=` 与 `?subjectId=` 参数）和 `WorkspaceAiPanel.vue`（按作用域绑定历史与伴读，仅提供复制操作）；知识块创建/编辑与删除确认窗均挂载在 `#modal` 插槽脱离 transform 堆叠上下文。
+- 手机「我的」、平板「个人中心」与平板「仪表盘」共用 `StudyMetrics.vue`，展示知识块、本周完成任务、累计专注、完成番茄与本周新增知识块；`statsApi.getWeekly` 显式携带本地 IANA 时区。手机「我的」页支持 `StudyMetrics` `variant="pc"`、`学科知识分布` Top 5、`同步与数据`（`auralis.settings.autoSync` 开关 + 同步互斥锁 + `resetOfflineData`）、`AI 设置`（沿用 PC `AI 服务商` 输入框 + `normalizeAiProvider` + `DEFAULT_AI_BASE_URLS` 补全 DeepSeek/SiliconFlow 默认地址，未配置时输入框留空并展示 DeepSeek 灰色示例、仅在服务端已保存配置时自动回填，并展示百分比/重置时间/4 格 Token 明细的 AI 配额卡片），以及`账号与安全凭证`（账号资料、内联设备会话、改密、密码确认 `DELETE /api/auth/me` 注销）；`requestCore.ts` 对改密/注销的密码错误 401（`isPasswordConfirmationFailure`）与 `/api/auth/logout` 401 免除 token 刷新与登出跳转，待后续在微信开发者工具、H5 浏览器与真实后端完成 GUI 验收。
+- 手机「学习」采用两页直达式：底部 Tab `pages/mobile/learn/index` 通过横向学科胶囊切换单学科，展示复习入口卡（按 `summarizeSubjectReview` 显示「开始复习」或「自测复习」）、支持按标题/来源/摘要搜索的本地知识块列表（基于 `useBlockStore` 本地优先持久化，在线且加载成功后显示复习阶段微标）、`<MarkdownText>` 全文阅读抽屉（含兼容非 HTTPS 局域网环境的 `copyTextWithFallback` 安全复制、编辑与删除确认）以及新建学科弹窗（同名校验）；点击复习入口跳转至隐藏 `AppTabBar` 的全屏二级页 `pages/mobile/review/index?subjectId=...`（直入自测带 `&mode=self-test`），采用三层叠放可滑动闪卡（`← 下一张` / `→ 上一张` 在未完成卡片间循环切换且不结束本轮；`↓ 不熟` 调用 `AGAIN` 后进入 `needsLearning`「待巩固」状态并保留在队列中；`↑ 掌握 / 完成巩固` 视状态提交 `GOOD` 确认或 `learning-completions`，全部卡片完成后才结束本轮，底部仅展示手势提示；支持 5/10 张「自测复习」、继续自测、返回待复习与返回学习页）；平板工作区「学科复习」保持强制先翻面显示答案再评分「需要巩固 / 再记一次 (`AGAIN`)」「已掌握 (`GOOD`)」或跳过。未确认的请求按用户和设备保存在本机，可按原命令 ID 重试；工作区仅将属于当前学科的有效提交纳入计数，跳过缺少正文哈希的旧卡片。
 
-设计目标和页面布局见 [前端设计](../design/Frontend.md)。
+设计目标和页面布局见 [前端设计](../project/FrontendDesign.md)。
 
 ## 设备与测试契约
 
@@ -178,6 +232,13 @@ npm run test:tablet
 node scripts\check-tablet-sidebar-transition.mjs
 ```
 
+仓库根目录本地纯前端动态数据预览（基于外部 JSON `scripts/fixtures/mobile-preview-data.json` 与 `Auralis-Mobile/.env.local`）：
+
+```powershell
+node --test scripts/mobile-preview-server.test.mjs
+node scripts/mobile-preview-server.mjs
+```
+
 仓库还包含：
 
 - `scripts/tablet-feature-flags.test.ts`
@@ -188,17 +249,15 @@ node scripts\check-tablet-sidebar-transition.mjs
 
 ## 当前限制
 
-- H5/微信命令行构建不能替代微信开发者工具和真机。
-- 过往 H5/微信构建记录保存在整理前原文；本次整理未重跑，不能据旧记录声明当前构建通过。
+- 2026-11-18 完成真实后端联调前置阻塞修复（H5 流式 `Uint8Array` SSE 解码、401 刷新重试失败透传、错误响应分块解析、`uni.connectSocket` `complete` 回调与 `connectSeq` 断开围栏、`useFocusStore` 遵守 `autoSync`、本地重置清理待确认复习键、改密主动续期及历史会话/AI 断流恢复）、实测发现的 H5 `localDb` 数字字符串 `position` 强转崩溃（保留 SQL 字符串字面量、自愈既有本地数字缓存、对齐 `Lexorank`/SQLite 码点排序 `compareTaskPosition` 并过滤 `CANCELLED` 任务）修复，以及首次切页路由预加载（`utils/pagePreload.ts`）、`AppTabBar`/`TabletLayout` 卸载定时器清理与离场锁围栏、`#F7F2EB` 根画布对齐；2026-11-19 落地两页式「学习」方案 A 重构（新增 `pages/mobile/learn/index.vue` 与 `utils/mobileLearning.ts`，改造 `pages/mobile/review/index.vue` 为二级全屏复习页并支持自测直入），并进一步闭环修复 Mobile 同步 outbox 与 H5 本地数据库并发问题（`localDb.ts` H5 自增 `id` 分配与旧数据回填、引号感知 H5 `UPDATE`/`SELECT`/`WHERE` 解析器、`addLocalMutation` 同实体合并与 `inFlightMutationIds` 在途围栏、`rebasePendingMutations` 重基与 `preserveMutationBaseVersion` 高版本护栏；`useTaskStore`/`useBlockStore` 删除统一走 `recordMutation`；`syncController.ts` 在拉取与快照期跳过挂起/`PROCESSING` 实体、结算 `CONFLICT`/`REJECTED`/`RESOURCE_DELETED` 并收敛无快照拒绝、保留推后异常局部刷新），并对齐 PC 端过期任务自动完成与已结束排期完成锁定规则（`taskSyncMapper.ts` 过期与锁定判定、`useTaskStore.ts` 写前作用域围栏与重读循环保护、账号切换同步清表、`onSyncCompleted`/`onTaskMutationRejected` 显式收敛、`ZenTaskRow.vue` 与双端首页锁态展示及拒收防重入），最终落盘自动化基线通过（`type-check`、`check:r4-mobile` 扫描 79 文件、`check-tablet-sidebar-transition.mjs`、`test:r4-mobile` 93/93、`test:tablet`、`build:h5` 与 `build:mp-weixin` 均退出码 0）；本轮已拉起 `http://localhost:5174/` H5 服务并在首页完成本地缓存渲染验证，因 `http://localhost:8080` 后端未启动（`net::ERR_CONNECTION_REFUSED`）而停在熔断门槛，新「学习 → 复习」两页真实联调、微信开发者工具及真实后端真机交互待后端启动后复测验收。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
 - Mobile 将 TypeScript 固定为 5.3.3 以匹配 vue-tsc 1.8.27。
 - Tablet 复杂交互需要真实触控屏。
-- 图片上传已实现客户端 intent/PUT/complete，但请求/upload/download 合法域名、MinIO、AI、双设备 reset 和弱网恢复仍需真实环境联调。
+- 文件上传/下载预览与真实 MinIO 域名、SSE 断流、弱网恢复、双设备 reset 并发仍需真实后端环境联调走查。
 
 ## 修改后的强制回写
 
-- 页面、Store、服务、条件编译或 feature flag：更新本文件。
-- 交互与视觉：更新 `docs/design/Frontend.md`。
-- 页面调用：更新 `docs/contracts/MobilePagesAPIMap.md`。
-- API/数据变化：更新对应契约。
-- 状态、风险和发布：更新 `current/` 与 Changelog。
+- 页面、Store、服务、页面 API 映射、条件编译或 feature flag：更新本文件。
+- 交互与视觉：更新 `docs/project/FrontendDesign.md`。
+- API/数据变化：更新对应契约（`docs/contracts/API.md`、`docs/contracts/Database.md`）。
+- 状态、风险和发布：更新 `current/` 与 `operations/Changelog.md`。

@@ -10,7 +10,7 @@
 
 ## 使用范围
 
-本文维护可复用步骤；运行故障和数据恢复见 [Runbook](Runbook.md)，服务拓扑与配置职责见[基础设施模块](../modules/Infrastructure.md)。过去的镜像、实验参数和部署流水已完整保存在[整理前记录](../archive/maintenance-2026-11-15/Deployment.md)，不作为本次执行结果。当前运行观察和未验收项见 [Status](../current/Status.md) / [IssuesAndReview](../current/IssuesAndReview.md)。
+本文维护可复用步骤；运行故障和数据恢复见 [Runbook](Runbook.md)，服务拓扑与配置职责见[基础设施模块](../modules/Infrastructure.md)。过去的镜像、实验参数和部署流水已完整保存在[整理前记录](../archive/snapshots/maintenance-2026-11-15/Deployment.md)，不作为本次执行结果。当前运行观察和未验收项见 [Status](../current/Status.md) / [IssuesAndReview](../current/IssuesAndReview.md)。
 
 | 模式 | 组成与用途 |
 | --- | --- |
@@ -88,7 +88,7 @@ Provider 使用 `DEEPSEEK`、`OPENAI_COMPATIBLE` 或 `SILICONFLOW` 的精确名�
 | `AURALIS_AI_LIMITS_*` | 并发、窗口额度、任务预算、预留与租约 |
 | `VITE_OVERVIEW_SSE_DEADLINE_MS` | PC 构建时外层期限，改变后须重建前端 |
 
-Overview 当前走清理、大纲和 Markdown 总结，超出单请求容量时尝试自动分批；不能从旧部署记录恢复 adaptive、Writer、旧估算模式或自动重试配置。后台作业的执行期限与直接请求区分，不因关闭直接请求期限而一并解除。
+Overview 当前走清理、大纲和 Markdown 总结，超出单请求容量时尝试自动分批；不能从旧部署记录恢复 adaptive、Writer、旧估算模式或自动重试配置。Overview 持久后台作业入口和 worker 已退役，手动及 PC 自动生成使用现行直接请求路径。
 
 所有 backend 实例须使用一致计量策略，不能保留绕过账本的旧实例。未知派发和缺失 usage 按保守规则结算，不以提高本机额度或删除旧记录证明问题关闭。
 

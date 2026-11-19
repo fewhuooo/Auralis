@@ -1,6 +1,6 @@
 # Auralis 运维与应急 Runbook
 
-更新时间：2026-11-15
+更新时间：2026-11-16
 
 文档状态：现行排障指南，生产恢复演练仍按 current 跟踪
 
@@ -10,7 +10,7 @@
 
 ## 使用原则
 
-本文按故障场景维护。配置、构建和发布步骤见[部署指南](Deployment.md)，当前风险见[问题登记](../current/IssuesAndReview.md)。历次现场、旧算法排障和镜像信息完整保存在[整理前记录](../archive/maintenance-2026-11-15/Runbook.md)，不能据此重复历史数据库清理或恢复退役配置。
+本文按故障场景维护。配置、构建和发布步骤见[部署指南](Deployment.md)，当前风险见[问题登记](../current/IssuesAndReview.md)。历次现场、旧算法排障和镜像信息完整保存在[整理前记录](../archive/snapshots/maintenance-2026-11-15/Runbook.md)，不能据此重复历史数据库清理或恢复退役配置。
 
 1. 先确认影响范围、版本和首个错误，保存脱敏证据后再改变状态。
 2. 不打印 secret、token、验证码、签名 URL、完整 prompt 或用户正文。
@@ -40,6 +40,12 @@ docker compose logs --tail 100 minio-init
 - 成功判据：应用稳定启动，liveness/readiness 正常，公开身份入口响应且受保护 API 拒绝无 token 请求。
 
 启动与更新命令统一见部署指南，避免诊断时意外启动第二个服务。
+
+## Server 全量自动测试
+
+从仓库根目录运行 `scripts/test-server.ps1`。它使用临时 PostgreSQL 容器和合成 localhost TLS keystore，为依赖真实 PostgreSQL URL 或 TLS fixture 的测试提供隔离输入，并在退出时清理本次创建的资源。可通过 `-Tests 'AiFeaturePolicyParityTests,AiUsageGuardPostgresLockTests,OverviewDeadlineSlowDripTests'` 重跑指定测试类；默认运行完整 Server 测试。不要将业务 `.env` 或共享数据库 URL 传给这项测试；脚本自身不读取它们。需要 Docker daemon、Java 21 JDK 和可用的 `pgvector/pgvector:0.8.6-pg17-bookworm` 镜像（镜像缺失时 Docker 可能下载）。
+
+脚本直接返回 Maven 的退出码。失败时查看 `Auralis-Server/target/surefire-reports/` 的报告，把本轮失败与既有测试/环境基线分开归因；Testcontainers、PostgreSQL fixture 和合成 TLS 测试覆盖的是不同边界，不能用汇总成功替代真实 Provider、GUI 或生产验收。
 
 ## 验证码邮件
 
