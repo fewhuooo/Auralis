@@ -371,16 +371,33 @@ function pickSentinelPrefix(input: string, kind: string): string {
   return prefix
 }
 
-function applyZenRichTextStyles(html: string): string {
+function applyZenRichTextStyles(html: string, mutedReasoning = false): string {
+  if (mutedReasoning) {
+    return html
+      .replaceAll('<h1', '<h1 style="font-size:13.5px;font-weight:600;color:#8C887F;margin:8px 0 4px;line-height:1.45;"')
+      .replaceAll('<h2', '<h2 style="font-size:13px;font-weight:600;color:#8C887F;margin:7px 0 4px;line-height:1.45;"')
+      .replaceAll('<h3', '<h3 style="font-size:13px;font-weight:600;color:#8C887F;margin:6px 0 3px;line-height:1.45;"')
+      .replaceAll('<h4', '<h4 style="font-size:13px;font-weight:600;color:#8C887F;margin:5px 0 3px;line-height:1.45;"')
+      .replaceAll('<p>', '<p style="margin:0 0 6px;line-height:1.65;color:#8C887F;">')
+      .replaceAll('<ul>', '<ul style="margin:4px 0 6px;padding-left:1.45em;list-style-position:outside;color:#8C887F;">')
+      .replaceAll('<ol>', '<ol style="margin:4px 0 6px;padding-left:1.45em;list-style-position:outside;color:#8C887F;">')
+      .replaceAll('<li>', '<li style="margin:0 0 4px;line-height:1.62;color:#8C887F;overflow-wrap:anywhere;">')
+      .replaceAll('<blockquote>', '<blockquote style="margin:6px 0;padding:6px 10px;border-left:2px solid rgba(140,136,127,0.4);color:#8C887F;">')
+      .replaceAll('<strong>', '<strong style="font-weight:600;color:#7B776F;">')
+      .replaceAll('<hr>', '<hr style="border:none;border-top:1px solid rgba(140,136,127,0.18);margin:8px 0;" />')
+      .replace(/<table(?=[\s>])/g, '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;color:#8C887F;"')
+      .replace(/<th(?=[\s>])/g, '<th style="border:1px solid rgba(140,136,127,0.18);padding:5px 8px;background-color:rgba(139,154,110,0.08);text-align:left;font-weight:600;color:#8C887F;"')
+      .replace(/<td(?=[\s>])/g, '<td style="border:1px solid rgba(140,136,127,0.14);padding:5px 8px;color:#8C887F;"')
+  }
   return html
     .replaceAll('<h1', '<h1 style="font-size:17px;font-weight:700;color:#1C1C1A;letter-spacing:-0.015em;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid rgba(28,28,26,0.08);line-height:1.35;"')
-    .replaceAll('<h2', '<h2 style="font-size:15px;font-weight:700;color:#1C1C1A;letter-spacing:-0.01em;margin:16px 0 7px;padding-left:9px;border-left:3px solid #8B9A6E;line-height:1.38;"')
-    .replaceAll('<h3', '<h3 style="font-size:14px;font-weight:600;color:#2C2C28;margin:12px 0 5px;line-height:1.42;"')
+    .replaceAll('<h2', '<h2 style="font-size:15.5px;font-weight:600;color:#1C1C1A;letter-spacing:-0.01em;margin:16px 0 8px;line-height:1.4;"')
+    .replaceAll('<h3', '<h3 style="font-size:14px;font-weight:600;color:#2C2C28;margin:13px 0 6px;line-height:1.45;"')
     .replaceAll('<h4', '<h4 style="font-size:13.5px;font-weight:600;color:#474741;margin:10px 0 4px;line-height:1.42;"')
     .replaceAll('<p>', '<p style="margin:0 0 10px;line-height:1.72;color:#2C2C28;">')
-    .replaceAll('<ul>', '<ul style="margin:6px 0 12px;padding-left:18px;color:#2C2C28;">')
-    .replaceAll('<ol>', '<ol style="margin:6px 0 12px;padding-left:20px;color:#2C2C28;">')
-    .replaceAll('<li>', '<li style="margin:4px 0;line-height:1.68;">')
+    .replaceAll('<ul>', '<ul style="margin:10px 0 12px;padding-left:1.55em;list-style-position:outside;color:#2C2C28;">')
+    .replaceAll('<ol>', '<ol style="margin:10px 0 12px;padding-left:1.55em;list-style-position:outside;color:#2C2C28;">')
+    .replaceAll('<li>', '<li style="margin:0 0 11px;line-height:1.75;overflow-wrap:anywhere;">')
     .replaceAll('<blockquote>', '<blockquote style="margin:12px 0;padding:9px 14px;border-left:3px solid #8B9A6E;background-color:#F7F2EB;color:#5F5E5C;border-radius:0 10px 10px 0;">')
     .replaceAll('<strong>', '<strong style="font-weight:700;color:#1C1C1A;">')
     .replaceAll('<hr>', '<hr style="border:none;border-top:1px solid rgba(28,28,26,0.08);margin:14px 0;" />')
@@ -396,6 +413,7 @@ export interface StreamingBlockDraft {
 
 export interface RenderMarkdownOptions {
   isStreaming?: boolean
+  mutedReasoning?: boolean
 }
 
 const STREAM_CURSOR_DOT_HTML = '<span style="display:inline-block;width:8px;height:8px;margin-left:5px;border-radius:50%;vertical-align:middle;background-color:rgba(110,127,80,0.72);"></span>'
@@ -544,7 +562,7 @@ function appendInlineCursorDot(html: string): string {
   return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
 }
 
-function parseStyledMarkdownSegment(markdownSegment: string): string {
+function parseStyledMarkdownSegment(markdownSegment: string, mutedReasoning = false): string {
   if (!markdownSegment) return ''
   const codePrefix = pickSentinelPrefix(markdownSegment, 'CODE')
   const mathPrefix = pickSentinelPrefix(markdownSegment, 'MATH')
@@ -591,7 +609,7 @@ function parseStyledMarkdownSegment(markdownSegment: string): string {
   }
 
   const parsed = markedInstance.parse(restoredForMarkdown, { async: false }) as string
-  let styled = applyZenRichTextStyles(parsed)
+  let styled = applyZenRichTextStyles(parsed, mutedReasoning)
   for (let idx = 0; idx < mathTokens.length; idx++) {
     styled = styled.replace(`${mathPrefix}${idx}@@`, () => mathTokens[idx])
   }
@@ -603,25 +621,30 @@ function buildStreamingDraftHtml(draft: StreamingBlockDraft): string {
   return `<div style="min-height:72px;margin:10px 0;padding:10px 12px;border-radius:10px;background-color:#F4EFE6;border:1px solid #EAE6DD;box-sizing:border-box;"><div style="font-size:11px;font-weight:600;color:#556B3D;margin-bottom:5px;">${label}</div><pre style="margin:0;padding:0;font-family:var(--font-family-mono, monospace);font-size:12px;line-height:1.55;color:#7A7A75;white-space:pre-wrap;word-break:break-word;">${escapeHtml(draft.raw)}${STREAM_CURSOR_DOT_HTML}</pre></div>`
 }
 
-/** Renders Markdown + LaTeX into safe rich-text HTML, with optional streaming stabilization. */
+/** Renders Markdown + LaTeX into safe rich-text HTML, with optional streaming stabilization and muted reasoning style. */
 export function renderMarkdownHtml(markdownText: string, options?: RenderMarkdownOptions): string {
-  const isStreaming = Boolean(options?.isStreaming)
+  const mutedReasoning = Boolean(options?.mutedReasoning)
+  const isStreaming = Boolean(options?.isStreaming) && !mutedReasoning
+  const wrapperStyle = mutedReasoning
+    ? 'font-size:13px;line-height:1.65;color:#8C887F;word-break:break-word;'
+    : 'font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;'
+
   if (!markdownText) {
     return isStreaming
-      ? `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${STREAM_CURSOR_DOT_HTML}</div>`
+      ? `<div style="${wrapperStyle}">${STREAM_CURSOR_DOT_HTML}</div>`
       : ''
   }
 
   if (!isStreaming) {
-    const styled = parseStyledMarkdownSegment(markdownText)
-    return `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${styled}</div>`
+    const styled = parseStyledMarkdownSegment(markdownText, mutedReasoning)
+    return `<div style="${wrapperStyle}">${styled}</div>`
   }
 
   const { stablePrefix, draft } = extractStreamingBlockDraft(markdownText)
   let body = ''
   if (stablePrefix) {
     const prepared = autoCloseStreamingMarkdown(stablePrefix)
-    body = parseStyledMarkdownSegment(prepared)
+    body = parseStyledMarkdownSegment(prepared, false)
     if (!draft) {
       body = appendInlineCursorDot(body)
     }
@@ -632,7 +655,7 @@ export function renderMarkdownHtml(markdownText: string, options?: RenderMarkdow
   if (!body) {
     body = STREAM_CURSOR_DOT_HTML
   }
-  return `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${body}</div>`
+  return `<div style="${wrapperStyle}">${body}</div>`
 }
 
 export function plainMarkdownExcerpt(raw: string): string {

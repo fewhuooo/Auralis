@@ -111,3 +111,18 @@ test('autoCloseStreamingMarkdown and extractStreamingBlockDraft stabilize increm
   assert.match(settledHtml, /<table/)
   assert.doesNotMatch(settledHtml, /rgba\(110,127,80,0\.72\)/)
 })
+
+test('renderMarkdownHtml applies hanging-indent list typography and muted reasoning styling', () => {
+  const listHtml = renderMarkdownHtml('## 核心结论\n\n1. 第一项重点说明\n2. 第二项详细分析')
+  assert.match(listHtml, /<h2 style="font-size:15\.5px;font-weight:600/)
+  assert.doesNotMatch(listHtml, /border-left:3px solid #8B9A6E;line-height:1\.38/)
+  assert.match(listHtml, /padding-left:1\.55em;list-style-position:outside/)
+  assert.match(listHtml, /margin:0 0 11px;line-height:1\.75/)
+
+  const reasoningHtml = renderMarkdownHtml('思考要点：\n\n- 第一步核对范围', {
+    isStreaming: true,
+    mutedReasoning: true,
+  })
+  assert.match(reasoningHtml, /font-size:13px;line-height:1\.65;color:#8C887F/)
+  assert.doesNotMatch(reasoningHtml, /rgba\(110,127,80,0\.72\)/)
+})

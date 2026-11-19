@@ -43,6 +43,7 @@
         class="chat-scroll"
         :scroll-into-view="scrollTargetId"
         @scroll="handleChatScroll"
+        @wheel="handleChatWheel"
         @touchstart="handleChatTouchStart"
         @touchmove="handleChatTouchMove"
       >
@@ -58,53 +59,17 @@
             </view>
 
             <view v-else class="assistant-entry">
-              <view
-                v-if="(msg.status === 'streaming' && !hasVisibleAssistantContent(msg)) || msg.reasoningText || msg.tools.length > 0"
-                class="process-block"
-              >
-                <view
-                  class="process-toggle"
-                  :class="{ 'is-static': !msg.reasoningText && msg.tools.length === 0 }"
-                  role="button"
-                  :aria-expanded="msg.processExpanded"
-                  @click="toggleProcess(idx)"
-                >
-                  <view
-                    class="process-dot"
-                    :class="{
-                      'is-streaming': msg.status === 'streaming' && !hasVisibleAssistantContent(msg),
-                      'is-error': hasFailedToolWithoutAnswer(msg),
-                    }"
-                  ></view>
-                  <text
-                    class="process-summary"
-                    :class="{ 'is-shimmer': msg.status === 'streaming' && !hasVisibleAssistantContent(msg) }"
-                  >{{ resolveAssistantProcessText(msg) }}</text>
-                  <LineIcon
-                    v-if="msg.reasoningText || msg.tools.length > 0"
-                    :name="msg.processExpanded ? 'chevron-up' : 'chevron-down'"
-                    size="13px"
-                    color="var(--text-muted)"
-                  />
-                </view>
-
-                <view v-if="msg.processExpanded" class="process-body">
-                  <view v-if="msg.tools.length > 0" class="process-tools">
-                    <view
-                      v-for="step in msg.tools"
-                      :key="step.id"
-                      class="process-tool-row"
-                    >
-                      <text class="process-tool-name">{{ step.label }}</text>
-                      <text class="process-tool-status" :class="step.status.toLowerCase()">
-                        {{ formatAiToolStatus(step.status) }}
-                      </text>
-                    </view>
-                  </view>
-
-                  <text v-if="msg.reasoningText" class="process-reasoning">{{ msg.reasoningText }}</text>
-                </view>
-              </view>
+              <MobileChatProcessArea
+                :reasoning="msg.reasoningText"
+                :tools="msg.tools"
+                :timeline="msg.processTimeline"
+                :streaming="msg.status === 'streaming'"
+                :has-content="hasVisibleAssistantContent(msg)"
+                :expanded="msg.processExpanded"
+                :error-highlight="hasFailedToolWithoutAnswer(msg)"
+                @toggle="toggleProcess(idx)"
+                @progress="handleStreamingTextProgress"
+              />
 
               <MobileChatPartList
                 v-if="hasVisibleAssistantContent(msg)"
@@ -387,70 +352,14 @@
         </view>
       </view>
 
-      <view v-if="showSaveBlockModal" class="save-block-mask" @click="closeSaveBlockModal">
-        <view class="save-block-dialog" @click.stop>
-          <view class="save-block-header">
-            <text class="save-block-title">存为知识块</text>
-            <view class="history-close-btn" role="button" aria-label="关闭" @click="closeSaveBlockModal">
-              <LineIcon name="close" size="15px" color="var(--text-muted)" />
-            </view>
-          </view>
-
-          <view class="save-block-field">
-            <text class="save-block-label">所属学科</text>
-            <scroll-view v-if="subjectStore.subjects.length > 0" scroll-x :show-scrollbar="false" class="save-subject-strip">
-              <view class="save-subject-row">
-                <view
-                  v-for="sub in subjectStore.subjects"
-                  :key="sub.id"
-                  class="save-subject-pill"
-                  :class="{ 'is-active': saveBlockSubjectId === sub.id }"
-                  role="button"
-                  @click="saveBlockSubjectId = sub.id"
-                >
-                  <text>{{ sub.name }}</text>
-                </view>
-              </view>
-            </scroll-view>
-            <text v-else class="save-subject-empty">暂无可用学科，请先在首页或 PC 端创建学科</text>
-          </view>
-
-          <view class="save-block-field">
-            <text class="save-block-label">标题</text>
-            <input
-              v-model="saveBlockTitle"
-              class="save-block-input"
-              :maxlength="80"
-              placeholder="输入知识块标题…"
-            />
-          </view>
-
-          <view class="save-block-field">
-            <text class="save-block-label">内容</text>
-            <textarea
-              v-model="saveBlockContent"
-              class="save-block-textarea"
-              :maxlength="4000"
-              auto-height
-              placeholder="知识块正文…"
-            />
-          </view>
-
-          <view class="save-block-actions">
-            <view class="save-block-cancel" role="button" @click="closeSaveBlockModal">
-              <text>取消</text>
-            </view>
-            <view
-              class="save-block-confirm"
-              :class="{ disabled: savingBlock || !saveBlockSubjectId || !saveBlockTitle.trim() || !saveBlockContent.trim() }"
-              role="button"
-              @click="confirmSaveBlock"
-            >
-              <text>{{ savingBlock ? '保存中…' : '保存' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+      <SaveKnowledgeBlockModal
+        :visible="showSaveBlockModal"
+        :default-subject-id="selectedSubjectId"
+        :initial-title="saveBlockSeedTitle"
+        :initial-preview="saveBlockSeedContent"
+        @close="showSaveBlockModal = false"
+        @saved="showSaveBlockModal = false"
+      />
     </template>
   </AppPageLayout>
 </template>
@@ -470,6 +379,8 @@ import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MobileChatPartList from '@/components/MobileChatPartList.vue'
+import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
+import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
@@ -477,6 +388,7 @@ import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import {
   applyContentDelta,
   applyReasoningDelta,
+  applyRunStatusSnapshot,
   applyTerminalState,
   applyToolEvent,
   buildMobileReadingContext,
@@ -485,19 +397,15 @@ import {
   createAssistantPlaceholder,
   deriveKnowledgeBlockTitle,
   evaluateSmartScroll,
-  extractHistoryMessageContent,
-  formatAiToolStatus,
   formatMobileAiScopeAnchor,
   isConversationProtocolSupported,
   resolveConversationScope,
-  resolveProcessSummary,
-  resolveWaitingStatusText,
+  restoreConversationMessages,
   safeDecodeQueryParam,
   type MobileChatMessage,
 } from '@/utils/mobileAiChat'
 import {
   extractPartsPlainText,
-  projectMobileChatParts,
   reduceMobileChatPartEvent,
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
@@ -538,10 +446,8 @@ const loadingHistory = ref(false)
 const conversations = ref<ConversationView[]>([])
 
 const showSaveBlockModal = ref(false)
-const saveBlockTitle = ref('')
-const saveBlockContent = ref('')
-const saveBlockSubjectId = ref('')
-const savingBlock = ref(false)
+const saveBlockSeedTitle = ref('')
+const saveBlockSeedContent = ref('')
 
 useEscapeKey(() => showScopeMenu.value, () => {
   showScopeMenu.value = false
@@ -549,13 +455,11 @@ useEscapeKey(() => showScopeMenu.value, () => {
 useEscapeKey(() => showHistorySheet.value, () => {
   showHistorySheet.value = false
 })
-useEscapeKey(() => showSaveBlockModal.value, () => {
-  closeSaveBlockModal()
-})
 
 let activeStreamToken = 0
 let activeViewToken = 0
 let scrollTimer: ReturnType<typeof setTimeout> | null = null
+let runPollTimer: ReturnType<typeof setTimeout> | null = null
 let abortLocalStream: (() => void) | null = null
 let subjectsLoadPromise: Promise<void> | null = null
 let hydratedUserKey = ''
@@ -655,11 +559,11 @@ function hasCopyableContent(msg: MobileChatMessage): boolean {
   return Boolean(extractPartsPlainText(msg.parts, msg.content).trim())
 }
 
-function resolveAssistantProcessText(msg: MobileChatMessage): string {
-  if (msg.status === 'streaming' && !hasVisibleAssistantContent(msg)) {
-    return resolveWaitingStatusText(msg.tools, Boolean(msg.reasoningText.trim()))
+function stopRunPolling() {
+  if (runPollTimer) {
+    clearTimeout(runPollTimer)
+    runPollTimer = null
   }
-  return resolveProcessSummary(msg)
 }
 
 function setMessageDraining(msgId: string, draining: boolean) {
@@ -745,14 +649,23 @@ function handleChatTouchMove(event: unknown) {
   }
 }
 
+function handleChatWheel(event: unknown) {
+  const payload = event as { deltaY?: number }
+  if (typeof payload?.deltaY !== 'number') return
+  if (payload.deltaY < 0) {
+    programmaticScrollUntil = 0
+    touchPullUpDetected = true
+    autoScrollLocked.value = true
+  } else if (payload.deltaY > 0 && autoScrollLocked.value) {
+    touchPullUpDetected = false
+  }
+}
+
 function handleChatScroll(event: unknown) {
   const payload = event as { detail?: { scrollTop?: number; scrollHeight?: number } }
   const scrollTop = Number(payload?.detail?.scrollTop ?? 0)
   const scrollHeight = Number(payload?.detail?.scrollHeight ?? 0)
-  if (Date.now() < programmaticScrollUntil && !touchPullUpDetected) {
-    prevScrollTop = scrollTop
-    return
-  }
+  const isProgrammatic = Date.now() < programmaticScrollUntil
   if (chatViewportHeight <= 0) {
     void measureChatViewport()
     prevScrollTop = scrollTop
@@ -764,7 +677,7 @@ function handleChatScroll(event: unknown) {
     viewportHeight: chatViewportHeight,
     prevScrollTop,
     touchPullUpDetected,
-  }, autoScrollLocked.value)
+  }, autoScrollLocked.value, isProgrammatic)
   autoScrollLocked.value = decision.locked
   prevScrollTop = decision.nextPrevScrollTop
   if (!decision.locked) {
@@ -858,6 +771,7 @@ function clearMapKeys(map: Record<string, string> | Record<string, number>) {
 function resetChatState() {
   activeStreamToken += 1
   activeViewToken += 1
+  stopRunPolling()
   currentConversationId.value = ''
   conversationScopeState.value = 'UNBOUND'
   selectedSubjectId.value = null
@@ -916,57 +830,9 @@ function openSaveBlockModal(msg: MobileChatMessage) {
       break
     }
   }
-  saveBlockTitle.value = deriveKnowledgeBlockTitle(precedingQuestion, plainContent)
-  saveBlockContent.value = plainContent.slice(0, 4000)
-  void ensureSubjectsLoaded().then(() => {
-    const validSelected = selectedSubjectId.value && subjectStore.subjects.some(s => s.id === selectedSubjectId.value)
-    if (validSelected) {
-      saveBlockSubjectId.value = selectedSubjectId.value as string
-    } else if (!subjectStore.subjects.some(s => s.id === saveBlockSubjectId.value)) {
-      saveBlockSubjectId.value = subjectStore.subjects[0]?.id || ''
-    }
-  })
+  saveBlockSeedTitle.value = deriveKnowledgeBlockTitle(precedingQuestion, plainContent)
+  saveBlockSeedContent.value = plainContent.slice(0, 4000)
   showSaveBlockModal.value = true
-}
-
-function closeSaveBlockModal() {
-  if (savingBlock.value) return
-  showSaveBlockModal.value = false
-}
-
-async function confirmSaveBlock() {
-  if (savingBlock.value) return
-  const targetSubject = subjectStore.subjects.find(s => s.id === saveBlockSubjectId.value)
-  if (!targetSubject) {
-    uni.showToast({ title: '请先选择所属学科', icon: 'none' })
-    return
-  }
-  const title = saveBlockTitle.value.trim()
-  const preview = saveBlockContent.value.trim()
-  if (!title || !preview) {
-    uni.showToast({ title: '请填写标题和正文内容', icon: 'none' })
-    return
-  }
-  const generation = authStore.getLoginGeneration()
-  savingBlock.value = true
-  try {
-    await blockStore.addBlock({
-      subjectId: targetSubject.id,
-      subject: targetSubject.name,
-      title,
-      preview,
-      source: 'AI 对话',
-      color: '',
-    })
-    if (generation !== authStore.getLoginGeneration()) return
-    showSaveBlockModal.value = false
-    uni.showToast({ title: '已存入知识库', icon: 'success' })
-  } catch {
-    if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '保存失败，请重试', icon: 'none' })
-  } finally {
-    savingBlock.value = false
-  }
 }
 
 function formatConvDate(iso?: string): string {
@@ -1016,6 +882,7 @@ async function loadConversation(conversationId: string) {
     }
 
     activeStreamToken += 1
+    stopRunPolling()
     isTyping.value = false
     activeRunId.value = ''
     activeAttemptId.value = ''
@@ -1034,23 +901,17 @@ async function loadConversation(conversationId: string) {
       ? resolvedScope.label
       : null
 
-    messages.value = (detail.messages || [])
-      .filter(m => m.role === 'USER' || m.role === 'ASSISTANT')
-      .map((m, index) => ({
-        id: m.id || `hist-${index}`,
-        role: m.role === 'USER' ? 'user' : 'assistant',
-        content: extractHistoryMessageContent(m),
-        parts: m.role === 'ASSISTANT' ? projectMobileChatParts(m.parts) : [],
-        reasoningText: '',
-        tools: [],
-        processExpanded: false,
-        processManuallyToggled: false,
-        status: m.status === 'FAILED' ? 'failed' : m.status === 'INTERRUPTED' ? 'cancelled' : 'completed',
-        errorMessage: m.status === 'FAILED' ? '该条回答未能完成' : undefined,
-      }))
+    messages.value = restoreConversationMessages(detail)
 
-    if (detail.activeRun?.status === 'UNKNOWN' && detail.activeRun.runId && detail.activeRun.currentAttemptId) {
-      void aiApi.recoverRunAttempt(currentConversationId.value, detail.activeRun.runId, detail.activeRun.currentAttemptId).catch(() => {})
+    if (detail.activeRun?.executionActive && detail.activeRun.runId) {
+      if (detail.activeRun.status === 'UNKNOWN' && detail.activeRun.currentAttemptId) {
+        void aiApi.recoverRunAttempt(currentConversationId.value, detail.activeRun.runId, detail.activeRun.currentAttemptId).catch(() => {})
+      } else {
+        activeRunId.value = detail.activeRun.runId
+        activeAttemptId.value = detail.activeRun.currentAttemptId || ''
+        isTyping.value = true
+        scheduleRunPolling(currentConversationId.value, detail.activeRun.runId, viewToken, generation)
+      }
     }
     if (isConversationUnsupported.value && messages.value.length > 0) {
       uni.showToast({ title: '旧版对话仅供查看，请开启新对话继续提问', icon: 'none' })
@@ -1062,6 +923,36 @@ async function loadConversation(conversationId: string) {
     if (generation !== authStore.getLoginGeneration() || viewToken !== activeViewToken) return
     uni.showToast({ title: '加载失败', icon: 'none' })
   }
+}
+
+function scheduleRunPolling(conversationId: string, runId: string, viewToken: number, generation: symbol) {
+  stopRunPolling()
+  runPollTimer = setTimeout(() => {
+    void (async () => {
+      if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+      try {
+        const statusView = await aiApi.getRunStatus(conversationId, runId)
+        if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+        messages.value = applyRunStatusSnapshot(messages.value, statusView)
+        scrollToBottom(false)
+        if (statusView.executionActive && statusView.status !== 'UNKNOWN') {
+          scheduleRunPolling(conversationId, runId, viewToken, generation)
+          return
+        }
+        if (statusView.status === 'UNKNOWN' && statusView.currentAttemptId) {
+          void aiApi.recoverRunAttempt(conversationId, runId, statusView.currentAttemptId).catch(() => {})
+        }
+        isTyping.value = false
+        activeRunId.value = ''
+        activeAttemptId.value = ''
+      } catch {
+        if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+        isTyping.value = false
+        activeRunId.value = ''
+        activeAttemptId.value = ''
+      }
+    })()
+  }, 1500)
 }
 
 function confirmDeleteConversation(conversationId: string, baseVersion: number) {
@@ -1118,6 +1009,7 @@ async function ensureConversation(seedTitle: string, generation: symbol, isCurre
 
 async function stopGeneration() {
   if (!isTyping.value || isStopping.value) return
+  stopRunPolling()
   isStopping.value = true
   const targetConversationId = currentConversationId.value
   const targetRunId = activeRunId.value
@@ -1336,6 +1228,7 @@ async function sendMessage() {
   const text = query.value.trim()
   if (!text || isTyping.value || isStopping.value) return
 
+  stopRunPolling()
   activeViewToken += 1
   const streamToken = ++activeStreamToken
   const generation = authStore.getLoginGeneration()
@@ -1353,6 +1246,7 @@ async function sendMessage() {
     parts: [],
     reasoningText: '',
     tools: [],
+    processTimeline: [],
     processExpanded: false,
     processManuallyToggled: false,
     status: 'completed',
@@ -1410,6 +1304,8 @@ async function regenerateAssistantMessage(msgId: string) {
     return
   }
 
+  if (target.originatingKind === 'activity_submission' && !target.runId) return
+
   let promptText = ''
   for (let i = msgIndex - 1; i >= 0; i -= 1) {
     if (messages.value[i].role === 'user') {
@@ -1424,12 +1320,11 @@ async function regenerateAssistantMessage(msgId: string) {
 
 async function handleSubmitActivity(questionId: string, answer: MobileChatActivityAnswer) {
   if (isTyping.value || isStopping.value || isConversationUnsupported.value || !currentConversationId.value) return
+  stopRunPolling()
   const convId = currentConversationId.value
   const submissionId = pendingSubmissionIds[questionId] ?? (pendingSubmissionIds[questionId] = uuidv7())
   const questionVersion = activityVersions[questionId] ?? 1
-  const apiAnswer = typeof answer === 'string'
-    ? { text: answer }
-    : { optionKeys: [...answer] }
+  const apiAnswer: MobileChatActivityAnswer = typeof answer === 'string' ? answer : [...answer]
 
   activeViewToken += 1
   const streamToken = ++activeStreamToken
@@ -1437,7 +1332,7 @@ async function handleSubmitActivity(questionId: string, answer: MobileChatActivi
 
   preSendError.value = ''
   showScopeMenu.value = false
-  messages.value.push(createAssistantPlaceholder(`assistant-${uuidv7()}`))
+  messages.value.push(createAssistantPlaceholder(`assistant-${uuidv7()}`, 'activity_submission'))
   const aiIndex = messages.value.length - 1
   isTyping.value = true
   activeRunId.value = ''
@@ -1466,6 +1361,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   activeStreamToken += 1
   activeViewToken += 1
+  stopRunPolling()
   if (scrollTimer) {
     clearTimeout(scrollTimer)
     scrollTimer = null
@@ -1891,121 +1787,6 @@ onLoad((options) => {
   gap: 8px;
   padding: 2px 2px 4px;
   box-sizing: border-box;
-}
-
-.process-block {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.process-toggle {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: var(--radius-full);
-  background-color: rgba(28, 28, 26, 0.045);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.process-toggle.is-static {
-  cursor: default;
-  background-color: transparent;
-  padding-left: 2px;
-}
-
-.process-toggle:active {
-  background-color: rgba(28, 28, 26, 0.08);
-}
-
-.process-toggle.is-static:active {
-  background-color: transparent;
-}
-
-.process-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: var(--color-zen-sage);
-  flex-shrink: 0;
-}
-
-.process-dot.is-streaming {
-  background-color: #556B3D;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
-  animation: zenTypingPulse 1.2s ease-in-out infinite;
-}
-
-.process-dot.is-error {
-  background-color: var(--color-warning);
-}
-
-.process-summary {
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-muted);
-}
-
-.process-summary.is-shimmer {
-  color: var(--color-sage-ink);
-  animation: statusBreathe 1.6s ease-in-out infinite;
-}
-
-@keyframes statusBreathe {
-  0%, 100% { opacity: 0.65; }
-  50% { opacity: 1; }
-}
-
-.process-body {
-  margin-left: 6px;
-  padding: 4px 0 4px 11px;
-  border-left: 2px solid rgba(139, 154, 110, 0.36);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.process-tools {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.process-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-xs);
-}
-
-.process-tool-name {
-  color: var(--text-secondary);
-  font-weight: var(--font-weight-medium);
-}
-
-.process-tool-status {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-.process-tool-status.running {
-  color: var(--color-sage-ink);
-}
-
-.process-tool-status.failed {
-  color: var(--color-warning-ink);
-}
-
-.process-reasoning {
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--text-muted);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .assistant-error-banner {
@@ -2462,152 +2243,4 @@ onLoad((options) => {
   100% { transform: translateX(0); }
 }
 
-.save-block-mask {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: var(--z-index-modal, 1200);
-  background-color: rgba(28, 28, 26, 0.28);
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  animation: historyMaskFade 0.18s ease both;
-}
-
-.save-block-dialog {
-  width: 100%;
-  max-width: 420px;
-  padding: 18px;
-  border-radius: 18px;
-  background-color: #FAF7F2;
-  border: 1px solid #EAE6DD;
-  box-shadow: 0 18px 42px rgba(45, 55, 40, 0.14);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  box-sizing: border-box;
-}
-
-.save-block-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.save-block-title {
-  font-size: 16.5px;
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.save-block-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.save-block-label {
-  font-size: 12px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-muted);
-}
-
-.save-subject-strip {
-  width: 100%;
-  white-space: nowrap;
-}
-
-.save-subject-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 2px 0;
-}
-
-.save-subject-pill {
-  height: 30px;
-  padding: 0 11px;
-  border-radius: var(--radius-full);
-  background-color: #FFFFFF;
-  border: 1px solid #EAE6DD;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.save-subject-pill.is-active {
-  background-color: #EEF2E6;
-  border-color: #8B9A6E;
-  color: var(--color-sage-ink);
-  font-weight: var(--font-weight-semibold);
-}
-
-.save-subject-empty {
-  font-size: 12px;
-  color: var(--color-warning-ink);
-}
-
-.save-block-input,
-.save-block-textarea {
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: 12px;
-  background-color: #FFFFFF;
-  border: 1px solid #EAE6DD;
-  font-size: 14px;
-  color: var(--text-primary);
-  box-sizing: border-box;
-}
-
-.save-block-textarea {
-  min-height: 92px;
-  max-height: 200px;
-  line-height: 1.55;
-  overflow-y: auto;
-}
-
-.save-block-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 2px;
-}
-
-.save-block-cancel,
-.save-block-confirm {
-  height: 36px;
-  padding: 0 16px;
-  border-radius: var(--radius-full);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-}
-
-.save-block-cancel {
-  background-color: #FFFFFF;
-  border: 1px solid #EAE6DD;
-  color: var(--text-secondary);
-}
-
-.save-block-confirm {
-  background-color: #556B3D;
-  color: #FFFFFF;
-}
-
-.save-block-confirm.disabled {
-  opacity: 0.42;
-}
 </style>

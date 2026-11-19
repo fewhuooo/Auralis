@@ -321,10 +321,8 @@ const smoothBuffer: SmoothStreamController = createSmoothStreamBuffer(
     maxSpeed: 120,
     finishSpeed: 84,
     onComplete: () => {
-      if (isTextStreamingActive.value) {
-        isTextStreamingActive.value = false
-        emit('drain-change', false)
-      }
+      currentStreamingTextId.value = null
+      setDraining(false)
     },
   },
 )
@@ -342,22 +340,20 @@ watch(
     const lastPart = parts[parts.length - 1]
     if (isStreaming && lastPart && lastPart.kind === 'text') {
       if (currentStreamingTextId.value !== lastPart.id) {
-        if (isTextStreamingActive.value) {
-          smoothBuffer.flush()
-        }
-        currentStreamingTextId.value = lastPart.id
+        smoothedActiveText.value = ''
         smoothBuffer.reset()
+        currentStreamingTextId.value = lastPart.id
       }
       setDraining(true)
       smoothBuffer.push(lastPart.text)
       return
     }
     if (!isStreaming && lastPart && lastPart.kind === 'text') {
-      currentStreamingTextId.value = null
-      if (isTextStreamingActive.value) {
+      if (isTextStreamingActive.value && currentStreamingTextId.value === lastPart.id) {
         smoothBuffer.finish(lastPart.text)
         return
       }
+      currentStreamingTextId.value = null
       smoothBuffer.reset()
       smoothedActiveText.value = lastPart.text
       setDraining(false)

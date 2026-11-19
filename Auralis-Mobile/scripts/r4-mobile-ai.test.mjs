@@ -135,7 +135,7 @@ test('stream process drawer opens on tool/reasoning, collapses on answer text un
   assert.equal(msg.processExpanded, true)
   assert.equal(msg.tools[0]?.label, '检索资料')
   assert.equal(msg.tools[0]?.status, 'RUNNING')
-  assert.equal(resolveProcessSummary(msg), '检索资料中…')
+  assert.equal(resolveProcessSummary(msg), '正在检索资料…')
 
   msg = applyReasoningDelta(msg, '先定位特征值定义。')
   assert.equal(msg.processExpanded, true)
@@ -391,7 +391,7 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
     activityId: 'act-1',
     questionVersion: 1,
     submissionId: 'sub-1',
-    answer: { optionKeys: ['B'] },
+    answer: ['B'],
   }, () => {}, {
     onEnvelope: ev => seenEnvelopes.push(ev.event),
   })
@@ -399,6 +399,7 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
   assert.equal(capturedRequests[0].url, 'https://api.auralis.test/api/ai/messages/stream')
   assert.equal(capturedRequests[0].data.action, 'activity_submission')
   assert.equal(capturedRequests[0].data.submissionId, 'sub-1')
+  assert.deepEqual(capturedRequests[0].data.answer, ['B'])
 
   await retryChatRun('conv-1', 'run-9', () => {})
   assert.equal(
@@ -450,7 +451,20 @@ test('mobileChatParts projects 6 structured component types, drops private field
 
   const quizPart = projected[2]
   assert.equal(createMobileActivitySubmission(quizPart, 'B', true), null)
-  assert.deepEqual(createMobileActivitySubmission(quizPart, 'B', false), { questionId: 'question-1', answer: 'B' })
+  assert.deepEqual(createMobileActivitySubmission(quizPart, 'B', false), { questionId: 'question-1', answer: ['B'] })
+
+  const openProjected = projectMobileChatParts([
+    {
+      id: 'open-1', componentId: 'open-cmp', kind: 'block', component: 'question', state: 'READY',
+      questionId: 'q-open', meta: { question: '请简述理由' }, items: [],
+    },
+  ])
+  const openPart = openProjected[0]
+  assert.equal(createMobileActivitySubmission(openPart, '   ', false), null)
+  assert.deepEqual(createMobileActivitySubmission(openPart, '  支持幂等回放  ', false), {
+    questionId: 'q-open',
+    answer: '支持幂等回放',
+  })
 
   let parts = reduceMobileChatPartEvent([], {
     protocolVersion: 1, conversationId: 'c1', requestId: 'r1', runId: 'run1', attemptId: 'att1',
@@ -520,4 +534,175 @@ test('evaluateSmartScroll enforces 50px bottom threshold, smoothStreamBuffer dra
   assert.equal(buffer.isDrained(), true)
   assert.equal(completed, 1)
   buffer.destroy()
+})
+
+test('mobileAiChat maintains interleaved processTimeline, sanitizes reasoning, guards programmatic scroll and restores activeRun', async () => {
+  const {
+    applyReasoningDelta,
+    applyRunStatusSnapshot,
+    applyTerminalState,
+    applyToolEvent,
+    createAssistantPlaceholder,
+    evaluateSmartScroll,
+    resolveWaitingStatusText,
+    restoreConversationMessages,
+    sanitizeMobileReasoningText,
+  } = await import('../src/utils/mobileAiChat.ts')
+  const { createSmoothStreamBuffer } = await import('../src/utils/smoothStreamBuffer.ts')
+
+  // 1) Interleaved processTimeline with explicit Chinese tool labels & terminal settlement
+  let msg = createAssistantPlaceholder('a-1')
+  msg = applyReasoningDelta(msg, '先核对课程目录中的概念，')
+  msg = applyToolEvent(msg, {
+    phase: 'started',
+    toolCallId: 'tc-1',
+    name: '检索资料',
+    label: '检索「335次咨询」',
+  })
+  assert.equal(resolveWaitingStatusText(msg.tools, true), '正在检索「335次咨询」…')
+  msg = applyToolEvent(msg, {
+    phase: 'completed',
+    toolCallId: 'tc-1',
+    name: '检索资料',
+    label: '检索「335次咨询」',
+  })
+  msg = applyReasoningDelta(msg, '结合原文摘录整理要点。')
+
+  assert.equal(msg.processTimeline.length, 3)
+  assert.deepEqual(
+    msg.processTimeline.map(item => item.kind),
+    ['reasoning', 'tool', 'reasoning'],
+  )
+  assert.equal(msg.processTimeline[1].kind === 'tool' && msg.processTimeline[1].tool.label, '检索「335次咨询」')
+
+  msg = applyToolEvent(msg, {
+    phase: 'started',
+    toolCallId: 'tc-running',
+    name: '查看《讲义》总览',
+    label: '查看《讲义》总览',
+  })
+  const settled = applyTerminalState(msg, 'completed')
+  assert.equal(settled.tools.every(t => t.status === 'COMPLETED'), true)
+  assert.equal(
+    settled.processTimeline.filter(item => item.kind === 'tool').every(item => item.tool.status === 'COMPLETED'),
+    true,
+  )
+
+  // 2) Reasoning sanitization preserves code fences
+  const cleaned = sanitizeMobileReasoningText(
+    '先调用 list_sources，再用 search.sourceIds 确认 chunkId 与 hasOverview。\n```json\n{"list_sources": true}\n```',
+  )
+  const [prose] = cleaned.split('```json')
+  assert.doesNotMatch(prose, /list_sources|search\.sourceIds|chunkId|hasOverview/)
+  assert.match(cleaned, /\{"list_sources": true\}/)
+
+  // 3) Programmatic scroll guard does not lock mid-scroll or unlock above bottom
+  const programmaticLocked = evaluateSmartScroll({
+    scrollTop: 420,
+    scrollHeight: 1200,
+    viewportHeight: 400,
+    prevScrollTop: 500,
+  }, true, true)
+  assert.equal(programmaticLocked.locked, true)
+
+  const programmaticUnlocked = evaluateSmartScroll({
+    scrollTop: 500,
+    scrollHeight: 1200,
+    viewportHeight: 400,
+    prevScrollTop: 420,
+  }, false, true)
+  assert.equal(programmaticUnlocked.locked, false)
+
+  // 4) restoreConversationMessages + applyRunStatusSnapshot preserve activeRun progress & labels
+  const restored = restoreConversationMessages({
+    id: 'conv-r',
+    chatScopeState: 'BOUND',
+    chatScope: null,
+    messages: [
+      { id: 'u-1', role: 'USER', status: 'COMPLETED', content: '解释隔离级别' },
+      { id: 'a-1', role: 'ASSISTANT', status: 'COMPLETED', content: '正在生成中', parts: [] },
+    ],
+    activeRun: {
+      runId: 'run-r',
+      currentReplyMessageId: 'a-1',
+      status: 'RUNNING',
+      executionActive: true,
+      publicSnapshot: [{ id: 'a-1:text', kind: 'text', text: '可重复读通过 MVCC 实现。' }],
+      toolTrace: [{ id: 'tc-r', name: '检索资料', label: '检索「MVCC」', status: 'COMPLETED' }],
+    },
+  })
+  assert.equal(restored.length, 2)
+  assert.equal(restored[1].status, 'streaming')
+  assert.equal(restored[1].runId, 'run-r')
+  assert.equal(restored[1].tools[0].label, '检索「MVCC」')
+  assert.equal(restored[1].processTimeline.length, 1)
+
+  const polled = applyRunStatusSnapshot(restored, {
+    runId: 'run-r',
+    currentReplyMessageId: 'a-1',
+    status: 'COMPLETED',
+    executionActive: false,
+    publicSnapshot: [{ id: 'a-1:text', kind: 'text', text: '完整回答完毕。' }],
+    toolTrace: [{ id: 'tc-r', name: '检索资料', label: '检索「MVCC」', status: 'COMPLETED' }],
+  })
+  assert.equal(polled[1].status, 'completed')
+  assert.equal(polled[1].content, '完整回答完毕。')
+
+  // 5) smoothStreamBuffer drains push-then-finish and prevents callbacks after destroy()
+  const scheduled = new Map()
+  let nextId = 1
+  const origRaf = globalThis.requestAnimationFrame
+  const origCancel = globalThis.cancelAnimationFrame
+  globalThis.requestAnimationFrame = (cb) => {
+    const id = nextId++
+    scheduled.set(id, cb)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id) => {
+    scheduled.delete(id)
+  }
+
+  try {
+    let drainedText = ''
+    let doneCount = 0
+    const sBuffer = createSmoothStreamBuffer((val) => { drainedText = val }, {
+      onComplete: () => { doneCount += 1 },
+    })
+    sBuffer.push('移动端平滑测试')
+    sBuffer.finish('移动端平滑测试')
+    let guard = 0
+    while (scheduled.size > 0 && guard < 40) {
+      guard += 1
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      entry[1](guard * 60)
+    }
+    assert.equal(drainedText, '移动端平滑测试')
+    assert.equal(sBuffer.isDrained(), true)
+    assert.equal(doneCount, 1)
+
+    let reentrantDone = 0
+    let reentrantTicks = 0
+    const rBuffer = createSmoothStreamBuffer(() => {
+      reentrantTicks += 1
+      rBuffer.destroy()
+    }, {
+      onComplete: () => { reentrantDone += 1 },
+    })
+    rBuffer.push('ABCDEFGH')
+    rBuffer.finish('ABCDEFGH')
+    const tick1 = scheduled.entries().next().value
+    scheduled.delete(tick1[0])
+    tick1[1](100)
+    const tick2 = scheduled.entries().next().value
+    scheduled.delete(tick2[0])
+    tick2[1](170)
+
+    assert.equal(reentrantTicks, 1)
+    assert.equal(scheduled.size, 0)
+    assert.equal(reentrantDone, 0)
+  } finally {
+    globalThis.requestAnimationFrame = origRaf
+    globalThis.cancelAnimationFrame = origCancel
+  }
 })

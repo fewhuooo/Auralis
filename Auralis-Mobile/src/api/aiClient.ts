@@ -10,6 +10,8 @@ import { uuidv7 } from '@/utils/uuid'
 
 type Provider = NonNullable<components['schemas']['AiSettingsCommand']['provider']>
 
+export type ChatActivityAnswer = string | readonly string[]
+
 export interface Protocol1MessageCommand {
   protocolVersion: 1
   action: 'turn' | 'activity_submission'
@@ -21,7 +23,7 @@ export interface Protocol1MessageCommand {
   activityId?: string
   questionVersion?: number
   submissionId?: string
-  answer?: { optionKeys?: string[]; text?: string }
+  answer?: ChatActivityAnswer
 }
 
 export interface ChatStreamEnvelope {
@@ -149,6 +151,7 @@ export interface ChatToolEvent {
   phase: 'started' | 'completed' | 'error'
   toolCallId?: string
   name: string
+  label?: string
   safeErrorCode?: string
 }
 
@@ -229,11 +232,15 @@ async function streamMessage(
         if (event.event === 'tool.started' || event.event === 'tool.completed' || event.event === 'tool.error') {
           const toolCallId = typeof envelope.payload.toolCallId === 'string' ? envelope.payload.toolCallId : undefined
           const toolName = typeof envelope.payload.name === 'string' ? envelope.payload.name : ''
+          const toolLabel = typeof envelope.payload.label === 'string' && envelope.payload.label.trim()
+            ? envelope.payload.label.trim()
+            : undefined
           const safeErrorCode = typeof envelope.payload.safeErrorCode === 'string' ? envelope.payload.safeErrorCode : undefined
           options?.onToolEvent?.({
             phase: event.event === 'tool.started' ? 'started' : event.event === 'tool.completed' ? 'completed' : 'error',
             toolCallId,
             name: toolName,
+            ...(toolLabel ? { label: toolLabel } : {}),
             safeErrorCode,
           })
         }
@@ -392,7 +399,7 @@ export interface ChatActivitySubmissionPayload {
   activityId: string
   questionVersion: number
   submissionId: string
-  answer: { optionKeys?: string[]; text?: string }
+  answer: ChatActivityAnswer
 }
 
 export async function submitChatActivity(

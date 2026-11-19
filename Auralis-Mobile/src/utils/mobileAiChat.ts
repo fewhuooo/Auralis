@@ -1,10 +1,16 @@
 import type { components } from '../api/generated/schema.ts'
 import type { ChatToolEvent } from '../api/aiClient.ts'
-import { markPendingMobileBlocksInvalid, type MobileChatContentPart } from './mobileChatParts.ts'
+import {
+  extractPartsPlainText,
+  markPendingMobileBlocksInvalid,
+  projectMobileChatParts,
+  type MobileChatContentPart,
+} from './mobileChatParts.ts'
 
 type ReadingContext = components['schemas']['ReadingContext']
 type ConversationView = components['schemas']['ConversationView']
 type MessageView = components['schemas']['MessageView']
+type ChatRunStatusView = components['schemas']['ChatRunStatusView']
 
 export interface SubjectScopeEntry {
   id: string
@@ -19,6 +25,10 @@ export interface MobileChatToolStep {
   errorCode?: string
 }
 
+export type MobileChatProcessItem =
+  | { id: string; kind: 'reasoning'; text: string }
+  | { id: string; kind: 'tool'; tool: MobileChatToolStep }
+
 export interface MobileChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -27,9 +37,11 @@ export interface MobileChatMessage {
   runId?: string
   reasoningText: string
   tools: MobileChatToolStep[]
+  processTimeline: MobileChatProcessItem[]
   processExpanded: boolean
   processManuallyToggled: boolean
   status: 'streaming' | 'completed' | 'cancelled' | 'failed'
+  originatingKind?: 'turn' | 'activity_submission'
   errorMessage?: string
 }
 
@@ -41,17 +53,112 @@ export interface ResolvedConversationScope {
 
 const TOOL_LABELS: Record<string, string> = {
   search: '检索资料',
-  list_sources: '浏览资料目录',
-  read_source_excerpt: '阅读资料片段',
-  read_source_overview: '读取资料总览',
+  list_sources: '查看资料目录',
+  read_source_excerpt: '阅读资料摘录',
+  read_source_overview: '查看资料总览',
+  render_steps: '生成流程卡片',
+  render_compare: '生成对比卡片',
+  render_roadmap: '生成路线图',
+  render_chart: '生成数据图表',
+  render_quiz: '生成自测选择题',
+  render_question: '生成开放问答',
 }
 
-/** Maps a backend tool name into a concise user-facing label. */
-export function formatAiToolLabel(toolName: string): string {
+/** Maps a backend tool name or explicit label into a concise user-facing Chinese label. */
+export function formatAiToolLabel(toolName: string, explicitLabel?: string): string {
+  const custom = explicitLabel?.trim()
+  if (custom) return custom
   const normalized = toolName.trim()
   if (normalized in TOOL_LABELS) return TOOL_LABELS[normalized]
-  if (normalized.startsWith('render_')) return '整理展示内容'
-  return '检索与分析'
+  if (normalized.startsWith('render_')) return '生成展示卡片'
+  return normalized || '检索资料'
+}
+
+function sanitizeReasoningSegment(segment: string): string {
+  return segment
+    .replace(/(?:^|\n)[ \t]*(?:规则|系统规则|提示词规则|注意)[：:]\s*(?:总览是\s*AI\s*生成内容|本轮显式授权范围|列完目录只代表枚举了资料)[^\n]*/gi, '')
+    .replace(/总览是\s*AI\s*生成内容[，,]?\s*不是原文逐字事实[，,]?\s*需要细节或引用时继续搜索或阅读原文摘录[。.]?/gi, '')
+    .replace(/`?\blist_sources(?:\([^)]*\))?`?/g, '查看资料目录')
+    .replace(/`?\bread_source_overview(?:\([^)]*\))?`?/g, '查看资料总览')
+    .replace(/`?\bread_source_excerpt(?:\([^)]*\))?`?/g, '阅读资料摘录')
+    .replace(/`?\bsearch\.sourceIds\b`?/g, '目标资料范围')
+    .replace(/`?\brender_steps(?:\([^)]*\))?`?/g, '流程卡片')
+    .replace(/`?\brender_compare(?:\([^)]*\))?`?/g, '对比卡片')
+    .replace(/`?\brender_roadmap(?:\([^)]*\))?`?/g, '学习路线图')
+    .replace(/`?\brender_chart(?:\([^)]*\))?`?/g, '数据图表')
+    .replace(/`?\brender_quiz(?:\([^)]*\))?`?/g, '自测选择题')
+    .replace(/`?\brender_question(?:\([^)]*\))?`?/g, '开放问答题')
+    .replace(/`?\b(?:sourceIds|sourceId)\b`?/g, '资料标识')
+    .replace(/`?\bchunkId\b`?/g, '片段标识')
+    .replace(/`?\bchunks?\b`?/gi, '知识片段')
+    .replace(/`?\bhasOverview\b`?/g, '总览可用状态')
+    .replace(/`?\b(?:hasMore|nextOffset)\b`?/g, '分页状态')
+    .replace(/(?:调用|使用|通过|先用|再用|继续|执行)\s*`?\bsearch\b`?/g, '检索资料')
+    .replace(/`search`/g, '检索资料')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^[ \t]+(?=\n|$)/gm, '')
+}
+
+/** Strips leaked internal tool identifiers and prompt rules from reasoning while preserving fenced code. */
+export function sanitizeMobileReasoningText(raw: string): string {
+  if (!raw) return ''
+  const fenceRegex = /```[\s\S]*?(?:```|$)/g
+  let out = ''
+  let lastIndex = 0
+  let match = fenceRegex.exec(raw)
+  while (match) {
+    if (match.index > lastIndex) {
+      out += sanitizeReasoningSegment(raw.slice(lastIndex, match.index))
+    }
+    out += match[0]
+    lastIndex = match.index + match[0].length
+    match = fenceRegex.exec(raw)
+  }
+  if (lastIndex < raw.length) {
+    out += sanitizeReasoningSegment(raw.slice(lastIndex))
+  }
+  return out
+}
+
+export function buildFallbackProcessTimeline(
+  reasoningText: string,
+  tools: readonly MobileChatToolStep[],
+): MobileChatProcessItem[] {
+  const timeline: MobileChatProcessItem[] = []
+  if (reasoningText) {
+    timeline.push({ id: 'reasoning:0', kind: 'reasoning', text: reasoningText })
+  }
+  for (const tool of tools) {
+    timeline.push({ id: `tool:${tool.id || timeline.length}`, kind: 'tool', tool })
+  }
+  return timeline
+}
+
+export function projectToolTraceSteps(rawTrace: unknown): MobileChatToolStep[] {
+  if (!Array.isArray(rawTrace)) return []
+  const steps: MobileChatToolStep[] = []
+  for (let i = 0; i < rawTrace.length; i += 1) {
+    const entry = rawTrace[i]
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '工具'
+    const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
+    const status: MobileChatToolStep['status'] = item.status === 'FAILED'
+      ? 'FAILED'
+      : item.status === 'RUNNING'
+        ? 'RUNNING'
+        : 'COMPLETED'
+    const id = typeof item.id === 'string' && item.id
+      ? item.id
+      : (typeof item.toolCallId === 'string' && item.toolCallId ? item.toolCallId : `trace-${i}`)
+    steps.push({
+      id,
+      name,
+      label: formatAiToolLabel(name, rawLabel),
+      status,
+    })
+  }
+  return steps
 }
 
 /** Formats tool step status for display inside the collapsible process block. */
@@ -195,7 +302,10 @@ export function extractHistoryMessageContent(message: Pick<MessageView, 'content
 }
 
 /** Creates an initial assistant placeholder message before streaming begins. */
-export function createAssistantPlaceholder(id: string): MobileChatMessage {
+export function createAssistantPlaceholder(
+  id: string,
+  originatingKind: 'turn' | 'activity_submission' = 'turn',
+): MobileChatMessage {
   return {
     id,
     role: 'assistant',
@@ -203,9 +313,11 @@ export function createAssistantPlaceholder(id: string): MobileChatMessage {
     parts: [],
     reasoningText: '',
     tools: [],
+    processTimeline: [],
     processExpanded: false,
     processManuallyToggled: false,
     status: 'streaming',
+    originatingKind,
   }
 }
 
@@ -215,21 +327,29 @@ export function applyReasoningDelta(message: MobileChatMessage, delta: string): 
   const shouldExpand = !message.content && !message.processManuallyToggled
     ? true
     : message.processExpanded
+  const nextTimeline = [...message.processTimeline]
+  const lastItem = nextTimeline[nextTimeline.length - 1]
+  if (lastItem && lastItem.kind === 'reasoning') {
+    nextTimeline[nextTimeline.length - 1] = { ...lastItem, text: lastItem.text + delta }
+  } else {
+    nextTimeline.push({ id: `reasoning:${nextTimeline.length}`, kind: 'reasoning', text: delta })
+  }
   return {
     ...message,
     reasoningText: message.reasoningText + delta,
+    processTimeline: nextTimeline,
     processExpanded: shouldExpand,
   }
 }
 
-/** Applies a tool lifecycle event to the assistant message's ordered step list. */
+/** Applies a tool lifecycle event to the assistant message's ordered step list and chronological timeline. */
 export function applyToolEvent(message: MobileChatMessage, event: ChatToolEvent): MobileChatMessage {
   const status: MobileChatToolStep['status'] = event.phase === 'started'
     ? 'RUNNING'
     : event.phase === 'completed'
       ? 'COMPLETED'
       : 'FAILED'
-  const label = formatAiToolLabel(event.name)
+  const label = formatAiToolLabel(event.name, event.label)
   const nextTools = [...message.tools]
 
   let matchIndex = -1
@@ -244,21 +364,36 @@ export function applyToolEvent(message: MobileChatMessage, event: ChatToolEvent)
     }
   }
 
+  let updatedTool: MobileChatToolStep
   if (matchIndex >= 0) {
-    nextTools[matchIndex] = {
+    updatedTool = {
       ...nextTools[matchIndex],
+      name: event.name || nextTools[matchIndex].name,
+      label: event.label?.trim() ? label : nextTools[matchIndex].label || label,
       status,
       errorCode: event.safeErrorCode,
     }
+    nextTools[matchIndex] = updatedTool
   } else {
     const id = event.toolCallId || `${event.name || 'tool'}-${nextTools.length + 1}`
-    nextTools.push({
+    updatedTool = {
       id,
       name: event.name,
       label,
       status,
       errorCode: event.safeErrorCode,
-    })
+    }
+    nextTools.push(updatedTool)
+  }
+
+  const nextTimeline = [...message.processTimeline]
+  const timelineIndex = nextTimeline.findIndex(
+    item => item.kind === 'tool' && item.tool.id === updatedTool.id,
+  )
+  if (timelineIndex >= 0) {
+    nextTimeline[timelineIndex] = { id: `tool:${updatedTool.id}`, kind: 'tool', tool: updatedTool }
+  } else {
+    nextTimeline.push({ id: `tool:${updatedTool.id}`, kind: 'tool', tool: updatedTool })
   }
 
   const shouldExpand = !message.content && !message.processManuallyToggled
@@ -268,6 +403,7 @@ export function applyToolEvent(message: MobileChatMessage, event: ChatToolEvent)
   return {
     ...message,
     tools: nextTools,
+    processTimeline: nextTimeline,
     processExpanded: shouldExpand,
   }
 }
@@ -288,15 +424,19 @@ export function applyTerminalState(
   status: 'completed' | 'cancelled' | 'failed',
   errorMessage?: string,
 ): MobileChatMessage {
-  const settledTools = message.tools.map(step => (
-    step.status === 'RUNNING'
-      ? { ...step, status: (status === 'completed' ? 'COMPLETED' : 'FAILED') as MobileChatToolStep['status'] }
-      : step
+  const settledStatus: MobileChatToolStep['status'] = status === 'completed' ? 'COMPLETED' : 'FAILED'
+  const settleTool = (step: MobileChatToolStep): MobileChatToolStep => (
+    step.status === 'RUNNING' ? { ...step, status: settledStatus } : step
+  )
+  const settledTools = message.tools.map(settleTool)
+  const settledTimeline = message.processTimeline.map(item => (
+    item.kind === 'tool' ? { ...item, tool: settleTool(item.tool) } : item
   ))
   return {
     ...message,
     parts: status === 'completed' ? message.parts : markPendingMobileBlocksInvalid(message.parts),
     tools: settledTools,
+    processTimeline: settledTimeline,
     status,
     errorMessage,
     processExpanded: message.processManuallyToggled ? message.processExpanded : false,
@@ -310,6 +450,9 @@ export function resolveWaitingStatusText(
 ): string {
   const runningTool = tools.find(step => step.status === 'RUNNING')
   if (runningTool) {
+    if (runningTool.label && runningTool.label !== '检索资料') {
+      return `正在${runningTool.label}…`
+    }
     return runningTool.name === 'search' ? '正在检索相关知识块…' : `${runningTool.label}中…`
   }
   if (hasReasoning) return '深度思考中…'
@@ -318,16 +461,21 @@ export function resolveWaitingStatusText(
 
 /** Produces the single-line summary title shown in the process accordion header. */
 export function resolveProcessSummary(
-  message: Pick<MobileChatMessage, 'reasoningText' | 'tools' | 'status' | 'content'>,
+  message: {
+    reasoningText: string
+    tools: readonly MobileChatToolStep[]
+    status: MobileChatMessage['status']
+    content: string
+  },
 ): string {
   const hasReasoning = Boolean(message.reasoningText.trim())
   const toolCount = message.tools.length
   const runningTool = message.tools.find(step => step.status === 'RUNNING')
 
   if (message.status === 'streaming' && !message.content) {
-    if (runningTool) return `${runningTool.label}中…`
+    if (runningTool) return `正在${runningTool.label}…`
     if (hasReasoning) return '深度思考中…'
-    return '思考中…'
+    return '正在检索相关资料…'
   }
 
   if (hasReasoning && toolCount > 0) return `已思考 · ${toolCount} 步检索`
@@ -337,6 +485,159 @@ export function resolveProcessSummary(
     return hasFailed && !message.content ? '检索未完成' : `已检索 ${toolCount} 步`
   }
   return '过程详情'
+}
+
+/** Restores persisted messages and reconciles any active or recovering run from ConversationView. */
+export function restoreConversationMessages(detail: ConversationView): MobileChatMessage[] {
+  const activeRun = detail.activeRun
+  const activeReplyId = activeRun?.currentReplyMessageId
+  const restored: MobileChatMessage[] = []
+  const rawMessages = detail.messages || []
+
+  for (let index = 0; index < rawMessages.length; index += 1) {
+    const rawMsg = rawMessages[index]
+    if (rawMsg.role !== 'USER' && rawMsg.role !== 'ASSISTANT') continue
+    const id = rawMsg.id || `hist-${index}`
+    const isAssistant = rawMsg.role === 'ASSISTANT'
+    const record = rawMsg as unknown as Record<string, unknown>
+    const parts = isAssistant ? projectMobileChatParts(rawMsg.parts) : []
+    const tools = isAssistant ? projectToolTraceSteps(record.tools) : []
+    const reasoningText = isAssistant && typeof record.reasoningText === 'string' ? record.reasoningText : ''
+    const originatingKind = record.originatingKind === 'activity_submission' ? 'activity_submission' : 'turn'
+    const status: MobileChatMessage['status'] = rawMsg.status === 'FAILED'
+      ? 'failed'
+      : rawMsg.status === 'INTERRUPTED'
+        ? 'cancelled'
+        : 'completed'
+
+    const base: MobileChatMessage = {
+      id,
+      role: isAssistant ? 'assistant' : 'user',
+      content: extractHistoryMessageContent(rawMsg),
+      parts,
+      runId: typeof record.runId === 'string' ? record.runId : undefined,
+      reasoningText,
+      tools,
+      processTimeline: buildFallbackProcessTimeline(reasoningText, tools),
+      processExpanded: false,
+      processManuallyToggled: false,
+      status,
+      originatingKind,
+      errorMessage: rawMsg.status === 'FAILED' ? '该条回答未能完成' : undefined,
+    }
+
+    if (activeRun && activeReplyId && id === activeReplyId) {
+      const snapshotParts = Array.isArray(activeRun.publicSnapshot) && activeRun.publicSnapshot.length > 0
+        ? projectMobileChatParts(activeRun.publicSnapshot)
+        : base.parts
+      const snapshotTools = Array.isArray(activeRun.toolTrace) && activeRun.toolTrace.length > 0
+        ? projectToolTraceSteps(activeRun.toolTrace)
+        : base.tools
+      const snapshotContent = snapshotParts.length > 0 ? extractPartsPlainText(snapshotParts) : base.content
+      const isRunning = Boolean(activeRun.executionActive && activeRun.status !== 'UNKNOWN')
+      restored.push({
+        ...base,
+        parts: snapshotParts,
+        tools: snapshotTools,
+        content: snapshotContent,
+        runId: activeRun.runId || base.runId,
+        processTimeline: buildFallbackProcessTimeline(base.reasoningText, snapshotTools),
+        status: isRunning ? 'streaming' : activeRun.status === 'COMPLETED' ? 'completed' : 'failed',
+        processExpanded: isRunning && !snapshotContent,
+      })
+      continue
+    }
+
+    restored.push(base)
+  }
+
+  if (activeRun && activeReplyId && !restored.some(item => item.id === activeReplyId)) {
+    const snapshotParts = projectMobileChatParts(activeRun.publicSnapshot)
+    const snapshotTools = projectToolTraceSteps(activeRun.toolTrace)
+    const snapshotContent = extractPartsPlainText(snapshotParts)
+    const isRunning = Boolean(activeRun.executionActive && activeRun.status !== 'UNKNOWN')
+    restored.push({
+      id: activeReplyId,
+      role: 'assistant',
+      content: snapshotContent,
+      parts: snapshotParts,
+      runId: activeRun.runId,
+      reasoningText: '',
+      tools: snapshotTools,
+      processTimeline: buildFallbackProcessTimeline('', snapshotTools),
+      processExpanded: isRunning && !snapshotContent,
+      processManuallyToggled: false,
+      status: isRunning ? 'streaming' : activeRun.status === 'COMPLETED' ? 'completed' : 'failed',
+      originatingKind: 'turn',
+      errorMessage: !isRunning && activeRun.status !== 'COMPLETED' ? '该条回答未能完成' : undefined,
+    })
+  }
+
+  return restored
+}
+
+/** Merges polled ChatRunStatusView progress into restored chat messages. */
+export function applyRunStatusSnapshot(
+  messages: readonly MobileChatMessage[],
+  statusView: ChatRunStatusView,
+): MobileChatMessage[] {
+  const replyId = statusView.currentReplyMessageId
+  if (!replyId) return [...messages]
+
+  const snapshotParts = projectMobileChatParts(statusView.publicSnapshot)
+  const snapshotTools = projectToolTraceSteps(statusView.toolTrace)
+  const snapshotContent = extractPartsPlainText(snapshotParts)
+  const isRunning = Boolean(statusView.executionActive && statusView.status !== 'UNKNOWN')
+  const nextStatus: MobileChatMessage['status'] = isRunning
+    ? 'streaming'
+    : statusView.status === 'COMPLETED'
+      ? 'completed'
+      : statusView.status === 'CANCELLED'
+        ? 'cancelled'
+        : 'failed'
+
+  const existingIndex = messages.findIndex(item => item.id === replyId)
+  if (existingIndex < 0) {
+    return [
+      ...messages,
+      {
+        id: replyId,
+        role: 'assistant',
+        content: snapshotContent,
+        parts: snapshotParts,
+        runId: statusView.runId,
+        reasoningText: '',
+        tools: snapshotTools,
+        processTimeline: buildFallbackProcessTimeline('', snapshotTools),
+        processExpanded: isRunning && !snapshotContent,
+        processManuallyToggled: false,
+        status: nextStatus,
+        originatingKind: 'turn',
+        errorMessage: nextStatus === 'failed' ? '该条回答未能完成' : undefined,
+      },
+    ]
+  }
+
+  const next = [...messages]
+  const existing = next[existingIndex]
+  const finalParts = snapshotParts.length > 0 ? snapshotParts : existing.parts
+  const finalTools = snapshotTools.length > 0 ? snapshotTools : existing.tools
+  next[existingIndex] = {
+    ...existing,
+    runId: statusView.runId || existing.runId,
+    parts: finalParts,
+    tools: finalTools,
+    content: snapshotContent || existing.content,
+    processTimeline: existing.processTimeline.length > 0
+      ? existing.processTimeline
+      : buildFallbackProcessTimeline(existing.reasoningText, finalTools),
+    status: nextStatus,
+    processExpanded: isRunning && !snapshotContent && !existing.processManuallyToggled
+      ? true
+      : (!isRunning && !existing.processManuallyToggled ? false : existing.processExpanded),
+    errorMessage: nextStatus === 'failed' ? '该条回答未能完成' : undefined,
+  }
+  return next
 }
 
 export const SMART_SCROLL_THRESHOLD_PX = 50
@@ -359,11 +660,20 @@ export interface SmartScrollDecision {
 export function evaluateSmartScroll(
   sample: SmartScrollSample,
   currentlyLocked: boolean,
+  isProgrammatic = false,
 ): SmartScrollDecision {
   const safeViewport = Math.max(0, sample.viewportHeight)
   const distanceFromBottom = sample.scrollHeight - (sample.scrollTop + safeViewport)
   const nearBottom = distanceFromBottom < SMART_SCROLL_THRESHOLD_PX
   const scrolledUpByDelta = sample.scrollTop < sample.prevScrollTop - 4
+
+  if (isProgrammatic && !sample.touchPullUpDetected) {
+    return {
+      nearBottom,
+      locked: currentlyLocked && !nearBottom,
+      nextPrevScrollTop: sample.scrollTop,
+    }
+  }
 
   if (nearBottom && !sample.touchPullUpDetected) {
     return {

@@ -471,11 +471,11 @@ export function createMobileActivitySubmission(
   let answer: MobileChatActivityAnswer
   if (block.component === 'question') {
     if (typeof draft !== 'string' || !draft.trim()) return null
-    answer = draft
+    answer = draft.trim()
   } else if (block.component === 'quiz' && block.meta.questionType === 'single') {
     const validKeys = new Set(block.items.map(item => item.key))
     if (typeof draft !== 'string' || !validKeys.has(draft)) return null
-    answer = draft
+    answer = [draft]
   } else if (block.component === 'quiz' && block.meta.questionType === 'multiple') {
     const validKeys = new Set(block.items.map(item => item.key))
     if (

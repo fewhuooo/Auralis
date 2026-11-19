@@ -47,6 +47,7 @@ export function createSmoothStreamBuffer(
   let frameHandle = 0
   let isStreamFinished = false
   let drained = true
+  let destroyed = false
 
   function cancelScheduledTick() {
     if (frameKind === 'raf' && typeof cancelAnimationFrame === 'function') {
@@ -59,11 +60,11 @@ export function createSmoothStreamBuffer(
   }
 
   function scheduleNextTick() {
-    if (frameKind !== null) return
+    if (destroyed || frameKind !== null) return
     if (typeof requestAnimationFrame === 'function') {
       frameKind = 'raf'
       frameHandle = requestAnimationFrame((ts) => {
-        if (frameKind !== 'raf') return
+        if (destroyed || frameKind !== 'raf') return
         frameKind = null
         frameHandle = 0
         tick(ts)
@@ -72,7 +73,7 @@ export function createSmoothStreamBuffer(
     }
     frameKind = 'timeout'
     frameHandle = Number(setTimeout(() => {
-      if (frameKind !== 'timeout') return
+      if (destroyed || frameKind !== 'timeout') return
       frameKind = null
       frameHandle = 0
       tick(currentTimestampMs())
@@ -80,6 +81,7 @@ export function createSmoothStreamBuffer(
   }
 
   function tick(timestamp: number) {
+    if (destroyed) return
     if (lastTimestamp === 0) {
       lastTimestamp = timestamp
     }
@@ -95,7 +97,9 @@ export function createSmoothStreamBuffer(
         displayedLength = fullText.length
         onUpdate(fullText)
       }
-      options.onComplete?.()
+      if (!destroyed) {
+        options.onComplete?.()
+      }
       return
     }
 
@@ -123,11 +127,13 @@ export function createSmoothStreamBuffer(
       onUpdate(fullText.slice(0, nextIndex))
     }
 
-    scheduleNextTick()
+    if (!destroyed) {
+      scheduleNextTick()
+    }
   }
 
   function startLoop() {
-    if (frameKind === null) {
+    if (!destroyed && frameKind === null) {
       lastTimestamp = 0
       scheduleNextTick()
     }
@@ -135,6 +141,7 @@ export function createSmoothStreamBuffer(
 
   return {
     push(targetText: string) {
+      if (destroyed) return
       if (targetText.length < fullText.length) {
         currentCursor = Math.min(currentCursor, targetText.length)
         displayedLength = Math.min(displayedLength, targetText.length)
@@ -147,6 +154,7 @@ export function createSmoothStreamBuffer(
       }
     },
     finish(targetText?: string) {
+      if (destroyed) return
       if (typeof targetText === 'string') {
         fullText = targetText
       }
@@ -155,12 +163,15 @@ export function createSmoothStreamBuffer(
         cancelScheduledTick()
         drained = true
         lastTimestamp = 0
-        options.onComplete?.()
+        if (!destroyed) {
+          options.onComplete?.()
+        }
         return
       }
       startLoop()
     },
     flush(targetText?: string) {
+      if (destroyed) return
       if (typeof targetText === 'string') {
         fullText = targetText
       }
@@ -171,7 +182,9 @@ export function createSmoothStreamBuffer(
       isStreamFinished = true
       drained = true
       onUpdate(fullText)
-      options.onComplete?.()
+      if (!destroyed) {
+        options.onComplete?.()
+      }
     },
     reset() {
       cancelScheduledTick()
@@ -184,6 +197,7 @@ export function createSmoothStreamBuffer(
       drained = true
     },
     destroy() {
+      destroyed = true
       cancelScheduledTick()
       lastTimestamp = 0
     },
