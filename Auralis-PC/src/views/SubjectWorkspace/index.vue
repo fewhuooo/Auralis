@@ -538,6 +538,7 @@
       <div class="ai-header">
         <button
           class="ai-model-switch ai-file-switch"
+          :class="{ 'is-locked': isScopeLocked || isAiDisplayStreaming }"
           :title="isScopeLocked ? t(messages.scopeLocked) : aiSourceSummaryTitle"
           @click="handleScopeSwitchClick"
         >
@@ -601,7 +602,7 @@
           ref="chatScrollRef"
           @mouseup="updateSelectionPosition('chat')"
           @keyup="updateSelectionPosition('chat')"
-          @scroll.passive="updateSelectionPosition('chat')"
+          @scroll.passive="handleChatContainerScroll"
           @wheel="handleChatWheel"
           @touchstart.passive="handleTouchStart"
           @touchmove.passive="handleTouchMove"
@@ -669,12 +670,17 @@
                     @submit="submitChatActivity"
                   />
                   <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
-                    <div class="citation-title">
+                    <button
+                      type="button"
+                      class="citation-collapse-pill"
+                      :aria-expanded="isCitationsExpanded(msg.id)"
+                      @click="toggleCitations(msg.id)"
+                    >
                       <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
-                      <span>{{ t(messages.references) }}</span>
-                      <span class="citation-count">{{ msg.citationFileNames.length }}</span>
-                    </div>
-                    <div class="citation-chips">
+                      <span>{{ t(messages.referencedSources, { count: msg.citationFileNames.length }) }}</span>
+                      <IconChevronDown class="citation-chevron" :class="{ 'is-expanded': isCitationsExpanded(msg.id) }" :size="12" :stroke-width="2" />
+                    </button>
+                    <div v-if="isCitationsExpanded(msg.id)" class="citation-chips">
                       <button
                         v-for="(fileName, idx) in msg.citationFileNames"
                         :key="fileName"
@@ -704,6 +710,37 @@
                     <span>{{ t(messages.retryReply) }}</span>
                   </button>
                 </div>
+
+                <div
+                  v-if="!isAiDisplayStreaming && msg.content && (msg.status === 'COMPLETED' || msg.status === 'INTERRUPTED')"
+                  class="chat-msg-footer"
+                >
+                  <button
+                    type="button"
+                    class="chat-footer-btn"
+                    @click="copyAssistantReply(msg.content)"
+                  >
+                    <IconCopy :size="12" :stroke-width="1.8" />
+                    <span>{{ t(messages.copyReply) }}</span>
+                  </button>
+                  <button
+                    v-if="isLastAssistantMessage(msg.id) && canSendWorkspaceChat && !chatStore.recoverableTarget"
+                    type="button"
+                    class="chat-footer-btn"
+                    @click="handleRegenerateAssistantMessage(msg.id)"
+                  >
+                    <IconRotate :size="12" :stroke-width="1.8" />
+                    <span>{{ t(messages.regenerateReply) }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="chat-footer-btn"
+                    @click="saveAssistantReplyAsBlock(msg.content)"
+                  >
+                    <IconPlus :size="12" :stroke-width="1.8" />
+                    <span>{{ t(messages.saveReplyAsBlock) }}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -723,7 +760,11 @@
                 />
                 <template v-if="isThinkingComplete && (streamingContent || streamingParts.length > 0)">
                   <ChatContentRenderer :parts="streamingParts" :streaming="isAiStreaming" :busy="isAiDisplayStreaming" @submit="submitChatActivity" />
-                  <span class="typing-cursor" v-if="isAiStreaming"></span>
+                  <span
+                    v-if="isAiStreaming && streamingParts.length > 0 && streamingParts[streamingParts.length - 1]?.kind === 'block'"
+                    class="stream-block-cursor-dot"
+                    aria-hidden="true"
+                  />
                 </template>
               </div>
             </div>
@@ -759,17 +800,17 @@
         </div>
       </div>
 
-      <!-- 意图感知磁吸悬浮胶囊：向上滚动时脱离自动跟随，浮现平滑小胶囊 -->
+      <!-- 意图感知磁吸悬浮胶囊：距底 >= 50px 或主动上滑时脱离自动跟随 -->
       <Transition name="scroll-pill-fade">
         <button
-          v-if="isAiStreaming && isAutoScrollLocked"
+          v-if="isAutoScrollLocked && chatMessages.length > 0"
           type="button"
           class="chat-scroll-resume-pill"
           @click="resumeAutoScroll"
         >
-          <span class="resume-pill-pulse-dot" />
+          <span v-if="isAiDisplayStreaming" class="resume-pill-pulse-dot" />
           <span class="resume-pill-arrow">↓</span>
-          <span class="resume-pill-text">{{ t(messages.generating) }}</span>
+          <span class="resume-pill-text">{{ t(messages.backToLatest) }}</span>
         </button>
       </Transition>
 
@@ -813,13 +854,13 @@
           ></textarea>
           <button
             class="ai-send-btn"
-            :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
+            :class="{ 'is-ready': !isAiStreaming && (chatInput.trim() || quotedSelection), 'is-stopping': isAiStreaming }"
             :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
             :title="chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage))"
             :aria-label="chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage))"
           >
-            <IconX v-if="isAiStreaming" :size="16" :stroke-width="2" />
+            <span v-if="isAiStreaming" class="ai-stop-square" aria-hidden="true" />
             <IconArrowUp v-else :size="16" :stroke-width="2" />
           </button>
         </div>
@@ -2423,6 +2464,9 @@ const notifyScopeLocked = () => {
 }
 
 const handleScopeSwitchClick = () => {
+  if (isAiDisplayStreaming.value) {
+    return
+  }
   if (isScopeLocked.value) {
     notifyScopeLocked()
     return
@@ -2430,8 +2474,8 @@ const handleScopeSwitchClick = () => {
   showModelMenu.value = !showModelMenu.value
 }
 
-watch(isScopeLocked, (locked) => {
-  if (locked) {
+watch([isScopeLocked, isAiDisplayStreaming], ([locked, streaming]) => {
+  if (locked || streaming) {
     showModelMenu.value = false
   }
 })
@@ -2792,6 +2836,7 @@ watch(chatInput, (val) => {
 
 const isAutoScrollLocked = ref(false)
 let touchStartY = 0
+let prevChatScrollTop = 0
 
 const handleTouchStart = (e: TouchEvent) => {
   if (e.touches[0]) {
@@ -2815,19 +2860,41 @@ const handleChatWheel = (e: WheelEvent) => {
   }
 }
 
+const handleChatScroll = () => {
+  const el = chatScrollRef.value
+  if (!el) return
+  const currentTop = el.scrollTop
+  if (currentTop < prevChatScrollTop - 4 && !isNearBottom()) {
+    isAutoScrollLocked.value = true
+  } else if (isNearBottom()) {
+    isAutoScrollLocked.value = false
+  }
+  prevChatScrollTop = currentTop
+}
+
+const handleChatContainerScroll = () => {
+  handleChatScroll()
+  updateSelectionPosition('chat')
+}
+
 const resumeAutoScroll = () => {
   isAutoScrollLocked.value = false
   scrollChatToBottom()
 }
 
 const scrollChatToBottom = () => {
-  nextTick(() => { if (chatScrollRef.value) chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight })
+  nextTick(() => {
+    if (chatScrollRef.value) {
+      chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
+      prevChatScrollTop = chatScrollRef.value.scrollTop
+    }
+  })
 }
 
 const isNearBottom = () => {
   if (!chatScrollRef.value) return true
   const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.value
-  return scrollHeight - (scrollTop + clientHeight) < 140
+  return scrollHeight - (scrollTop + clientHeight) < 50
 }
 
 const autoScrollChatIfNeeded = () => {
@@ -2844,14 +2911,13 @@ watch([streamingContent, streamingReasoning, () => streamingParts.value.length],
 
 watch(isAiStreaming, (streaming, oldVal) => {
   if (oldVal && !streaming) {
-    // 正文输出完，流式结束：启动 450ms 收起动效缓冲期，让展开的思考链平滑执行收起动效
+    // 正文输出完，流式结束：启动 450ms 收起动效缓冲期，保留用户主动上滑锁定态不被强拽回底
     isStreamSettling.value = true
     if (streamSettleTimer) clearTimeout(streamSettleTimer)
     streamSettleTimer = setTimeout(() => {
       isStreamSettling.value = false
       streamSettleTimer = null
     }, 450)
-    isAutoScrollLocked.value = false
     isThinkingComplete.value = true
   } else if (streaming) {
     if (streamSettleTimer) {
@@ -2871,6 +2937,92 @@ watch([streamingReasoning, streamingTools, streamingContent, () => streamingPart
     }
   }
 })
+
+const expandedCitationsMap = ref<Record<string, boolean>>({})
+
+watch(() => chatStore.activeSession?.id, () => {
+  expandedCitationsMap.value = {}
+})
+
+const isCitationsExpanded = (msgId: string) => Boolean(expandedCitationsMap.value[msgId])
+
+const toggleCitations = (msgId: string) => {
+  expandedCitationsMap.value = {
+    ...expandedCitationsMap.value,
+    [msgId]: !expandedCitationsMap.value[msgId],
+  }
+}
+
+const isLastAssistantMessage = (msgId: string) => {
+  for (let i = chatMessages.value.length - 1; i >= 0; i -= 1) {
+    if (chatMessages.value[i].role === 'assistant') {
+      return chatMessages.value[i].id === msgId
+    }
+  }
+  return false
+}
+
+const copyTextSafely = async (text: string): Promise<boolean> => {
+  if (!text) return false
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fallback for non-HTTPS LAN origins
+    }
+  }
+  if (typeof document === 'undefined') return false
+  const prevFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const selection = typeof window !== 'undefined' ? window.getSelection() : null
+  const savedRanges: Range[] = []
+  if (selection && selection.rangeCount > 0) {
+    for (let i = 0; i < selection.rangeCount; i += 1) {
+      savedRanges.push(selection.getRangeAt(i).cloneRange())
+    }
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '-9999px'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  let copied = false
+  try {
+    copied = document.execCommand('copy')
+  } catch {
+    copied = false
+  } finally {
+    document.body.removeChild(textarea)
+    if (selection) {
+      selection.removeAllRanges()
+      for (const range of savedRanges) {
+        selection.addRange(range)
+      }
+    }
+    prevFocused?.focus?.()
+  }
+  return copied
+}
+
+const copyAssistantReply = async (content: string) => {
+  const ok = await copyTextSafely(content)
+  if (ok) {
+    ElMessage.success(t(messages.copied))
+    return
+  }
+  ElNotification({ title: '复制失败', message: '当前环境不支持自动复制，请手动选择文本。', type: 'warning', position: 'top-right' })
+}
+
+const saveAssistantReplyAsBlock = (content: string) => {
+  if (!content.trim()) return
+  selectedText.value = content.slice(0, 4000)
+  selectionScope.value = 'chat'
+  selectionPosition.value = null
+  showKnowledgeEditor.value = true
+}
 
 const sendChat = async () => {
   if (!canSendWorkspaceChat.value) return
@@ -2934,6 +3086,39 @@ const handleRetryAssistantMessage = (msgId: string) => {
   }
 }
 
+const handleRegenerateAssistantMessage = async (msgId: string) => {
+  if (!canSendWorkspaceChat.value || isAiDisplayStreaming.value) return
+  const idx = chatMessages.value.findIndex((m) => m.id === msgId)
+  if (idx < 0) return
+  const target = chatMessages.value[idx]
+  if (target.status === 'FAILED' || target.status === 'INTERRUPTED') {
+    handleRetryAssistantMessage(msgId)
+    return
+  }
+  let promptMsg: ChatMsg | undefined
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (chatMessages.value[i].role === 'user') {
+      promptMsg = chatMessages.value[i]
+      break
+    }
+  }
+  if (!promptMsg || !promptMsg.content.trim()) return
+  isAutoScrollLocked.value = false
+  scrollChatToBottom()
+  try {
+    await chatStore.sendMessage(promptMsg.content, {
+      ...aiChatReferenceOptions(),
+      selectionText: promptMsg.quoteText,
+    })
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      const safe = classifyClientError(error, 'CHAT')
+      logClientError('[SubjectWorkspace] regenerate failed', error, safe)
+      ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
+    }
+  }
+}
+
 const handleRecoverUnknown = async () => {
   if (!canUseWorkspaceChat.value) return
   try {
@@ -2954,6 +3139,7 @@ const handleRecoverUnknown = async () => {
 }
 
 const clearChat = () => {
+  isAutoScrollLocked.value = false
   if (!chatSessionInitialization) void startFreshChatSession('学科对话', true)
 }
 
@@ -5186,7 +5372,7 @@ html.dark .chat-recover-banner {
 }
 
 
-/* 意图感知磁吸悬浮胶囊：向上滚动时脱离自动跟随，浮现平滑小胶囊 */
+/* 意图感知磁吸悬浮胶囊：纯白细描边极简样式 */
 .chat-scroll-resume-pill {
   position: absolute;
   bottom: 84px;
@@ -5195,35 +5381,38 @@ html.dark .chat-recover-banner {
   z-index: 25;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   height: 32px;
-  padding: 0 14px 0 10px;
+  padding: 0 13px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-card, #ffffff) 90%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 45%, var(--border-default, #dcd8d0));
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+  border: 1px solid #eae6dd;
+  box-shadow: 0 6px 18px rgba(72, 62, 46, 0.11), 0 2px 5px rgba(72, 62, 46, 0.05);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 550;
   cursor: pointer;
   user-select: none;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .chat-scroll-resume-pill:hover {
-  background: var(--color-bg-card, #ffffff);
-  border-color: var(--color-zen-sage, #8b9a6e);
-  box-shadow: 0 6px 22px color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 24%, transparent);
+  border-color: rgba(110, 127, 80, 0.45);
+  box-shadow: 0 8px 22px rgba(72, 62, 46, 0.14);
   transform: translateX(-50%) translateY(-2px);
+}
+
+html.dark .chat-scroll-resume-pill {
+  background: var(--color-bg-card, #232220);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
 }
 
 .resume-pill-pulse-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-zen-sage, #8b9a6e);
+  background: var(--color-sage-ink, #556b3d);
   animation: resume-dot-pulse 1.4s infinite ease-in-out;
 }
 
@@ -5239,7 +5428,7 @@ html.dark .chat-recover-banner {
 }
 
 .resume-pill-arrow {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--color-sage-dark, #5c6b44);
   font-weight: 700;
 }
@@ -5297,17 +5486,15 @@ html.dark .chat-recover-banner {
 .ai-reply :deep(ul), .ai-reply :deep(ol) { padding-left: 20px; margin: 8px 0; }
 .ai-reply :deep(li) { margin-bottom: 4px; }
 
-.typing-cursor {
+.stream-block-cursor-dot {
   display: inline-block;
-  width: 2px;
-  height: 14px;
-  background: var(--text-secondary);
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: blink 0.8s step-end infinite;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background-color: rgba(110, 127, 80, 0.78);
+  animation: resume-dot-pulse 1.2s ease-in-out infinite;
 }
-
-@keyframes blink { 50% { opacity: 0; } }
 
 /* Input Area */
 .ai-input-area {
@@ -5380,6 +5567,21 @@ html.dark .ai-input-wrapper {
   transform: scale(1.06);
   background: #76855B;
   box-shadow: 0 4px 14px rgba(139, 154, 110, 0.55);
+}
+.ai-send-btn.is-stopping {
+  background: #556b3d;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(85, 107, 61, 0.28);
+}
+.ai-send-btn.is-stopping:hover {
+  transform: scale(1.04);
+  background: #485c33;
+}
+.ai-stop-square {
+  width: 10px;
+  height: 10px;
+  border-radius: 2.5px;
+  background-color: #ffffff;
 }
 .ai-send-btn:disabled {
   cursor: not-allowed;
@@ -6064,42 +6266,54 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
 }
 .chat-msg-citations {
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 22%, var(--border-subtle, #E0DEDA));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   font-size: 12px;
 }
-.chat-msg-citations .citation-title {
+
+.citation-collapse-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-weight: 650;
-  color: var(--color-sage-dark, #5C6B44);
-  margin-bottom: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #eae6dd;
+  background: #ffffff;
+  color: var(--color-sage-dark, #5c6b44);
   font-size: 11.5px;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
 }
+
+.citation-collapse-pill:hover {
+  border-color: rgba(110, 127, 80, 0.45);
+  background: #faf7f2;
+}
+
+.citation-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.citation-chevron.is-expanded {
+  transform: rotate(180deg);
+}
+
 .chat-msg-citations .citation-title-icon {
-  color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #8b9a6e);
   flex-shrink: 0;
 }
-.chat-msg-citations .citation-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 14%, var(--color-bg-card, #FFFFFF));
-  color: var(--color-sage-dark, #5C6B44);
-  font-size: 10px;
-  font-weight: 700;
-}
+
 .chat-msg-citations .citation-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .chat-msg-citations .citation-chip {
   display: inline-flex;
   align-items: center;
@@ -6107,8 +6321,8 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   max-width: 100%;
   padding: 4px 9px;
   border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 22%, var(--border-subtle, #E0DEDA));
-  background: color-mix(in srgb, var(--color-bg-card, #FFFFFF) 85%, var(--color-bg-primary, #F5F1EB));
+  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 22%, var(--border-subtle, #e0deda));
+  background: color-mix(in srgb, var(--color-bg-card, #ffffff) 85%, var(--color-bg-primary, #f5f1eb));
   color: var(--text-primary);
   font-size: 11.5px;
   line-height: 1.4;
@@ -6117,20 +6331,23 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   transition: all 0.16s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
+
 .chat-msg-citations .citation-chip:hover {
-  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 12%, var(--color-bg-card, #FFFFFF));
-  border-color: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 45%, var(--border-subtle, #E0DEDA));
-  color: var(--color-sage-dark, #5C6B44);
+  background: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 12%, var(--color-bg-card, #ffffff));
+  border-color: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 45%, var(--border-subtle, #e0deda));
+  color: var(--color-sage-dark, #5c6b44);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 10%, transparent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 10%, transparent);
 }
+
 .chat-msg-citations .citation-idx {
   font-family: var(--font-mono, monospace);
   font-weight: 700;
   font-size: 10.5px;
-  color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #8b9a6e);
   flex-shrink: 0;
 }
+
 .chat-msg-citations .citation-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6138,8 +6355,60 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   max-width: 220px;
   color: var(--text-secondary);
 }
+
 .chat-msg-citations .citation-chip:hover .citation-name {
-  color: var(--color-sage-dark, #5C6B44);
+  color: var(--color-sage-dark, #5c6b44);
+}
+
+.chat-msg-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  animation: chat-footer-fade-in 0.22s ease both;
+}
+
+@keyframes chat-footer-fade-in {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.chat-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid #eae6dd;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.chat-footer-btn:hover {
+  color: var(--color-sage-dark, #5c6b44);
+  border-color: rgba(110, 127, 80, 0.35);
+  background: rgba(139, 154, 110, 0.08);
+}
+
+.ai-model-switch.is-locked {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+html.dark .citation-collapse-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #a3b899;
+}
+
+html.dark .chat-footer-btn {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .chat-msg-interrupted-bar {

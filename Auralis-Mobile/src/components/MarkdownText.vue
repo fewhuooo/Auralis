@@ -8,9 +8,10 @@ import { renderMarkdownHtml } from '@/utils/markdown'
 
 const props = defineProps<{
   content: string
+  streaming?: boolean
 }>()
 
-const nodes = computed(() => renderMarkdownHtml(props.content))
+const nodes = computed(() => renderMarkdownHtml(props.content, { isStreaming: props.streaming }))
 </script>
 
 <style scoped>

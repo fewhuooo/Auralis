@@ -12,12 +12,16 @@ type Provider = NonNullable<components['schemas']['AiSettingsCommand']['provider
 
 export interface Protocol1MessageCommand {
   protocolVersion: 1
-  action: 'turn'
+  action: 'turn' | 'activity_submission'
   conversationId: string
   requestId: string
-  content: string
+  content?: string
   readingContext?: components['schemas']['ReadingContext']
   selectionText?: string
+  activityId?: string
+  questionVersion?: number
+  submissionId?: string
+  answer?: { optionKeys?: string[]; text?: string }
 }
 
 export interface ChatStreamEnvelope {
@@ -153,6 +157,7 @@ export type ChatRunTerminalStatus = 'COMPLETED' | 'CANCELLED' | 'UNKNOWN' | 'FAI
 export interface ChatWithAiOptions {
   readingContext?: ReadingContext
   selectionText?: string
+  onEnvelope?: (envelope: ChatStreamEnvelope) => void
   onToolEvent?: (event: ChatToolEvent) => void
   onReasoningDelta?: (delta: string) => void
   onRunStarted?: (info: { runId: string; attemptId: string }) => void
@@ -161,7 +166,9 @@ export interface ChatWithAiOptions {
 }
 
 async function streamMessage(
-  body: Protocol1MessageCommand,
+  endpointPath: string,
+  conversationId: string,
+  body: Protocol1MessageCommand | { requestId: string },
   onMessage: (content: string) => void,
   retried = false,
   expectedGeneration?: symbol,
@@ -190,7 +197,7 @@ async function streamMessage(
       if (!isCurrent() || manuallyAborted) return
       if (event.data && typeof event.data === 'object') {
         const envelope = event.data as ChatStreamEnvelope
-        if (envelope.protocolVersion !== 1 || envelope.event !== event.event || envelope.conversationId !== body.conversationId) return
+        if (envelope.protocolVersion !== 1 || envelope.event !== event.event || envelope.conversationId !== conversationId) return
         if (activeAttempt && envelope.attemptId !== activeAttempt) return
         activeAttempt = envelope.attemptId
         const key = `${envelope.runId}:${envelope.attemptId}:${envelope.sequence}`
@@ -201,6 +208,8 @@ async function streamMessage(
           notifiedRunId = envelope.runId
           options?.onRunStarted?.({ runId: envelope.runId, attemptId: envelope.attemptId || '' })
         }
+
+        options?.onEnvelope?.(envelope)
 
         if (event.event === 'reasoning.delta') {
           const reasoningText = envelope.payload.text
@@ -252,7 +261,7 @@ async function streamMessage(
       }
     })
     const task = uni.request({
-      url: `${runtime.apiBaseUrl.replace(/\/+$/, '')}/api/ai/messages/stream`,
+      url: `${runtime.apiBaseUrl.replace(/\/+$/, '')}${endpointPath}`,
       method: 'POST',
       timeout: 330_000,
       enableChunked: true,
@@ -276,7 +285,7 @@ async function streamMessage(
             if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
             if (refreshed) {
               settled = true
-              streamMessage(body, onMessage, true, generation, options).then(resolve, reject)
+              streamMessage(endpointPath, conversationId, body, onMessage, true, generation, options).then(resolve, reject)
               return
             }
             auth.expireSession(generation)
@@ -368,7 +377,7 @@ export async function chatWithAI(
   options?: ChatWithAiOptions,
 ): Promise<void> {
   if (!conversationId) throw new Error('A conversationId is required for chat')
-  await streamMessage({
+  await streamMessage('/api/ai/messages/stream', conversationId, {
     protocolVersion: 1,
     action: 'turn',
     conversationId,
@@ -377,6 +386,50 @@ export async function chatWithAI(
     ...(options?.readingContext ? { readingContext: options.readingContext } : {}),
     ...(options?.selectionText ? { selectionText: options.selectionText } : {}),
   }, onMessage, false, undefined, options)
+}
+
+export interface ChatActivitySubmissionPayload {
+  activityId: string
+  questionVersion: number
+  submissionId: string
+  answer: { optionKeys?: string[]; text?: string }
+}
+
+export async function submitChatActivity(
+  conversationId: string,
+  payload: ChatActivitySubmissionPayload,
+  onMessage: (content: string) => void,
+  options?: ChatWithAiOptions,
+): Promise<void> {
+  if (!conversationId) throw new Error('A conversationId is required for activity submission')
+  await streamMessage('/api/ai/messages/stream', conversationId, {
+    protocolVersion: 1,
+    action: 'activity_submission',
+    conversationId,
+    requestId: uuidv7(),
+    activityId: payload.activityId,
+    questionVersion: payload.questionVersion,
+    submissionId: payload.submissionId,
+    answer: payload.answer,
+  }, onMessage, false, undefined, options)
+}
+
+export async function retryChatRun(
+  conversationId: string,
+  runId: string,
+  onMessage: (content: string) => void,
+  options?: ChatWithAiOptions,
+): Promise<void> {
+  if (!conversationId || !runId) throw new Error('ConversationId and runId are required for retry')
+  await streamMessage(
+    `/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/attempts`,
+    conversationId,
+    { requestId: uuidv7() },
+    onMessage,
+    false,
+    undefined,
+    options,
+  )
 }
 
 

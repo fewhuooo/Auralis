@@ -27,7 +27,10 @@ import {
   updateChatActivityDraft,
 } from '../src/services/chatContentProjection.ts'
 import {
+  appendStreamCursorDot,
   autoCloseMarkdown,
+  extractStreamingBlockDraft,
+  renderMarkdown,
   wrapTrailingToken,
 } from '../src/utils/markdown.ts'
 
@@ -283,4 +286,47 @@ test('wrapTrailingToken wraps trailing characters with token-fade span', () => {
   const htmlWithTrailingWhitespace = '<p>正在讲解知识点</p>\n'
   const wrappedWs = wrapTrailingToken(htmlWithTrailingWhitespace)
   assert.ok(wrappedWs.includes('<span class="token-fade">解知识点</span>'))
+})
+
+test('extractStreamingBlockDraft holds unclosed math blocks and multiline tables while ignoring fenced code', () => {
+  const unclosedDollar = extractStreamingBlockDraft('推导出如下公式：\n\n$$\\frac{a}{b}')
+  assert.equal(unclosedDollar.stablePrefix, '推导出如下公式：\n\n')
+  assert.deepEqual(unclosedDollar.draft, { kind: 'math', raw: '$$\\frac{a}{b}' })
+
+  const closedDollar = extractStreamingBlockDraft('推导出如下公式：\n\n$$\\frac{a}{b}$$\n\n完毕')
+  assert.equal(closedDollar.draft, null)
+
+  const unclosedBracket = extractStreamingBlockDraft('矩阵为：\n\\[A = B')
+  assert.equal(unclosedBracket.stablePrefix, '矩阵为：\n')
+  assert.deepEqual(unclosedBracket.draft, { kind: 'math', raw: '\\[A = B' })
+
+  const unclosedTable = extractStreamingBlockDraft('对比如下：\n| 协议 | 特点 |\n| :--- | :--- |\n| SSE | 单向推流')
+  assert.equal(unclosedTable.stablePrefix, '对比如下：\n')
+  assert.equal(unclosedTable.draft?.kind, 'table')
+  assert.ok(unclosedTable.draft?.raw.includes('| SSE | 单向推流'))
+
+  const closedTable = extractStreamingBlockDraft('| 协议 | 特点 |\n| :--- | :--- |\n| SSE | 单向 |\n\n后续结论')
+  assert.equal(closedTable.draft, null)
+
+  const unclosedFence = extractStreamingBlockDraft('```md\n$$x\n| a | b |')
+  assert.equal(unclosedFence.draft, null)
+})
+
+test('renderMarkdown injects 8px stream-cursor-dot inside text blocks and stable draft cards while streaming', () => {
+  const unclosedTableHtml = renderMarkdown('说明如下：\n\n| 列A | 列B |\n| :--- | :--- |\n| 1 | 2', true)
+  assert.match(unclosedTableHtml, /streaming-block-draft--table/)
+  assert.match(unclosedTableHtml, /表格生成中…/)
+  assert.doesNotMatch(unclosedTableHtml, /<table>/)
+
+  const completedTableStreaming = renderMarkdown('| 列A | 列B |\n| :--- | :--- |\n| 1 | 2 |\n\n结论如下', true)
+  assert.match(completedTableStreaming, /<table>/)
+  assert.match(completedTableStreaming, /<span class="stream-cursor-dot" aria-hidden="true"><\/span><\/p>/)
+
+  const settledHtml = renderMarkdown('| 列A | 列B |\n| :--- | :--- |\n| 1 | 2 |', false)
+  assert.match(settledHtml, /<table>/)
+  assert.doesNotMatch(settledHtml, /stream-cursor-dot/)
+  assert.doesNotMatch(settledHtml, /streaming-block-draft/)
+
+  const inlineCursor = appendStreamCursorDot('<p>核心<span class="token-fade">定义</span></p>\n')
+  assert.equal(inlineCursor, '<p>核心<span class="token-fade">定义</span><span class="stream-cursor-dot" aria-hidden="true"></span></p>\n')
 })

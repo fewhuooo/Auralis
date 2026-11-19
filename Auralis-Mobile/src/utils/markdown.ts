@@ -389,14 +389,169 @@ function applyZenRichTextStyles(html: string): string {
     .replace(/<td(?=[\s>])/g, '<td style="border:1px solid rgba(28,28,26,0.08);padding:7px 9px;color:#2C2C28;"')
 }
 
-export function renderMarkdownHtml(markdownText: string): string {
-  if (!markdownText) return ''
-  const codePrefix = pickSentinelPrefix(markdownText, 'CODE')
-  const mathPrefix = pickSentinelPrefix(markdownText, 'MATH')
+export interface StreamingBlockDraft {
+  kind: 'math' | 'table'
+  raw: string
+}
+
+export interface RenderMarkdownOptions {
+  isStreaming?: boolean
+}
+
+const STREAM_CURSOR_DOT_HTML = '<span style="display:inline-block;width:8px;height:8px;margin-left:5px;border-radius:50%;vertical-align:middle;background-color:rgba(110,127,80,0.72);"></span>'
+
+function maskCodeRegionsPreservingOffsets(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/[^\n]/g, ' '))
+    .replace(/`[^`\n]*`/g, (span) => ' '.repeat(span.length))
+}
+
+/** Extracts unclosed block formulas or multiline tables during streaming to prevent vertical jitter. */
+export function extractStreamingBlockDraft(text: string): {
+  stablePrefix: string
+  draft: StreamingBlockDraft | null
+} {
+  if (!text) return { stablePrefix: '', draft: null }
+  const codeFenceMatches = text.match(/```/g)
+  if (codeFenceMatches && codeFenceMatches.length % 2 !== 0) {
+    return { stablePrefix: text, draft: null }
+  }
+
+  const masked = maskCodeRegionsPreservingOffsets(text)
+  const doubleDollarMatches = masked.match(/\$\$/g)
+  if (doubleDollarMatches && doubleDollarMatches.length % 2 !== 0) {
+    const idx = masked.lastIndexOf('$$')
+    if (idx >= 0) {
+      return { stablePrefix: text.slice(0, idx), draft: { kind: 'math', raw: text.slice(idx) } }
+    }
+  }
+
+  const openBracketCount = (masked.match(/\\\[/g) || []).length
+  const closeBracketCount = (masked.match(/\\\]/g) || []).length
+  if (openBracketCount > closeBracketCount) {
+    const idx = masked.lastIndexOf('\\[')
+    if (idx >= 0) {
+      return { stablePrefix: text.slice(0, idx), draft: { kind: 'math', raw: text.slice(idx) } }
+    }
+  }
+
+  if (!/\r?\n[ \t]*\r?\n[ \t]*$/.test(masked)) {
+    let paraStart = 0
+    const paraBreakRegex = /\r?\n[ \t]*\r?\n/g
+    let breakMatch = paraBreakRegex.exec(masked)
+    while (breakMatch) {
+      paraStart = breakMatch.index + breakMatch[0].length
+      breakMatch = paraBreakRegex.exec(masked)
+    }
+
+    const lines: Array<{ start: number; trimmed: string }> = []
+    let cursor = paraStart
+    const segment = masked.slice(paraStart)
+    for (const rawLine of segment.split('\n')) {
+      lines.push({ start: cursor, trimmed: rawLine.trim() })
+      cursor += rawLine.length + 1
+    }
+    while (lines.length > 0 && lines[lines.length - 1].trimmed.length === 0) {
+      lines.pop()
+    }
+    if (lines.length > 0 && lines[lines.length - 1].trimmed.startsWith('|')) {
+      let tableStartIdx = lines.length - 1
+      while (tableStartIdx > 0 && lines[tableStartIdx - 1].trimmed.startsWith('|')) {
+        tableStartIdx -= 1
+      }
+      const cutAt = lines[tableStartIdx].start
+      return { stablePrefix: text.slice(0, cutAt), draft: { kind: 'table', raw: text.slice(cutAt) } }
+    }
+  }
+
+  return { stablePrefix: text, draft: null }
+}
+
+/** Auto-closes incomplete inline Markdown and code markers to stabilize live streaming layout. */
+export function autoCloseStreamingMarkdown(text: string): string {
+  if (!text) return ''
+  let result = text.replace(/(?:<[a-zA-Z0-9_\-:]*|:::[a-zA-Z0-9_\-:]*|```[a-zA-Z0-9_\-]*)$/, '')
+
+  const codeBlockMatches = result.match(/```/g)
+  if (codeBlockMatches && codeBlockMatches.length % 2 !== 0) {
+    return `${result}\n\`\`\``
+  }
+
+  const textWithoutBlocks = result.replace(/```[\s\S]*?```/g, '')
+  const codeSpanMatches = textWithoutBlocks.match(/`/g)
+  const isInlineCodeUnclosed = Boolean(codeSpanMatches && codeSpanMatches.length % 2 !== 0)
+  if (isInlineCodeUnclosed) {
+    result += '`'
+  }
+
+  const textWithClosedSpans = isInlineCodeUnclosed ? `${textWithoutBlocks}\`` : textWithoutBlocks
+  const textWithoutCode = textWithClosedSpans.replace(/`[^`\n]*`/g, '')
+
+  const doubleDollarMatches = textWithoutCode.match(/\$\$/g)
+  if (doubleDollarMatches && doubleDollarMatches.length % 2 !== 0) {
+    result += '$$'
+  }
+
+  const openParenMath = (textWithoutCode.match(/\\\(/g) || []).length
+  const closeParenMath = (textWithoutCode.match(/\\\)/g) || []).length
+  if (openParenMath > closeParenMath) {
+    result += '\\)'
+  }
+
+  const openBracketMath = (textWithoutCode.match(/\\\[/g) || []).length
+  const closeBracketMath = (textWithoutCode.match(/\\\]/g) || []).length
+  if (openBracketMath > closeBracketMath) {
+    result += '\\]'
+  }
+
+  const boldMatches = textWithoutCode.match(/\*\*/g)
+  if (boldMatches && boldMatches.length % 2 !== 0) {
+    result += '**'
+  }
+
+  const strikeMatches = textWithoutCode.match(/~~/g)
+  if (strikeMatches && strikeMatches.length % 2 !== 0) {
+    result += '~~'
+  }
+
+  if (/\[([^\]\n]+)\]\(([^)\n]*)$/.test(result)) {
+    result += ')'
+  }
+
+  return result
+}
+
+function appendInlineCursorDot(html: string): string {
+  if (!html) return STREAM_CURSOR_DOT_HTML
+  const trailMatch = /((?:\s*<\/[a-zA-Z0-9]+>)+\s*)$/.exec(html)
+  if (!trailMatch) {
+    return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
+  }
+  const trail = trailMatch[1]
+  if (/<\/(?:table|thead|tbody|tfoot|tr|td|th|div)\s*>/i.test(trail)) {
+    return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
+  }
+  const closerTokenRegex = /\s*<\/([a-zA-Z0-9]+)>/g
+  let tokenMatch = closerTokenRegex.exec(trail)
+  while (tokenMatch) {
+    const tag = tokenMatch[1].toLowerCase()
+    if (tag !== 'span') {
+      const insertPos = trailMatch.index + tokenMatch.index
+      return `${html.slice(0, insertPos)}${STREAM_CURSOR_DOT_HTML}${html.slice(insertPos)}`
+    }
+    tokenMatch = closerTokenRegex.exec(trail)
+  }
+  return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
+}
+
+function parseStyledMarkdownSegment(markdownSegment: string): string {
+  if (!markdownSegment) return ''
+  const codePrefix = pickSentinelPrefix(markdownSegment, 'CODE')
+  const mathPrefix = pickSentinelPrefix(markdownSegment, 'MATH')
   const codeTokens: string[] = []
   const mathTokens: string[] = []
 
-  const withoutCode = markdownText
+  const withoutCode = markdownSegment
     .replace(/```[\s\S]*?```/g, (block) => {
       const token = `${codePrefix}${codeTokens.length}@@`
       codeTokens.push(block)
@@ -412,6 +567,16 @@ export function renderMarkdownHtml(markdownText: string): string {
     .replace(/\$\$([\s\S]+?)\$\$/g, (_all, inner: string) => {
       const token = `${mathPrefix}${mathTokens.length}@@`
       mathTokens.push(renderMathHtml(inner, true))
+      return token
+    })
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_all, inner: string) => {
+      const token = `${mathPrefix}${mathTokens.length}@@`
+      mathTokens.push(renderMathHtml(inner, true))
+      return token
+    })
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_all, inner: string) => {
+      const token = `${mathPrefix}${mathTokens.length}@@`
+      mathTokens.push(renderMathHtml(inner, false))
       return token
     })
     .replace(/\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$/g, (_all, inner: string) => {
@@ -430,7 +595,44 @@ export function renderMarkdownHtml(markdownText: string): string {
   for (let idx = 0; idx < mathTokens.length; idx++) {
     styled = styled.replace(`${mathPrefix}${idx}@@`, () => mathTokens[idx])
   }
-  return `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${styled}</div>`
+  return styled
+}
+
+function buildStreamingDraftHtml(draft: StreamingBlockDraft): string {
+  const label = draft.kind === 'math' ? '公式排版中…' : '表格生成中…'
+  return `<div style="min-height:72px;margin:10px 0;padding:10px 12px;border-radius:10px;background-color:#F4EFE6;border:1px solid #EAE6DD;box-sizing:border-box;"><div style="font-size:11px;font-weight:600;color:#556B3D;margin-bottom:5px;">${label}</div><pre style="margin:0;padding:0;font-family:var(--font-family-mono, monospace);font-size:12px;line-height:1.55;color:#7A7A75;white-space:pre-wrap;word-break:break-word;">${escapeHtml(draft.raw)}${STREAM_CURSOR_DOT_HTML}</pre></div>`
+}
+
+/** Renders Markdown + LaTeX into safe rich-text HTML, with optional streaming stabilization. */
+export function renderMarkdownHtml(markdownText: string, options?: RenderMarkdownOptions): string {
+  const isStreaming = Boolean(options?.isStreaming)
+  if (!markdownText) {
+    return isStreaming
+      ? `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${STREAM_CURSOR_DOT_HTML}</div>`
+      : ''
+  }
+
+  if (!isStreaming) {
+    const styled = parseStyledMarkdownSegment(markdownText)
+    return `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${styled}</div>`
+  }
+
+  const { stablePrefix, draft } = extractStreamingBlockDraft(markdownText)
+  let body = ''
+  if (stablePrefix) {
+    const prepared = autoCloseStreamingMarkdown(stablePrefix)
+    body = parseStyledMarkdownSegment(prepared)
+    if (!draft) {
+      body = appendInlineCursorDot(body)
+    }
+  }
+  if (draft) {
+    body += buildStreamingDraftHtml(draft)
+  }
+  if (!body) {
+    body = STREAM_CURSOR_DOT_HTML
+  }
+  return `<div style="font-size:14.5px;line-height:1.72;color:#2C2C28;word-break:break-word;">${body}</div>`
 }
 
 export function plainMarkdownExcerpt(raw: string): string {
@@ -440,6 +642,16 @@ export function plainMarkdownExcerpt(raw: string): string {
   const withMathStashed = raw
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/\$\$([\s\S]+?)\$\$/g, (_all, inner: string) => {
+      const token = `${excerptPrefix}${mathPlaceholders.length}@@`
+      mathPlaceholders.push(formatTexPlain(inner))
+      return token
+    })
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_all, inner: string) => {
+      const token = `${excerptPrefix}${mathPlaceholders.length}@@`
+      mathPlaceholders.push(formatTexPlain(inner))
+      return token
+    })
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_all, inner: string) => {
       const token = `${excerptPrefix}${mathPlaceholders.length}@@`
       mathPlaceholders.push(formatTexPlain(inner))
       return token

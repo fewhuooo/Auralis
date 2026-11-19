@@ -94,6 +94,10 @@ watch(() => props.streaming, (isStreaming) => {
   }
 })
 
+function isPartActivelyStreaming(index: number): boolean {
+  return index === projection.parts.length - 1 && (props.streaming || isTextStreamingActive.value)
+}
+
 function getRenderedText(part: Extract<ChatContentPart, { kind: 'text' }>, index: number): string {
   // 只要平滑蓄洪池仍在舒缓吐字，且是当前活跃追踪的末尾文本块，就展示平滑推进中的文本，避免收尾瞬间突跳
   if (isTextStreamingActive.value && index === projection.parts.length - 1 && currentStreamingTextId.value === part.id) {
@@ -129,9 +133,9 @@ function onSubmit(questionId: string, answer: ChatActivityAnswer): void {
       <div
         v-if="part.kind === 'text'"
         class="chat-content-renderer__text"
-        :class="{ 'is-streaming-active': streaming && index === projection.parts.length - 1 }"
-        v-memo="[part.id, getRenderedText(part, index), streaming && index === projection.parts.length - 1]"
-        v-html="renderMarkdown(getRenderedText(part, index), streaming && index === projection.parts.length - 1)"
+        :class="{ 'is-streaming-active': isPartActivelyStreaming(index) }"
+        v-memo="[part.id, getRenderedText(part, index), isPartActivelyStreaming(index)]"
+        v-html="renderMarkdown(getRenderedText(part, index), isPartActivelyStreaming(index))"
       />
       <ChatContentBlock
         v-else-if="part.component === 'steps' || part.component === 'compare' || part.component === 'roadmap' || part.component === 'chart'"
@@ -335,6 +339,80 @@ html.dark .chat-content-renderer__text :deep(tbody tr:hover) {
   overflow-y: hidden;
 }
 
+/* 8px 橄榄绿半透明柔和跟随圆点 */
+.chat-content-renderer__text :deep(.stream-cursor-dot) {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 5px;
+  border-radius: 50%;
+  vertical-align: -0.5px;
+  background-color: rgba(110, 127, 80, 0.78);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.16);
+  animation: stream-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stream-dot-pulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.95;
+  }
+}
+
+/* 跨行表格与块级公式（$$...$$ / \[...\]）闭合前等高稳定草稿容器 */
+.chat-content-renderer__text :deep(.streaming-block-draft) {
+  min-height: 76px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: #F4EFE6;
+  border: 1px solid #EAE6DD;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-content-renderer__text :deep(.streaming-block-draft__label) {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-sage-dark, #5C6B44);
+  letter-spacing: 0.01em;
+}
+
+.chat-content-renderer__text :deep(.streaming-block-draft__raw) {
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-family-mono, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted, #6F6E69);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+html.dark .chat-content-renderer__text :deep(.streaming-block-draft) {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .chat-content-renderer__text :deep(.streaming-block-draft__label) {
+  color: #A3B899;
+}
+
+html.dark .chat-content-renderer__text :deep(.streaming-block-draft__raw) {
+  color: rgba(235, 232, 224, 0.72);
+}
+
 /* LaTeX 流式未闭合时的柔和降级胶囊 */
 .chat-content-renderer__text :deep(.katex-streaming-pill),
 .chat-content-renderer__text :deep(.katex-streaming-inline-pill) {
@@ -368,6 +446,7 @@ html.dark .chat-content-renderer__text :deep(tbody tr:hover) {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-content-renderer__text.is-streaming-active,
+  .chat-content-renderer__text :deep(.stream-cursor-dot),
   .chat-content-renderer__text :deep(.katex-streaming-pill) {
     animation: none;
   }

@@ -135,6 +135,7 @@ import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useAuthStore } from '@/store/useAuthStore'
+import { extractHistoryMessageContent } from '@/utils/mobileAiChat'
 import { uuidv7 } from '@/utils/uuid'
 
 interface ChatBubbleItem {
@@ -215,7 +216,7 @@ async function switchConversation(conversationId: string) {
       .filter(m => m.role === 'USER' || m.role === 'ASSISTANT')
       .map(m => ({
         role: m.role === 'USER' ? 'user' : 'assistant',
-        content: m.content || '',
+        content: extractHistoryMessageContent(m),
       }))
     scrollToBottom()
   } catch {

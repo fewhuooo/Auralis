@@ -171,23 +171,43 @@ const isShimmering = computed(() => {
   return true
 })
 
-// 状态文字显示（顶栏仅展示思考状态，不保留工具调用提示）
+const runningTool = computed(() => props.tools?.find((tool) => tool.status === 'RUNNING') || null)
+
+// 状态文字显示（优先透出正在检索的语义状态，检索/思考结束后收拢为极简胶囊）
 const statusText = computed(() => {
   if (isShimmering.value) {
-    return hasReasoning.value ? '深度思考中…' : '正在思考…'
+    if (runningTool.value) {
+      return runningTool.value.name === 'search'
+        ? '正在检索相关知识块…'
+        : `正在${formatToolName(runningTool.value.name)}…`
+    }
+    if (hasReasoning.value) return '深度思考中…'
+    return '正在检索相关知识块…'
+  }
+  const toolCount = props.tools?.length ?? 0
+  if (hasReasoning.value && toolCount > 0) {
+    return `已思考 · ${toolCount} 步检索`
+  }
+  if (toolCount > 0) {
+    return `已检索 ${toolCount} 步`
   }
   if (hasReasoning.value) {
     return wordCount.value > 0 ? `已深度思考 · ${wordCount.value} 字` : '已深度思考'
   }
-  return '思考完成'
+  return '检索与思考完成'
 })
 
-// 工具友好名称
+// 工具友好名称（对齐 Protocol 1 只读工具与可视化块工具）
 function formatToolName(name: string): string {
+  if (name === 'search') return '检索资料'
+  if (name === 'list_sources') return '浏览资料目录'
+  if (name === 'read_source_excerpt') return '阅读资料片段'
+  if (name === 'read_source_overview') return '读取资料总览'
+  if (name.startsWith('render_')) return '整理展示卡片'
   if (name.includes('search') || name.includes('query')) return '检索资料'
   if (name.includes('retriev') || name.includes('doc')) return '查阅文献'
   if (name.includes('calc')) return '计算验证'
-  return name
+  return '检索与分析'
 }
 
 function toggleOpen(): void {
@@ -208,7 +228,7 @@ function toggleOpen(): void {
     }"
     aria-label="思考过程与工具状态"
   >
-    <!-- 单行胶囊状态栏 (Collapsible Status Pill) -->
+    <!-- 单行胶囊状态栏 (极简圆点 + 状态文案，去掉冗余星芒图标) -->
     <button
       type="button"
       class="process-pill-trigger"
@@ -217,14 +237,13 @@ function toggleOpen(): void {
         'is-active': isOpen,
       }"
       @click="toggleOpen"
-      :title="hasReasoning || hasTools ? (isOpen ? '收起思考过程' : '点击查看思考过程') : ''"
+      :title="hasReasoning || hasTools ? (isOpen ? '收起检索与思考过程' : '点击查看检索与思考过程') : ''"
     >
-      <!-- 左侧 16px 微动图标 -->
-      <span class="process-pill-icon-wrap" :class="{ 'is-pulsing': isShimmering }">
-        <svg class="process-spark-svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M8 1L9.5 6.5L15 8L9.5 9.5L8 15L6.5 9.5L1 8L6.5 6.5L8 1Z" fill="currentColor" />
-        </svg>
-      </span>
+      <span
+        class="process-status-dot"
+        :class="{ 'is-pulsing': isShimmering }"
+        aria-hidden="true"
+      />
 
       <!-- 流光/静态状态字（文字大小严格保持 12px 不动） -->
       <span class="process-pill-label" :class="{ 'has-shimmer': isShimmering }">
@@ -257,7 +276,7 @@ function toggleOpen(): void {
           <!-- 思考链正文 Markdown（使用灰色字体呈现深邃沉稳推理感） -->
           <div v-if="hasReasoning" class="reasoning-markdown" v-html="renderMarkdown(activeReasoningText, isReasoningStreaming)" />
 
-          <!-- 工具调用组装在思考链内部（组装在思考步骤中，不置于最顶层） -->
+          <!-- 工具调用组装在思考链内部 -->
           <div v-if="hasTools" class="inline-thinking-tools">
             <div
               v-for="tool in tools"
@@ -265,24 +284,17 @@ function toggleOpen(): void {
               class="thinking-tool-pill"
               :data-status="tool.status"
             >
-              <span class="tool-icon">
-                <svg v-if="tool.status === 'RUNNING'" class="tool-spinner" width="11" height="11" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="28 10" />
-                </svg>
-                <svg v-else-if="tool.status === 'COMPLETED'" width="11" height="11" viewBox="0 0 16 16" fill="none">
-                  <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                <svg v-else width="11" height="11" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 4V9M8 12H8.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                </svg>
-              </span>
+              <span
+                class="tool-status-dot"
+                :class="`is-${tool.status.toLowerCase()}`"
+                aria-hidden="true"
+              />
               <span class="tool-label">{{ formatToolName(tool.name) }}</span>
-              <span class="tool-state-tag">{{ tool.status === 'RUNNING' ? '调用中…' : tool.status === 'FAILED' ? '执行失败' : '已完成' }}</span>
+              <span class="tool-state-tag">{{ tool.status === 'RUNNING' ? '进行中…' : tool.status === 'FAILED' ? '未完成' : '已完成' }}</span>
             </div>
           </div>
 
-          <!-- 流式思考光标 -->
-          <span v-if="isReasoningStreaming" class="timeline-cursor" />
+          <span v-if="isReasoningStreaming" class="timeline-cursor-dot" aria-hidden="true" />
         </div>
       </div>
     </div>
@@ -334,34 +346,31 @@ function toggleOpen(): void {
   color: var(--text-primary);
 }
 
-/* 左侧 18px 微动图标容器 */
-.process-pill-icon-wrap {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  color: var(--color-sage-dark, #5c6b44);
+/* 左侧极简 7px 橄榄绿呼吸圆点 */
+.process-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: rgba(110, 127, 80, 0.78);
   flex-shrink: 0;
-  transition: transform 0.2s ease;
+  transition: transform 0.2s ease, opacity 0.2s ease, background-color 0.2s ease;
 }
 
-.process-pill-icon-wrap.is-pulsing {
-  animation: micro-breathe 2s infinite ease-in-out;
+.process-status-dot.is-pulsing {
+  background-color: var(--color-sage-ink, #556B3D);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+  animation: micro-breathe 1.6s infinite ease-in-out;
 }
 
 @keyframes micro-breathe {
   0%, 100% {
-    transform: scale(0.95);
-    opacity: 0.75;
+    transform: scale(0.9);
+    opacity: 0.6;
   }
   50% {
-    transform: scale(1.15);
+    transform: scale(1.18);
     opacity: 1;
   }
-}
-
-.process-spark-svg {
-  display: block;
 }
 
 /* 状态字：流光与静态过渡 */
@@ -558,20 +567,22 @@ function toggleOpen(): void {
   color: var(--color-warning, #d9822b);
 }
 
-.tool-icon {
-  display: grid;
-  place-items: center;
-  width: 13px;
-  height: 13px;
+.tool-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: rgba(110, 127, 80, 0.72);
 }
 
-.tool-spinner {
-  animation: tool-spin 0.8s linear infinite;
+.tool-status-dot.is-running {
+  background-color: var(--color-sage-ink, #556B3D);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.2);
+  animation: micro-breathe 1.4s infinite ease-in-out;
 }
 
-@keyframes tool-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.tool-status-dot.is-failed {
+  background-color: var(--color-warning, #d9822b);
 }
 
 .tool-label {
@@ -585,19 +596,14 @@ function toggleOpen(): void {
   opacity: 0.85;
 }
 
-.timeline-cursor {
+.timeline-cursor-dot {
   display: inline-block;
-  width: 2px;
-  height: 12px;
-  margin-left: 2px;
-  vertical-align: -1px;
-  background: var(--color-zen-sage, #8b9a6e);
-  animation: timeline-cursor-blink 0.8s infinite;
-}
-
-@keyframes timeline-cursor-blink {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background-color: rgba(110, 127, 80, 0.75);
+  animation: micro-breathe 1.2s ease-in-out infinite;
 }
 
 html.dark .process-pill-trigger {
@@ -613,10 +619,10 @@ html.dark .process-pill-trigger.is-interactive:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .process-pill-icon-wrap.is-pulsing,
+  .process-status-dot.is-pulsing,
+  .tool-status-dot.is-running,
   .process-pill-label.has-shimmer,
-  .micro-spinner,
-  .timeline-cursor {
+  .timeline-cursor-dot {
     animation: none;
   }
 }

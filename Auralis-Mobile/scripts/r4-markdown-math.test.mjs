@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { plainMarkdownExcerpt, renderMarkdownHtml } from '../src/utils/markdown.ts'
+import {
+  autoCloseStreamingMarkdown,
+  extractStreamingBlockDraft,
+  plainMarkdownExcerpt,
+  renderMarkdownHtml,
+} from '../src/utils/markdown.ts'
 
 test('renderMarkdownHtml renders inline math, nested fractions, scripts and Greek symbols without leaking raw tokens', () => {
   const html = renderMarkdownHtml(
@@ -69,4 +74,40 @@ test('renderMarkdownHtml styles Markdown tables without corrupting thead tags', 
   assert.match(html, /<table style="width:100%/)
   assert.match(html, /<th style="[^"]*"[^>]*>隔离级别<\/th>/)
   assert.match(html, /<td style="[^"]*"[^>]*>Repeatable Read<\/td>/)
+})
+
+test('renderMarkdownHtml supports \\[...\\] and \\(...\\) delimiters as well as plain excerpts', () => {
+  const html = renderMarkdownHtml('勾股定理 \\(a^2 + b^2 = c^2\\) 与\n\n\\[E = mc^2\\]')
+  assert.match(html, /a<sup[^>]*>2<\/sup> \+ b<sup[^>]*>2<\/sup> = c<sup[^>]*>2<\/sup>/)
+  assert.match(html, /<div[^>]*text-align:center[^>]*>E = mc<sup[^>]*>2<\/sup><\/div>/)
+
+  const excerpt = plainMarkdownExcerpt('结论：\\(x_0\\) 满足 \\[\\frac{1}{2}\\]')
+  assert.equal(excerpt, '结论：x₀ 满足 (1)/(2)')
+})
+
+test('autoCloseStreamingMarkdown and extractStreamingBlockDraft stabilize incremental Markdown streaming', () => {
+  assert.equal(autoCloseStreamingMarkdown('核心 **关键机制'), '核心 **关键机制**')
+  assert.equal(autoCloseStreamingMarkdown('运行 `npm run'), '运行 `npm run`')
+  assert.equal(autoCloseStreamingMarkdown('参考 [文档](https://auralis.test'), '参考 [文档](https://auralis.test)')
+  assert.equal(autoCloseStreamingMarkdown('前文<quiz-'), '前文')
+
+  const pendingMath = extractStreamingBlockDraft('证明如下：\n\n$$\\sum_{k=1}^n')
+  assert.equal(pendingMath.stablePrefix, '证明如下：\n\n')
+  assert.equal(pendingMath.draft?.kind, 'math')
+
+  const pendingTable = extractStreamingBlockDraft('对比表：\n| 维度 | 说明 |\n| :--- | :--- |\n| 延迟 | 低')
+  assert.equal(pendingTable.stablePrefix, '对比表：\n')
+  assert.equal(pendingTable.draft?.kind, 'table')
+
+  const streamingTableHtml = renderMarkdownHtml('| 维度 | 说明 |\n| :--- | :--- |\n| 延迟 | 低', { isStreaming: true })
+  assert.match(streamingTableHtml, /表格生成中…/)
+  assert.doesNotMatch(streamingTableHtml, /<table/)
+  assert.match(streamingTableHtml, /border-radius:50%/)
+
+  const streamingTextHtml = renderMarkdownHtml('这里解释 **核心概念', { isStreaming: true })
+  assert.match(streamingTextHtml, /<strong[^>]*>核心概念<span[^>]*border-radius:50%[^>]*><\/span><\/strong>/)
+
+  const settledHtml = renderMarkdownHtml('| 维度 | 说明 |\n| :--- | :--- |\n| 延迟 | 低 |', { isStreaming: false })
+  assert.match(settledHtml, /<table/)
+  assert.doesNotMatch(settledHtml, /rgba\(110,127,80,0\.72\)/)
 })
