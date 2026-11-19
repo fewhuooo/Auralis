@@ -2,22 +2,30 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { createSmoothStreamBuffer, type SmoothStreamController } from '@/services/smoothStreamBuffer'
 import { renderMarkdown } from '@/utils/markdown'
-import type { ChatToolActivity } from '@/services/aiStreamReducer'
+import { formatToolCapsuleLabel, sanitizeReasoningText } from '@/utils/chatProcessFormat'
+import type { ChatProcessTimelineItem, ChatToolActivity } from '@/services/aiStreamReducer'
+
+type RenderTimelineGroup =
+  | { id: string; kind: 'reasoning'; html: string }
+  | { id: string; kind: 'tools'; tools: readonly ChatToolActivity[] }
 
 const props = withDefaults(defineProps<{
   reasoning?: string
   tools?: readonly ChatToolActivity[]
+  timeline?: readonly ChatProcessTimelineItem[]
   streaming?: boolean
   hasContent?: boolean
 }>(), {
   reasoning: '',
   tools: () => [],
+  timeline: () => [],
   streaming: false,
   hasContent: false,
 })
 
 const emit = defineEmits<{
   complete: []
+  progress: []
 }>()
 
 // 展开状态：流式生成中默认自动展开；正文输出完/非流式自动收起回胶囊
@@ -25,12 +33,10 @@ const isOpen = ref(false)
 // 用户是否主动手动干预过展开/收起
 const userManuallyToggled = ref(false)
 
-// 初始判定：挂载时若正处于流式生成中，默认自动展开
 if (props.streaming) {
   isOpen.value = true
 }
 
-// 针对思考链文本的平滑蓄水池缓冲：减缓思考链推流节奏，打造自然沉浸的“深度推理中”节奏感
 const smoothedReasoning = ref('')
 let reasoningBuffer: SmoothStreamController | null = null
 let hasEmittedComplete = false
@@ -39,9 +45,32 @@ let hasEmittedComplete = false
 const minimumThinkingActive = ref(false)
 let minThinkingTimer: ReturnType<typeof setTimeout> | null = null
 
+const normalizedTimeline = computed<readonly ChatProcessTimelineItem[]>(() => {
+  if (props.timeline && props.timeline.length > 0) {
+    return props.timeline
+  }
+  const fallback: ChatProcessTimelineItem[] = []
+  if (props.reasoning) {
+    fallback.push({ id: 'reasoning:0', kind: 'reasoning', text: props.reasoning })
+  }
+  if (props.tools && props.tools.length > 0) {
+    for (const tool of props.tools) {
+      fallback.push({ id: `tool:${tool.id || fallback.length}`, kind: 'tool', tool })
+    }
+  }
+  return fallback
+})
+
+const cumulativeReasoningSource = computed(() => {
+  const segments = normalizedTimeline.value
+    .filter((item): item is Extract<ChatProcessTimelineItem, { kind: 'reasoning' }> => item.kind === 'reasoning')
+    .map((item) => item.text)
+  return segments.length > 0 ? segments.join('') : (props.reasoning || '')
+})
+
 function triggerMinThinkingWindow() {
   if (minThinkingTimer || !props.streaming || props.hasContent) return
-  const hasAnyReasoning = Boolean(props.reasoning && props.reasoning.trim())
+  const hasAnyReasoning = Boolean(cumulativeReasoningSource.value.trim())
   const hasAnyTools = Boolean(props.tools && props.tools.length > 0)
   if (hasAnyReasoning || hasAnyTools) {
     minimumThinkingActive.value = true
@@ -49,17 +78,16 @@ function triggerMinThinkingWindow() {
       minimumThinkingActive.value = false
       minThinkingTimer = null
       checkAndEmitComplete()
-    }, 1200) // 1.2s 视觉柔性停留
+    }, 1200)
   }
 }
 
 function checkAndEmitComplete() {
   if (hasEmittedComplete) return
-  const isReasoningDrained = !props.reasoning?.trim() || (reasoningBuffer ? reasoningBuffer.isDrained() : true)
+  const isReasoningDrained = !cumulativeReasoningSource.value.trim() || (reasoningBuffer ? reasoningBuffer.isDrained() : true)
   const areToolsDrained = !props.tools || props.tools.filter((t) => t.status === 'RUNNING').length === 0
   const isBackendDoneThinking = props.hasContent || !props.streaming
 
-  // 只要思考内容吐完（或已进入正文/已结束）且工具完成，立即放行正文挂载，绝不额外挂起卡顿
   if (isReasoningDrained && areToolsDrained && isBackendDoneThinking) {
     hasEmittedComplete = true
     emit('complete')
@@ -69,12 +97,13 @@ function checkAndEmitComplete() {
 reasoningBuffer = createSmoothStreamBuffer(
   (text) => {
     smoothedReasoning.value = text
+    emit('progress')
   },
   {
-    minSpeed: 20, // 思考链低水位拉伸速度（约 50ms/字）
-    baseSpeed: 32, // 思考链从容深邃的推进节奏（约 31ms/字）
-    maxSpeed: 75, // 思考链追赶上限
-    finishSpeed: 55, // 思考完成交接时的收尾排空速度
+    minSpeed: 20,
+    baseSpeed: 32,
+    maxSpeed: 75,
+    finishSpeed: 55,
     onComplete: () => {
       checkAndEmitComplete()
     },
@@ -90,12 +119,11 @@ onBeforeUnmount(() => {
   reasoningBuffer = null
 })
 
-watch(() => props.reasoning, (newVal) => {
+watch(cumulativeReasoningSource, (newVal) => {
   if (props.streaming && !props.hasContent) {
     triggerMinThinkingWindow()
     reasoningBuffer?.push(newVal || '')
   } else {
-    // 非流式或正文已开始输出/完成：立即 flush 全部思考文本，禁止继续逐字打字
     reasoningBuffer?.flush(newVal || '')
     smoothedReasoning.value = newVal || ''
   }
@@ -113,10 +141,14 @@ watch(() => props.streaming, (isStreaming) => {
   if (isStreaming) {
     hasEmittedComplete = false
     userManuallyToggled.value = false
-    // 流式开启：默认自动展开
     isOpen.value = true
+    reasoningBuffer?.reset()
+    smoothedReasoning.value = ''
     if (!props.hasContent) {
       triggerMinThinkingWindow()
+      if (cumulativeReasoningSource.value) {
+        reasoningBuffer?.push(cumulativeReasoningSource.value)
+      }
     }
   } else {
     if (minThinkingTimer) {
@@ -124,65 +156,83 @@ watch(() => props.streaming, (isStreaming) => {
       minThinkingTimer = null
     }
     minimumThinkingActive.value = false
-    // 流式结束（正文输出完）：若用户未手动点击干预，自动收起回胶囊
     if (!userManuallyToggled.value) {
       isOpen.value = false
     }
-    // 流式结束：立即 flush
-    reasoningBuffer?.flush(props.reasoning || '')
-    smoothedReasoning.value = props.reasoning || ''
+    const finalText = cumulativeReasoningSource.value
+    reasoningBuffer?.flush(finalText)
+    smoothedReasoning.value = finalText
   }
   checkAndEmitComplete()
 }, { immediate: true })
 
 watch(() => props.hasContent, (hasContent) => {
   if (hasContent) {
-    // 正文开始输出或已输出：思考阶段彻底结束，立即 flush 思考文本并终止逐字动画
     if (minThinkingTimer) {
       clearTimeout(minThinkingTimer)
       minThinkingTimer = null
     }
     minimumThinkingActive.value = false
-    reasoningBuffer?.flush(props.reasoning || '')
-    smoothedReasoning.value = props.reasoning || ''
+    const finalText = cumulativeReasoningSource.value
+    reasoningBuffer?.flush(finalText)
+    smoothedReasoning.value = finalText
   }
   checkAndEmitComplete()
 }, { immediate: true })
 
-// 是否正处于思考流式中（正文尚未出现且处于流式状态）
 const isReasoningStreaming = computed(() => Boolean(props.streaming && !props.hasContent))
 
-// 激活思考正文：只有在正在思考流式进行中时，才展示平滑缓冲字数；一旦正文输出或流式结束，直接展示完整内容
-const activeReasoningText = computed(() => {
-  if (isReasoningStreaming.value && reasoningBuffer && !reasoningBuffer.isDrained()) {
-    return smoothedReasoning.value || props.reasoning || ''
+const visibleTimelineGroups = computed<RenderTimelineGroup[]>(() => {
+  const revealedLimit = isReasoningStreaming.value && reasoningBuffer && !reasoningBuffer.isDrained()
+    ? smoothedReasoning.value.length
+    : Number.POSITIVE_INFINITY
+
+  const groups: RenderTimelineGroup[] = []
+  let consumedReasoningChars = 0
+
+  for (const item of normalizedTimeline.value) {
+    if (item.kind === 'tool') {
+      const prev = groups[groups.length - 1]
+      if (prev && prev.kind === 'tools') {
+        groups[groups.length - 1] = { id: prev.id, kind: 'tools', tools: [...prev.tools, item.tool] }
+      } else {
+        groups.push({ id: item.id, kind: 'tools', tools: [item.tool] })
+      }
+      continue
+    }
+
+    const available = Math.max(0, Math.min(item.text.length, revealedLimit - consumedReasoningChars))
+    consumedReasoningChars += item.text.length
+    if (available <= 0) continue
+
+    const sanitized = sanitizeReasoningText(item.text.slice(0, available))
+    if (!sanitized.trim()) continue
+    // Disable token-fade & streaming green cursor inside muted reasoning markdown
+    groups.push({
+      id: item.id,
+      kind: 'reasoning',
+      html: renderMarkdown(sanitized, false),
+    })
   }
-  return props.reasoning || ''
+
+  return groups
 })
 
-const hasReasoning = computed(() => Boolean(activeReasoningText.value && activeReasoningText.value.trim()))
+const hasReasoning = computed(() => Boolean(cumulativeReasoningSource.value.trim()))
 const hasTools = computed(() => Boolean(props.tools && props.tools.length > 0))
-const wordCount = computed(() => (activeReasoningText.value ? activeReasoningText.value.trim().length : 0))
+const wordCount = computed(() => sanitizeReasoningText(cumulativeReasoningSource.value).trim().length)
 
-// 流光状态判定：仅在思考流式进行中（且主正文尚未吐字）时保持流光
-const isShimmering = computed(() => {
-  if (!props.streaming || props.hasContent) return false
-  if (minimumThinkingActive.value) return true
-  return true
-})
+const isShimmering = computed(() => Boolean(props.streaming && !props.hasContent))
 
 const runningTool = computed(() => props.tools?.find((tool) => tool.status === 'RUNNING') || null)
 
-// 状态文字显示（优先透出正在检索的语义状态，检索/思考结束后收拢为极简胶囊）
 const statusText = computed(() => {
   if (isShimmering.value) {
     if (runningTool.value) {
-      return runningTool.value.name === 'search'
-        ? '正在检索相关知识块…'
-        : `正在${formatToolName(runningTool.value.name)}…`
+      return `正在${formatToolCapsuleLabel(runningTool.value)}…`
     }
     if (hasReasoning.value) return '深度思考中…'
-    return '正在检索相关知识块…'
+    return '正在检索相关资料…'
   }
   const toolCount = props.tools?.length ?? 0
   if (hasReasoning.value && toolCount > 0) {
@@ -197,21 +247,7 @@ const statusText = computed(() => {
   return '检索与思考完成'
 })
 
-// 工具友好名称（对齐 Protocol 1 只读工具与可视化块工具）
-function formatToolName(name: string): string {
-  if (name === 'search') return '检索资料'
-  if (name === 'list_sources') return '浏览资料目录'
-  if (name === 'read_source_excerpt') return '阅读资料片段'
-  if (name === 'read_source_overview') return '读取资料总览'
-  if (name.startsWith('render_')) return '整理展示卡片'
-  if (name.includes('search') || name.includes('query')) return '检索资料'
-  if (name.includes('retriev') || name.includes('doc')) return '查阅文献'
-  if (name.includes('calc')) return '计算验证'
-  return '检索与分析'
-}
-
 function toggleOpen(): void {
-  // 如果没有任何可展开的内容（没有思考文本且没有工具），则不展开
   if (!hasReasoning.value && !hasTools.value) return
   userManuallyToggled.value = true
   isOpen.value = !isOpen.value
@@ -273,26 +309,37 @@ function toggleOpen(): void {
     >
       <div class="process-timeline-inner">
         <div class="timeline-track">
-          <!-- 思考链正文 Markdown（使用灰色字体呈现深邃沉稳推理感） -->
-          <div v-if="hasReasoning" class="reasoning-markdown" v-html="renderMarkdown(activeReasoningText, isReasoningStreaming)" />
-
-          <!-- 工具调用组装在思考链内部 -->
-          <div v-if="hasTools" class="inline-thinking-tools">
-            <div
-              v-for="tool in tools"
-              :key="tool.id"
-              class="thinking-tool-pill"
-              :data-status="tool.status"
-            >
-              <span
-                class="tool-status-dot"
-                :class="`is-${tool.status.toLowerCase()}`"
-                aria-hidden="true"
-              />
-              <span class="tool-label">{{ formatToolName(tool.name) }}</span>
-              <span class="tool-state-tag">{{ tool.status === 'RUNNING' ? '进行中…' : tool.status === 'FAILED' ? '未完成' : '已完成' }}</span>
+          <template v-for="group in visibleTimelineGroups" :key="group.id">
+            <div v-if="group.kind === 'reasoning'" class="reasoning-markdown" v-html="group.html" />
+            <div v-else class="inline-thinking-tools">
+              <div
+                v-for="tool in group.tools"
+                :key="tool.id"
+                class="thinking-tool-pill"
+                :data-status="tool.status"
+              >
+                <svg
+                  v-if="tool.status === 'COMPLETED'"
+                  class="tool-check-icon"
+                  width="11"
+                  height="11"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path d="M2.5 6.2L5 8.6L9.5 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span
+                  v-else
+                  class="tool-status-dot"
+                  :class="`is-${tool.status.toLowerCase()}`"
+                  aria-hidden="true"
+                />
+                <span class="tool-label">{{ formatToolCapsuleLabel(tool) }}</span>
+                <span v-if="tool.status === 'FAILED'" class="tool-state-tag">未完成</span>
+              </div>
             </div>
-          </div>
+          </template>
 
           <span v-if="isReasoningStreaming" class="timeline-cursor-dot" aria-hidden="true" />
         </div>
@@ -459,13 +506,17 @@ function toggleOpen(): void {
   border-left: 1.5px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 28%, var(--border-subtle, #cbd5e1));
 }
 
-/* 思考链 Markdown 正文（灰色字体） */
+/* 思考链 Markdown 正文（低对比暖灰字体） */
 .reasoning-markdown {
   font-size: 13px;
-  line-height: 1.7;
-  color: var(--text-muted, #78716c);
+  line-height: 1.65;
+  color: #8c887f;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  margin-bottom: 6px;
+}
+
+.reasoning-markdown:last-child {
+  margin-bottom: 0;
 }
 
 .reasoning-markdown :deep(p),
@@ -480,7 +531,7 @@ function toggleOpen(): void {
 .reasoning-markdown :deep(h2),
 .reasoning-markdown :deep(h3),
 .reasoning-markdown :deep(h4) {
-  color: var(--text-muted, #78716c);
+  color: #8c887f;
   font-size: 13px;
   font-weight: 600;
   margin: 6px 0 3px;
@@ -492,6 +543,17 @@ function toggleOpen(): void {
 
 .reasoning-markdown :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.reasoning-markdown :deep(ul),
+.reasoning-markdown :deep(ol) {
+  padding-left: 1.45em;
+  margin: 4px 0 6px;
+  list-style-position: outside;
+}
+
+.reasoning-markdown :deep(li) {
+  margin-bottom: 4px;
 }
 
 .reasoning-markdown :deep(code) {
@@ -567,6 +629,11 @@ function toggleOpen(): void {
   color: var(--color-warning, #d9822b);
 }
 
+.tool-check-icon {
+  flex-shrink: 0;
+  color: #6e8552;
+}
+
 .tool-status-dot {
   width: 6px;
   height: 6px;
@@ -586,14 +653,14 @@ function toggleOpen(): void {
 }
 
 .tool-label {
-  font-weight: 550;
-  color: var(--text-secondary, #525252);
+  font-weight: 500;
+  color: var(--text-secondary, #57534e);
 }
 
 .tool-state-tag {
   font-size: 10px;
-  color: var(--text-muted, #78716c);
-  opacity: 0.85;
+  color: var(--color-warning, #d9822b);
+  opacity: 0.9;
 }
 
 .timeline-cursor-dot {
@@ -604,6 +671,18 @@ function toggleOpen(): void {
   border-radius: 50%;
   background-color: rgba(110, 127, 80, 0.75);
   animation: micro-breathe 1.2s ease-in-out infinite;
+}
+
+html.dark .reasoning-markdown,
+html.dark .reasoning-markdown :deep(h1),
+html.dark .reasoning-markdown :deep(h2),
+html.dark .reasoning-markdown :deep(h3),
+html.dark .reasoning-markdown :deep(h4) {
+  color: #8e8a80;
+}
+
+html.dark .tool-check-icon {
+  color: #8fb072;
 }
 
 html.dark .process-pill-trigger {

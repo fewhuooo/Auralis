@@ -53,9 +53,10 @@ export function createSmoothStreamBuffer(
   let rafId: number | null = null
   let isStreamFinished = false
   let isDrained = true
+  let destroyed = false
 
   function tick(timestamp: number) {
-    if (rafId === null) return
+    if (destroyed || rafId === null) return
 
     if (lastTimestamp === 0) {
       lastTimestamp = timestamp
@@ -103,7 +104,9 @@ export function createSmoothStreamBuffer(
         onUpdate(fullText.slice(0, nextIndex))
       }
 
-      rafId = requestAnimationFrame(tick)
+      if (!destroyed && rafId !== null) {
+        rafId = requestAnimationFrame(tick)
+      }
     } else {
       isDrained = true
       if (isStreamFinished) {
@@ -113,7 +116,9 @@ export function createSmoothStreamBuffer(
         }
         rafId = null
         lastTimestamp = 0
-        options.onComplete?.()
+        if (!destroyed) {
+          options.onComplete?.()
+        }
       } else {
         // 池子暂时见底，挂起等待新批次唤醒
         rafId = null
@@ -123,11 +128,14 @@ export function createSmoothStreamBuffer(
   }
 
   function startLoop() {
+    if (destroyed) return
     if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') {
       currentCursor = fullText.length
       displayedLength = fullText.length
       onUpdate(fullText)
-      options.onComplete?.()
+      if (!destroyed) {
+        options.onComplete?.()
+      }
       return
     }
     if (rafId === null) {
@@ -138,12 +146,14 @@ export function createSmoothStreamBuffer(
 
   return {
     push(targetText: string) {
+      if (destroyed) return
       fullText = targetText
       isStreamFinished = false
       isDrained = displayedLength >= fullText.length
       startLoop()
     },
     finish(targetText?: string) {
+      if (destroyed) return
       if (typeof targetText === 'string') {
         fullText = targetText
       }
@@ -156,6 +166,7 @@ export function createSmoothStreamBuffer(
       }
     },
     flush(targetText?: string) {
+      if (destroyed) return
       if (typeof targetText === 'string') {
         fullText = targetText
       }
@@ -169,7 +180,9 @@ export function createSmoothStreamBuffer(
       isStreamFinished = true
       isDrained = true
       onUpdate(fullText)
-      options.onComplete?.()
+      if (!destroyed) {
+        options.onComplete?.()
+      }
     },
     reset() {
       if (rafId !== null && typeof cancelAnimationFrame !== 'undefined') {
@@ -185,6 +198,7 @@ export function createSmoothStreamBuffer(
       isDrained = true
     },
     destroy() {
+      destroyed = true
       if (rafId !== null && typeof cancelAnimationFrame !== 'undefined') {
         cancelAnimationFrame(rafId)
         rafId = null

@@ -232,12 +232,35 @@ export function autoCloseMarkdown(text: string): string {
  * 配合 CSS 动画实现水墨淡入过渡，消除纯黑边缘的锐利顿挫感
  */
 export function wrapTrailingToken(html: string): string {
-  const match = /([^<>\s]{1,4})(\s*(?:<\/[a-zA-Z0-9]+>\s*)*\s*)$/.exec(html)
-  if (!match) return html
-  const startIdx = match.index
-  const chars = match[1]
-  const rest = match[2]
-  return html.slice(0, startIdx) + '<span class="token-fade">' + chars + '</span>' + rest
+  const closeMatch = /(\s*(?:<\/[a-zA-Z0-9]+>\s*)*\s*)$/.exec(html)
+  const rest = closeMatch ? closeMatch[1] : ''
+  const body = html.slice(0, html.length - rest.length)
+  if (!body || body.endsWith('>')) return html
+
+  const entityMatch = /(&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);)$/.exec(body)
+  if (entityMatch) {
+    const startIdx = body.length - entityMatch[1].length
+    return body.slice(0, startIdx) + '<span class="token-fade">' + entityMatch[1] + '</span>' + rest
+  }
+
+  const charMatch = /([^<>\s]{1,4})$/.exec(body)
+  if (!charMatch) return html
+  let startIdx = body.length - charMatch[1].length
+  const windowBase = Math.max(0, body.length - 16)
+  const windowText = body.slice(windowBase)
+  const entityRegex = /&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);/g
+  let scan = entityRegex.exec(windowText)
+  while (scan) {
+    const absStart = windowBase + scan.index
+    const absEnd = absStart + scan[0].length
+    if (absStart < startIdx && absEnd > startIdx) {
+      startIdx = absEnd
+    }
+    scan = entityRegex.exec(windowText)
+  }
+  const chars = body.slice(startIdx)
+  if (!chars || chars.includes('<') || chars.includes('>')) return html
+  return body.slice(0, startIdx) + '<span class="token-fade">' + chars + '</span>' + rest
 }
 
 /**

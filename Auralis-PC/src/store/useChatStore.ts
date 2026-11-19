@@ -18,7 +18,14 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { SyncScopeChangedError } from '@/api/request'
 import { uuidv7 } from '@/utils/uuid'
 import { AiStreamController } from '@/services/aiStreamController'
-import { createChatStreamState, reduceChatStreamEvent, setPart, type ChatStreamState } from '@/services/aiStreamReducer'
+import {
+  createChatStreamState,
+  reduceChatStreamEvent,
+  setPart,
+  type ChatProcessTimelineItem,
+  type ChatStreamState,
+  type ChatToolActivity,
+} from '@/services/aiStreamReducer'
 import { projectChatContentParts } from '@/services/chatContentProjection'
 import type { ChatActivityAnswer, ChatActivityDraft, ChatBlockPart, ChatContentPart } from '@/types/chatContent'
 import type { ChatScopeState, ChatConversationScope } from '@/types/chatProtocol'
@@ -119,6 +126,7 @@ export interface ChatMessage {
   attemptId?: string
   executionActive?: boolean
   tools?: ChatStreamState['tools']
+  processTimeline?: readonly ChatProcessTimelineItem[]
   messageSequence?: number
   createdAt?: string
   requestOptions?: ChatRequestOptions
@@ -159,11 +167,43 @@ export const useChatStore = defineStore('chat', () => {
   const sessions = ref<ChatSession[]>([])
   const activeSessionId = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
+function projectToolTrace(rawTools: unknown): ChatToolActivity[] {
+  if (!Array.isArray(rawTools)) return []
+  return rawTools.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const item = entry as Record<string, unknown>
+    const id = String(item.id || item.toolCallId || '')
+    const name = String(item.name || '工具')
+    const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
+    const status = item.status === 'FAILED' ? 'FAILED' : item.status === 'RUNNING' ? 'RUNNING' : 'COMPLETED'
+    if (!id && !name) return []
+    const tool: ChatToolActivity = rawLabel ? { id, name, label: rawLabel, status } : { id, name, status }
+    return [tool]
+  })
+}
+
+function buildFallbackProcessTimeline(
+  reasoningText?: string,
+  tools?: readonly ChatToolActivity[]
+): ChatProcessTimelineItem[] {
+  const items: ChatProcessTimelineItem[] = []
+  if (reasoningText) {
+    items.push({ id: 'reasoning:0', kind: 'reasoning', text: reasoningText })
+  }
+  if (tools && tools.length > 0) {
+    for (const tool of tools) {
+      items.push({ id: `tool:${tool.id || items.length}`, kind: 'tool', tool })
+    }
+  }
+  return items
+}
+
   const isStreaming = ref(false)
   const streamingContent = ref('')
   const streamingReasoning = ref('')
   const streamingParts = ref<readonly ChatContentPart[]>([])
   const streamingTools = ref<ChatStreamState['tools']>([])
+  const streamingProcessTimeline = ref<ChatStreamState['processTimeline']>([])
   const lastError = ref<string | null>(null)
   const lastErrorCode = ref<string | null>(null)
   const activeRun = ref<ActiveRunState | null>(null)
@@ -241,6 +281,7 @@ export const useChatStore = defineStore('chat', () => {
         text: view.content,
       })
     }
+    const mappedTools = projectToolTrace(view.tools)
     return {
       id: view.id,
       serverMessageId: view.id,
@@ -250,7 +291,8 @@ export const useChatStore = defineStore('chat', () => {
       content: view.content || '',
       parts,
       reasoningText: view.reasoningText || '',
-      tools: view.tools || [],
+      tools: mappedTools,
+      processTimeline: buildFallbackProcessTimeline(view.reasoningText || '', mappedTools),
       messageSequence: view.messageSequence,
       createdAt: view.createdAt,
     }
@@ -366,6 +408,9 @@ export const useChatStore = defineStore('chat', () => {
       reasoningText: existing?.reasoningText,
       createdAt: existing?.createdAt ?? status.updatedAt,
     }, targetSessionId)
+    if (existing?.processTimeline && existing.processTimeline.length > 0) {
+      reply.processTimeline = [...existing.processTimeline]
+    }
     reply.content ||= reply.parts.filter((part) => part.kind === 'text').map((part) => part.text).join('')
     reply.runId = status.runId
     reply.attemptId = status.currentAttemptId
@@ -430,16 +475,7 @@ export const useChatStore = defineStore('chat', () => {
 
       if (!exists && replyId) {
         const snapshotParts = projectChatContentParts(run.publicSnapshot || [])
-        const snapshotTools = Array.isArray(run.toolTrace)
-          ? run.toolTrace.map((t: Record<string, unknown>) => ({
-              id: String(t.id || t.toolCallId || ''),
-              name: String(t.name || '工具'),
-              status: (t.status === 'FAILED' ? 'FAILED' : t.status === 'RUNNING' ? 'RUNNING' : 'COMPLETED') as
-                | 'RUNNING'
-                | 'COMPLETED'
-                | 'FAILED',
-            }))
-          : []
+        const snapshotTools = projectToolTrace(run.toolTrace)
         const publicText = snapshotParts
           .filter((p) => p.kind === 'text')
           .map((p) => (p as { text: string }).text)
@@ -457,6 +493,7 @@ export const useChatStore = defineStore('chat', () => {
           attemptId: run.currentAttemptId,
           executionActive: run.executionActive,
           tools: snapshotTools,
+          processTimeline: buildFallbackProcessTimeline('', snapshotTools),
           createdAt: run.updatedAt || new Date().toISOString(),
         })
       }
@@ -576,6 +613,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning.value = ''
     streamingParts.value = []
     streamingTools.value = []
+    streamingProcessTimeline.value = []
     lastError.value = null
     lastErrorCode.value = null
     activeRun.value = null
@@ -631,6 +669,12 @@ export const useChatStore = defineStore('chat', () => {
       attemptId: eventState.attemptId || existing?.attemptId,
       executionActive: eventState.executionActive,
       tools: eventState.tools && eventState.tools.length > 0 ? [...eventState.tools] : existing?.tools ? [...existing.tools] : [],
+      processTimeline:
+        eventState.processTimeline && eventState.processTimeline.length > 0
+          ? [...eventState.processTimeline]
+          : existing?.processTimeline
+            ? [...existing.processTimeline]
+            : undefined,
       createdAt: existing?.createdAt || new Date().toISOString(),
     }
     if (index >= 0) {
@@ -661,6 +705,7 @@ export const useChatStore = defineStore('chat', () => {
           publicText: '',
           parts: msg.parts,
           tools: [],
+          processTimeline: [],
           executionActive: false,
         }
         const updatedState = setPart(dummyState, partPayload)
@@ -686,6 +731,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning.value = ''
     streamingParts.value = []
     streamingTools.value = []
+    streamingProcessTimeline.value = []
     lastError.value = null
     lastErrorCode.value = null
     const targetSessionId = activeSessionId.value || message.conversationId
@@ -751,6 +797,7 @@ export const useChatStore = defineStore('chat', () => {
           streamingReasoning.value = state.reasoningText || ''
           streamingParts.value = state.parts
           streamingTools.value = state.tools
+          streamingProcessTimeline.value = state.processTimeline
         },
       })
       if (!isCurrent()) return
@@ -787,6 +834,7 @@ export const useChatStore = defineStore('chat', () => {
         streamingReasoning.value = ''
         streamingParts.value = []
         streamingTools.value = []
+        streamingProcessTimeline.value = []
       }
     }
   }
@@ -926,6 +974,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning.value = ''
     streamingParts.value = []
     streamingTools.value = []
+    streamingProcessTimeline.value = []
     const runId = message.runId
     let state = createChatStreamState({ runId, conversationId: session.remoteId })
     const requestId = uuidv7()
@@ -950,6 +999,7 @@ export const useChatStore = defineStore('chat', () => {
         streamingReasoning.value = state.reasoningText || ''
         streamingParts.value = state.parts
         streamingTools.value = state.tools
+        streamingProcessTimeline.value = state.processTimeline
         activeRun.value = {
           conversationId: session.remoteId,
           runId,
@@ -983,6 +1033,7 @@ export const useChatStore = defineStore('chat', () => {
         streamingReasoning.value = ''
         streamingParts.value = []
         streamingTools.value = []
+        streamingProcessTimeline.value = []
       }
     }
   }
@@ -1048,6 +1099,7 @@ export const useChatStore = defineStore('chat', () => {
       streamingReasoning.value = ''
       streamingParts.value = []
       streamingTools.value = []
+      streamingProcessTimeline.value = []
       await applyRunStatus(status, running.conversationId, targetSessionId, isCurrentSettlement)
     } catch (error) {
       if (!isCurrent()) return
@@ -1180,6 +1232,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning,
     streamingParts,
     streamingTools,
+    streamingProcessTimeline,
     lastError,
     lastErrorCode,
     activeRun,

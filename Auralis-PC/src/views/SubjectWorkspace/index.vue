@@ -656,9 +656,10 @@
               <div class="chat-content ai-reply" v-else>
                 <template v-if="msg.status !== 'FAILED'">
                   <ChatProcessArea
-                    v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0)"
+                    v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0) || (msg.processTimeline && msg.processTimeline.length > 0)"
                     :reasoning="msg.reasoningText"
                     :tools="msg.tools"
+                    :timeline="msg.processTimeline"
                     :streaming="false"
                     :has-content="true"
                   />
@@ -751,15 +752,24 @@
             <div class="chat-bubble">
               <div class="chat-content ai-reply">
                 <ChatProcessArea
-                  v-if="(isAiDisplayStreaming && !streamingContent && streamingParts.length === 0) || Boolean(streamingReasoning) || (streamingTools && streamingTools.length > 0)"
+                  v-if="(isAiDisplayStreaming && !streamingContent && streamingParts.length === 0) || Boolean(streamingReasoning) || (streamingTools && streamingTools.length > 0) || (streamingProcessTimeline && streamingProcessTimeline.length > 0)"
                   :reasoning="streamingReasoning"
                   :tools="streamingTools"
+                  :timeline="streamingProcessTimeline"
                   :streaming="isAiStreaming"
                   :has-content="Boolean(streamingContent || streamingParts.length > 0)"
                   @complete="handleThinkingComplete"
+                  @progress="handleRendererProgress"
                 />
                 <template v-if="isThinkingComplete && (streamingContent || streamingParts.length > 0)">
-                  <ChatContentRenderer :parts="streamingParts" :streaming="isAiStreaming" :busy="isAiDisplayStreaming" @submit="submitChatActivity" />
+                  <ChatContentRenderer
+                    :parts="streamingParts"
+                    :streaming="isAiStreaming"
+                    :busy="isAiDisplayStreaming"
+                    @submit="submitChatActivity"
+                    @drain-change="handleRendererDrainChange"
+                    @text-progress="handleRendererProgress"
+                  />
                   <span
                     v-if="isAiStreaming && streamingParts.length > 0 && streamingParts[streamingParts.length - 1]?.kind === 'block'"
                     class="stream-block-cursor-dot"
@@ -1013,6 +1023,8 @@ import 'element-plus/theme-chalk/el-option.css'
 import FilePreview from '@/components/FilePreview.vue'
 import ChatContentRenderer from '@/components/chat/ChatContentRenderer.vue'
 import ChatProcessArea from '@/components/chat/ChatProcessArea.vue'
+import type { ChatProcessTimelineItem, ChatToolActivity } from '@/services/aiStreamReducer'
+import { evaluatePcScrollEvent, isPcNearBottom, shouldPcAutoScroll } from '@/utils/chatSmartScroll'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
@@ -1069,6 +1081,7 @@ const {
   streamingReasoning: storedStreamingReasoning,
   streamingParts: storedStreamingParts,
   streamingTools: storedStreamingTools,
+  streamingProcessTimeline: storedStreamingProcessTimeline,
   pendingMessage: storedPendingMessage,
 } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
@@ -2352,16 +2365,32 @@ interface ChatMsg {
   content: string
   parts: import('@/types/chatContent').ChatContentPart[]
   reasoningText?: string
-  tools?: readonly import('@/services/aiStreamReducer').ChatToolActivity[]
+  tools?: readonly ChatToolActivity[]
+  processTimeline?: readonly ChatProcessTimelineItem[]
   quoteText?: string
   citationFileNames?: string[]
   runId?: string
   attemptId?: string
 }
 const isStreamSettling = ref(false)
+const isActiveRendererDraining = ref(false)
+let settleTimerDone = true
 let streamSettleTimer: ReturnType<typeof setTimeout> | null = null
 const isAiStreaming = computed(() => storedChatStreaming.value)
 const isAiDisplayStreaming = computed(() => storedChatStreaming.value || isStreamSettling.value)
+
+function maybeFinishStreamSettling() {
+  if (!isAiStreaming.value && settleTimerDone && !isActiveRendererDraining.value) {
+    isStreamSettling.value = false
+  }
+}
+
+function handleRendererDrainChange(draining: boolean) {
+  isActiveRendererDraining.value = draining
+  if (!draining) {
+    maybeFinishStreamSettling()
+  }
+}
 
 const chatMessages = computed<ChatMsg[]>(() => {
   let list = storedChatMessages.value.filter(
@@ -2382,6 +2411,7 @@ const chatMessages = computed<ChatMsg[]>(() => {
     parts: message.parts,
     reasoningText: message.reasoningText,
     tools: message.tools,
+    processTimeline: message.processTimeline,
     quoteText: message.requestOptions?.selectionText,
     citationFileNames: [],
     runId: message.runId,
@@ -2422,6 +2452,17 @@ const streamingTools = computed(() => {
   if (isStreamSettling.value && !isAiStreaming.value) {
     const target = [...storedChatMessages.value].reverse().find((m) => m.role === 'ASSISTANT')
     return target?.tools || []
+  }
+  return []
+})
+const streamingProcessTimeline = computed(() => {
+  if (!isAiDisplayStreaming.value) return []
+  if (storedStreamingProcessTimeline.value && storedStreamingProcessTimeline.value.length > 0) {
+    return storedStreamingProcessTimeline.value
+  }
+  if (isStreamSettling.value && !isAiStreaming.value) {
+    const target = [...storedChatMessages.value].reverse().find((m) => m.role === 'ASSISTANT')
+    return target?.processTimeline || []
   }
   return []
 })
@@ -2837,6 +2878,16 @@ watch(chatInput, (val) => {
 const isAutoScrollLocked = ref(false)
 let touchStartY = 0
 let prevChatScrollTop = 0
+let isProgrammaticScroll = false
+let programmaticScrollFrame: number | null = null
+
+const cancelProgrammaticScrollFrame = () => {
+  if (programmaticScrollFrame !== null && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(programmaticScrollFrame)
+    programmaticScrollFrame = null
+  }
+  isProgrammaticScroll = false
+}
 
 const handleTouchStart = (e: TouchEvent) => {
   if (e.touches[0]) {
@@ -2846,13 +2897,15 @@ const handleTouchStart = (e: TouchEvent) => {
 
 const handleTouchMove = (e: TouchEvent) => {
   if (e.touches[0] && e.touches[0].clientY > touchStartY + 12) {
+    cancelProgrammaticScrollFrame()
     isAutoScrollLocked.value = true
   }
 }
 
 const handleChatWheel = (e: WheelEvent) => {
   if (e.deltaY < 0) {
-    // 物理滚轮向上：意图查阅上方内容，立即断开自动跟随
+    // 物理滚轮向上：意图查阅上方内容，立即解除编程式滚动护栏并断开自动跟随
+    cancelProgrammaticScrollFrame()
     isAutoScrollLocked.value = true
   } else if (e.deltaY > 0 && isNearBottom()) {
     // 滚轮滑至底部：恢复自动跟随
@@ -2863,13 +2916,13 @@ const handleChatWheel = (e: WheelEvent) => {
 const handleChatScroll = () => {
   const el = chatScrollRef.value
   if (!el) return
-  const currentTop = el.scrollTop
-  if (currentTop < prevChatScrollTop - 4 && !isNearBottom()) {
-    isAutoScrollLocked.value = true
-  } else if (isNearBottom()) {
-    isAutoScrollLocked.value = false
-  }
-  prevChatScrollTop = currentTop
+  const nextState = evaluatePcScrollEvent(
+    { locked: isAutoScrollLocked.value, prevScrollTop: prevChatScrollTop },
+    { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight },
+    isProgrammaticScroll,
+  )
+  isAutoScrollLocked.value = nextState.locked
+  prevChatScrollTop = nextState.prevScrollTop
 }
 
 const handleChatContainerScroll = () => {
@@ -2884,9 +2937,24 @@ const resumeAutoScroll = () => {
 
 const scrollChatToBottom = () => {
   nextTick(() => {
-    if (chatScrollRef.value) {
-      chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
-      prevChatScrollTop = chatScrollRef.value.scrollTop
+    const el = chatScrollRef.value
+    if (!el) return
+    if (programmaticScrollFrame !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(programmaticScrollFrame)
+      programmaticScrollFrame = null
+    }
+    isProgrammaticScroll = true
+    el.scrollTop = el.scrollHeight
+    prevChatScrollTop = el.scrollTop
+    if (typeof requestAnimationFrame === 'function') {
+      programmaticScrollFrame = requestAnimationFrame(() => {
+        programmaticScrollFrame = null
+        isProgrammaticScroll = false
+      })
+    } else {
+      setTimeout(() => {
+        isProgrammaticScroll = false
+      }, 0)
     }
   })
 }
@@ -2894,29 +2962,37 @@ const scrollChatToBottom = () => {
 const isNearBottom = () => {
   if (!chatScrollRef.value) return true
   const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.value
-  return scrollHeight - (scrollTop + clientHeight) < 50
+  return isPcNearBottom({ scrollTop, scrollHeight, clientHeight })
 }
 
 const autoScrollChatIfNeeded = () => {
-  if (!isAutoScrollLocked.value && isNearBottom()) {
+  if (shouldPcAutoScroll(isAutoScrollLocked.value) && isNearBottom()) {
     scrollChatToBottom()
   }
 }
 
+const handleRendererProgress = () => {
+  if (isAiDisplayStreaming.value) {
+    autoScrollChatIfNeeded()
+  }
+}
+
 watch([streamingContent, streamingReasoning, () => streamingParts.value.length], () => {
-  if (isAiStreaming.value && !isAutoScrollLocked.value) {
+  if (isAiStreaming.value && shouldPcAutoScroll(isAutoScrollLocked.value)) {
     autoScrollChatIfNeeded()
   }
 })
 
 watch(isAiStreaming, (streaming, oldVal) => {
   if (oldVal && !streaming) {
-    // 正文输出完，流式结束：启动 450ms 收起动效缓冲期，保留用户主动上滑锁定态不被强拽回底
+    // 正文输出完，流式结束：等待 450ms 收起动效与文本蓄洪池完全排空，保留用户主动上滑锁定态
     isStreamSettling.value = true
+    settleTimerDone = false
     if (streamSettleTimer) clearTimeout(streamSettleTimer)
     streamSettleTimer = setTimeout(() => {
-      isStreamSettling.value = false
+      settleTimerDone = true
       streamSettleTimer = null
+      maybeFinishStreamSettling()
     }, 450)
     isThinkingComplete.value = true
   } else if (streaming) {
@@ -2924,6 +3000,7 @@ watch(isAiStreaming, (streaming, oldVal) => {
       clearTimeout(streamSettleTimer)
       streamSettleTimer = null
     }
+    settleTimerDone = true
     isStreamSettling.value = false
     isThinkingComplete.value = false
   }
@@ -2942,6 +3019,15 @@ const expandedCitationsMap = ref<Record<string, boolean>>({})
 
 watch(() => chatStore.activeSession?.id, () => {
   expandedCitationsMap.value = {}
+  if (streamSettleTimer) {
+    clearTimeout(streamSettleTimer)
+    streamSettleTimer = null
+  }
+  cancelProgrammaticScrollFrame()
+  settleTimerDone = true
+  isActiveRendererDraining.value = false
+  isStreamSettling.value = false
+  isAutoScrollLocked.value = false
 })
 
 const isCitationsExpanded = (msgId: string) => Boolean(expandedCitationsMap.value[msgId])
@@ -3551,6 +3637,7 @@ onUnmounted(() => {
     clearTimeout(streamSettleTimer)
     streamSettleTimer = null
   }
+  cancelProgrammaticScrollFrame()
   if (typeof window !== 'undefined') {
     document.removeEventListener('selectionchange', handleDocSelectionChange)
   }
@@ -5483,8 +5570,9 @@ html.dark .chat-scroll-resume-pill {
 .ai-reply :deep(code) { background: rgba(0, 0, 0, 0.05); padding: 2px 5px; border-radius: 4px; font-size: 12px; font-family: var(--font-family-mono); }
 .ai-reply :deep(pre) { background: var(--color-bg-card, #ffffff); color: var(--text-primary); border: 1px solid var(--border-subtle, #e0deda); padding: 12px 14px; border-radius: 10px; overflow-x: auto; margin: 10px 0; font-size: 12.5px; line-height: 1.55; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); }
 .ai-reply :deep(pre code) { background: transparent; padding: 0; color: inherit; font-size: inherit; font-family: inherit; }
-.ai-reply :deep(ul), .ai-reply :deep(ol) { padding-left: 20px; margin: 8px 0; }
-.ai-reply :deep(li) { margin-bottom: 4px; }
+.ai-reply :deep(ul), .ai-reply :deep(ol) { padding-left: 1.55em; margin: 10px 0 12px; list-style-position: outside; }
+.ai-reply :deep(li) { margin-bottom: 11px; line-height: 1.75; }
+.ai-reply :deep(li:last-child) { margin-bottom: 0; }
 
 .stream-block-cursor-dot {
   display: inline-block;

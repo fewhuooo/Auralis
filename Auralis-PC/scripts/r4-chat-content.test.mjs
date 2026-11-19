@@ -330,3 +330,188 @@ test('renderMarkdown injects 8px stream-cursor-dot inside text blocks and stable
   const inlineCursor = appendStreamCursorDot('<p>核心<span class="token-fade">定义</span></p>\n')
   assert.equal(inlineCursor, '<p>核心<span class="token-fade">定义</span><span class="stream-cursor-dot" aria-hidden="true"></span></p>\n')
 })
+
+test('wrapTrailingToken preserves complete HTML entities without splitting inside token-fade spans', async () => {
+  const { wrapTrailingToken, renderMarkdown } = await import('../src/utils/markdown.ts')
+
+  for (const entity of ['&amp;', '&quot;', '&#039;', '&nbsp;']) {
+    const wrapped = wrapTrailingToken(`<p>A${entity}</p>`)
+    assert.equal(wrapped, `<p>A<span class="token-fade">${entity}</span></p>`)
+  }
+
+  const trailingPlain = wrapTrailingToken('<p>AT&amp;T 协议</p>')
+  assert.equal(trailingPlain, '<p>AT&amp;T <span class="token-fade">协议</span></p>')
+
+  const streamedHtml = renderMarkdown('AT&T & "Demo"', true)
+  assert.doesNotMatch(streamedHtml, /<span class="token-fade">[a-z0-9#]+;<\/span>/i)
+  assert.match(streamedHtml, /&amp;/)
+})
+
+test('reduceChatStreamEvent builds interleaved chronological processTimeline with Chinese tool labels', async () => {
+  const { createChatStreamState, reduceChatStreamEvent } = await import('../src/services/aiStreamReducer.ts')
+
+  const baseEnvelope = {
+    protocolVersion: 1,
+    conversationId: 'conv-1',
+    requestId: 'req-1',
+    runId: 'run-1',
+    attemptId: 'att-1',
+    userMessageId: 'user-1',
+    replyMessageId: 'reply-1',
+  }
+
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 1,
+    event: 'reasoning.delta',
+    payload: { text: '先查找课程目录中的定义，' },
+  })
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 2,
+    event: 'tool.started',
+    payload: { toolCallId: 'tc-1', name: '检索资料', label: '检索「335次咨询」' },
+  })
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 3,
+    event: 'tool.completed',
+    payload: { toolCallId: 'tc-1', name: '检索资料', label: '检索「335次咨询」' },
+  })
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 4,
+    event: 'reasoning.delta',
+    payload: { text: '再结合原文摘录整理结论。' },
+  })
+
+  assert.equal(state.processTimeline.length, 3)
+  assert.deepEqual(
+    state.processTimeline.map((item) => item.kind),
+    ['reasoning', 'tool', 'reasoning'],
+  )
+  assert.equal(state.processTimeline[0].kind === 'reasoning' && state.processTimeline[0].text, '先查找课程目录中的定义，')
+  assert.deepEqual(state.processTimeline[1].kind === 'tool' && state.processTimeline[1].tool, {
+    id: 'tc-1',
+    name: '检索资料',
+    label: '检索「335次咨询」',
+    status: 'COMPLETED',
+  })
+  assert.equal(state.processTimeline[2].kind === 'reasoning' && state.processTimeline[2].text, '再结合原文摘录整理结论。')
+})
+
+test('chatProcessFormat formats concise Chinese tool labels and strips leaked internal tokens from reasoning', async () => {
+  const { formatToolCapsuleLabel, sanitizeReasoningText } = await import('../src/utils/chatProcessFormat.ts')
+
+  assert.equal(formatToolCapsuleLabel({ name: 'search', label: '检索「事务隔离」' }), '检索「事务隔离」')
+  assert.equal(formatToolCapsuleLabel({ name: 'read_source_overview' }), '查看资料总览')
+  assert.equal(formatToolCapsuleLabel({ name: 'render_compare' }), '生成对比卡片')
+
+  const cleaned = sanitizeReasoningText(
+    '先调用 list_sources 查看并传 search.sourceIds，确认 chunkId=c1 的 hasOverview 状态。\n```ts\nconst list_sources = 1\n```',
+  )
+  const [proseBeforeFence] = cleaned.split('```ts')
+  assert.doesNotMatch(proseBeforeFence, /list_sources|search\.sourceIds|chunkId|hasOverview/)
+  assert.match(proseBeforeFence, /查看资料目录/)
+  assert.match(cleaned, /const list_sources = 1/)
+})
+
+test('createSmoothStreamBuffer drains push-then-finish and prevents rAF or onComplete after destroy', async () => {
+  const { createSmoothStreamBuffer } = await import('../src/services/smoothStreamBuffer.ts')
+
+  const scheduledCallbacks = new Map()
+  let nextFrameId = 1
+  const originalWindow = globalThis.window
+  const originalRaf = globalThis.requestAnimationFrame
+  const originalCancel = globalThis.cancelAnimationFrame
+
+  globalThis.window = globalThis
+  globalThis.requestAnimationFrame = (cb) => {
+    const id = nextFrameId++
+    scheduledCallbacks.set(id, cb)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id) => {
+    scheduledCallbacks.delete(id)
+  }
+
+  try {
+    let text = ''
+    let completed = 0
+    const buffer = createSmoothStreamBuffer((val) => { text = val }, {
+      onComplete: () => { completed += 1 },
+    })
+
+    buffer.push('平滑流式测试文本')
+    assert.equal(scheduledCallbacks.size, 1)
+    buffer.finish('平滑流式测试文本')
+
+    let guard = 0
+    while (scheduledCallbacks.size > 0 && guard < 40) {
+      guard += 1
+      const entry = scheduledCallbacks.entries().next().value
+      scheduledCallbacks.delete(entry[0])
+      entry[1](guard * 60)
+    }
+
+    assert.equal(text, '平滑流式测试文本')
+    assert.equal(buffer.isDrained(), true)
+    assert.equal(completed, 1)
+
+    let reentrantCompleted = 0
+    let reentrantUpdates = 0
+    const reentrantBuffer = createSmoothStreamBuffer(() => {
+      reentrantUpdates += 1
+      reentrantBuffer.destroy()
+    }, {
+      onComplete: () => { reentrantCompleted += 1 },
+    })
+    reentrantBuffer.push('ABCDEFGH')
+    reentrantBuffer.finish('ABCDEFGH')
+    const first = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(first[0])
+    first[1](80)
+    const second = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(second[0])
+    second[1](150)
+
+    assert.equal(reentrantUpdates, 1)
+    assert.equal(scheduledCallbacks.size, 0)
+    assert.equal(reentrantCompleted, 0)
+  } finally {
+    globalThis.window = originalWindow
+    globalThis.requestAnimationFrame = originalRaf
+    globalThis.cancelAnimationFrame = originalCancel
+  }
+})
+
+test('chatSmartScroll enforces 50px threshold and ignores programmatic scroll growth', async () => {
+  const { evaluatePcScrollEvent, isPcNearBottom, shouldPcAutoScroll } = await import('../src/utils/chatSmartScroll.ts')
+
+  assert.equal(isPcNearBottom({ scrollTop: 560, scrollHeight: 1000, clientHeight: 400 }), true)
+  assert.equal(isPcNearBottom({ scrollTop: 550, scrollHeight: 1000, clientHeight: 400 }), false)
+
+  const lockedState = evaluatePcScrollEvent(
+    { locked: false, prevScrollTop: 560 },
+    { scrollTop: 480, scrollHeight: 1000, clientHeight: 400 },
+    false,
+  )
+  assert.equal(lockedState.locked, true)
+  assert.equal(shouldPcAutoScroll(lockedState.locked), false)
+
+  const programmaticWhileLocked = evaluatePcScrollEvent(
+    lockedState,
+    { scrollTop: 480, scrollHeight: 1400, clientHeight: 400 },
+    true,
+  )
+  assert.equal(programmaticWhileLocked.locked, true)
+
+  const recoveredAtBottom = evaluatePcScrollEvent(
+    programmaticWhileLocked,
+    { scrollTop: 960, scrollHeight: 1400, clientHeight: 400 },
+    false,
+  )
+  assert.equal(recoveredAtBottom.locked, false)
+  assert.equal(shouldPcAutoScroll(recoveredAtBottom.locked), true)
+})

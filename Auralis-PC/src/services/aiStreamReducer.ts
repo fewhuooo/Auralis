@@ -5,8 +5,21 @@ import { projectChatContentPart } from './chatContentProjection.ts'
 export interface ChatToolActivity {
   id: string
   name: string
+  label?: string
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
 }
+
+export type ChatProcessTimelineItem =
+  | {
+      id: string
+      kind: 'reasoning'
+      text: string
+    }
+  | {
+      id: string
+      kind: 'tool'
+      tool: ChatToolActivity
+    }
 
 export interface ChatStreamState {
   conversationId?: string
@@ -20,6 +33,7 @@ export interface ChatStreamState {
   reasoningText?: string
   parts: readonly ChatContentPart[]
   tools: readonly ChatToolActivity[]
+  processTimeline: readonly ChatProcessTimelineItem[]
   executionActive: boolean
   terminal?: 'COMPLETED' | 'FAILED' | 'CANCELLED'
   safeErrorCode?: string
@@ -33,6 +47,7 @@ export function createChatStreamState(initial?: Partial<ChatStreamState>): ChatS
     reasoningText: '',
     parts: [],
     tools: [],
+    processTimeline: [],
     executionActive: true,
     ...initial,
   }
@@ -206,9 +221,17 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     case 'reasoning.delta': {
       const text = typeof event.payload.text === 'string' ? event.payload.text : ''
       if (text) {
+        const timeline = [...next.processTimeline]
+        const lastEntry = timeline[timeline.length - 1]
+        if (lastEntry && lastEntry.kind === 'reasoning') {
+          timeline[timeline.length - 1] = { ...lastEntry, text: lastEntry.text + text }
+        } else {
+          timeline.push({ id: `reasoning:${timeline.length}`, kind: 'reasoning', text })
+        }
         next = {
           ...next,
           reasoningText: (next.reasoningText || '') + text,
+          processTimeline: timeline,
         }
       }
       break
@@ -287,9 +310,28 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     case 'tool.started': {
       const id = String(event.payload.toolCallId || '')
       if (id) {
+        const name = String(event.payload.name || '工具')
+        const rawLabel = typeof event.payload.label === 'string' ? event.payload.label.trim() : ''
+        const tool: ChatToolActivity = rawLabel
+          ? { id, name, label: rawLabel, status: 'RUNNING' }
+          : { id, name, status: 'RUNNING' }
+        const existingIndex = next.tools.findIndex((item) => item.id === id)
+        const tools =
+          existingIndex >= 0
+            ? next.tools.map((item, idx) => (idx === existingIndex ? tool : item))
+            : [...next.tools, tool]
+        const timelineId = `tool:${id}`
+        const timelineIndex = next.processTimeline.findIndex((item) => item.id === timelineId)
+        const processTimeline =
+          timelineIndex >= 0
+            ? next.processTimeline.map((item, idx) =>
+                idx === timelineIndex ? { id: timelineId, kind: 'tool' as const, tool } : item
+              )
+            : [...next.processTimeline, { id: timelineId, kind: 'tool' as const, tool }]
         next = {
           ...next,
-          tools: [...next.tools, { id, name: String(event.payload.name || '工具'), status: 'RUNNING' }],
+          tools,
+          processTimeline,
         }
       }
       break
@@ -298,10 +340,20 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     case 'tool.completed':
     case 'tool.error': {
       const id = String(event.payload.toolCallId || '')
+      const status = event.event === 'tool.error' ? 'FAILED' : 'COMPLETED'
+      const rawName = typeof event.payload.name === 'string' ? event.payload.name.trim() : ''
+      const rawLabel = typeof event.payload.label === 'string' ? event.payload.label.trim() : ''
+      const updateTool = (tool: ChatToolActivity): ChatToolActivity => ({
+        ...tool,
+        ...(rawName ? { name: rawName } : {}),
+        ...(rawLabel ? { label: rawLabel } : {}),
+        status,
+      })
       next = {
         ...next,
-        tools: next.tools.map((tool) =>
-          tool.id === id ? { ...tool, status: event.event === 'tool.error' ? 'FAILED' : 'COMPLETED' } : tool
+        tools: next.tools.map((tool) => (tool.id === id ? updateTool(tool) : tool)),
+        processTimeline: next.processTimeline.map((item) =>
+          item.kind === 'tool' && item.tool.id === id ? { ...item, tool: updateTool(item.tool) } : item
         ),
       }
       break

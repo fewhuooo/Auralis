@@ -18,6 +18,8 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   draftChange: [componentId: string, draft: ChatActivityDraft]
   submit: [questionId: string, answer: ChatActivityAnswer]
+  drainChange: [draining: boolean]
+  textProgress: []
 }>()
 
 const chatStore = useChatStore()
@@ -29,9 +31,17 @@ const isTextStreamingActive = ref(false)
 const currentStreamingTextId = ref<string | null>(null)
 let smoothBuffer: SmoothStreamController | null = null
 
+function updateDrainingState(active: boolean): void {
+  if (isTextStreamingActive.value !== active) {
+    isTextStreamingActive.value = active
+    emit('drainChange', active)
+  }
+}
+
 smoothBuffer = createSmoothStreamBuffer(
   (text) => {
     smoothedActiveText.value = text
+    emit('textProgress')
   },
   {
     minSpeed: 18, // 蓄水池偏低时的保底拉伸速度（约 55ms/字），以时间换空间跨越网络空窗
@@ -39,7 +49,8 @@ smoothBuffer = createSmoothStreamBuffer(
     maxSpeed: 70, // 最大消峰追赶上限，杜绝文字瞬闪
     finishSpeed: 48, // 结束收尾平稳过渡
     onComplete: () => {
-      isTextStreamingActive.value = false
+      currentStreamingTextId.value = null
+      updateDrainingState(false)
     },
   },
 )
@@ -47,33 +58,41 @@ smoothBuffer = createSmoothStreamBuffer(
 onBeforeUnmount(() => {
   smoothBuffer?.destroy()
   smoothBuffer = null
+  updateDrainingState(false)
 })
 
-watch(() => props.parts, (parts) => {
-  projection.parts = projectChatContentParts(parts)
-  const lastIndex = projection.parts.length - 1
-  const lastPart = projection.parts[lastIndex]
+watch(
+  [() => props.parts, () => props.streaming] as const,
+  ([parts, isStreaming]) => {
+    projection.parts = projectChatContentParts(parts)
+    const lastIndex = projection.parts.length - 1
+    const lastPart = projection.parts[lastIndex]
 
-  if (props.streaming && lastPart && lastPart.kind === 'text') {
-    // 文本 -> 块 -> 文本交错防御：切换到新文本段前先 flush 前序缓冲，并为新文本段重设蓄洪池
-    if (currentStreamingTextId.value !== lastPart.id) {
-      if (isTextStreamingActive.value) {
-        smoothBuffer?.flush()
+    if (isStreaming && lastPart && lastPart.kind === 'text') {
+      // 文本 -> 块 -> 文本交错防御：切换到新文本段前清零展示态与缓冲，避免闪旧文及多余完成回调
+      if (currentStreamingTextId.value !== lastPart.id) {
+        smoothedActiveText.value = ''
+        smoothBuffer?.reset()
+        currentStreamingTextId.value = lastPart.id
       }
-      currentStreamingTextId.value = lastPart.id
-      smoothBuffer?.reset()
+      updateDrainingState(true)
+      smoothBuffer?.push(lastPart.text)
+      return
     }
-    isTextStreamingActive.value = true
-    smoothBuffer?.push(lastPart.text)
-  } else if (!props.streaming && lastPart && lastPart.kind === 'text') {
-    currentStreamingTextId.value = null
-    if (isTextStreamingActive.value) {
-      smoothBuffer?.finish(lastPart.text)
-    } else {
+
+    if (!isStreaming && lastPart && lastPart.kind === 'text') {
+      // 流结束时若仍追踪同一末尾文本段且在排空，保持 currentStreamingTextId 至 onComplete，防止末尾文本瞬跳
+      if (isTextStreamingActive.value && currentStreamingTextId.value === lastPart.id) {
+        smoothBuffer?.finish(lastPart.text)
+        return
+      }
+      currentStreamingTextId.value = null
       smoothBuffer?.reset()
       smoothedActiveText.value = lastPart.text
+      updateDrainingState(false)
+      return
     }
-  } else {
+
     // 末尾非文本（例如推入结构化块或无内容）：先 flush 前序文本确保全部内容平稳落定
     currentStreamingTextId.value = null
     if (isTextStreamingActive.value) {
@@ -81,18 +100,11 @@ watch(() => props.parts, (parts) => {
     } else {
       smoothBuffer?.reset()
     }
-    isTextStreamingActive.value = false
     smoothedActiveText.value = ''
-  }
-}, { immediate: true, deep: true })
-
-watch(() => props.streaming, (isStreaming) => {
-  const lastIndex = projection.parts.length - 1
-  const lastPart = projection.parts[lastIndex]
-  if (!isStreaming && lastPart && lastPart.kind === 'text') {
-    smoothBuffer?.finish(lastPart.text)
-  }
-})
+    updateDrainingState(false)
+  },
+  { immediate: true, deep: true },
+)
 
 function isPartActivelyStreaming(index: number): boolean {
   return index === projection.parts.length - 1 && (props.streaming || isTextStreamingActive.value)
@@ -196,6 +208,47 @@ function onSubmit(questionId: string, answer: ChatActivityAnswer): void {
 }
 
 .chat-content-renderer__text :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-content-renderer__text :deep(h2) {
+  font-size: 1.14em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 18px 0 8px;
+  color: var(--text-primary);
+}
+
+.chat-content-renderer__text :deep(h3) {
+  font-size: 1.04em;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 14px 0 6px;
+  color: var(--text-primary);
+}
+
+.chat-content-renderer__text :deep(ul),
+.chat-content-renderer__text :deep(ol) {
+  padding-left: 1.55em;
+  margin: 10px 0 12px;
+  list-style-position: outside;
+}
+
+.chat-content-renderer__text :deep(li) {
+  margin-bottom: 11px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.chat-content-renderer__text :deep(li:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-content-renderer__text :deep(li > p) {
+  margin: 0 0 6px;
+}
+
+.chat-content-renderer__text :deep(li > p:last-child) {
   margin-bottom: 0;
 }
 
