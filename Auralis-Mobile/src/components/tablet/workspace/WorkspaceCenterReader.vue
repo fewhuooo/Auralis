@@ -1,112 +1,139 @@
 <template>
-  <view class="center-card zen-panel">
-    <view class="center-header">
-      <view class="context-heading">
-        <text class="context-title">{{ selectedSource ? selectedSource.title || '未命名资料' : subjectName }}</text>
-        <text
-          v-if="selectedSource && selectedSource.ingestionStatus !== 'READY'"
-          class="ui-tag"
-          :class="`tone-${getSourceStatusMeta(selectedSource.ingestionStatus).tone}`"
-        >{{ getSourceStatusMeta(selectedSource.ingestionStatus).label }}</text>
+  <main class="center-card zen-panel">
+    <!-- 顶部微状态栏 -->
+    <header class="center-status-bar">
+      <view class="status-left">
+        <text v-if="centerView === 'summary' && summaryTarget" class="status-title">
+          {{ summaryTarget.kind === 'subject' ? '学科总结' : '文件总结' }} · {{ summaryTarget.title }}
+        </text>
+        <view v-else-if="centerView === 'preview' && selectedSource" class="status-title-row">
+          <LineIcon name="file-text" size="14px" color="var(--text-muted)" />
+          <text class="status-title">{{ selectedSource.title || '未命名资料' }}</text>
+          <text
+            v-if="selectedSource.ingestionStatus !== 'READY'"
+            class="ui-tag"
+            :class="`tone-${getSourceStatusMeta(selectedSource.ingestionStatus).tone}`"
+          >{{ getSourceStatusMeta(selectedSource.ingestionStatus).label }}</text>
+        </view>
+        <view v-else-if="centerView === 'blocks'" class="status-title-row">
+          <LineIcon name="layers" size="14px" color="var(--text-muted)" />
+          <text class="status-title num-tabular">共 {{ subjectBlocks.length }} 个知识块</text>
+        </view>
+        <text v-else-if="centerView === 'review'" class="status-title">学科复习 · {{ subjectName }}</text>
+        <text v-else-if="centerView === 'stats'" class="status-title">学科统计 · {{ subjectName }}</text>
+        <text v-else class="status-title">{{ subjectName || '学科工作区' }}</text>
       </view>
 
-      <view class="header-right">
-        <view class="ui-segmented compact-seg" role="tablist">
-          <view
-            v-for="tab in visibleTabs"
-            :key="tab.key"
-            class="ui-seg-item compact-seg-item"
-            :class="{ active: activeTab === tab.key }"
-            role="tab"
-            :aria-selected="activeTab === tab.key"
-            @click="emit('update:activeTab', tab.key)"
-          >
-            <text>{{ tab.label }}</text>
-            <text v-if="tab.key === 'blocks'" class="tab-badge num-tabular">{{ subjectBlocks.length }}</text>
+      <view class="status-right">
+        <template v-if="centerView === 'preview' && selectedSource && previewUrl">
+          <button class="status-pill-btn" @click="openDocument(previewUrl)">新窗口打开</button>
+          <button class="status-pill-btn" @click="copyLink(previewUrl, '已复制链接')">复制链接</button>
+          <text class="status-caption">文件预览</text>
+        </template>
+        <text v-else-if="centerView === 'preview'" class="status-caption">文件预览</text>
+        <text v-else-if="centerView === 'summary'" class="status-caption">AI 总结</text>
+      </view>
+    </header>
+
+    <!-- 主内容体 -->
+    <view class="center-body">
+      <view
+        class="edge-collapse-btn"
+        role="button"
+        :aria-label="tier2Open ? '收起左侧面板' : '展开左侧面板'"
+        @click="emit('toggle-tier2')"
+      >
+        <LineIcon
+          :name="tier2Open ? 'chevron-left' : 'chevron-right'"
+          size="13px"
+          color="var(--text-secondary)"
+        />
+      </view>
+
+      <!-- 1. 文件预览 -->
+      <view v-if="centerView === 'preview' && selectedSource" class="preview-stage">
+        <view v-if="selectedSource.ingestionStatus === 'FAILED'" class="processing-alert-banner">
+          <view class="processing-alert-left">
+            <text class="processing-alert-badge">解析失败</text>
+            <text class="processing-alert-msg">{{ selectedSource.safeErrorDetail || '解析未完成，建议重新上传' }}</text>
           </view>
         </view>
 
-        <view
-          class="ai-toggle-btn"
-          :class="{ active: aiPanelVisible }"
-          role="button"
-          :aria-pressed="aiPanelVisible"
-          aria-label="切换 AI 伴读"
-          @click="emit('toggle-ai-panel')"
-        >
-          <LineIcon name="sparkles" size="14px" :color="aiPanelVisible ? '#FFFFFF' : 'var(--color-sage-ink)'" />
-          <text>AI</text>
-        </view>
-      </view>
-    </view>
-
-    <!-- Tab 1: 资料预览 -->
-    <scroll-view v-if="activeTab === 'preview' && selectedSource" scroll-y :show-scrollbar="false" class="tab-body">
-      <view class="source-preview-box">
-        <view
-          v-if="selectedSource.ingestionStatus !== 'READY'"
-          class="status-notice"
-          :class="`tone-${getSourceStatusMeta(selectedSource.ingestionStatus).tone}`"
-        >
-          <LineIcon name="info" size="14px" color="currentColor" />
-          <text class="notice-text">
+        <view v-else-if="selectedSource.ingestionStatus !== 'READY'" class="processing-info-banner">
+          <LineIcon name="info" size="14px" color="var(--color-sage-ink)" />
+          <text class="processing-info-text">
             {{
-              selectedSource.ingestionStatus === 'FAILED'
-                ? (selectedSource.safeErrorDetail || '解析失败，建议重新上传')
-                : selectedSource.ingestionStatus === 'PARSING' || selectedSource.ingestionStatus === 'INDEXING'
-                  ? '正在解析构建索引'
-                  : '等待 PC 端解析'
+              selectedSource.ingestionStatus === 'PARSING' || selectedSource.ingestionStatus === 'INDEXING'
+                ? '正在解析并构建索引，索引完成后即可读取结构大纲'
+                : '等待 PC 端完成解析索引'
             }}
           </text>
         </view>
 
         <view v-if="previewLoading" class="preview-skeletons">
-          <view class="preview-skeleton-hero ui-shimmer" />
-          <view class="preview-skeleton-line ui-shimmer" />
+          <view class="preview-skeleton-hero ui-shimmer"></view>
+          <view class="preview-skeleton-line ui-shimmer"></view>
         </view>
 
         <view v-else-if="previewError" class="empty-state">
-          <text class="state-title error">{{ previewError }}</text>
+          <text class="state-title is-error">{{ previewError }}</text>
           <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">重试</button>
         </view>
 
-        <view v-else-if="!selectedSource.assetId" class="doc-meta-card zen-card">
-          <view class="doc-icon-circle">
-            <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
+        <view v-else-if="!selectedSource.assetId" class="empty-state">
+          <view class="doc-meta-card zen-card">
+            <view class="doc-icon-circle">
+              <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
+            </view>
+            <text class="doc-name">{{ selectedSource.title || '文本资料' }}</text>
+            <text class="doc-meta">{{ selectedSource.type }}</text>
           </view>
-          <text class="doc-name">{{ selectedSource.title || '文本资料' }}</text>
-          <text class="doc-meta">{{ selectedSource.type }}</text>
         </view>
 
-        <view
+        <scroll-view
           v-else-if="previewUrl && isImageMedia(previewMimeType, previewMediaName)"
-          class="image-preview-frame zen-card"
+          scroll-y
+          :show-scrollbar="false"
+          class="preview-scroll"
         >
-          <image
-            :src="previewUrl"
-            mode="widthFix"
-            class="preview-image"
-            @click="previewImageUrl(previewUrl)"
-          />
-          <view class="preview-footer">
-            <text class="doc-meta">{{ selectedSource.title || previewOriginalName }}</text>
-            <button class="ui-btn ui-btn-secondary sm" @click="previewImageUrl(previewUrl)">全屏</button>
+          <view class="image-preview-frame zen-card">
+            <image
+              :src="previewUrl"
+              mode="widthFix"
+              class="preview-image"
+              @click="previewImageUrl(previewUrl)"
+            />
+            <view class="preview-footer">
+              <text class="doc-meta">{{ selectedSource.title || previewOriginalName }}</text>
+              <button class="ui-btn ui-btn-secondary sm" @click="previewImageUrl(previewUrl)">全屏</button>
+            </view>
           </view>
-        </view>
+        </scroll-view>
 
-        <view v-else-if="previewUrl" class="doc-meta-card zen-card">
-          <view class="doc-icon-circle">
-            <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
-          </view>
-          <text class="doc-name">{{ selectedSource.title || previewOriginalName }}</text>
-          <text class="doc-meta num-tabular">
-            {{ formatPreviewFileType(previewMediaName, previewMimeType) }}
-            {{ formatBytes(selectedSource.assetSizeBytes) ? ` · ${formatBytes(selectedSource.assetSizeBytes)}` : '' }}
-          </text>
-          <view class="quick-actions-row">
-            <button class="ui-btn ui-btn-primary sm" @click="openDocument(previewUrl)">打开原文件</button>
-            <button class="ui-btn ui-btn-secondary sm" @click="copyText(previewUrl, '已复制链接')">复制链接</button>
-            <button v-if="tabletHandwritingNotesEnabled" class="ui-btn ui-btn-secondary sm" @click="openHandwritingNotebook">手写笔记</button>
+        <!-- #ifdef H5 -->
+        <view
+          v-else-if="previewUrl && isPdfMedia(previewMimeType, previewMediaName)"
+          class="pdf-frame-wrap"
+        >
+          <iframe :src="previewUrl" class="pdf-preview-frame" title="PDF 预览" />
+        </view>
+        <!-- #endif -->
+
+        <view v-else-if="previewUrl" class="empty-state">
+          <view class="doc-meta-card zen-card">
+            <view class="doc-icon-circle">
+              <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
+            </view>
+            <text class="doc-name">{{ selectedSource.title || previewOriginalName }}</text>
+            <text class="doc-meta num-tabular">
+              {{ formatPreviewFileType(previewMediaName, previewMimeType) }}
+              {{ formatBytes(selectedSource.assetSizeBytes) ? ` · ${formatBytes(selectedSource.assetSizeBytes)}` : '' }}
+            </text>
+            <view class="quick-actions-row">
+              <button class="ui-btn ui-btn-primary sm" @click="openDocument(previewUrl)">打开原文件</button>
+              <button class="ui-btn ui-btn-secondary sm" @click="copyLink(previewUrl, '已复制链接')">复制链接</button>
+              <button v-if="tabletHandwritingNotesEnabled" class="ui-btn ui-btn-secondary sm" @click="openHandwritingNotebook">手写笔记</button>
+            </view>
           </view>
         </view>
 
@@ -115,230 +142,239 @@
           <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">获取预览</button>
         </view>
       </view>
-    </scroll-view>
 
-    <!-- Tab 2: 大纲与总结 -->
-    <scroll-view v-else-if="activeTab === 'overview'" scroll-y :show-scrollbar="false" class="overview-scroll">
-      <view class="markdown-paper">
-        <view class="paper-head">
-          <view class="ui-segmented compact-seg" role="tablist">
-            <view
-              class="ui-seg-item compact-seg-item"
-              :class="{ active: overviewMode === 'outline' }"
-              role="tab"
-              :aria-selected="overviewMode === 'outline'"
-              @click="overviewMode = 'outline'"
-            >
-              <text>结构大纲</text>
-            </view>
-            <view
-              class="ui-seg-item compact-seg-item"
-              :class="{ active: overviewMode === 'summary' }"
-              role="tab"
-              :aria-selected="overviewMode === 'summary'"
-              @click="overviewMode = 'summary'"
-            >
-              <text>精炼总结</text>
-            </view>
+      <!-- 2. 总结与大纲全屏阅读视图 -->
+      <view v-else-if="centerView === 'summary' && summaryTarget" class="summary-stage">
+        <view class="summary-header">
+          <button class="summary-back-btn" @click="emit('close-summary')">
+            <LineIcon name="chevron-left" size="14px" color="var(--text-primary)" />
+            <text>返回</text>
+          </button>
+
+          <view class="summary-title-box">
+            <text class="summary-kicker">{{ summaryTarget.kind === 'subject' ? '学科总结' : '文件总结' }}</text>
+            <text class="summary-title-text">{{ summaryTarget.title }}</text>
           </view>
 
-          <view class="toolbar-actions">
-            <text v-if="overview?.updatedAt" class="meta-timestamp num-tabular">
-              {{ formatShortDateTime(overview.updatedAt) }}
-            </text>
-            <view class="ui-icon-btn sm" role="button" aria-label="刷新" @click="emit('refresh-overview')">
+          <view class="summary-actions">
+            <view class="ui-segmented compact-seg" role="tablist">
+              <view
+                class="ui-seg-item compact-seg-item"
+                :class="{ active: summaryMode === 'summary' }"
+                role="tab"
+                :aria-selected="summaryMode === 'summary'"
+                @click="summaryMode = 'summary'"
+              >
+                <text>精炼总结</text>
+              </view>
+              <view
+                class="ui-seg-item compact-seg-item"
+                :class="{ active: summaryMode === 'outline' }"
+                role="tab"
+                :aria-selected="summaryMode === 'outline'"
+                @click="summaryMode = 'outline'"
+              >
+                <text>结构大纲</text>
+              </view>
+            </view>
+            <view class="ui-icon-btn sm" role="button" aria-label="刷新" @click="emit('refresh-summary')">
               <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
             </view>
             <view
-              v-if="activeOverviewMarkdown"
+              v-if="activeSummaryMarkdown"
               class="ui-icon-btn sm"
               role="button"
               aria-label="复制内容"
-              @click="copyText(activeOverviewMarkdown, '已复制')"
+              @click="copyLink(activeSummaryMarkdown, '已复制')"
             >
               <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
             </view>
           </view>
         </view>
 
-        <view v-if="overviewLoading" class="paper-skeletons">
-          <view class="paper-skeleton-title ui-shimmer" />
-          <view class="paper-skeleton-line ui-shimmer" />
-          <view class="paper-skeleton-line mid ui-shimmer" />
-          <view class="paper-skeleton-line ui-shimmer" />
-        </view>
-
-        <view v-else-if="overviewError" class="empty-state">
-          <text class="state-title error">{{ overviewError }}</text>
-          <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh-overview')">重试</button>
-        </view>
-
-        <view v-else-if="!overview" class="empty-state">
-          <text class="state-title">
-            {{
-              selectedSource && selectedSource.ingestionStatus !== 'READY'
-                ? getSourceStatusMeta(selectedSource.ingestionStatus).label
-                : '暂无大纲与总结'
-            }}
-          </text>
-        </view>
-
-        <view v-else-if="!activeOverviewMarkdown" class="empty-state">
-          <text class="state-title">{{ overviewMode === 'outline' ? '暂无大纲' : '暂无总结' }}</text>
-        </view>
-
-        <template v-else>
-          <text v-if="overview.title" class="overview-doc-title">{{ overview.title }}</text>
-          <MarkdownText :content="activeOverviewMarkdown" />
-        </template>
-      </view>
-    </scroll-view>
-
-    <!-- Tab 3: 知识块 -->
-    <view v-else-if="activeTab === 'blocks'" class="blocks-tab">
-      <view class="blocks-split">
-        <view class="blocks-list-col">
-          <view class="blocks-list-head">
-            <view class="search-wrap">
-              <LineIcon name="search" size="13px" color="var(--text-muted)" />
-              <input
-                v-model="blockSearch"
-                class="search-input"
-                placeholder="搜索知识块"
-              />
+        <scroll-view scroll-y :show-scrollbar="false" class="summary-scroll">
+          <view class="summary-body-wrap">
+            <view v-if="summaryTarget.loading && !summaryTarget.overview" class="paper-skeletons">
+              <view class="paper-skeleton-title ui-shimmer"></view>
+              <view class="paper-skeleton-line ui-shimmer"></view>
+              <view class="paper-skeleton-line mid ui-shimmer"></view>
             </view>
-            <view class="ui-icon-btn sm add-block-btn" role="button" aria-label="新建知识块" @click="emit('create-block')">
-              <LineIcon name="plus" size="15px" color="#FFFFFF" />
+            <view v-else-if="summaryTarget.error && !summaryTarget.overview" class="empty-state">
+              <text class="state-title is-error">{{ summaryTarget.error }}</text>
+              <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh-summary')">重试</button>
             </view>
-          </view>
-
-          <view v-if="filteredBlocks.length === 0" class="empty-list-state">
-            <text class="state-title">{{ blockSearch.trim() ? '无匹配结果' : '暂无知识块' }}</text>
-          </view>
-
-          <scroll-view v-else scroll-y :show-scrollbar="false" class="blocks-list-scroll">
-            <view class="blocks-items-wrap">
-              <view
-                v-for="block in filteredBlocks"
-                :key="block.id"
-                class="block-list-item"
-                :class="{ active: activeBlock?.id === block.id }"
-                role="button"
-                @click="selectedBlockId = block.id"
-              >
-                <text class="block-item-title">{{ block.title }}</text>
-                <text class="block-item-preview">{{ plainExcerpt(block.preview) }}</text>
-                <text class="block-item-meta num-tabular">{{ block.source || '自主整理' }} · {{ formatShortDateTime(block.time) }}</text>
-              </view>
+            <view v-else-if="!activeSummaryMarkdown" class="empty-state">
+              <text class="state-title">{{ summaryMode === 'summary' ? '暂无精炼总结' : '暂无结构大纲' }}</text>
             </view>
-          </scroll-view>
-        </view>
-
-        <scroll-view scroll-y :show-scrollbar="false" class="block-detail-col">
-          <view v-if="activeBlock" class="block-detail-paper">
-            <view class="detail-head">
-              <view class="detail-title-group">
-                <text class="detail-title">{{ activeBlock.title }}</text>
-                <text class="detail-meta num-tabular">{{ activeBlock.source || '自主整理' }} · {{ formatShortDateTime(activeBlock.time) }}</text>
-              </view>
-              <view class="detail-actions">
-                <button class="ui-btn ui-btn-secondary sm" @click="emit('edit-block', activeBlock)">编辑</button>
-                <button class="ui-btn ui-btn-danger sm" @click="emit('delete-block', activeBlock)">删除</button>
-              </view>
+            <view v-else class="summary-paper zen-card">
+              <text v-if="summaryTarget.overview?.title" class="summary-doc-title">{{ summaryTarget.overview.title }}</text>
+              <MarkdownText :content="activeSummaryMarkdown" />
             </view>
-
-            <view class="detail-markdown">
-              <MarkdownText :content="activeBlock.preview || ''" />
-            </view>
-          </view>
-          <view v-else class="empty-state">
-            <text class="state-title">暂无知识块</text>
-            <button class="ui-btn ui-btn-primary sm" @click="emit('create-block')">新建知识块</button>
           </view>
         </scroll-view>
       </view>
-    </view>
 
-    <!-- Tab 4: 复习 -->
-    <view v-else class="review-tab">
-      <view v-if="reviewLoading && !activeCard" class="paper-skeletons review-skeleton-wrap">
-        <view class="review-skeleton-card ui-shimmer" />
-      </view>
+      <!-- 3. 知识库网格视图 -->
+      <view v-else-if="centerView === 'blocks'" class="blocks-workspace">
+        <view class="blocks-top-bar">
+          <view class="blocks-search-wrap">
+            <LineIcon name="search" size="14px" color="var(--text-muted)" />
+            <input
+              v-model="blockSearch"
+              class="blocks-search-input"
+              placeholder="搜索知识块…"
+            />
+            <view
+              v-if="blockSearch"
+              class="search-clear-btn"
+              role="button"
+              aria-label="清空搜索"
+              @click="blockSearch = ''"
+            >
+              <LineIcon name="close" size="12px" color="var(--text-muted)" />
+            </view>
+          </view>
 
-      <view v-else-if="reviewLoadError" class="empty-state">
-        <text class="state-title error">{{ reviewLoadError }}</text>
-        <button class="ui-btn ui-btn-secondary sm" @click="loadReview">重试</button>
-      </view>
-
-      <view v-else-if="reviewSaveError && !activeCard" class="empty-state">
-        <text class="state-title error">{{ reviewSaveError }}</text>
-        <button
-          class="ui-btn ui-btn-primary sm"
-          @click="refreshRequired ? loadReview() : retrySave()"
-        >{{ refreshRequired ? '刷新队列' : '重试保存' }}</button>
-      </view>
-
-      <view v-else-if="!activeCard" class="empty-state">
-        <view class="done-badge">
-          <LineIcon name="check" size="22px" color="var(--color-sage-ink)" />
-        </view>
-        <text class="state-title">{{ reviewEmptyLabel }}</text>
-        <button class="ui-btn ui-btn-secondary sm" @click="loadReview">刷新</button>
-      </view>
-
-      <view v-else class="review-stage">
-        <view class="review-stage-head">
-          <text class="review-counter num-tabular">{{ remainingCount }} 待复习 · {{ completedCount }} 完成</text>
-          <view class="ui-icon-btn sm" role="button" aria-label="刷新队列" @click="loadReview">
-            <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
+          <view class="blocks-bar-actions">
+            <text class="blocks-count-badge num-tabular">{{ filteredBlocks.length }} 个知识块</text>
+            <button class="blocks-add-btn" @click="emit('create-block')">
+              <LineIcon name="plus" size="14px" color="#FFFFFF" />
+              <text>新建知识块</text>
+            </button>
           </view>
         </view>
 
-        <view class="review-card-box">
-          <FlashCard
-            v-model:flipped="isFlipped"
-            :front="activeCard.title"
-            :back="activeCard.preview"
-            :subject="activeCard.subject || subjectName"
-            :has-next="remainingCount > 1"
-          />
+        <scroll-view v-if="filteredBlocks.length > 0" scroll-y :show-scrollbar="false" class="blocks-grid-scroll">
+          <view class="blocks-grid">
+            <view
+              v-for="block in filteredBlocks"
+              :key="block.id"
+              class="block-card"
+              role="button"
+              :aria-label="`查看知识块 ${block.title}`"
+              @click="emit('view-block', block)"
+            >
+              <view class="block-card-header">
+                <view class="block-title-row">
+                  <LineIcon name="file-text" size="14px" color="var(--color-sage-ink)" />
+                  <text class="block-card-title">{{ block.title || '未命名知识块' }}</text>
+                </view>
+                <view class="block-card-actions" @click.stop>
+                  <view
+                    class="card-action-btn"
+                    :class="{ 'is-copied': copiedBlockId === block.id }"
+                    role="button"
+                    aria-label="复制知识块"
+                    @click.stop="copyBlockCard(block)"
+                  >
+                    <LineIcon
+                      :name="copiedBlockId === block.id ? 'check' : 'copy'"
+                      size="12px"
+                      :color="copiedBlockId === block.id ? 'var(--color-sage-ink)' : 'var(--text-secondary)'"
+                    />
+                  </view>
+                  <view
+                    class="card-action-btn is-danger"
+                    role="button"
+                    aria-label="删除知识块"
+                    @click.stop="emit('delete-block', block)"
+                  >
+                    <LineIcon name="trash" size="12px" color="var(--text-secondary)" />
+                  </view>
+                </view>
+              </view>
+
+              <view class="block-card-body">
+                <text class="block-excerpt" :class="{ 'is-empty': !block.preview }">
+                  {{ plainExcerpt(block.preview) || '暂无正文内容' }}
+                </text>
+              </view>
+
+              <view class="block-card-footer">
+                <text class="block-footer-source">{{ block.source || '自主整理' }}</text>
+                <text class="block-footer-time num-tabular">{{ formatShortDateTime(block.time) }}</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+
+        <view v-else-if="blockSearch.trim()" class="empty-state">
+          <text class="state-title">无匹配知识块</text>
+          <button class="ui-btn ui-btn-secondary sm" @click="blockSearch = ''">清空搜索</button>
         </view>
 
-        <view v-if="reviewSaveError" class="review-save-banner">
-          <text>{{ reviewSaveError }}</text>
-          <button
-            class="ui-btn ui-btn-secondary sm"
-            @click="refreshRequired ? loadReview() : retrySave()"
-          >{{ refreshRequired ? '刷新' : '重试' }}</button>
+        <view v-else class="blocks-onboarding">
+          <view class="onboarding-halo">
+            <LineIcon name="layers" size="28px" color="var(--color-sage-ink)" />
+          </view>
+          <text class="onboarding-heading">本学科暂无知识块</text>
+          <text class="onboarding-desc">手动提炼关键概念，或先浏览学习资料沉淀知识点</text>
+          <view class="onboarding-cards">
+            <view class="onboarding-card zen-card" role="button" @click="emit('create-block')">
+              <view class="onboarding-card-icon">
+                <LineIcon name="plus" size="20px" color="var(--color-sage-ink)" />
+              </view>
+              <text class="onboarding-card-title">手动创建知识块</text>
+              <text class="onboarding-card-hint">记录核心概念、公式与记忆卡片</text>
+            </view>
+            <view class="onboarding-card zen-card" role="button" @click="emit('open-files-drawer')">
+              <view class="onboarding-card-icon">
+                <LineIcon name="file-text" size="20px" color="var(--color-sage-ink)" />
+              </view>
+              <text class="onboarding-card-title">查看学习资料</text>
+              <text class="onboarding-card-hint">从课件与文档中整理学习要点</text>
+            </view>
+          </view>
         </view>
+      </view>
 
-        <view class="review-controls">
-          <template v-if="!isFlipped">
-            <button class="ui-btn ui-btn-secondary rate-btn" :disabled="reviewSaving" @click="skipCard">跳过</button>
-            <button class="ui-btn ui-btn-primary rate-btn wide" :disabled="reviewSaving" @click="isFlipped = true">显示答案</button>
-          </template>
-          <template v-else>
-            <button class="ui-btn ui-btn-danger rate-btn" :disabled="reviewSaving" @click="rateCard('AGAIN')">再记一次</button>
-            <button class="ui-btn ui-btn-primary rate-btn wide" :disabled="reviewSaving" @click="rateCard('GOOD')">已掌握</button>
-          </template>
+      <!-- 4. 学科复习 -->
+      <WorkspaceReviewPane
+        v-else-if="centerView === 'review'"
+        :subject-id="subjectId"
+        :subject-name="subjectName"
+        :subject-blocks="subjectBlocks"
+      />
+
+      <!-- 5. 学科统计 -->
+      <WorkspaceStatsPane
+        v-else-if="centerView === 'stats'"
+        :subject-id="subjectId"
+        :subject-name="subjectName"
+        :source-count="sourcesCount"
+        @open-review="emit('open-review')"
+      />
+
+      <!-- 6. 默认学科欢迎引导 -->
+      <view v-else class="workspace-onboarding">
+        <view class="onboarding-halo is-large">
+          <LineIcon :name="`subj-${safeIcon}`" size="34px" color="var(--color-sage-ink)" />
+        </view>
+        <text class="onboarding-welcome">欢迎来到「{{ subjectName || '学科工作区' }}」</text>
+        <text class="onboarding-subtitle">
+          {{ subjectDescription || '上传学习资料、梳理结构总览、整理知识块或随时召唤 AI 伴读' }}
+        </text>
+        <view class="onboarding-upload-capsule" role="button" @click="emit('upload')">
+          <LineIcon name="upload" size="16px" color="var(--color-sage-ink)" />
+          <text>点击上传学习资料</text>
         </view>
       </view>
     </view>
-  </view>
+  </main>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import FlashCard from '@/components/FlashCard.vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
-import { reviewApi } from '@/api/reviewApi'
+import WorkspaceReviewPane from '@/components/tablet/workspace/WorkspaceReviewPane.vue'
+import WorkspaceStatsPane from '@/components/tablet/workspace/WorkspaceStatsPane.vue'
 import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
-import { useDueReview } from '@/composables/useDueReview'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
 import type { KnowledgeBlock } from '@/store/useBlockStore'
 import { plainMarkdownExcerpt } from '@/utils/markdown'
+import { copyTextWithFallback } from '@/utils/mobileLearning'
 import {
   formatBytes,
   formatShortDateTime,
@@ -346,50 +382,66 @@ import {
   isImageMedia,
   isPdfMedia,
 } from '@/utils/sourceFormat'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 
-export type WorkspaceTabKey = 'preview' | 'overview' | 'blocks' | 'review'
+export type WorkspaceCenterView = 'onboarding' | 'preview' | 'summary' | 'blocks' | 'review' | 'stats'
+
+export interface WorkspaceSummaryTarget {
+  kind: 'subject' | 'file'
+  id: string
+  title: string
+  overview: OverviewResultView | null
+  loading: boolean
+  error: string
+}
 
 const props = defineProps<{
+  centerView: WorkspaceCenterView
+  tier2Open: boolean
   subjectId: string
   subjectName: string
+  subjectIcon?: string
+  subjectDescription?: string
   selectedSource: SourceView | null
-  activeTab: WorkspaceTabKey
-  aiPanelVisible: boolean
+  sourcesCount: number
   previewUrl: string
   previewMimeType: string
   previewOriginalName: string
   previewLoading: boolean
   previewError: string
-  overview: OverviewResultView | null
-  overviewLoading: boolean
-  overviewError: string
+  summaryTarget: WorkspaceSummaryTarget | null
   subjectBlocks: KnowledgeBlock[]
 }>()
 
 const emit = defineEmits<{
-  (event: 'update:activeTab', tab: WorkspaceTabKey): void
-  (event: 'toggle-ai-panel'): void
+  (event: 'toggle-tier2'): void
+  (event: 'upload'): void
   (event: 'retry-preview'): void
-  (event: 'refresh-overview'): void
+  (event: 'close-summary'): void
+  (event: 'refresh-summary'): void
+  (event: 'view-block', block: KnowledgeBlock): void
   (event: 'create-block'): void
-  (event: 'edit-block', block: KnowledgeBlock): void
   (event: 'delete-block', block: KnowledgeBlock): void
+  (event: 'open-files-drawer'): void
+  (event: 'open-review'): void
 }>()
 
-const visibleTabs = computed<Array<{ key: WorkspaceTabKey; label: string }>>(() => (
-  props.selectedSource
-    ? [
-        { key: 'preview', label: '预览' },
-        { key: 'overview', label: '大纲' },
-        { key: 'blocks', label: '知识块' },
-        { key: 'review', label: '复习' },
-      ]
-    : [
-        { key: 'overview', label: '大纲' },
-        { key: 'blocks', label: '知识块' },
-        { key: 'review', label: '复习' },
-      ]
-))
+const safeIcon = computed(() => (props.subjectIcon && isSubjectIconKey(props.subjectIcon) ? props.subjectIcon : 'book'))
+
+const summaryMode = ref<'summary' | 'outline'>('summary')
+const activeSummaryMarkdown = computed(() => {
+  const overview = props.summaryTarget?.overview
+  if (!overview) return ''
+  return summaryMode.value === 'summary'
+    ? (overview.summaryMarkdown || '')
+    : (overview.outlineMarkdown || '')
+})
+
+const previewMediaName = computed(() => {
+  const orig = props.previewOriginalName || ''
+  if (orig && /\.[a-z0-9]{2,6}$/i.test(orig)) return orig
+  return props.selectedSource?.title || orig
+})
 
 function formatPreviewFileType(name: string, mime: string): string {
   if (isPdfMedia(mime, name)) return 'PDF'
@@ -402,23 +454,7 @@ function formatPreviewFileType(name: string, mime: string): string {
   return '文档'
 }
 
-const previewMediaName = computed(() => {
-  const orig = props.previewOriginalName || ''
-  if (orig && /\.[a-z0-9]{2,6}$/i.test(orig)) return orig
-  return props.selectedSource?.title || orig
-})
-
-const overviewMode = ref<'outline' | 'summary'>('outline')
 const blockSearch = ref('')
-const selectedBlockId = ref<string>('')
-
-const activeOverviewMarkdown = computed(() => {
-  if (!props.overview) return ''
-  return overviewMode.value === 'outline'
-    ? (props.overview.outlineMarkdown || '')
-    : (props.overview.summaryMarkdown || '')
-})
-
 const filteredBlocks = computed(() => {
   const kw = blockSearch.value.trim().toLowerCase()
   if (!kw) return props.subjectBlocks
@@ -429,52 +465,33 @@ const filteredBlocks = computed(() => {
   ))
 })
 
-const activeBlock = computed(() => {
-  if (filteredBlocks.value.length === 0) return null
-  return filteredBlocks.value.find(b => b.id === selectedBlockId.value) || filteredBlocks.value[0]
-})
-
-watch(() => props.subjectBlocks, (blocks) => {
-  if (blocks.length > 0 && !blocks.some(b => b.id === selectedBlockId.value)) {
-    selectedBlockId.value = blocks[0].id
-  }
-}, { immediate: true })
-
 function plainExcerpt(raw: string): string {
   return plainMarkdownExcerpt(raw)
 }
 
-const {
-  currentIndex,
-  completedCount,
-  remainingCount,
-  activeCard,
-  isFlipped,
-  loading: reviewLoading,
-  saving: reviewSaving,
-  loadError: reviewLoadError,
-  saveError: reviewSaveError,
-  refreshRequired,
-  loadReview,
-  retrySave,
-  skipCard,
-  rateCard,
-} = useDueReview(reviewApi, {
-  subjectId: () => props.subjectId || undefined,
-  enabled: () => props.activeTab === 'review' && Boolean(props.subjectId),
-})
+const copiedBlockId = ref('')
+let copiedResetTimer: ReturnType<typeof setTimeout> | null = null
 
-const reviewEmptyLabel = computed(() => (
-  currentIndex.value > 0 || completedCount.value > 0
-    ? '本轮已完成'
-    : '暂无待复习'
-))
+async function copyLink(text: string, toastTitle: string) {
+  const ok = await copyTextWithFallback(text)
+  uni.showToast({ title: ok ? toastTitle : '复制失败，请手动复制', icon: 'none' })
+}
 
-function copyText(text: string, toastTitle: string) {
-  uni.setClipboardData({
-    data: text,
-    success: () => uni.showToast({ title: toastTitle, icon: 'none' }),
-  })
+async function copyBlockCard(block: KnowledgeBlock) {
+  const content = block.preview?.trim()
+    ? `${block.title}\n\n${block.preview}`
+    : block.title
+  const ok = await copyTextWithFallback(content)
+  if (!ok) {
+    uni.showToast({ title: '复制失败，请手动复制', icon: 'none' })
+    return
+  }
+  copiedBlockId.value = block.id
+  if (copiedResetTimer) clearTimeout(copiedResetTimer)
+  copiedResetTimer = setTimeout(() => {
+    copiedBlockId.value = ''
+    copiedResetTimer = null
+  }, 1500)
 }
 
 function previewImageUrl(url: string) {
@@ -495,19 +512,26 @@ function openDocument(url: string) {
         uni.openDocument({
           filePath: res.tempFilePath,
           showMenu: true,
-          fail: () => copyText(url, '已复制链接'),
+          fail: () => { void copyLink(url, '已复制链接') },
         })
         return
       }
-      copyText(url, '已复制链接')
+      void copyLink(url, '已复制链接')
     },
-    fail: () => copyText(url, '已复制链接'),
+    fail: () => { void copyLink(url, '已复制链接') },
   })
 }
 
 function openHandwritingNotebook() {
   uni.navigateTo({ url: '/pages/tablet/handwriting/index' })
 }
+
+onBeforeUnmount(() => {
+  if (copiedResetTimer) {
+    clearTimeout(copiedResetTimer)
+    copiedResetTimer = null
+  }
+})
 </script>
 
 <style scoped>
@@ -515,182 +539,188 @@ function openHandwritingNotebook() {
   flex: 1;
   min-width: 0;
   height: 100%;
-  border-radius: var(--radius-card);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
 }
 
-.center-header {
-  min-height: 54px;
-  padding: 8px 18px;
+.center-status-bar {
+  height: 48px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
   flex-shrink: 0;
   box-sizing: border-box;
 }
 
-.context-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+.status-left {
   flex: 1;
+  min-width: 0;
 }
 
-.context-title {
-  font-size: var(--text-md);
-  font-weight: 700;
-  letter-spacing: -0.015em;
+.status-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.status-title {
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ui-tag.tone-ready {
-  background: var(--color-sage-bg);
-  color: var(--color-sage-ink);
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.ui-tag.tone-parsing {
-  background: rgba(200, 155, 109, 0.16);
-  color: #9A6B3B;
+.status-pill-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-default);
+  background: var(--color-bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.ui-tag.tone-pending {
-  background: var(--bg-primary);
+.status-caption {
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.ui-tag.tone-failed {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
+.center-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.header-right {
+.edge-collapse-btn {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--glass-surface-strong);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.compact-seg {
-  padding: 3px;
-  border-radius: 10px;
-}
-
-.compact-seg-item {
-  flex: 0 0 auto;
-  height: 28px;
-  padding: 0 11px;
-  font-size: var(--text-xs);
-  border-radius: 8px;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.tab-badge {
-  font-size: var(--text-2xs);
+  justify-content: center;
   opacity: 0.72;
-}
-
-.ai-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  flex-shrink: 0;
   cursor: pointer;
-  transition: background-color 0.16s var(--ease-out), border-color 0.16s var(--ease-out), color 0.16s var(--ease-out);
+  z-index: 12;
+  transition: opacity 0.16s ease, border-color 0.16s ease;
 }
 
-.ai-toggle-btn:hover {
+.edge-collapse-btn:hover {
+  opacity: 1;
   border-color: var(--border-accent);
 }
 
-.ai-toggle-btn.active {
-  background: var(--accent-gradient);
-  color: #FFFFFF;
-  border-color: transparent;
-}
-
-.tab-body {
+.preview-stage {
   flex: 1;
-  height: 0;
   min-height: 0;
-  padding: 20px 24px;
-  box-sizing: border-box;
-}
-
-.source-preview-box {
-  max-width: 760px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  overflow: hidden;
 }
 
-.status-notice {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 8px;
-  padding: 8px 12px;
+.processing-alert-banner,
+.processing-info-banner {
+  margin: 12px 18px 0;
+  padding: 9px 14px;
   border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.processing-alert-banner {
+  background: var(--color-danger-bg);
+  border: 1px solid rgba(201, 59, 59, 0.24);
+}
+
+.processing-alert-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.processing-alert-badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(201, 59, 59, 0.16);
+  color: var(--color-danger);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.processing-alert-msg {
   font-size: var(--text-xs);
-  font-weight: 500;
-}
-
-.status-notice.tone-parsing {
-  background: rgba(200, 155, 109, 0.14);
-  color: #9A6B3B;
-}
-
-.status-notice.tone-pending {
-  background: var(--bg-primary);
   color: var(--text-secondary);
 }
 
-.status-notice.tone-failed {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
+.processing-info-banner {
+  background: var(--color-sage-bg);
+  border: 1px solid var(--border-accent);
+}
+
+.processing-info-text {
+  font-size: var(--text-xs);
+  color: var(--color-sage-ink);
 }
 
 .preview-skeletons {
+  padding: 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .preview-skeleton-hero {
-  height: 220px;
-  border-radius: 14px;
+  height: 240px;
+  border-radius: 16px;
 }
 
 .preview-skeleton-line {
   height: 18px;
-  width: 48%;
+  width: 60%;
   border-radius: 8px;
 }
 
+.preview-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+  padding: 20px 28px 84px;
+  box-sizing: border-box;
+}
+
 .image-preview-frame {
+  max-width: 840px;
+  margin: 0 auto;
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -706,20 +736,34 @@ function openHandwritingNotebook() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+}
+
+.pdf-frame-wrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 12px 16px 16px 32px;
+  box-sizing: border-box;
+}
+
+.pdf-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: #FFFFFF;
 }
 
 .doc-meta-card {
-  max-width: 440px;
   width: 100%;
-  margin: 32px auto;
-  padding: 32px 24px;
+  max-width: 440px;
+  padding: 28px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   gap: 10px;
-  box-sizing: border-box;
 }
 
 .doc-icon-circle {
@@ -730,14 +774,12 @@ function openHandwritingNotebook() {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 4px;
 }
 
 .doc-name {
   font-size: var(--text-md);
   font-weight: 700;
   color: var(--text-primary);
-  word-break: break-all;
 }
 
 .doc-meta {
@@ -746,73 +788,113 @@ function openHandwritingNotebook() {
 }
 
 .quick-actions-row {
+  margin-top: 6px;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
 }
 
-.overview-scroll {
+.summary-stage {
   flex: 1;
-  height: 0;
   min-height: 0;
-  padding: 20px 28px 28px;
-  box-sizing: border-box;
-}
-
-.markdown-paper {
-  max-width: 720px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-.paper-head {
+.summary-header {
+  min-height: 54px;
+  padding: 8px 18px 8px 34px;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.toolbar-actions {
+.summary-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-default);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.summary-title-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-kicker {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.summary-title-text {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.meta-timestamp {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-right: 4px;
+.compact-seg {
+  padding: 3px;
+  border-radius: var(--radius-full);
+}
+
+.compact-seg-item {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  font-size: 11.5px;
+}
+
+.summary-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+.summary-body-wrap {
+  padding: 20px 28px 84px;
 }
 
 .paper-skeletons {
-  width: 100%;
-  max-width: 680px;
-  margin: 12px auto;
+  max-width: 820px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.review-skeleton-wrap {
-  padding: 28px;
-  box-sizing: border-box;
+  gap: 12px;
 }
 
 .paper-skeleton-title {
-  width: 42%;
-  height: 28px;
+  height: 24px;
+  width: 45%;
   border-radius: 8px;
-  margin-bottom: 6px;
 }
 
 .paper-skeleton-line {
-  width: 100%;
-  height: 16px;
+  height: 15px;
   border-radius: 6px;
 }
 
@@ -820,127 +902,159 @@ function openHandwritingNotebook() {
   width: 78%;
 }
 
-.overview-doc-title {
-  font-size: var(--text-2xl);
+.summary-paper {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.summary-doc-title {
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: -0.02em;
   color: var(--text-primary);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  letter-spacing: -0.02em;
 }
 
-.blocks-tab,
-.review-tab {
+.blocks-workspace {
   flex: 1;
   min-height: 0;
+  padding: 20px 26px 0 34px;
   display: flex;
   flex-direction: column;
-}
-
-.blocks-split {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-.blocks-list-col {
-  width: 256px;
-  flex-shrink: 0;
-  height: 100%;
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
-.blocks-list-head {
-  padding: 10px 10px 8px;
-  border-bottom: 1px solid var(--border-subtle);
+.blocks-top-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
-.search-wrap {
+.blocks-search-wrap {
   flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 9px;
-  background: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
+  min-width: 210px;
+  max-width: 340px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: border-color 0.16s ease, background-color 0.16s ease;
+  gap: 8px;
 }
 
-/* #ifdef H5 */
-.search-wrap:focus-within {
-  border-color: var(--color-zen-sage);
-  background: #FFFFFF;
-}
-/* #endif */
-
-.search-input {
+.blocks-search-input {
   flex: 1;
   min-width: 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--text-primary);
-  background: transparent;
 }
 
-.add-block-btn {
-  background: var(--accent-gradient);
-  border-color: transparent;
-}
-
-.empty-list-state {
-  flex: 1;
+.search-clear-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 12px;
+  cursor: pointer;
 }
 
-.blocks-list-scroll {
+.blocks-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.blocks-count-badge {
+  padding: 4px 11px;
+  border-radius: var(--radius-full);
+  background: var(--color-sage-bg);
+  border: 1px solid rgba(139, 154, 110, 0.24);
+  color: var(--color-sage-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.blocks-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 15px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(118, 135, 88, 0.28);
+  cursor: pointer;
+}
+
+.blocks-grid-scroll {
   flex: 1;
   height: 0;
   min-height: 0;
 }
 
-.blocks-items-wrap {
-  padding: 8px 10px;
+.blocks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 2px 2px 84px;
+  align-content: start;
 }
 
-.block-list-item {
-  padding: 11px 12px;
-  border-radius: 12px;
-  background: transparent;
-  margin-bottom: 4px;
-  border: 1px solid transparent;
+.block-card {
+  height: 184px;
+  padding: 15px 16px 13px;
+  border-radius: 16px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  box-sizing: border-box;
   cursor: pointer;
-  transition: background-color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+  transition: transform 0.18s var(--ease-out), border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.block-list-item:hover {
-  background: var(--color-bg-tertiary);
-}
-
-.block-list-item.active {
-  background: var(--color-sage-bg);
+.block-card:hover {
+  transform: translateY(-2px);
   border-color: var(--border-accent);
+  box-shadow: 0 8px 20px -4px rgba(45, 55, 40, 0.08);
 }
 
-.block-item-title {
-  font-size: var(--text-sm);
+.block-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.block-title-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.block-card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
@@ -948,150 +1062,77 @@ function openHandwritingNotebook() {
   white-space: nowrap;
 }
 
-.block-item-preview {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.45;
-}
-
-.block-item-meta {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-.block-detail-col {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  padding: 22px 26px;
-  box-sizing: border-box;
-}
-
-.block-detail-paper {
-  max-width: 680px;
-  margin: 0 auto;
+.block-card-actions {
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.detail-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.detail-title-group {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.detail-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-.detail-meta {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.detail-actions {
-  display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-.review-skeleton-card {
-  height: 300px;
-  max-width: 540px;
-  width: 100%;
-  margin: 0 auto;
-  border-radius: 22px;
-}
-
-.review-stage {
-  flex: 1;
-  min-height: 0;
-  padding: 16px 28px 24px;
+.card-action-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(45, 55, 40, 0.05);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  cursor: pointer;
 }
 
-.review-stage-head {
-  width: 100%;
-  max-width: 560px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
+.card-action-btn.is-copied {
+  background: var(--color-sage-bg);
 }
 
-.review-counter {
-  font-size: var(--text-xs);
-  font-weight: 600;
+.card-action-btn.is-danger:hover {
+  background: var(--color-danger-bg);
+}
+
+.block-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.block-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.58;
+  color: var(--text-secondary);
+}
+
+.block-excerpt.is-empty {
   color: var(--text-muted);
 }
 
-.review-card-box {
-  flex: 1;
-  min-height: 0;
-  max-height: 430px;
-  width: 100%;
-  max-width: 560px;
-  display: flex;
-}
-
-.review-save-banner {
-  width: 100%;
-  max-width: 560px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-size: var(--text-xs);
+.block-card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  box-sizing: border-box;
-}
-
-.review-controls {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  max-width: 560px;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
-.rate-btn {
-  flex: 1;
-  height: 46px;
+.block-footer-source,
+.block-footer-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.rate-btn.wide {
-  flex: 1.5;
-}
-
-.empty-state {
+.blocks-onboarding,
+.workspace-onboarding {
   flex: 1;
-  padding: 56px 24px;
+  padding: 36px 28px 84px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1100,14 +1141,100 @@ function openHandwritingNotebook() {
   gap: 12px;
 }
 
-.done-badge {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+.onboarding-halo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   background: var(--color-sage-bg);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.onboarding-halo.is-large {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+}
+
+.onboarding-heading,
+.onboarding-welcome {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.onboarding-desc,
+.onboarding-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 460px;
+  line-height: 1.55;
+}
+
+.onboarding-cards {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 230px));
+  gap: 14px;
+}
+
+.onboarding-card {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.onboarding-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-card-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.onboarding-card-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.onboarding-upload-capsule {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-full);
+  background: var(--color-sage-bg);
+  border: 1px dashed var(--border-accent);
+  color: var(--color-sage-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.empty-state {
+  flex: 1;
+  padding: 48px 24px 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
 }
 
 .state-title {
@@ -1116,50 +1243,17 @@ function openHandwritingNotebook() {
   color: var(--text-primary);
 }
 
-.state-title.error {
+.state-title.is-error {
   color: var(--color-danger);
 }
 
-@media (max-width: 1080px) {
-  .context-heading {
-    min-width: 100%;
+@media (max-width: 720px) {
+  .blocks-workspace {
+    padding: 16px 16px 0 28px;
   }
 
-  .header-right {
-    width: 100%;
-    justify-content: space-between;
-  }
-}
-
-@media (max-width: 900px) {
-  .center-card {
-    height: auto;
-    min-height: 520px;
-  }
-
-  .tab-body,
-  .overview-scroll,
-  .block-detail-col {
-    flex: none;
-    height: auto;
-  }
-
-  .blocks-split {
-    flex-direction: column;
-  }
-
-  .blocks-list-col {
-    width: 100%;
-    height: auto;
-    max-height: 220px;
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .blocks-list-scroll {
-    flex: none;
-    height: auto;
-    max-height: 164px;
+  .onboarding-cards {
+    grid-template-columns: 1fr;
   }
 }
 </style>

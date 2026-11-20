@@ -1,6 +1,11 @@
 <template>
-  <view class="ai-panel zen-panel">
-    <view class="ai-header">
+  <view class="ai-panel zen-panel" :class="{ 'is-floating': floating }">
+    <view
+      class="ai-header"
+      :class="{ 'is-draggable': floating && !expanded }"
+      @mousedown="onHeaderMouseDown"
+      @touchstart="onHeaderTouchStart"
+    >
       <view class="ai-title-row">
         <LineIcon name="sparkles" size="15px" color="var(--color-sage-ink)" />
         <text class="ai-title">AI 伴读</text>
@@ -8,12 +13,30 @@
           {{ selectedSource.title }}
         </text>
       </view>
-      <view class="ai-header-actions">
+      <view class="ai-header-actions" @mousedown.stop @touchstart.stop>
         <view class="ui-icon-btn sm" role="button" aria-label="历史对话" @click="toggleHistory">
           <LineIcon name="history" size="14px" color="var(--text-secondary)" />
         </view>
         <view class="ui-icon-btn sm" role="button" aria-label="新对话" @click="resetConversation">
           <LineIcon name="plus" size="14px" color="var(--text-secondary)" />
+        </view>
+        <view
+          v-if="floating"
+          class="ui-icon-btn sm"
+          role="button"
+          :aria-label="expanded ? '还原浮窗' : '放大浮窗'"
+          @click="emit('toggle-expand')"
+        >
+          <LineIcon :name="expanded ? 'minimize' : 'maximize'" size="14px" color="var(--text-secondary)" />
+        </view>
+        <view
+          v-if="floating"
+          class="ui-icon-btn sm"
+          role="button"
+          aria-label="收起 AI 伴读"
+          @click="emit('close')"
+        >
+          <LineIcon name="close" size="14px" color="var(--text-secondary)" />
         </view>
       </view>
     </view>
@@ -228,15 +251,6 @@
         </view>
       </view>
     </view>
-
-    <SaveKnowledgeBlockModal
-      :visible="showSaveBlockModal"
-      :default-subject-id="subjectId"
-      :initial-title="saveBlockSeedTitle"
-      :initial-preview="saveBlockSeedContent"
-      @close="showSaveBlockModal = false"
-      @saved="showSaveBlockModal = false"
-    />
   </view>
 </template>
 
@@ -245,7 +259,6 @@ import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, watch } f
 import LineIcon from '@/components/LineIcon.vue'
 import MobileChatPartList from '@/components/MobileChatPartList.vue'
 import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
-import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import {
   chatWithAI,
@@ -287,7 +300,30 @@ const props = defineProps<{
   subjectId: string
   subjectName: string
   selectedSource: SourceView | null
+  floating?: boolean
+  expanded?: boolean
 }>()
+
+const emit = defineEmits<{
+  (event: 'close'): void
+  (event: 'toggle-expand'): void
+  (event: 'header-pointerdown', value: unknown): void
+  (event: 'header-touchstart', value: unknown): void
+  (event: 'typing-change', value: boolean): void
+  (event: 'request-save-block', value: { title: string; preview: string }): void
+}>()
+
+function onHeaderMouseDown(event: unknown) {
+  if (props.floating && !props.expanded) {
+    emit('header-pointerdown', event)
+  }
+}
+
+function onHeaderTouchStart(event: unknown) {
+  if (props.floating && !props.expanded) {
+    emit('header-touchstart', event)
+  }
+}
 
 const authStore = useAuthStore()
 const instanceProxy = getCurrentInstance()?.proxy
@@ -300,6 +336,12 @@ const messages = ref<MobileChatMessage[]>([])
 const query = ref('')
 const isTyping = ref(false)
 const isStopping = ref(false)
+
+watch(
+  () => isTyping.value || isStopping.value,
+  (typing) => emit('typing-change', typing),
+  { immediate: true },
+)
 const activeRunId = ref('')
 const activeAttemptId = ref('')
 const isConversationUnsupported = ref(false)
@@ -308,10 +350,6 @@ const scrollTargetId = ref('')
 const anchorId = 'workspace-ai-bottom'
 const autoScrollLocked = ref(false)
 const drainingMessageIds = ref<Record<string, boolean>>({})
-
-const showSaveBlockModal = ref(false)
-const saveBlockSeedTitle = ref('')
-const saveBlockSeedContent = ref('')
 
 let activeStreamToken = 0
 let activeViewToken = 0
@@ -773,9 +811,10 @@ function openSaveBlockModal(msg: MobileChatMessage) {
       break
     }
   }
-  saveBlockSeedTitle.value = deriveKnowledgeBlockTitle(precedingQuestion, plainContent)
-  saveBlockSeedContent.value = plainContent.slice(0, 4000)
-  showSaveBlockModal.value = true
+  emit('request-save-block', {
+    title: deriveKnowledgeBlockTitle(precedingQuestion, plainContent),
+    preview: plainContent.slice(0, 4000),
+  })
 }
 
 function submitStarterPrompt(prompt: string) {
@@ -1201,6 +1240,14 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
+.ai-panel.is-floating {
+  width: 100%;
+  height: 100%;
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  box-shadow: none;
+}
+
 .ai-header {
   height: 54px;
   padding: 0 14px;
@@ -1211,6 +1258,15 @@ onBeforeUnmount(() => {
   gap: 8px;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.ai-header.is-draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.ai-header.is-draggable:active {
+  cursor: grabbing;
 }
 
 .ai-title-row {

@@ -1,54 +1,218 @@
 <template>
   <TabletLayout>
     <view class="t-workspace">
+      <!-- 1. PC 同源左侧一级窄条导轨 (72px) -->
+      <aside class="tier1-strip zen-panel" aria-label="工作区导轨">
+        <view class="tier1-top">
+          <view class="tier1-btn" role="button" aria-label="返回学科大厅" @click="goBack">
+            <LineIcon name="chevron-left" size="19px" color="currentColor" />
+            <text class="tier1-btn-text">返回</text>
+          </view>
+
+          <view
+            class="tier1-btn"
+            :class="{ 'is-active': tier2Open && tier2Mode === 'files' }"
+            role="button"
+            aria-label="学习资料"
+            @click="toggleTier2('files')"
+          >
+            <LineIcon name="file-text" size="19px" color="currentColor" />
+            <text class="tier1-btn-text">资料</text>
+          </view>
+
+          <view
+            class="tier1-btn"
+            :class="{ 'is-active': tier2Open && tier2Mode === 'outline' }"
+            role="button"
+            aria-label="总览"
+            @click="toggleTier2('outline')"
+          >
+            <LineIcon name="list" size="19px" color="currentColor" />
+            <text class="tier1-btn-text">总览</text>
+          </view>
+
+          <view
+            class="tier1-btn"
+            :class="{ 'is-active': centerView === 'blocks' }"
+            role="button"
+            aria-label="知识库"
+            @click="openCenterSection('blocks')"
+          >
+            <LineIcon name="grid" size="19px" color="currentColor" />
+            <text class="tier1-btn-text">知识库</text>
+          </view>
+
+          <view
+            class="tier1-btn"
+            :class="{ 'is-active': centerView === 'review' }"
+            role="button"
+            aria-label="学科复习"
+            @click="openCenterSection('review')"
+          >
+            <LineIcon name="history" size="19px" color="currentColor" />
+            <text class="tier1-btn-text">复习</text>
+          </view>
+
+          <view
+            class="tier1-btn"
+            :class="{ 'is-active': centerView === 'stats' }"
+            role="button"
+            aria-label="学科统计"
+            @click="openCenterSection('stats')"
+          >
+            <LineIcon name="chart" size="19px" color="currentColor" />
+            <text class="tier1-btn-text">统计</text>
+          </view>
+        </view>
+
+        <view class="tier1-bottom">
+          <view class="subject-mini-icon" :title="subjectName" aria-hidden="true">
+            <LineIcon :name="`subj-${safeSubjectIcon}`" size="20px" color="#FFFFFF" />
+          </view>
+        </view>
+      </aside>
+
+      <!-- 2. 可折叠二级抽屉（学习资料 / 总览） -->
       <WorkspaceSourceRail
+        :open="tier2Open"
+        :mode="tier2Mode"
         :subject-name="subjectName"
-        :subject-icon="activeSubject?.icon"
         :sources="sources"
         :selected-source-id="selectedSourceId"
         :loading-sources="loadingSources"
         :sources-error="sourcesError"
         :uploading="uploading"
-        @back="goBack"
+        :subject-overview="subjectOverview"
+        :subject-overview-loading="subjectOverviewLoading"
+        :subject-overview-error="subjectOverviewError"
+        :file-overviews="fileOverviews"
+        :file-overview-loading="fileOverviewLoading"
+        :file-overview-errors="fileOverviewErrors"
         @upload="handleUploadFile"
-        @refresh="reloadAll"
-        @select-overview="selectOverview"
+        @refresh-sources="loadSources"
         @select-source="selectSource"
         @delete-source="handleDeleteSource"
+        @refresh-overviews="loadAllOverviews"
+        @open-subject-summary="openSubjectSummary"
+        @open-file-summary="openFileSummary"
+        @retry-file-overview="retryFileOverview"
       />
 
+      <!-- 3. 右侧主工作区（预览 / 总结 / 知识库 / 复习 / 统计） -->
       <WorkspaceCenterReader
-        v-model:active-tab="activeTab"
+        :center-view="centerView"
+        :tier2-open="tier2Open"
         :subject-id="subjectId"
         :subject-name="subjectName"
+        :subject-icon="activeSubject?.icon"
+        :subject-description="activeSubject?.description"
         :selected-source="selectedSource"
-        :ai-panel-visible="aiPanelVisible"
+        :sources-count="sources.length"
         :preview-url="previewUrl"
         :preview-mime-type="previewMimeType"
         :preview-original-name="previewOriginalName"
         :preview-loading="previewLoading"
         :preview-error="previewError"
-        :overview="overview"
-        :overview-loading="overviewLoading"
-        :overview-error="overviewError"
+        :summary-target="summaryTarget"
         :subject-blocks="subjectBlocks"
-        @toggle-ai-panel="aiPanelVisible = !aiPanelVisible"
+        @toggle-tier2="handleToggleTier2Collapse"
+        @upload="handleUploadFile"
         @retry-preview="loadSourcePreview"
-        @refresh-overview="loadOverview"
+        @close-summary="closeSummary"
+        @refresh-summary="refreshActiveSummary"
+        @view-block="openBlockDetail"
         @create-block="openCreateBlockModal"
-        @edit-block="openEditBlockModal"
         @delete-block="handleDeleteBlock"
-      />
-
-      <WorkspaceAiPanel
-        v-if="aiPanelVisible"
-        :subject-id="subjectId"
-        :subject-name="subjectName"
-        :selected-source="selectedSource"
+        @open-files-drawer="openFilesDrawer"
+        @open-review="openCenterSection('review')"
       />
     </view>
 
     <template #modal>
+      <!-- 右下角 AI 伴读悬浮启动胶囊 -->
+      <view
+        v-if="!aiPanelVisible"
+        class="ai-fab-pill"
+        role="button"
+        aria-label="打开 AI 伴读浮窗"
+        @click="openAiFloating"
+      >
+        <LineIcon name="sparkles" size="16px" color="#FFFFFF" />
+        <text class="ai-fab-label">AI 伴读</text>
+        <view v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></view>
+      </view>
+
+      <!-- 非阻塞 AI 伴读浮窗（懒挂载 + 保活不销毁流式状态） -->
+      <view
+        v-if="aiPanelMounted"
+        v-show="aiPanelVisible"
+        class="ai-floating-shell"
+        :class="{ 'is-expanded': aiExpanded, 'is-dragging': isDraggingFloating }"
+        :style="floatingShellStyle"
+      >
+        <WorkspaceAiPanel
+          :subject-id="subjectId"
+          :subject-name="subjectName"
+          :selected-source="selectedSource"
+          :floating="true"
+          :expanded="aiExpanded"
+          @close="aiPanelVisible = false"
+          @toggle-expand="toggleAiExpanded"
+          @header-pointerdown="startMouseDrag"
+          @header-touchstart="startTouchDrag"
+          @typing-change="aiTyping = $event"
+          @request-save-block="handleRequestSaveBlock"
+        />
+      </view>
+
+      <!-- AI 回答存为知识块弹窗（置于独立模态层，避免受浮窗 transform 限制） -->
+      <SaveKnowledgeBlockModal
+        :visible="showSaveAiBlockModal"
+        :default-subject-id="subjectId"
+        :initial-title="saveAiBlockSeedTitle"
+        :initial-preview="saveAiBlockSeedContent"
+        @close="showSaveAiBlockModal = false"
+        @saved="showSaveAiBlockModal = false"
+      />
+
+      <!-- 知识块详情阅读弹窗 -->
+      <view v-if="viewingBlock" class="zen-modal-mask" @click="closeBlockDetail">
+        <view
+          class="zen-modal-body block-detail-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="viewingBlock.title"
+          @click.stop
+        >
+          <view class="modal-header">
+            <view class="detail-head-meta">
+              <text class="modal-title">{{ viewingBlock.title }}</text>
+              <text class="detail-sub-meta num-tabular">
+                {{ viewingBlock.source || '自主整理' }} · {{ formatShortDateTime(viewingBlock.time) }}
+              </text>
+            </view>
+            <view class="ui-icon-btn sm" role="button" aria-label="关闭" @click="closeBlockDetail">
+              <LineIcon name="close" size="14px" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <scroll-view scroll-y :show-scrollbar="false" class="detail-body-scroll">
+            <view class="detail-markdown-box">
+              <MarkdownText :content="viewingBlock.preview || '暂无正文内容'" />
+            </view>
+          </scroll-view>
+
+          <view class="modal-footer detail-footer">
+            <button class="ui-btn ui-btn-danger sm" @click="handleDeleteBlock(viewingBlock)">删除</button>
+            <view class="detail-footer-right">
+              <button class="ui-btn ui-btn-secondary sm" @click="copyViewingBlock">复制</button>
+              <button class="ui-btn ui-btn-primary sm" @click="editViewingBlock">编辑</button>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 新建 / 编辑知识块弹窗 -->
       <view v-if="showBlockModal" class="zen-modal-mask" @click="closeBlockModal">
         <view class="zen-modal-body block-modal-card" @click.stop>
           <view class="modal-header">
@@ -123,12 +287,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
+import MarkdownText from '@/components/MarkdownText.vue'
+import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import WorkspaceSourceRail from '@/components/tablet/workspace/WorkspaceSourceRail.vue'
-import WorkspaceCenterReader, { type WorkspaceTabKey } from '@/components/tablet/workspace/WorkspaceCenterReader.vue'
+import WorkspaceCenterReader, {
+  type WorkspaceCenterView,
+  type WorkspaceSummaryTarget,
+} from '@/components/tablet/workspace/WorkspaceCenterReader.vue'
 import WorkspaceAiPanel from '@/components/tablet/workspace/WorkspaceAiPanel.vue'
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
@@ -138,14 +307,19 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
+import { copyTextWithFallback } from '@/utils/mobileLearning'
+import { formatShortDateTime } from '@/utils/sourceFormat'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
 
 const subjectId = ref('')
-const activeTab = ref<WorkspaceTabKey>('overview')
-const aiPanelVisible = ref(true)
+const requestedPanel = ref('')
+const tier2Open = ref(true)
+const tier2Mode = ref<'files' | 'outline'>('files')
+const centerView = ref<WorkspaceCenterView>('onboarding')
 
 const sources = ref<SourceView[]>([])
 const loadingSources = ref(false)
@@ -159,30 +333,103 @@ const previewOriginalName = ref('')
 const previewLoading = ref(false)
 const previewError = ref('')
 
-const overview = ref<OverviewResultView | null>(null)
-const overviewLoading = ref(false)
-const overviewError = ref('')
+const subjectOverview = ref<OverviewResultView | null>(null)
+const subjectOverviewLoading = ref(false)
+const subjectOverviewError = ref('')
+const fileOverviews = ref<Record<string, OverviewResultView | null>>({})
+const fileOverviewLoading = ref<Record<string, boolean>>({})
+const fileOverviewErrors = ref<Record<string, string>>({})
+const summaryKind = ref<'subject' | 'file' | null>(null)
+const summarySourceId = ref<string | null>(null)
 
+const viewingBlockId = ref('')
 const showBlockModal = ref(false)
 const editingBlockId = ref<string | null>(null)
 const submittingBlock = ref(false)
 const blockDraft = ref({ title: '', source: '', preview: '' })
 
+const aiPanelMounted = ref(false)
+const aiPanelVisible = ref(false)
+const aiExpanded = ref(false)
+const aiTyping = ref(false)
+const dragX = ref(0)
+const dragY = ref(0)
+const isDraggingFloating = ref(false)
+const showSaveAiBlockModal = ref(false)
+const saveAiBlockSeedTitle = ref('')
+const saveAiBlockSeedContent = ref('')
+
 let sourceReqToken = 0
 let previewReqToken = 0
-let overviewReqToken = 0
+let subjectOverviewReqToken = 0
+let fileOverviewReqSeq = 0
+let userChangedTier2 = false
+let userChangedCenterView = false
+const fileOverviewTokens: Record<string, number> = {}
+
+let dragStartClientX = 0
+let dragStartClientY = 0
+let dragStartOffsetX = 0
+let dragStartOffsetY = 0
+let dragMinX = -480
+let dragMaxX = 0
+let dragMinY = -480
+let dragMaxY = 0
+let dragMode: 'mouse' | 'touch' | null = null
 
 const activeSubject = computed(() => subjectStore.subjects.find(item => item.id === subjectId.value) || null)
 const subjectName = computed(() => activeSubject.value?.name || '学科工作台')
+const safeSubjectIcon = computed(() => (
+  activeSubject.value?.icon && isSubjectIconKey(activeSubject.value.icon) ? activeSubject.value.icon : 'book'
+))
+
 const selectedSource = computed(() => {
   if (!selectedSourceId.value) return null
   return sources.value.find(item => item.id === selectedSourceId.value) || null
 })
 
 const subjectBlocks = computed(() => blockStore.recentBlocks.filter((item) => {
+  if (item.is_deleted) return false
   if (item.subjectId && subjectId.value) return item.subjectId === subjectId.value
   return item.subject === subjectName.value
 }))
+
+const viewingBlock = computed(() => (
+  viewingBlockId.value
+    ? subjectBlocks.value.find(item => item.id === viewingBlockId.value) || null
+    : null
+))
+
+const summaryTarget = computed<WorkspaceSummaryTarget | null>(() => {
+  if (summaryKind.value === 'subject' && subjectId.value) {
+    return {
+      kind: 'subject',
+      id: subjectId.value,
+      title: subjectName.value,
+      overview: subjectOverview.value,
+      loading: subjectOverviewLoading.value,
+      error: subjectOverviewError.value,
+    }
+  }
+  if (summaryKind.value === 'file' && summarySourceId.value) {
+    const src = sources.value.find(item => item.id === summarySourceId.value)
+    if (!src?.id) return null
+    return {
+      kind: 'file',
+      id: src.id,
+      title: src.title || '未命名资料',
+      overview: fileOverviews.value[src.id] ?? null,
+      loading: Boolean(fileOverviewLoading.value[src.id]),
+      error: fileOverviewErrors.value[src.id] || '',
+    }
+  }
+  return null
+})
+
+const floatingShellStyle = computed(() => {
+  if (aiExpanded.value || (dragX.value === 0 && dragY.value === 0)) return undefined
+  return { transform: `translate3d(${dragX.value}px, ${dragY.value}px, 0)` }
+})
 
 function goBack() {
   uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
@@ -216,6 +463,36 @@ function clearPreview() {
   previewError.value = ''
 }
 
+function toggleTier2(mode: 'files' | 'outline') {
+  userChangedTier2 = true
+  if (tier2Open.value && tier2Mode.value === mode) {
+    tier2Open.value = false
+    return
+  }
+  tier2Mode.value = mode
+  tier2Open.value = true
+}
+
+function handleToggleTier2Collapse() {
+  userChangedTier2 = true
+  tier2Open.value = !tier2Open.value
+}
+
+function openFilesDrawer() {
+  userChangedTier2 = true
+  tier2Mode.value = 'files'
+  tier2Open.value = true
+}
+
+function openCenterSection(view: 'blocks' | 'review' | 'stats') {
+  userChangedCenterView = true
+  userChangedTier2 = true
+  summaryKind.value = null
+  summarySourceId.value = null
+  centerView.value = view
+  tier2Open.value = false
+}
+
 async function loadSources() {
   if (!subjectId.value) return
   const token = ++sourceReqToken
@@ -228,8 +505,13 @@ async function loadSources() {
     sources.value = list
     if (selectedSourceId.value && !list.some(item => item.id === selectedSourceId.value)) {
       selectedSourceId.value = null
-      if (activeTab.value === 'preview') activeTab.value = 'overview'
       clearPreview()
+      if (centerView.value === 'preview') {
+        centerView.value = 'onboarding'
+      }
+    }
+    if (centerView.value === 'summary' && summaryKind.value === 'file' && summarySourceId.value && !list.some(item => item.id === summarySourceId.value)) {
+      closeSummary()
     }
   } catch (error) {
     if (token !== sourceReqToken || !isFenceValid(fence, false)) return
@@ -241,11 +523,7 @@ async function loadSources() {
 
 async function loadSourcePreview() {
   const source = selectedSource.value
-  if (!source) {
-    clearPreview()
-    return
-  }
-  if (!source.assetId) {
+  if (!source || !source.assetId) {
     clearPreview()
     return
   }
@@ -271,48 +549,136 @@ async function loadSourcePreview() {
   }
 }
 
-async function loadOverview() {
+async function loadSubjectOverview() {
   if (!subjectId.value) return
-  const source = selectedSource.value
-  if (source && source.ingestionStatus !== 'READY') {
-    overviewReqToken++
-    overviewLoading.value = false
-    overviewError.value = ''
-    overview.value = null
-    return
-  }
-  const token = ++overviewReqToken
+  const token = ++subjectOverviewReqToken
   const fence = captureFence()
-  overviewLoading.value = true
-  overviewError.value = ''
+  subjectOverviewLoading.value = true
+  subjectOverviewError.value = ''
   try {
-    const result = source?.id
-      ? await overviewApi.getSource(source.id, source.ingestionRevision)
-      : await overviewApi.getSubject(subjectId.value)
-    if (token !== overviewReqToken || !isFenceValid(fence)) return
-    overview.value = result
+    const result = await overviewApi.getSubject(subjectId.value)
+    if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
+    subjectOverview.value = result
   } catch (error) {
-    if (token !== overviewReqToken || !isFenceValid(fence)) return
-    overview.value = null
-    overviewError.value = error instanceof Error && error.message ? error.message : '大纲与总结加载失败'
+    if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
+    subjectOverviewError.value = error instanceof Error && error.message ? error.message : '学科总览加载失败'
   } finally {
-    if (token === overviewReqToken) overviewLoading.value = false
+    if (token === subjectOverviewReqToken) subjectOverviewLoading.value = false
   }
 }
 
-function selectOverview() {
-  selectedSourceId.value = null
-  if (activeTab.value === 'preview') activeTab.value = 'overview'
-  clearPreview()
-  void loadOverview()
+async function loadFileOverview(source: SourceView) {
+  const srcId = source.id
+  if (!srcId) return
+  if (source.ingestionStatus !== 'READY') {
+    fileOverviewLoading.value = { ...fileOverviewLoading.value, [srcId]: false }
+    fileOverviewErrors.value = { ...fileOverviewErrors.value, [srcId]: '' }
+    fileOverviews.value = { ...fileOverviews.value, [srcId]: null }
+    return
+  }
+  const token = ++fileOverviewReqSeq
+  fileOverviewTokens[srcId] = token
+  const fence = captureFence()
+  fileOverviewLoading.value = { ...fileOverviewLoading.value, [srcId]: true }
+  fileOverviewErrors.value = { ...fileOverviewErrors.value, [srcId]: '' }
+  try {
+    const result = await overviewApi.getSource(srcId, source.ingestionRevision)
+    if (token !== fileOverviewTokens[srcId] || !isFenceValid(fence, false)) return
+    fileOverviews.value = { ...fileOverviews.value, [srcId]: result }
+  } catch (error) {
+    if (token !== fileOverviewTokens[srcId] || !isFenceValid(fence, false)) return
+    fileOverviewErrors.value = {
+      ...fileOverviewErrors.value,
+      [srcId]: error instanceof Error && error.message ? error.message : '大纲加载失败',
+    }
+  } finally {
+    if (token === fileOverviewTokens[srcId]) {
+      fileOverviewLoading.value = { ...fileOverviewLoading.value, [srcId]: false }
+    }
+  }
+}
+
+async function loadAllOverviews() {
+  const fence = captureFence()
+  await loadSubjectOverview()
+  if (!isFenceValid(fence, false)) return
+  const readySources = sources.value.filter(item => item.id && item.ingestionStatus === 'READY')
+  const batchSize = 4
+  for (let i = 0; i < readySources.length; i += batchSize) {
+    if (!isFenceValid(fence, false)) return
+    await Promise.all(readySources.slice(i, i + batchSize).map(src => loadFileOverview(src)))
+  }
 }
 
 function selectSource(source: SourceView) {
   if (!source.id) return
+  const sourceChanged = selectedSourceId.value !== source.id
+  userChangedCenterView = true
   selectedSourceId.value = source.id
-  activeTab.value = 'preview'
+  summaryKind.value = null
+  summarySourceId.value = null
+  centerView.value = 'preview'
+  if (sourceChanged) {
+    clearPreview()
+  }
   void loadSourcePreview()
-  void loadOverview()
+  if (source.ingestionStatus === 'READY' && !fileOverviews.value[source.id]) {
+    void loadFileOverview(source)
+  }
+}
+
+function openSubjectSummary() {
+  userChangedCenterView = true
+  summaryKind.value = 'subject'
+  summarySourceId.value = null
+  centerView.value = 'summary'
+  if (!subjectOverview.value && !subjectOverviewLoading.value) {
+    void loadSubjectOverview()
+  }
+}
+
+function openFileSummary(source: SourceView) {
+  if (!source.id) return
+  const sourceChanged = selectedSourceId.value !== source.id
+  userChangedCenterView = true
+  selectedSourceId.value = source.id
+  summaryKind.value = 'file'
+  summarySourceId.value = source.id
+  centerView.value = 'summary'
+  if (sourceChanged) {
+    clearPreview()
+    void loadSourcePreview()
+  } else if (!previewUrl.value && !previewLoading.value && !previewError.value) {
+    void loadSourcePreview()
+  }
+  if (source.ingestionStatus === 'READY' && !fileOverviews.value[source.id] && !fileOverviewLoading.value[source.id]) {
+    void loadFileOverview(source)
+  }
+}
+
+function retryFileOverview(source: SourceView) {
+  void loadFileOverview(source)
+}
+
+function refreshActiveSummary() {
+  if (summaryKind.value === 'subject') {
+    void loadSubjectOverview()
+    return
+  }
+  if (summaryKind.value === 'file' && summarySourceId.value) {
+    const src = sources.value.find(item => item.id === summarySourceId.value)
+    if (src) void loadFileOverview(src)
+  }
+}
+
+function closeSummary() {
+  userChangedCenterView = true
+  summaryKind.value = null
+  summarySourceId.value = null
+  centerView.value = selectedSource.value ? 'preview' : 'onboarding'
+  if (selectedSource.value && !previewUrl.value && !previewLoading.value && !previewError.value) {
+    void loadSourcePreview()
+  }
 }
 
 async function handleUploadFile() {
@@ -329,9 +695,8 @@ async function handleUploadFile() {
     uni.showToast({ title: '已上传，等待解析', icon: 'none' })
     if (created.id) {
       selectedSourceId.value = created.id
-      activeTab.value = 'preview'
+      centerView.value = 'preview'
       void loadSourcePreview()
-      void loadOverview()
     }
   } catch (error) {
     if (!isFenceValid(fence, false)) return
@@ -356,10 +721,10 @@ function handleDeleteSource(source: SourceView) {
         if (!isFenceValid(fence, false)) return
         if (selectedSourceId.value === source.id) {
           selectedSourceId.value = null
-          if (activeTab.value === 'preview') activeTab.value = 'overview'
           clearPreview()
+          if (centerView.value === 'preview') centerView.value = 'onboarding'
         }
-        await Promise.all([loadSources(), subjectStore.loadSubjects(), loadOverview()])
+        await Promise.all([loadSources(), subjectStore.loadSubjects(), loadSubjectOverview()])
         if (!isFenceValid(fence, false)) return
         uni.showToast({ title: '已删除', icon: 'none' })
       } catch (error) {
@@ -369,6 +734,30 @@ function handleDeleteSource(source: SourceView) {
       }
     },
   })
+}
+
+function openBlockDetail(block: KnowledgeBlock) {
+  viewingBlockId.value = block.id
+}
+
+function closeBlockDetail() {
+  viewingBlockId.value = ''
+}
+
+async function copyViewingBlock() {
+  if (!viewingBlock.value) return
+  const text = viewingBlock.value.preview?.trim()
+    ? `${viewingBlock.value.title}\n\n${viewingBlock.value.preview}`
+    : viewingBlock.value.title
+  const ok = await copyTextWithFallback(text)
+  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
+}
+
+function editViewingBlock() {
+  const block = viewingBlock.value
+  if (!block) return
+  viewingBlockId.value = ''
+  openEditBlockModal(block)
 }
 
 function openCreateBlockModal() {
@@ -395,8 +784,6 @@ function closeBlockModal() {
   if (submittingBlock.value) return
   showBlockModal.value = false
 }
-
-useEscapeKey(() => showBlockModal.value, closeBlockModal)
 
 async function submitBlockModal() {
   if (submittingBlock.value || !subjectId.value) return
@@ -444,7 +831,7 @@ async function submitBlockModal() {
     showBlockModal.value = false
     editingBlockId.value = null
     blockDraft.value = { title: '', source: '', preview: '' }
-    activeTab.value = 'blocks'
+    centerView.value = 'blocks'
   } catch (error) {
     if (!isFenceValid(fence, false)) return
     const msg = error instanceof Error && error.message ? error.message : '保存知识块失败'
@@ -464,22 +851,164 @@ function handleDeleteBlock(block: KnowledgeBlock) {
       if (!res.confirm || !isFenceValid(fence, false)) return
       await blockStore.removeBlock(block.id)
       if (!isFenceValid(fence, false)) return
+      if (viewingBlockId.value === block.id) viewingBlockId.value = ''
       uni.showToast({ title: '已删除知识块', icon: 'none' })
     },
   })
 }
 
+function openAiFloating() {
+  aiPanelMounted.value = true
+  aiPanelVisible.value = true
+}
+
+function toggleAiExpanded() {
+  aiExpanded.value = !aiExpanded.value
+  dragX.value = 0
+  dragY.value = 0
+}
+
+function computeDragBounds() {
+  if (typeof window === 'undefined') return
+  const vw = window.innerWidth || 1024
+  const vh = window.innerHeight || 768
+  const panelWidth = Math.min(400, vw - 32)
+  const panelHeight = Math.max(420, Math.min(Math.round(vh * 0.74), 660))
+  const margin = 12
+  dragMinX = -(vw - 22 - panelWidth - margin)
+  dragMaxX = 22 - margin
+  dragMinY = -(vh - 22 - panelHeight - margin)
+  dragMaxY = 22 - margin
+  if (dragMinX > dragMaxX) dragMinX = dragMaxX
+  if (dragMinY > dragMaxY) dragMinY = dragMaxY
+}
+
+function applyDragDelta(clientX: number, clientY: number) {
+  const nextX = dragStartOffsetX + (clientX - dragStartClientX)
+  const nextY = dragStartOffsetY + (clientY - dragStartClientY)
+  dragX.value = Math.min(dragMaxX, Math.max(dragMinX, nextX))
+  dragY.value = Math.min(dragMaxY, Math.max(dragMinY, nextY))
+}
+
+function onWindowMouseMove(event: MouseEvent) {
+  if (dragMode !== 'mouse') return
+  applyDragDelta(event.clientX, event.clientY)
+}
+
+function onWindowTouchMove(event: TouchEvent) {
+  if (dragMode !== 'touch') return
+  const touch = event.touches[0]
+  if (!touch) return
+  applyDragDelta(touch.clientX, touch.clientY)
+}
+
+function stopDragging() {
+  if (!dragMode) return
+  dragMode = null
+  isDraggingFloating.value = false
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('mousemove', onWindowMouseMove)
+    window.removeEventListener('mouseup', stopDragging)
+    window.removeEventListener('touchmove', onWindowTouchMove)
+    window.removeEventListener('touchend', stopDragging)
+    window.removeEventListener('touchcancel', stopDragging)
+  }
+}
+
+function startMouseDrag(rawEvent: unknown) {
+  if (aiExpanded.value || typeof window === 'undefined') return
+  const ev = rawEvent as { clientX?: number; clientY?: number }
+  if (typeof ev?.clientX !== 'number' || typeof ev?.clientY !== 'number') return
+  computeDragBounds()
+  dragMode = 'mouse'
+  isDraggingFloating.value = true
+  dragStartClientX = ev.clientX
+  dragStartClientY = ev.clientY
+  dragStartOffsetX = dragX.value
+  dragStartOffsetY = dragY.value
+  window.addEventListener('mousemove', onWindowMouseMove)
+  window.addEventListener('mouseup', stopDragging)
+}
+
+function startTouchDrag(rawEvent: unknown) {
+  if (aiExpanded.value || typeof window === 'undefined') return
+  const ev = rawEvent as { touches?: Array<{ clientX?: number; clientY?: number }> }
+  const touch = ev?.touches?.[0]
+  if (!touch || typeof touch.clientX !== 'number' || typeof touch.clientY !== 'number') return
+  computeDragBounds()
+  dragMode = 'touch'
+  isDraggingFloating.value = true
+  dragStartClientX = touch.clientX
+  dragStartClientY = touch.clientY
+  dragStartOffsetX = dragX.value
+  dragStartOffsetY = dragY.value
+  window.addEventListener('touchmove', onWindowTouchMove, { passive: true })
+  window.addEventListener('touchend', stopDragging)
+  window.addEventListener('touchcancel', stopDragging)
+}
+
+function handleWindowResize() {
+  dragX.value = 0
+  dragY.value = 0
+}
+
+function handleRequestSaveBlock(payload: { title: string; preview: string }) {
+  saveAiBlockSeedTitle.value = payload.title
+  saveAiBlockSeedContent.value = payload.preview
+  showSaveAiBlockModal.value = true
+}
+
+useEscapeKey(() => showBlockModal.value && !showSaveAiBlockModal.value, closeBlockModal)
+useEscapeKey(
+  () => Boolean(viewingBlock.value) && !showBlockModal.value && !showSaveAiBlockModal.value,
+  closeBlockDetail,
+)
+useEscapeKey(
+  () => aiPanelVisible.value && !showBlockModal.value && !viewingBlock.value && !showSaveAiBlockModal.value,
+  () => { aiPanelVisible.value = false },
+)
+
 async function reloadAll() {
   if (!subjectId.value) return
+  const fence = captureFence()
   await Promise.all([
     subjectStore.loadSubjects(),
     blockStore.fetchBlocks(undefined, subjectId.value),
     loadSources(),
   ])
-  await loadOverview()
-  if (selectedSource.value) {
-    void loadSourcePreview()
+  if (!isFenceValid(fence, false)) return
+
+  const panel = requestedPanel.value
+  if (!userChangedTier2) {
+    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+      tier2Open.value = false
+    } else if (panel === 'overview') {
+      tier2Mode.value = 'outline'
+      tier2Open.value = true
+    } else {
+      tier2Mode.value = 'files'
+      tier2Open.value = true
+    }
   }
+
+  if (!userChangedCenterView) {
+    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+      centerView.value = panel
+    } else if (sources.value.length > 0 && sources.value[0].id) {
+      if (!selectedSourceId.value) {
+        selectedSourceId.value = sources.value[0].id
+      }
+      centerView.value = 'preview'
+      void loadSourcePreview()
+    } else {
+      selectedSourceId.value = null
+      centerView.value = 'onboarding'
+    }
+  } else if (!selectedSourceId.value && sources.value.length > 0 && sources.value[0].id) {
+    selectedSourceId.value = sources.value[0].id
+  }
+
+  void loadAllOverviews()
 }
 
 onLoad((options) => {
@@ -491,12 +1020,22 @@ onLoad((options) => {
     subjectStore.setActiveSubject(incomingId)
   }
   const panel = options?.panel || options?.tab
-  if (panel === 'overview' || panel === 'blocks' || panel === 'review') {
-    activeTab.value = panel
+  if (typeof panel === 'string') {
+    requestedPanel.value = panel
+    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+      centerView.value = panel
+      tier2Open.value = false
+    } else if (panel === 'overview') {
+      tier2Mode.value = 'outline'
+      tier2Open.value = true
+    }
   }
 })
 
 onMounted(async () => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+  }
   const fence = captureFence()
   await subjectStore.loadSubjects()
   if (fence.generation !== authStore.getLoginGeneration()) return
@@ -511,6 +1050,13 @@ onMounted(async () => {
   }
   await reloadAll()
 })
+
+onBeforeUnmount(() => {
+  stopDragging()
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleWindowResize)
+  }
+})
 </script>
 
 <style scoped>
@@ -518,12 +1064,198 @@ onMounted(async () => {
   width: 100%;
   height: 100%;
   background: transparent;
-  padding: 14px;
+  padding: 12px 14px;
   box-sizing: border-box;
   display: flex;
   align-items: stretch;
-  gap: 12px;
   overflow: hidden;
+}
+
+.tier1-strip {
+  width: 72px;
+  height: 100%;
+  flex-shrink: 0;
+  margin-right: 10px;
+  padding: 18px 0 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+
+.tier1-top,
+.tier1-bottom {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.tier1-btn {
+  width: 58px;
+  height: 54px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.16s ease, color 0.16s ease, transform 0.14s var(--ease-out);
+}
+
+.tier1-btn:hover {
+  background: rgba(45, 55, 40, 0.045);
+  color: var(--text-primary);
+}
+
+.tier1-btn:active {
+  transform: scale(0.94);
+}
+
+.tier1-btn.is-active {
+  background: var(--color-sage-bg);
+  color: var(--color-sage-ink);
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(139, 154, 110, 0.16);
+}
+
+.tier1-btn-text {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.subject-mini-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(118, 135, 88, 0.28);
+}
+
+.ai-fab-pill {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 1050;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(118, 135, 88, 0.36);
+  cursor: pointer;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.18s ease;
+}
+
+.ai-fab-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(118, 135, 88, 0.44);
+}
+
+.ai-fab-pill:active {
+  transform: scale(0.94);
+}
+
+.ai-fab-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.ai-fab-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  animation: fabPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes fabPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
+}
+
+.ai-floating-shell {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  height: min(74vh, 660px);
+  min-height: 420px;
+  z-index: 1080;
+  border-radius: 20px;
+  box-shadow: 0 22px 54px rgba(28, 28, 26, 0.18), 0 6px 18px rgba(45, 55, 40, 0.10);
+  transition: width 0.22s var(--ease-out), height 0.22s var(--ease-out), right 0.22s var(--ease-out), bottom 0.22s var(--ease-out);
+}
+
+.ai-floating-shell.is-dragging {
+  transition: none;
+}
+
+.ai-floating-shell.is-expanded {
+  right: 18px;
+  bottom: 18px;
+  width: min(520px, calc(100vw - 96px));
+  height: calc(100vh - 36px);
+}
+
+.block-detail-modal {
+  max-width: 640px;
+  max-height: 82vh;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-head-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-sub-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.detail-body-scroll {
+  flex: 1;
+  min-height: 120px;
+  max-height: 54vh;
+}
+
+.detail-markdown-box {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+}
+
+.detail-footer {
+  justify-content: space-between;
+}
+
+.detail-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .block-modal-card {
@@ -536,8 +1268,9 @@ onMounted(async () => {
 
 .modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .modal-title {
@@ -602,12 +1335,26 @@ onMounted(async () => {
   gap: 10px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .t-workspace {
-    flex-direction: column;
-    overflow-y: auto;
-    height: auto;
-    min-height: 100%;
+    padding: 8px;
+  }
+
+  .tier1-strip {
+    width: 58px;
+    margin-right: 8px;
+  }
+
+  .tier1-btn {
+    width: 48px;
+    height: 48px;
+  }
+
+  .ai-floating-shell {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    height: min(78vh, 620px);
   }
 }
 </style>
