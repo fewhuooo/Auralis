@@ -1441,7 +1441,7 @@ onBeforeUnmount(() => {
 }
 
 .user-text {
-  color: #FFFFFF;
+  color: var(--text-primary, #262522);
   line-height: 1.5;
   word-break: break-word;
 }

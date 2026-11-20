@@ -168,6 +168,243 @@ export interface ChatWithAiOptions {
   onAbortReady?: (abortLocal: () => void) => void
 }
 
+function buildAiStreamError(
+  payload: unknown,
+  statusCode: number,
+  retryAfterHeader?: string,
+): ApiProblemError {
+  const problem = parseProblemDetails(payload, statusCode)
+  const quotaTitle = formatAiQuotaMessage(problem.code)
+  let title = quotaTitle === 'AI 请求失败' ? (problem.title || 'AI stream failed') : quotaTitle
+
+  let parsedRetryAfter = parseRetryAfter(problem.retryAfterSeconds)
+  if (parsedRetryAfter === undefined && retryAfterHeader) {
+    parsedRetryAfter = parseRetryAfter(retryAfterHeader)
+  }
+  if (quotaTitle !== 'AI 请求失败') {
+    title += formatRetrySuffix(parsedRetryAfter, problem.resetAt)
+    problem.title = title
+    problem.detail = title
+  }
+  problem.retryAfterSeconds = parsedRetryAfter
+
+  if ([
+    'AI_REQUEST_BUDGET_EXCEEDED',
+    'AI_TASK_BUDGET_EXCEEDED',
+    'AI_CONCURRENCY_LIMIT',
+    'AI_HOURLY_QUOTA_EXCEEDED',
+    'AI_DAILY_QUOTA_EXCEEDED',
+    'AI_GLOBAL_QUOTA_EXCEEDED',
+  ].includes(problem.code || '')) {
+    problem.detail = problem.title
+  }
+  return new ApiProblemError(problem)
+}
+
+function createChatStreamSession(
+  conversationId: string,
+  isCurrent: () => boolean,
+  isManuallyAborted: () => boolean,
+  onMessage: (content: string) => void,
+  options: ChatWithAiOptions | undefined,
+  onFailed: (error: ApiProblemError) => void,
+) {
+  let content = ''
+  let activeAttempt = ''
+  let notifiedRunId = ''
+  const seen = new Set<string>()
+  const sse = createSseDecoder((event) => {
+    if (!isCurrent() || isManuallyAborted()) return
+    if (event.data && typeof event.data === 'object') {
+      const envelope = event.data as ChatStreamEnvelope
+      if (envelope.protocolVersion !== 1 || envelope.event !== event.event || envelope.conversationId !== conversationId) return
+      if (activeAttempt && envelope.attemptId !== activeAttempt) return
+      activeAttempt = envelope.attemptId
+      const key = `${envelope.runId}:${envelope.attemptId}:${envelope.sequence}`
+      if (seen.has(key)) return
+      seen.add(key)
+
+      if (envelope.runId && envelope.runId !== notifiedRunId) {
+        notifiedRunId = envelope.runId
+        options?.onRunStarted?.({ runId: envelope.runId, attemptId: envelope.attemptId || '' })
+      }
+
+      options?.onEnvelope?.(envelope)
+
+      if (event.event === 'reasoning.delta') {
+        const reasoningText = envelope.payload.text
+        if (typeof reasoningText === 'string' && reasoningText) {
+          options?.onReasoningDelta?.(reasoningText)
+        }
+      }
+
+      const delta = typeof envelope.payload.publicTextDelta === 'string'
+        ? envelope.payload.publicTextDelta
+        : (event.event === 'text.delta' && typeof envelope.payload.text === 'string' ? envelope.payload.text : '')
+      if (delta) {
+        content += delta
+        onMessage(delta)
+      }
+
+      if (event.event === 'tool.started' || event.event === 'tool.completed' || event.event === 'tool.error') {
+        const toolCallId = typeof envelope.payload.toolCallId === 'string' ? envelope.payload.toolCallId : undefined
+        const toolName = typeof envelope.payload.name === 'string' ? envelope.payload.name : ''
+        const toolLabel = typeof envelope.payload.label === 'string' && envelope.payload.label.trim()
+          ? envelope.payload.label.trim()
+          : undefined
+        const safeErrorCode = typeof envelope.payload.safeErrorCode === 'string' ? envelope.payload.safeErrorCode : undefined
+        options?.onToolEvent?.({
+          phase: event.event === 'tool.started' ? 'started' : event.event === 'tool.completed' ? 'completed' : 'error',
+          toolCallId,
+          name: toolName,
+          ...(toolLabel ? { label: toolLabel } : {}),
+          safeErrorCode,
+        })
+      }
+
+      if (event.event === 'run.completed') {
+        options?.onTerminal?.({ status: 'COMPLETED' })
+      } else if (event.event === 'run.cancelled') {
+        options?.onTerminal?.({ status: 'CANCELLED' })
+      } else if (event.event === 'run.unknown') {
+        const safeErrorCode = typeof envelope.payload.safeErrorCode === 'string' ? envelope.payload.safeErrorCode : undefined
+        options?.onTerminal?.({ status: 'UNKNOWN', safeErrorCode })
+      }
+    }
+    if (event.event === 'run.failed') {
+      const value = event.data as ChatStreamEnvelope
+      const payload = value.payload as { safeErrorCode?: string; message?: string }
+      options?.onTerminal?.({ status: 'FAILED', safeErrorCode: payload?.safeErrorCode })
+      onFailed(new ApiProblemError(parseProblemDetails({
+        status: 500,
+        title: payload?.message || 'AI stream failed',
+        detail: payload?.message || '',
+        code: payload?.safeErrorCode || 'AI_REQUEST_FAILED',
+      }, 500)))
+    }
+  })
+
+  return {
+    sse,
+    getContent: () => content,
+  }
+}
+
+/* #ifdef H5 */
+async function streamMessageViaFetch(
+  endpointPath: string,
+  conversationId: string,
+  body: Protocol1MessageCommand | { requestId: string },
+  onMessage: (content: string) => void,
+  retried: boolean,
+  expectedGeneration: symbol | undefined,
+  options: ChatWithAiOptions | undefined,
+): Promise<string> {
+  const auth = useAuthStore()
+  const generation = expectedGeneration ?? auth.getLoginGeneration()
+  const isCurrent = () => auth.getLoginGeneration() === generation
+  if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+
+  const runtime = getRuntimeConfig()
+  const controller = typeof AbortController === 'function' ? new AbortController() : null
+  let manuallyAborted = false
+  let streamFailure: ApiProblemError | null = null
+
+  const { sse, getContent } = createChatStreamSession(
+    conversationId,
+    isCurrent,
+    () => manuallyAborted,
+    onMessage,
+    options,
+    (err) => {
+      if (!streamFailure) {
+        streamFailure = err
+        controller?.abort()
+      }
+    },
+  )
+
+  options?.onAbortReady?.(() => {
+    manuallyAborted = true
+    controller?.abort()
+  })
+
+  try {
+    const response = await fetch(`${runtime.apiBaseUrl.replace(/\/+$/, '')}${endpointPath}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'Accept-Encoding': 'identity',
+        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      ...(controller ? { signal: controller.signal } : {}),
+    })
+
+    if (manuallyAborted) return getContent()
+    if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+
+    if (response.status === 401 && !retried) {
+      const refreshed = await auth.refreshAccessToken()
+      if (manuallyAborted) return getContent()
+      if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+      if (refreshed) {
+        await response.body?.cancel?.().catch(() => {})
+        return streamMessageViaFetch(endpointPath, conversationId, body, onMessage, true, generation, options)
+      }
+      auth.expireSession(generation)
+    }
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '')
+      if (manuallyAborted) return getContent()
+      if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+      const retryAfterHeader = response.headers?.get?.('retry-after') ?? undefined
+      throw buildAiStreamError(resolveErrorPayload(errText, errText), response.status, retryAfterHeader)
+    }
+
+    const textDecoder = new TextDecoder('utf-8')
+    if (response.body && typeof response.body.getReader === 'function') {
+      const reader = response.body.getReader()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+        if (manuallyAborted || streamFailure) break
+        const chunkText = decodeStreamChunk(value, textDecoder)
+        if (chunkText) {
+          sse.push(chunkText)
+        }
+      }
+      if (streamFailure) throw streamFailure
+      if (manuallyAborted) return getContent()
+      if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+      const tail = textDecoder.decode()
+      if (tail) sse.push(tail)
+      sse.finish()
+      if (streamFailure) throw streamFailure
+      return getContent()
+    }
+
+    const fullText = await response.text()
+    if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+    if (manuallyAborted) return getContent()
+    const tail = textDecoder.decode()
+    if (fullText || tail) {
+      sse.push(fullText + tail)
+    }
+    sse.finish()
+    if (streamFailure) throw streamFailure
+    return getContent()
+  } catch (error) {
+    if (streamFailure) throw streamFailure
+    if (manuallyAborted) return getContent()
+    throw error
+  }
+}
+/* #endif */
+
 async function streamMessage(
   endpointPath: string,
   conversationId: string,
@@ -177,16 +414,18 @@ async function streamMessage(
   expectedGeneration?: symbol,
   options?: ChatWithAiOptions,
 ): Promise<string> {
+  /* #ifdef H5 */
+  if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof fetch === 'function') {
+    return streamMessageViaFetch(endpointPath, conversationId, body, onMessage, retried, expectedGeneration, options)
+  }
+  /* #endif */
+
   const auth = useAuthStore()
   const generation = expectedGeneration ?? auth.getLoginGeneration()
   const isCurrent = () => auth.getLoginGeneration() === generation
   if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
   const runtime = getRuntimeConfig()
   return new Promise((resolve, reject) => {
-    let content = ''
-    let activeAttempt = ''
-    let notifiedRunId = ''
-    const seen = new Set<string>()
     let receivedChunk = false
     let rawChunkText = ''
     let settled = false
@@ -196,77 +435,18 @@ async function streamMessage(
       if (!chunkText || rawChunkText.length >= 65_536) return
       rawChunkText += chunkText.slice(0, 65_536 - rawChunkText.length)
     }
-    const sse = createSseDecoder((event) => {
-      if (!isCurrent() || manuallyAborted) return
-      if (event.data && typeof event.data === 'object') {
-        const envelope = event.data as ChatStreamEnvelope
-        if (envelope.protocolVersion !== 1 || envelope.event !== event.event || envelope.conversationId !== conversationId) return
-        if (activeAttempt && envelope.attemptId !== activeAttempt) return
-        activeAttempt = envelope.attemptId
-        const key = `${envelope.runId}:${envelope.attemptId}:${envelope.sequence}`
-        if (seen.has(key)) return
-        seen.add(key)
-
-        if (envelope.runId && envelope.runId !== notifiedRunId) {
-          notifiedRunId = envelope.runId
-          options?.onRunStarted?.({ runId: envelope.runId, attemptId: envelope.attemptId || '' })
-        }
-
-        options?.onEnvelope?.(envelope)
-
-        if (event.event === 'reasoning.delta') {
-          const reasoningText = envelope.payload.text
-          if (typeof reasoningText === 'string' && reasoningText) {
-            options?.onReasoningDelta?.(reasoningText)
-          }
-        }
-
-        const delta = typeof envelope.payload.publicTextDelta === 'string'
-          ? envelope.payload.publicTextDelta
-          : (event.event === 'text.delta' && typeof envelope.payload.text === 'string' ? envelope.payload.text : '')
-        if (delta) {
-          content += delta
-          onMessage(delta)
-        }
-
-        if (event.event === 'tool.started' || event.event === 'tool.completed' || event.event === 'tool.error') {
-          const toolCallId = typeof envelope.payload.toolCallId === 'string' ? envelope.payload.toolCallId : undefined
-          const toolName = typeof envelope.payload.name === 'string' ? envelope.payload.name : ''
-          const toolLabel = typeof envelope.payload.label === 'string' && envelope.payload.label.trim()
-            ? envelope.payload.label.trim()
-            : undefined
-          const safeErrorCode = typeof envelope.payload.safeErrorCode === 'string' ? envelope.payload.safeErrorCode : undefined
-          options?.onToolEvent?.({
-            phase: event.event === 'tool.started' ? 'started' : event.event === 'tool.completed' ? 'completed' : 'error',
-            toolCallId,
-            name: toolName,
-            ...(toolLabel ? { label: toolLabel } : {}),
-            safeErrorCode,
-          })
-        }
-
-        if (event.event === 'run.completed') {
-          options?.onTerminal?.({ status: 'COMPLETED' })
-        } else if (event.event === 'run.cancelled') {
-          options?.onTerminal?.({ status: 'CANCELLED' })
-        } else if (event.event === 'run.unknown') {
-          const safeErrorCode = typeof envelope.payload.safeErrorCode === 'string' ? envelope.payload.safeErrorCode : undefined
-          options?.onTerminal?.({ status: 'UNKNOWN', safeErrorCode })
-        }
-      }
-      if (event.event === 'run.failed' && !settled) {
-        const value = event.data as ChatStreamEnvelope
+    const { sse, getContent } = createChatStreamSession(
+      conversationId,
+      isCurrent,
+      () => manuallyAborted,
+      onMessage,
+      options,
+      (error) => {
+        if (settled) return
         settled = true
-        const payload = value.payload as { safeErrorCode?: string; message?: string }
-        options?.onTerminal?.({ status: 'FAILED', safeErrorCode: payload?.safeErrorCode })
-        reject(new ApiProblemError(parseProblemDetails({
-          status: 500,
-          title: payload?.message || 'AI stream failed',
-          detail: payload?.message || '',
-          code: payload?.safeErrorCode || 'AI_REQUEST_FAILED',
-        }, 500)))
-      }
-    })
+        reject(error)
+      },
+    )
     const task = uni.request({
       url: `${runtime.apiBaseUrl.replace(/\/+$/, '')}${endpointPath}`,
       method: 'POST',
@@ -307,30 +487,13 @@ async function streamMessage(
         appendRawChunk(tail)
         if (response.statusCode < 200 || response.statusCode >= 300) {
           settled = true
-          const problem = parseProblemDetails(resolveErrorPayload(response.data, rawChunkText), response.statusCode)
-          
-          const quotaTitle = formatAiQuotaMessage(problem.code)
-          let title = quotaTitle === 'AI 请求失败' ? (problem.title || 'AI stream failed') : quotaTitle
-          
-          let parsedRetryAfter = parseRetryAfter(problem.retryAfterSeconds);
-          if (parsedRetryAfter === undefined && response.header) {
-              const headers = response.header as Record<string, string>
-              const retryAfterHeader = Object.keys(headers).find(k => k.toLowerCase() === 'retry-after')
-              if (retryAfterHeader) {
-                  parsedRetryAfter = parseRetryAfter(headers[retryAfterHeader])
-              }
-          }
-          if (quotaTitle !== 'AI 请求失败') {
-            title += formatRetrySuffix(parsedRetryAfter, problem.resetAt)
-            problem.title = title
-            problem.detail = title
-          }
-          problem.retryAfterSeconds = parsedRetryAfter
-          
-          if (['AI_REQUEST_BUDGET_EXCEEDED', 'AI_TASK_BUDGET_EXCEEDED', 'AI_CONCURRENCY_LIMIT', 'AI_HOURLY_QUOTA_EXCEEDED', 'AI_DAILY_QUOTA_EXCEEDED', 'AI_GLOBAL_QUOTA_EXCEEDED'].includes(problem.code || '')) {
-            problem.detail = problem.title
-          }
-          reject(new ApiProblemError(problem))
+          const headers = (response.header || {}) as Record<string, string>
+          const retryAfterKey = Object.keys(headers).find(k => k.toLowerCase() === 'retry-after')
+          reject(buildAiStreamError(
+            resolveErrorPayload(response.data, rawChunkText),
+            response.statusCode,
+            retryAfterKey ? headers[retryAfterKey] : undefined,
+          ))
           return
         }
         if (receivedChunk) {
@@ -340,14 +503,16 @@ async function streamMessage(
           if (full) sse.push(full)
         }
         sse.finish()
-        settled = true
-        resolve(content)
+        if (!settled) {
+          settled = true
+          resolve(getContent())
+        }
       },
       fail(error) {
         if (settled) return
         if (manuallyAborted) {
           settled = true
-          resolve(content)
+          resolve(getContent())
           return
         }
         settled = true
@@ -360,7 +525,7 @@ async function streamMessage(
       settled = true
       const abortable = task as typeof task & { abort?: () => void }
       abortable.abort?.()
-      resolve(content)
+      resolve(getContent())
     })
     const chunkedTask = task as typeof task & {
       onChunkReceived?(handler: (response: { data: unknown }) => void): void

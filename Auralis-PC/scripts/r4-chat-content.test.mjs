@@ -483,6 +483,7 @@ test('createSmoothStreamBuffer drains push-then-finish and prevents rAF or onCom
     // Reaching fullText.length inside tick then calling finish() must cancel pending rAF and fire onComplete once
     let onceCompleted = 0
     const finishAfterReachBuffer = createSmoothStreamBuffer(() => {}, {
+      minSpeed: 100,
       baseSpeed: 100,
       maxSpeed: 100,
       onComplete: () => { onceCompleted += 1 },
@@ -621,8 +622,8 @@ test('computeSmoothStreamTargetSpeed is monotonic across backlog regimes and smo
   const { createChatStreamState, reduceChatStreamEvent } = await import('../src/services/aiStreamReducer.ts')
   const { buildVisibleProcessTimelineGroups } = await import('../src/utils/chatProcessFormat.ts')
 
-  const speedConfig = { minSpeed: 32, baseSpeed: 64, maxSpeed: 260, finishSpeed: 200 }
-  const samples = [1, 4, 16, 30, 31, 48, 100, 300]
+  const speedConfig = { minSpeed: 14, baseSpeed: 28, maxSpeed: 105, finishSpeed: 58 }
+  const samples = [1, 2, 4, 5, 12, 24, 48, 80, 160, 320, 600]
   let prev = 0
   for (const remaining of samples) {
     const rate = computeSmoothStreamTargetSpeed(remaining, false, speedConfig)
@@ -630,9 +631,12 @@ test('computeSmoothStreamTargetSpeed is monotonic across backlog regimes and smo
     assert.ok(rate <= speedConfig.maxSpeed)
     prev = rate
   }
-  assert.equal(computeSmoothStreamTargetSpeed(500, false, speedConfig), 260)
-  assert.equal(computeSmoothStreamTargetSpeed(20, true, speedConfig), 200)
-  assert.equal(computeSmoothStreamTargetSpeed(100, true, speedConfig), 260)
+  assert.equal(computeSmoothStreamTargetSpeed(1, false, speedConfig), 14)
+  assert.equal(computeSmoothStreamTargetSpeed(12, false, speedConfig), 28)
+  assert.ok(computeSmoothStreamTargetSpeed(48, false, speedConfig) < 46)
+  assert.equal(computeSmoothStreamTargetSpeed(600, false, speedConfig), 105)
+  assert.equal(computeSmoothStreamTargetSpeed(20, true, speedConfig), 58)
+  assert.equal(computeSmoothStreamTargetSpeed(300, true, speedConfig), 105)
 
   const scheduled = new Map()
   let nextId = 1
@@ -656,25 +660,57 @@ test('computeSmoothStreamTargetSpeed is monotonic across backlog regimes and smo
     const buffer = createSmoothStreamBuffer((val) => {
       snapshots.push(val.length)
     }, {
-      minSpeed: 24,
-      baseSpeed: 42,
-      maxSpeed: 240,
-      finishSpeed: 160,
+      minSpeed: 14,
+      baseSpeed: 28,
+      maxSpeed: 105,
+      finishSpeed: 58,
+      speedDampingFactor: 3.8,
       onComplete: () => {
         completed += 1
       },
     })
+
+    // First burst -> drain completely while still streaming -> verify second burst after idle pause eases in calmly
+    const firstBurst = '第一段高并发突发推送文本，用于先把内部游标速率抬高到巡航上限以上，测试池空后的冷却效果。'.repeat(2)
+    buffer.push(firstBurst)
+    let ts = 16
+    let guard = 0
+    while (scheduled.size > 0 && guard < 400) {
+      guard += 1
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+    assert.equal(buffer.isDrained(), true)
+
+    const countBeforeSecondBurst = snapshots.length
+    const secondBurst = `${firstBurst}${longAnswer}`
+    buffer.push(secondBurst)
+    for (let i = 0; i < 6 && scheduled.size > 0; i += 1) {
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+    const firstSecondBurstDelta = (snapshots[countBeforeSecondBurst] ?? firstBurst.length) - firstBurst.length
+    assert.ok(firstSecondBurstDelta <= 2, `expected calm cooldown start after idle pause, got +${firstSecondBurstDelta} chars`)
+
+    buffer.reset()
+    snapshots.length = 0
+    scheduled.clear()
 
     buffer.finish(longAnswer)
     assert.equal(completed, 0)
     assert.equal(snapshots.length, 0)
 
     let frames = 0
-    while (scheduled.size > 0 && frames < 120) {
+    while (scheduled.size > 0 && frames < 240) {
       frames += 1
       const entry = scheduled.entries().next().value
       scheduled.delete(entry[0])
-      entry[1](frames * 16)
+      ts += 16
+      entry[1](ts)
     }
 
     assert.ok(frames >= 3, `expected multi-frame smooth drain, got ${frames} frame(s)`)

@@ -112,10 +112,11 @@ reasoningBuffer = createSmoothStreamBuffer(
     emit('progress')
   },
   {
-    minSpeed: 32,
-    baseSpeed: 64,
-    maxSpeed: 260,
-    finishSpeed: 200,
+    minSpeed: 18,
+    baseSpeed: 38,
+    maxSpeed: 125,
+    finishSpeed: 76,
+    speedDampingFactor: 4.2,
     onComplete: () => {
       if (!props.streaming && !userManuallyToggled.value) {
         isOpen.value = false

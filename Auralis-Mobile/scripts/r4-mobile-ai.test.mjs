@@ -780,8 +780,8 @@ test('buildVisibleMobileTimelineGroups gates tools behind unfinished reasoning a
 test('mobile smoothStreamBuffer keeps monotonic speed scaling and drains long tails across frames on finish()', async () => {
   const { computeSmoothStreamTargetSpeed, createSmoothStreamBuffer } = await import('../src/utils/smoothStreamBuffer.ts')
 
-  const speedConfig = { minSpeed: 32, baseSpeed: 64, maxSpeed: 260, finishSpeed: 200 }
-  const samples = [1, 4, 16, 30, 40, 41, 48, 120, 300]
+  const speedConfig = { minSpeed: 14, baseSpeed: 28, maxSpeed: 105, finishSpeed: 58 }
+  const samples = [1, 2, 4, 5, 12, 24, 48, 80, 160, 320, 600]
   let prev = 0
   for (const remaining of samples) {
     const rate = computeSmoothStreamTargetSpeed(remaining, false, speedConfig)
@@ -789,8 +789,12 @@ test('mobile smoothStreamBuffer keeps monotonic speed scaling and drains long ta
     assert.ok(rate <= speedConfig.maxSpeed)
     prev = rate
   }
-  assert.equal(computeSmoothStreamTargetSpeed(500, false, speedConfig), 260)
-  assert.equal(computeSmoothStreamTargetSpeed(10, true, speedConfig), 200)
+  assert.equal(computeSmoothStreamTargetSpeed(1, false, speedConfig), 14)
+  assert.equal(computeSmoothStreamTargetSpeed(12, false, speedConfig), 28)
+  assert.ok(computeSmoothStreamTargetSpeed(48, false, speedConfig) < 46)
+  assert.equal(computeSmoothStreamTargetSpeed(600, false, speedConfig), 105)
+  assert.equal(computeSmoothStreamTargetSpeed(10, true, speedConfig), 58)
+  assert.equal(computeSmoothStreamTargetSpeed(300, true, speedConfig), 105)
 
   const scheduled = new Map()
   let nextId = 1
@@ -812,24 +816,55 @@ test('mobile smoothStreamBuffer keeps monotonic speed scaling and drains long ta
     const buffer = createSmoothStreamBuffer((val) => {
       lengths.push(val.length)
     }, {
-      minSpeed: 32,
-      baseSpeed: 64,
-      maxSpeed: 260,
-      finishSpeed: 200,
+      minSpeed: 14,
+      baseSpeed: 28,
+      maxSpeed: 105,
+      finishSpeed: 58,
+      speedDampingFactor: 3.8,
       onComplete: () => {
         completed += 1
       },
     })
 
+    // First burst -> drain completely -> verify cooldown resets instant velocity before next SSE burst
+    const firstBurst = '第一段思考内容，用于模拟高速突发文本后进入空池停顿间隙。'.repeat(2)
+    buffer.push(firstBurst)
+    let ts = 16
+    let guard = 0
+    while (scheduled.size > 0 && guard < 400) {
+      guard += 1
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+    assert.equal(buffer.isDrained(), true)
+
+    const countBeforeSecondBurst = lengths.length
+    buffer.push(`${firstBurst}${longReasoning}`)
+    for (let i = 0; i < 6 && scheduled.size > 0; i += 1) {
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+    const firstSecondBurstDelta = (lengths[countBeforeSecondBurst] ?? firstBurst.length) - firstBurst.length
+    assert.ok(firstSecondBurstDelta <= 2, `expected calm cooldown start after idle pause, got +${firstSecondBurstDelta} chars`)
+
+    buffer.reset()
+    lengths.length = 0
+    scheduled.clear()
+
     buffer.finish(longReasoning)
     assert.equal(completed, 0)
 
     let frames = 0
-    while (scheduled.size > 0 && frames < 120) {
+    while (scheduled.size > 0 && frames < 240) {
       frames += 1
       const entry = scheduled.entries().next().value
       scheduled.delete(entry[0])
-      entry[1](frames * 16)
+      ts += 16
+      entry[1](ts)
     }
 
     assert.ok(frames >= 3, `expected multi-frame smooth drain, got ${frames} frame(s)`)
@@ -935,4 +970,181 @@ test('resolveMobileTextDrainAction and animateOnMount animate fresh replies whil
     }),
     'sync_immediate',
   )
+})
+
+test('chatWithAI streams progressively via H5 fetch ReadableStream, retries once on 401, and aborts cleanly', async (context) => {
+  let token = 'stale-token'
+  const loginGen = Symbol('h5-gen')
+  const origWindow = globalThis.window
+  const origDocument = globalThis.document
+  const origFetch = globalThis.fetch
+  const origUni = globalThis.uni
+
+  globalThis.__h5StreamAuth = {
+    get token() { return token },
+    getLoginGeneration: () => loginGen,
+    refreshAccessToken: async () => {
+      token = 'fresh-h5-token'
+      return true
+    },
+    expireSession: () => {},
+  }
+  globalThis.window = globalThis
+  globalThis.document = {}
+  globalThis.uni = {
+    request() {
+      throw new Error('uni.request should not be used when H5 fetch streaming is available')
+    },
+  }
+
+  const mocks = new Map([
+    ['./aiApi', 'export const aiApi = {};'],
+    ['./request', 'export default {};'],
+    ['@/config/runtime', 'export const getRuntimeConfig = () => ({ apiBaseUrl: "https://api.auralis.test", websocketBaseUrl: "wss://api.auralis.test", platform: "h5" });'],
+    ['@/store/useAuthStore', 'export const useAuthStore = () => globalThis.__h5StreamAuth;'],
+  ])
+
+  const loader = registerHooks({
+    resolve(specifier, ctx, nextResolve) {
+      if (mocks.has(specifier)) {
+        return { url: `data:text/javascript,${encodeURIComponent(mocks.get(specifier))}`, shortCircuit: true }
+      }
+      if (specifier.startsWith('@/')) {
+        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, ctx)
+      }
+      if (ctx.parentURL?.includes('/Auralis-Mobile/src/') && (specifier.startsWith('./') || specifier.startsWith('../')) && !/\.[a-z0-9]+$/i.test(specifier)) {
+        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
+      }
+      return nextResolve(specifier, ctx)
+    },
+  })
+
+  context.after(() => {
+    loader.deregister()
+    delete globalThis.__h5StreamAuth
+    globalThis.window = origWindow
+    globalThis.document = origDocument
+    globalThis.fetch = origFetch
+    globalThis.uni = origUni
+  })
+
+  const { chatWithAI } = await import('../src/api/aiClient.ts?h5-fetch-stream-test')
+
+  // 1) 401 -> refresh once -> progressive chunked delivery before EOF
+  const encoder = new TextEncoder()
+  const makeEnvelope = (seq, event, payload) => ({
+    protocolVersion: 1,
+    conversationId: 'conv-h5',
+    requestId: 'req-h5',
+    runId: 'run-h5',
+    attemptId: 'att-h5',
+    userMessageId: 'u-h5',
+    replyMessageId: 'a-h5',
+    sequence: seq,
+    event,
+    payload,
+  })
+  const chunk1 = encoder.encode(
+    `event: reasoning.delta\ndata: ${JSON.stringify(makeEnvelope(1, 'reasoning.delta', { text: '正在梳理' }))}\n\n`
+    + `event: tool.started\ndata: ${JSON.stringify(makeEnvelope(2, 'tool.started', { toolCallId: 't1', name: 'search', label: '检索资料' }))}\n\n`,
+  )
+  const chunk2Full = encoder.encode(
+    `event: text.delta\ndata: ${JSON.stringify(makeEnvelope(3, 'text.delta', { text: '逐字推送正文', publicTextDelta: '逐字推送正文' }))}\n\n`
+    + `event: run.completed\ndata: ${JSON.stringify(makeEnvelope(4, 'run.completed', { executionActive: false }))}\n\n`,
+  )
+  const splitPoint = Math.floor(chunk2Full.length / 2)
+  const chunk2a = chunk2Full.slice(0, splitPoint)
+  const chunk2b = chunk2Full.slice(splitPoint)
+
+  let fetchCalls = 0
+  let chunk2Released = false
+  let releaseChunk2 = null
+  const chunk2Gate = new Promise((resolve) => {
+    releaseChunk2 = () => {
+      chunk2Released = true
+      resolve()
+    }
+  })
+
+  globalThis.fetch = async (_url, init) => {
+    fetchCalls += 1
+    assert.equal(init.headers['Accept-Encoding'], 'identity')
+    if (fetchCalls === 1) {
+      assert.equal(init.headers.Authorization, 'Bearer stale-token')
+      return new Response('', { status: 401 })
+    }
+    assert.equal(init.headers.Authorization, 'Bearer fresh-h5-token')
+    let step = 0
+    const body = new ReadableStream({
+      async pull(controller) {
+        step += 1
+        if (step === 1) {
+          controller.enqueue(chunk1)
+          return
+        }
+        if (step === 2) {
+          await chunk2Gate
+          controller.enqueue(chunk2a)
+          return
+        }
+        if (step === 3) {
+          controller.enqueue(chunk2b)
+          return
+        }
+        controller.close()
+      },
+    })
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+
+  const reasoningSeen = []
+  const toolsSeen = []
+  const deltasSeen = []
+  let terminalSeen = null
+  let sawChunk1BeforeChunk2 = false
+
+  const chatPromise = chatWithAI('你好', [], (delta) => {
+    deltasSeen.push(delta)
+  }, 'conv-h5', {
+    onReasoningDelta: (delta) => {
+      reasoningSeen.push(delta)
+      if (!chunk2Released) {
+        sawChunk1BeforeChunk2 = true
+        releaseChunk2?.()
+      }
+    },
+    onToolEvent: (evt) => toolsSeen.push(evt),
+    onTerminal: (t) => { terminalSeen = t },
+  })
+
+  await chatPromise
+  assert.equal(fetchCalls, 2)
+  assert.equal(sawChunk1BeforeChunk2, true, 'must emit SSE events before stream closes')
+  assert.deepEqual(reasoningSeen, ['正在梳理'])
+  assert.equal(toolsSeen[0].label, '检索资料')
+  assert.deepEqual(deltasSeen, ['逐字推送正文'])
+  assert.deepEqual(terminalSeen, { status: 'COMPLETED' })
+
+  // 2) Manual abort resolves cleanly without rejecting
+  let abortLocalFn = null
+  let signalAborted = false
+  globalThis.fetch = async (_url, init) => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(chunk1)
+        init.signal.addEventListener('abort', () => {
+          signalAborted = true
+          controller.error(new DOMException('Aborted', 'AbortError'))
+        })
+      },
+    })
+    return new Response(body, { status: 200 })
+  }
+
+  const abortedRun = chatWithAI('暂停测试', [], () => {}, 'conv-h5', {
+    onAbortReady: (fn) => { abortLocalFn = fn },
+    onReasoningDelta: () => { abortLocalFn?.() },
+  })
+  await abortedRun
+  assert.equal(signalAborted, true)
 })

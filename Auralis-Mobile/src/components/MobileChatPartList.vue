@@ -320,10 +320,11 @@ const smoothBuffer: SmoothStreamController = createSmoothStreamBuffer(
     emit('text-progress')
   },
   {
-    minSpeed: 24,
-    baseSpeed: 42,
-    maxSpeed: 240,
-    finishSpeed: 160,
+    minSpeed: 14,
+    baseSpeed: 28,
+    maxSpeed: 105,
+    finishSpeed: 58,
+    speedDampingFactor: 3.8,
     onComplete: () => {
       if (currentStreamingTextId.value) {
         lastCompletedTextId = currentStreamingTextId.value

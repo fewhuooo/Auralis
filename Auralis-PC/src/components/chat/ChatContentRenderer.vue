@@ -47,10 +47,11 @@ smoothBuffer = createSmoothStreamBuffer(
     emit('textProgress')
   },
   {
-    minSpeed: 24, // 蓄水池偏低时的保底拉伸速度，以时间换空间跨越网络空窗
-    baseSpeed: 42, // 自然阅读巡航速度
-    maxSpeed: 240, // 适配高吞吐模型峰值追赶，避免末尾大量堆积
-    finishSpeed: 160, // 流结束收尾平滑排空速度
+    minSpeed: 14, // 蓄水池偏低时的保底拉伸速度，以时间换空间跨越网络空窗
+    baseSpeed: 28, // 温润从容的自然阅读巡航速度
+    maxSpeed: 105, // 限制峰值冲刺上限，防止高并发大段文本突然刷屏
+    finishSpeed: 58, // 流结束收尾平滑排空速度
+    speedDampingFactor: 3.8,
     onComplete: () => {
       if (currentStreamingTextId.value) {
         lastCompletedTextId = currentStreamingTextId.value

@@ -473,13 +473,14 @@ uni-button::after {
 /* Shared AI Chat Primitives */
 .zen-chat-user-bubble {
   padding: 10px 15px;
-  border-radius: 16px 16px 4px 16px;
-  background-color: var(--color-zen-graphite);
-  color: #FFFFFF;
+  border-radius: 18px 18px 6px 18px;
+  background-color: #ECE5D8;
+  color: #262522;
+  border: 1px solid rgba(44, 42, 39, 0.06);
   font-size: var(--text-base);
   line-height: 1.55;
   word-break: break-word;
-  box-shadow: 0 2px 8px rgba(28, 28, 26, 0.08);
+  box-shadow: 0 1px 2px rgba(72, 62, 46, 0.04);
 }
 
 .zen-chat-assistant-bubble {

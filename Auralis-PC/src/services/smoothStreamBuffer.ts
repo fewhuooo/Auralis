@@ -50,34 +50,38 @@ export function computeSmoothStreamTargetSpeed(
 ): number {
   const { minSpeed, baseSpeed, maxSpeed, finishSpeed } = config
   if (isStreamFinished) {
-    return Math.min(maxSpeed, Math.max(finishSpeed, remaining * 3.5))
+    return Math.min(maxSpeed, Math.max(finishSpeed, baseSpeed + remaining * 0.55))
   }
-  if (remaining <= 4) {
+  if (remaining <= 1) {
     return minSpeed
   }
-  if (remaining <= 16) {
-    return Math.min(maxSpeed, baseSpeed + (remaining - 4) * 1.5)
+  if (remaining <= 12) {
+    const t = (remaining - 1) / 11
+    return Math.min(maxSpeed, minSpeed + t * (baseSpeed - minSpeed))
   }
-  if (remaining <= 48) {
-    return Math.min(maxSpeed, baseSpeed + 18 + (remaining - 16) * 2.0)
+  if (remaining <= 80) {
+    return Math.min(maxSpeed, baseSpeed + (remaining - 12) * 0.45)
   }
-  return Math.min(maxSpeed, baseSpeed + 82 + (remaining - 48) * 1.8)
+  if (remaining <= 240) {
+    return Math.min(maxSpeed, baseSpeed + 30.6 + (remaining - 80) * 0.35)
+  }
+  return Math.min(maxSpeed, baseSpeed + 86.6 + (remaining - 240) * 0.25)
 }
 
 export function createSmoothStreamBuffer(
   onUpdate: (displayedText: string) => void,
   options: SmoothStreamOptions = {},
 ): SmoothStreamController {
-  const minSpeed = options.minSpeed ?? 18
+  const minSpeed = options.minSpeed ?? 14
   const baseSpeed = options.baseSpeed ?? 28
-  const maxSpeed = options.maxSpeed ?? 75
-  const finishSpeed = options.finishSpeed ?? 50
-  const damping = options.speedDampingFactor ?? 6.5
+  const maxSpeed = options.maxSpeed ?? 105
+  const finishSpeed = options.finishSpeed ?? 58
+  const damping = options.speedDampingFactor ?? 3.8
 
   let fullText = ''
   let currentCursor = 0
   let displayedLength = 0
-  let currentSpeed = baseSpeed
+  let currentSpeed = minSpeed
   let lastTimestamp = 0
   let rafId: number | null = null
   let isStreamFinished = false
@@ -125,6 +129,7 @@ export function createSmoothStreamBuffer(
       }
     } else {
       isDrained = true
+      currentSpeed = minSpeed
       if (isStreamFinished) {
         if (displayedLength !== fullText.length) {
           displayedLength = fullText.length
@@ -136,7 +141,7 @@ export function createSmoothStreamBuffer(
           options.onComplete?.()
         }
       } else {
-        // 池子暂时见底，挂起等待新批次唤醒
+        // 池子暂时见底，挂起等待新批次唤醒，同时冷却瞬时速度避免下一波整段猛冲
         rafId = null
         lastTimestamp = 0
       }
@@ -203,6 +208,7 @@ export function createSmoothStreamBuffer(
       }
       currentCursor = fullText.length
       displayedLength = fullText.length
+      currentSpeed = minSpeed
       lastTimestamp = 0
       isStreamFinished = true
       isDrained = true
@@ -219,7 +225,7 @@ export function createSmoothStreamBuffer(
       fullText = ''
       currentCursor = 0
       displayedLength = 0
-      currentSpeed = baseSpeed
+      currentSpeed = minSpeed
       lastTimestamp = 0
       isStreamFinished = false
       isDrained = true
