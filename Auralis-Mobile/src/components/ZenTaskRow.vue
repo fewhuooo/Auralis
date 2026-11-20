@@ -46,18 +46,6 @@
         {{ task.subject }}
       </text>
 
-      <picker
-        v-if="!hideScheduleActions && mode === 'pending' && task.id"
-        mode="time"
-        value="09:00"
-        @change="onTimePicked"
-      >
-        <view class="schedule-chip" role="button" aria-label="排入日程">
-          <LineIcon name="clock" size="11px" color="var(--color-sage-ink)" />
-          <text>排期</text>
-        </view>
-      </picker>
-
       <view
         v-if="!hideScheduleActions && mode === 'scheduled' && task.id && task.status !== 'completed'"
         class="row-icon-btn"
@@ -99,7 +87,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'toggle', id: string): void
   (event: 'unschedule', id: string): void
-  (event: 'schedule-time', id: string, hhmm: string): void
   (event: 'delete', id: string, title: string): void
 }>()
 
@@ -112,15 +99,10 @@ const isOverdue = computed(() => {
 })
 
 const showTrailingSlot = computed(() => (
-  props.mode === 'pending' || (!props.hideScheduleActions && Boolean(props.task.id) && props.task.status !== 'completed')
+  props.mode === 'pending'
+    ? Boolean(props.task.subject || props.task.id)
+    : (!props.hideScheduleActions && Boolean(props.task.id) && props.task.status !== 'completed')
 ))
-
-function onTimePicked(event: { detail?: { value?: string } }) {
-  const hhmm = event?.detail?.value
-  if (hhmm && props.task.id) {
-    emit('schedule-time', props.task.id, hhmm)
-  }
-}
 </script>
 
 <style scoped>
@@ -332,25 +314,6 @@ function onTimePicked(event: { detail?: { value?: string } }) {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-}
-
-.schedule-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
-  border: 0.5px solid rgba(139, 154, 110, 0.32);
-  color: var(--color-sage-ink);
-  font-size: var(--text-2xs);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-  transition: background-color 0.16s ease, transform 0.14s ease;
-}
-
-.schedule-chip:active {
-  transform: scale(0.95);
 }
 
 .row-icon-btn {

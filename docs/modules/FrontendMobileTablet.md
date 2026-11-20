@@ -113,7 +113,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
 
 | 页面组 | 当前数据边界 | 剩余缺口 |
 | --- | --- | --- |
-| Dashboard | `useTaskStore` + `useDueReview` + `StudyMetrics`（`statsApi` 传本地 `timeZone`）；移除“继续上次学习”卡片，右栏提供分学科复习快捷入口跳转 `?id=&panel=review` | 真机触控滚动与弱网态待验 |
+| Dashboard | `useTaskStore` + `useSubjectStore` + `StudyMetrics`（`statsApi` 传本地 `timeZone`）；左栏为无底框且无周切换箭头的 7 日日期条、当日日程（可 `×` 移回待办）与待办清单（无行内「排期」按钮）；移除“继续上次学习”卡片，右上方为「学科空间」展示列表（无刷新按钮）点击进入对应工作区 `?id=` | 真机触控滚动与弱网态待验 |
 | Subject Hall | Subject Store → Sync；3 列禅意卡片、大小写去重校验与提交锁 | 多设备新增/改名并发验证 |
 | Workspace | `WorkspaceSourceRail`（`sourceApi` 分页与删除、`uploadSubjectFile` 上传）+ `WorkspaceCenterReader`（`assetApi.downloadUrl` 签名预览、`overviewApi` 正式 Markdown、`useBlockStore` 增改删无 `difficulty`、翻面复习）+ `WorkspaceAiPanel`（严格 `ReadingContext` + 4 字段 `chatScope` 历史隔离，并对齐协议一完整能力：`MobileChatProcessArea`、`MobileChatPartList`、`SaveKnowledgeBlockModal`、停止/取消、`activeRun` 恢复与轮询、`@wheel` 50px 智能滚动及复制） | 真实 MinIO 预览域名、真端 AI 交互、SSE 断流恢复与横屏长时使用待验 |
 | Pomodoro | 与手机共享 `useFocusStore` / `focusController`，通过 `TimerCore` 渲染 | 锁屏与息屏恢复真机走查 |

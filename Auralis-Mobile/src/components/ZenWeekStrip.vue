@@ -1,33 +1,22 @@
 <template>
-  <view class="week-card zen-card" :class="{ 'is-compact': !showNav }">
-    <view v-if="showNav" class="week-nav">
+  <view
+    class="week-card"
+    :class="{
+      'zen-card': !frameless,
+      'is-frameless': frameless,
+      'is-compact': !showHeader && !frameless,
+    }"
+  >
+    <view v-if="showHeader" class="week-nav">
       <text class="week-month num-tabular">{{ monthTitle }}</text>
-      <view class="week-controls">
-        <view
-          v-if="modelValue !== todayKey"
-          class="today-chip"
-          role="button"
-          aria-label="回到今天"
-          @click="emit('jump-today')"
-        >
-          <text>今天</text>
-        </view>
-        <view
-          class="week-arrow"
-          role="button"
-          aria-label="上一周"
-          @click="emit('shift-week', -7)"
-        >
-          <LineIcon name="chevron-left" size="14px" color="var(--text-muted)" />
-        </view>
-        <view
-          class="week-arrow"
-          role="button"
-          aria-label="下一周"
-          @click="emit('shift-week', 7)"
-        >
-          <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
-        </view>
+      <view
+        v-if="modelValue !== todayKey"
+        class="today-chip"
+        role="button"
+        aria-label="回到今天"
+        @click="emit('jump-today')"
+      >
+        <text>今天</text>
       </view>
     </view>
 
@@ -57,7 +46,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import LineIcon from '@/components/LineIcon.vue'
 import { pad2, type WeekDayDescriptor } from '@/utils/dateKey'
 
 const props = defineProps<{
@@ -65,12 +53,12 @@ const props = defineProps<{
   todayKey: string
   days: WeekDayDescriptor[]
   scheduledDates: Set<string>
-  showNav?: boolean
+  showHeader?: boolean
+  frameless?: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
-  (event: 'shift-week', deltaDays: number): void
   (event: 'jump-today'): void
 }>()
 
@@ -95,11 +83,27 @@ const monthTitle = computed(() => {
   padding: 12px 12px 9px;
 }
 
+.week-card.is-frameless {
+  padding: 0;
+  gap: 6px;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .week-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 24px;
   padding: 0 4px;
+}
+
+.week-card.is-frameless .week-nav {
+  padding: 0 2px;
 }
 
 .week-month {
@@ -107,12 +111,6 @@ const monthTitle = computed(() => {
   font-weight: var(--font-weight-bold);
   color: var(--text-secondary);
   letter-spacing: 0.04em;
-}
-
-.week-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .today-chip {
@@ -131,30 +129,6 @@ const monthTitle = computed(() => {
 
 .today-chip:active {
   transform: scale(0.95);
-}
-
-.week-arrow {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: border-color 0.16s ease, transform 0.14s ease;
-}
-
-.week-arrow:hover {
-  border-color: var(--border-accent);
-}
-
-.week-arrow:active {
-  transform: scale(0.92);
 }
 
 .week-strip {

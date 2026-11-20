@@ -20,8 +20,8 @@
           :today-key="todayKey"
           :days="weekDays"
           :scheduled-dates="scheduledDateSet"
-          :show-nav="true"
-          @shift-week="shiftWeek"
+          :show-header="true"
+          :frameless="true"
           @jump-today="jumpToToday"
         />
 
@@ -86,7 +86,6 @@
                   mode="pending"
                   :locked="todo.id ? taskStore.updatingTaskIds.includes(todo.id) : false"
                   @toggle="toggleTaskItem"
-                  @schedule-time="onSchedulePending"
                   @delete="confirmDeleteTodo"
                 />
               </view>
@@ -96,29 +95,29 @@
       </view>
 
       <view class="right-column">
-        <view class="review-card zen-panel">
+        <view class="subjects-card zen-panel">
           <view class="panel-header">
-            <text class="panel-title">待复习</text>
-            <view class="ui-icon-btn sm" role="button" aria-label="刷新待复习" @click="loadDueCounts">
-              <LineIcon name="refresh" size="14px" color="var(--color-sage-ink)" />
-            </view>
+            <text class="panel-title">学科空间</text>
+            <text v-if="subjectStore.subjects.length > 0" class="section-count num-tabular">
+              {{ subjectStore.subjects.length }}
+            </text>
           </view>
 
-          <view v-if="subjectStore.subjects.length === 0" class="review-empty">
+          <view v-if="subjectStore.subjects.length === 0" class="subjects-empty">
             <text class="empty-text">暂无学科</text>
           </view>
 
-          <scroll-view v-else scroll-y :show-scrollbar="false" class="due-subjects-scroll">
-            <view class="due-subject-list">
+          <scroll-view v-else scroll-y :show-scrollbar="false" class="subjects-scroll">
+            <view class="subject-list">
               <view
-                v-for="sub in sortedReviewSubjects"
+                v-for="sub in subjectStore.subjects"
                 :key="sub.id"
-                class="due-subject-row"
-                :class="{ 'is-quiet': (dueCounts[sub.id] ?? 0) === 0 }"
+                class="subject-row"
                 role="button"
-                @click="openSubjectReview(sub.id)"
+                :aria-label="`进入学科 ${sub.name}`"
+                @click="openSubjectWorkspace(sub.id)"
               >
-                <view class="due-sub-left">
+                <view class="subject-row-left">
                   <view class="sub-icon-badge">
                     <LineIcon
                       :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
@@ -128,10 +127,11 @@
                   </view>
                   <text class="sub-name">{{ sub.name }}</text>
                 </view>
-                <view class="due-sub-right">
-                  <text v-if="(dueCounts[sub.id] ?? 0) > 0" class="due-badge active num-tabular">
-                    {{ dueCountText(sub.id) }}
-                  </text>
+                <view class="subject-row-right">
+                  <view class="subject-meta num-tabular">
+                    <LineIcon name="layers" size="12px" color="var(--text-muted)" />
+                    <text>{{ sub.blockCount || 0 }}</text>
+                  </view>
                   <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
                 </view>
               </view>
@@ -241,9 +241,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { reviewApi } from '@/api/reviewApi'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
@@ -279,12 +278,15 @@ const greeting = computed(() => {
 const nowClock = ref(new Date())
 const todayKey = ref(toLocalDateKey(nowClock.value))
 const selectedDateKey = ref(todayKey.value)
-const weekDays = computed(() => getWeekDays(selectedDateKey.value, todayKey.value))
+const weekDays = computed(() => getWeekDays(todayKey.value, todayKey.value))
 const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
 
 function syncClock() {
   nowClock.value = new Date()
   todayKey.value = toLocalDateKey(nowClock.value)
+  if (!weekDays.value.some(day => day.dateKey === selectedDateKey.value)) {
+    selectedDateKey.value = todayKey.value
+  }
   void taskStore.recoverOverdueTasks()
 }
 
@@ -300,12 +302,9 @@ const scheduledDateSet = computed(() => {
   return dates
 })
 
-function shiftWeek(deltaDays: number) {
-  selectedDateKey.value = shiftDateKey(selectedDateKey.value, deltaDays)
-}
-
 function jumpToToday() {
-  todayKey.value = toLocalDateKey(new Date())
+  nowClock.value = new Date()
+  todayKey.value = toLocalDateKey(nowClock.value)
   selectedDateKey.value = todayKey.value
 }
 
@@ -326,12 +325,6 @@ async function toggleTaskItem(id: string) {
 async function unscheduleTaskItem(id: string) {
   await taskStore.unscheduleTask(id)
   uni.showToast({ title: '已移回待办', icon: 'none' })
-}
-
-async function onSchedulePending(taskId: string, hhmm: string) {
-  if (!hhmm) return
-  await taskStore.scheduleTask(taskId, combineLocalDateAndTime(selectedDateKey.value, hhmm))
-  uni.showToast({ title: `已排入 ${hhmm}`, icon: 'none' })
 }
 
 function confirmDeleteTodo(id: string, title: string) {
@@ -434,79 +427,21 @@ async function submitCreateTask() {
   }
 }
 
-const dueCounts = ref<Record<string, number>>({})
-const dueHasMore = ref<Record<string, boolean>>({})
-let dueCountRequestId = 0
-
-const sortedReviewSubjects = computed(() => (
-  [...subjectStore.subjects].sort((a, b) => (dueCounts.value[b.id] ?? 0) - (dueCounts.value[a.id] ?? 0))
-))
-
-function dueCountText(subjectId: string): string {
-  const count = dueCounts.value[subjectId] ?? 0
-  return dueHasMore.value[subjectId] ? `${count}+` : `${count}`
+function openSubjectWorkspace(subjectId: string) {
+  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${subjectId}` })
 }
-
-async function loadDueCounts() {
-  if (!authStore.isAuthenticated || subjectStore.subjects.length === 0) {
-    dueCounts.value = {}
-    dueHasMore.value = {}
-    return
-  }
-  const id = ++dueCountRequestId
-  const generation = authStore.getLoginGeneration()
-  const userId = authStore.user?.id
-  const deviceId = authStore.serverDeviceId
-  const at = new Date().toISOString()
-  const entries = await Promise.all(
-    subjectStore.subjects.map(async (sub) => {
-      try {
-        const page = await reviewApi.queue(at, undefined, sub.id)
-        return {
-          id: sub.id,
-          count: page.items?.length ?? 0,
-          hasMore: Boolean(page.hasMore),
-        }
-      } catch {
-        return null
-      }
-    }),
-  )
-  if (
-    id !== dueCountRequestId
-    || generation !== authStore.getLoginGeneration()
-    || userId !== authStore.user?.id
-    || deviceId !== authStore.serverDeviceId
-  ) return
-  const nextCounts: Record<string, number> = {}
-  const nextMore: Record<string, boolean> = {}
-  for (const item of entries) {
-    if (item) {
-      nextCounts[item.id] = item.count
-      nextMore[item.id] = item.hasMore
-    }
-  }
-  dueCounts.value = nextCounts
-  dueHasMore.value = nextMore
-}
-
-function openSubjectReview(subjectId: string) {
-  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${subjectId}&panel=review` })
-}
-
-watch(() => subjectStore.subjects.map(item => item.id).join(','), () => {
-  void loadDueCounts()
-})
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
-onShow(syncClock)
+onShow(() => {
+  syncClock()
+  void subjectStore.loadSubjects()
+})
 
 onMounted(async () => {
   clockTimer = setInterval(syncClock, 30000)
   await subjectStore.loadSubjects()
   await taskStore.fetchTasks()
-  await loadDueCounts()
 })
 
 onUnmounted(() => {
@@ -667,7 +602,7 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.review-card {
+.subjects-card {
   flex: 1;
   min-height: 0;
   padding: 20px 22px;
@@ -695,26 +630,26 @@ onUnmounted(() => {
   letter-spacing: -0.015em;
 }
 
-.review-empty {
+.subjects-empty {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.due-subjects-scroll {
+.subjects-scroll {
   flex: 1;
   height: 0;
   min-height: 0;
 }
 
-.due-subject-list {
+.subject-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.due-subject-row {
+.subject-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -727,24 +662,19 @@ onUnmounted(() => {
   border: 1px solid var(--glass-border-subtle);
   box-shadow: var(--glass-shadow-subtle);
   cursor: pointer;
-  transition: border-color 0.16s ease, transform 0.14s ease, opacity 0.16s ease, box-shadow 0.16s ease;
+  transition: border-color 0.16s ease, transform 0.14s ease, box-shadow 0.16s ease;
 }
 
-.due-subject-row.is-quiet {
-  opacity: 0.78;
-}
-
-.due-subject-row:hover {
-  opacity: 1;
+.subject-row:hover {
   border-color: var(--border-accent);
   transform: translateX(2px);
 }
 
-.due-subject-row:active {
+.subject-row:active {
   transform: scale(0.985);
 }
 
-.due-sub-left {
+.subject-row-left {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -771,20 +701,20 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.due-sub-right {
+.subject-row-right {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 
-.due-badge {
+.subject-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--font-size-xs);
-  padding: 2px 9px;
-  border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
-  color: var(--color-sage-ink);
-  font-weight: var(--font-weight-bold);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
 }
 
 .create-modal {
@@ -915,7 +845,7 @@ onUnmounted(() => {
   }
 
   .tasks-scroll,
-  .due-subjects-scroll {
+  .subjects-scroll {
     flex: none;
     height: auto;
     max-height: 420px;
