@@ -20,6 +20,7 @@ import { createAiApi } from '../src/api/aiApi.ts'
 import { createSyncApi } from '../src/api/useSyncApi.ts'
 import { createOverviewApi } from '../src/api/overviewApi.ts'
 import { createSourceApi } from '../src/api/sourceApi.ts'
+import { createStatsApi } from '../src/api/statsApi.ts'
 import {
   buildWorkspaceReadingContext,
   doesConversationMatchWorkspaceScope,
@@ -791,4 +792,30 @@ test('useLayoutStore holds exit lock across preload window, cancels stale timers
   assert.equal(store.isReturning, true)
   t.mock.timers.tick(150)
   assert.equal(store.isReturning, false)
+})
+
+test('statsApi.subject requests /api/stats/subjects/{subjectId} with subjectId, days, and timeZone', async () => {
+  const calls = []
+  const api = createStatsApi({
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      return {
+        subjectId: 'sub-1',
+        timeZone: 'Asia/Shanghai',
+        from: '2026-11-14',
+        to: '2026-11-20',
+        daily: [],
+      }
+    },
+  })
+  const res = await api.subject('sub-1', 'Asia/Shanghai', 7)
+  assert.equal(res.subjectId, 'sub-1')
+  assert.deepEqual(calls, [{
+    path: '/api/stats/subjects/{subjectId}',
+    method: 'get',
+    options: {
+      pathParams: { subjectId: 'sub-1' },
+      query: { days: 7, timeZone: 'Asia/Shanghai' },
+    },
+  }])
 })
