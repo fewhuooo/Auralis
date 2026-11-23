@@ -26,9 +26,83 @@
 
       <view class="status-right">
         <template v-if="centerView === 'preview' && selectedSource && previewUrl">
-          <button class="status-pill-btn" @click="openDocument(previewUrl)">新窗口打开</button>
-          <button class="status-pill-btn" @click="copyLink(previewUrl, '已复制链接')">复制链接</button>
-          <text class="status-caption">文件预览</text>
+          <!-- #ifdef H5 -->
+          <view v-if="isCoreDocPreview" class="preview-controls-bar" aria-label="文档预览控制">
+            <view class="preview-control-group">
+              <button
+                type="button"
+                class="preview-ctrl-btn"
+                :disabled="!viewerReady || !zoomState.canZoomOut"
+                aria-label="缩小"
+                title="缩小"
+                @click="docViewerRef?.zoomOut()"
+              >−</button>
+              <text class="preview-ctrl-value num-tabular">{{ zoomState.label }}</text>
+              <button
+                type="button"
+                class="preview-ctrl-btn"
+                :disabled="!viewerReady || !zoomState.canZoomIn"
+                aria-label="放大"
+                title="放大"
+                @click="docViewerRef?.zoomIn()"
+              >＋</button>
+              <button
+                type="button"
+                class="preview-ctrl-btn preview-ctrl-reset"
+                :disabled="!viewerReady || !zoomState.canReset"
+                aria-label="重置缩放"
+                @click="docViewerRef?.resetZoom()"
+              >重置</button>
+            </view>
+
+            <view class="preview-control-group">
+              <button
+                type="button"
+                class="preview-ctrl-btn"
+                :disabled="!viewerReady"
+                aria-label="向左旋转"
+                title="向左旋转"
+                @click="docViewerRef?.rotateLeft()"
+              >
+                <LineIcon name="rotate" size="13px" color="currentColor" />
+              </button>
+              <text class="preview-ctrl-value preview-ctrl-deg num-tabular">{{ previewRotation }}°</text>
+              <button
+                type="button"
+                class="preview-ctrl-btn"
+                :disabled="!viewerReady"
+                aria-label="向右旋转"
+                title="向右旋转"
+                @click="docViewerRef?.rotateRight()"
+              >
+                <LineIcon name="rotate-cw" size="13px" color="currentColor" />
+              </button>
+            </view>
+          </view>
+          <!-- #endif -->
+
+          <view class="preview-utility-actions">
+            <button
+              type="button"
+              class="status-icon-btn"
+              title="新窗口打开"
+              aria-label="新窗口打开"
+              @click="openDocument(previewUrl)"
+            >
+              <LineIcon name="external-link" size="14px" color="var(--text-secondary)" />
+            </button>
+            <button
+              type="button"
+              class="status-icon-btn"
+              title="复制链接"
+              aria-label="复制链接"
+              @click="copyLink(previewUrl, '已复制链接')"
+            >
+              <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
+            </button>
+          </view>
+
+          <text v-if="!isCoreDocPreview" class="status-caption">文件预览</text>
         </template>
         <text v-else-if="centerView === 'preview'" class="status-caption">文件预览</text>
         <text v-else-if="centerView === 'summary'" class="status-caption">AI 总结</text>
@@ -111,12 +185,20 @@
         </scroll-view>
 
         <!-- #ifdef H5 -->
-        <view
-          v-else-if="previewUrl && isPdfMedia(previewMimeType, previewMediaName)"
-          class="pdf-frame-wrap"
-        >
-          <iframe :src="previewUrl" class="pdf-preview-frame" title="PDF 预览" />
-        </view>
+        <WorkspaceDocumentViewer
+          v-else-if="previewUrl && isCoreFileViewerKind(activePreviewKind)"
+          ref="docViewerRef"
+          :url="previewUrl"
+          :file-name="previewCoreFileName"
+          :mime-type="previewMimeType"
+          :preview-kind="activePreviewKind"
+          :source-key="`${selectedSource.id}:${previewUrl}`"
+          @ready-change="viewerReady = $event"
+          @zoom-change="zoomState = $event"
+          @rotation-change="previewRotation = $event"
+          @page-change="handleViewerPageChange"
+          @open-external="openDocument(previewUrl)"
+        />
         <!-- #endif -->
 
         <view v-else-if="previewUrl" class="empty-state">
@@ -141,6 +223,35 @@
           <text class="state-title">暂无预览</text>
           <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">获取预览</button>
         </view>
+
+        <!-- #ifdef H5 -->
+        <view
+          v-if="isCoreDocPreview && viewerReady && previewPageCount > 1"
+          class="floating-page-pill"
+          role="navigation"
+          aria-label="文档翻页"
+        >
+          <view
+            class="floating-page-btn"
+            :class="{ 'is-disabled': previewPage <= 1 }"
+            role="button"
+            aria-label="上一页"
+            @click="previewPage > 1 && docViewerRef?.prevPage()"
+          >
+            <LineIcon name="chevron-left" size="14px" color="currentColor" />
+          </view>
+          <text class="floating-page-text num-tabular">{{ previewPage }} / {{ previewPageCount }}</text>
+          <view
+            class="floating-page-btn"
+            :class="{ 'is-disabled': previewPage >= previewPageCount }"
+            role="button"
+            aria-label="下一页"
+            @click="previewPage < previewPageCount && docViewerRef?.nextPage()"
+          >
+            <LineIcon name="chevron-right" size="14px" color="currentColor" />
+          </view>
+        </view>
+        <!-- #endif -->
       </view>
 
       <!-- 2. 总结与大纲全屏阅读视图 -->
@@ -364,11 +475,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import WorkspaceReviewPane from '@/components/tablet/workspace/WorkspaceReviewPane.vue'
 import WorkspaceStatsPane from '@/components/tablet/workspace/WorkspaceStatsPane.vue'
+// #ifdef H5
+import WorkspaceDocumentViewer from '@/components/tablet/workspace/WorkspaceDocumentViewer.vue'
+// #endif
+import type { DocViewerZoomPayload } from '@/components/tablet/workspace/WorkspaceDocumentViewer.vue'
 import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
@@ -383,6 +498,11 @@ import {
   isPdfMedia,
 } from '@/utils/sourceFormat'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
+import {
+  buildPreviewFileName,
+  isCoreFileViewerKind,
+  resolveTabletPreviewKind,
+} from '@/utils/tabletFilePreview'
 
 export type WorkspaceCenterView = 'onboarding' | 'preview' | 'summary' | 'blocks' | 'review' | 'stats'
 
@@ -437,11 +557,70 @@ const activeSummaryMarkdown = computed(() => {
     : (overview.outlineMarkdown || '')
 })
 
-const previewMediaName = computed(() => {
-  const orig = props.previewOriginalName || ''
-  if (orig && /\.[a-z0-9]{2,6}$/i.test(orig)) return orig
-  return props.selectedSource?.title || orig
+interface DocViewerHandle {
+  zoomIn: () => void
+  zoomOut: () => void
+  resetZoom: () => void
+  rotateLeft: () => void
+  rotateRight: () => void
+  prevPage: () => void
+  nextPage: () => void
+}
+
+const DEFAULT_VIEWER_ZOOM: DocViewerZoomPayload = {
+  scale: 1,
+  label: '100%',
+  canZoomIn: true,
+  canZoomOut: true,
+  canReset: false,
+}
+
+const docViewerRef = ref<DocViewerHandle | null>(null)
+const viewerReady = ref(false)
+const zoomState = ref<DocViewerZoomPayload>({ ...DEFAULT_VIEWER_ZOOM })
+const previewRotation = ref(0)
+const previewPage = ref(1)
+const previewPageCount = ref(1)
+
+const previewMediaName = computed(() => (
+  buildPreviewFileName(props.previewOriginalName, props.selectedSource?.title || '', props.previewMimeType)
+))
+
+const activePreviewKind = computed(() => (
+  resolveTabletPreviewKind(previewMediaName.value, props.previewMimeType)
+))
+
+const isCoreDocPreview = computed(() => {
+  let enabled = false
+  // #ifdef H5
+  enabled = (
+    Boolean(props.previewUrl)
+    && !isImageMedia(props.previewMimeType, previewMediaName.value)
+    && isCoreFileViewerKind(activePreviewKind.value)
+  )
+  // #endif
+  return enabled
 })
+
+const previewCoreFileName = computed(() => (
+  buildPreviewFileName(props.previewOriginalName, props.selectedSource?.title || '', props.previewMimeType)
+))
+
+function handleViewerPageChange(page: number, pageCount: number) {
+  previewPage.value = page
+  previewPageCount.value = pageCount
+}
+
+watch(
+  () => [props.selectedSource?.id, props.previewUrl],
+  () => {
+    viewerReady.value = false
+    zoomState.value = { ...DEFAULT_VIEWER_ZOOM }
+    previewRotation.value = 0
+    previewPage.value = 1
+    previewPageCount.value = 1
+  },
+)
 
 function formatPreviewFileType(name: string, mime: string): string {
   if (isPdfMedia(mime, name)) return 'PDF'
@@ -586,15 +765,99 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.status-pill-btn {
-  padding: 4px 10px;
+.preview-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 4px;
   border-radius: var(--radius-full);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-tertiary);
+  background: var(--glass-sub-bg);
+  border: 1px solid var(--border-subtle);
+}
+
+.preview-ctrl-btn {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
   color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.preview-ctrl-btn::after {
+  border: none;
+}
+
+.preview-ctrl-btn:hover:not(:disabled) {
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--text-primary);
+}
+
+.preview-ctrl-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.preview-ctrl-reset {
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.preview-ctrl-value {
+  min-width: 38px;
+  text-align: center;
   font-size: 11.5px;
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.preview-ctrl-deg {
+  min-width: 28px;
+}
+
+.preview-utility-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--glass-sub-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.status-icon-btn::after {
+  border: none;
+}
+
+.status-icon-btn:hover {
+  border-color: var(--border-accent);
+  background: var(--color-bg-tertiary);
 }
 
 .status-caption {
@@ -637,6 +900,7 @@ onBeforeUnmount(() => {
 }
 
 .preview-stage {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -739,20 +1003,57 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.pdf-frame-wrap {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  padding: 12px 16px 16px 32px;
-  box-sizing: border-box;
+.floating-page-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(250, 247, 242, 0.9);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 8px 24px rgba(45, 55, 40, 0.1), 0 1px 3px rgba(45, 55, 40, 0.05);
 }
 
-.pdf-preview-frame {
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: #FFFFFF;
+.floating-page-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.14s ease, transform 0.12s ease;
+}
+
+.floating-page-btn:hover:not(.is-disabled) {
+  background: rgba(139, 154, 110, 0.14);
+}
+
+.floating-page-btn:active:not(.is-disabled) {
+  transform: scale(0.92);
+}
+
+.floating-page-btn.is-disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.floating-page-text {
+  min-width: 56px;
+  padding: 0 4px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
 }
 
 .doc-meta-card {
