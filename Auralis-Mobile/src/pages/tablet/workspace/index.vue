@@ -102,6 +102,7 @@
       <WorkspaceCenterReader
         :center-view="centerView"
         :tier2-open="tier2Open"
+        :initializing="workspaceBooting"
         :subject-id="subjectId"
         :subject-name="subjectName"
         :subject-icon="activeSubject?.icon"
@@ -317,6 +318,7 @@ const blockStore = useBlockStore()
 
 const subjectId = ref('')
 const requestedPanel = ref('')
+const workspaceBooting = ref(true)
 const tier2Open = ref(true)
 const tier2Mode = ref<'files' | 'outline'>('files')
 const centerView = ref<WorkspaceCenterView>('onboarding')
@@ -1023,6 +1025,7 @@ onLoad((options) => {
   if (typeof panel === 'string') {
     requestedPanel.value = panel
     if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+      workspaceBooting.value = false
       centerView.value = panel
       tier2Open.value = false
     } else if (panel === 'overview') {
@@ -1037,18 +1040,22 @@ onMounted(async () => {
     window.addEventListener('resize', handleWindowResize)
   }
   const fence = captureFence()
-  await subjectStore.loadSubjects()
-  if (fence.generation !== authStore.getLoginGeneration()) return
-  if (!subjectId.value) {
-    const fallbackId = subjectStore.activeSubjectId || subjectStore.subjects[0]?.id || ''
-    if (!fallbackId) {
-      uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
-      return
+  try {
+    await subjectStore.loadSubjects()
+    if (fence.generation !== authStore.getLoginGeneration()) return
+    if (!subjectId.value) {
+      const fallbackId = subjectStore.activeSubjectId || subjectStore.subjects[0]?.id || ''
+      if (!fallbackId) {
+        uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+        return
+      }
+      subjectId.value = fallbackId
+      subjectStore.setActiveSubject(fallbackId)
     }
-    subjectId.value = fallbackId
-    subjectStore.setActiveSubject(fallbackId)
+    await reloadAll()
+  } finally {
+    workspaceBooting.value = false
   }
-  await reloadAll()
 })
 
 onBeforeUnmount(() => {

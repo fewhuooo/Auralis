@@ -6,21 +6,33 @@
         v-show="!errorMessage"
         ref="surfaceRef"
         class="doc-viewer-surface"
+        :class="{ 'is-ready': isReady }"
       ></div>
     </view>
 
-    <view v-if="loading && !errorMessage" class="doc-viewer-overlay" role="status">
-      <view class="doc-viewer-status-card zen-card">
-        <view class="doc-spinner" aria-hidden="true"></view>
-        <text class="doc-status-title">{{ statusLabel }}</text>
-        <view v-if="downloadProgress !== null" class="doc-progress-track">
-          <view class="doc-progress-fill" :style="{ width: `${downloadProgress}%` }"></view>
+    <Transition name="doc-overlay-fade">
+      <view v-if="loading && !errorMessage" class="doc-viewer-overlay" role="status">
+        <view class="doc-loading-stage">
+          <view class="doc-sheet-placeholder zen-card" aria-hidden="true">
+            <view class="doc-sheet-kicker"></view>
+            <view class="doc-sheet-title"></view>
+            <view class="doc-sheet-block"></view>
+            <view class="doc-sheet-line"></view>
+            <view class="doc-sheet-line is-short"></view>
+          </view>
+          <view class="doc-viewer-status-pill zen-card">
+            <view class="doc-spinner" aria-hidden="true"></view>
+            <text class="doc-status-title">{{ statusLabel }}</text>
+            <view v-if="downloadProgress !== null" class="doc-progress-track">
+              <view class="doc-progress-fill" :style="{ width: `${downloadProgress}%` }"></view>
+            </view>
+            <text v-else class="doc-status-sub">{{ fileName }}</text>
+          </view>
         </view>
-        <text v-else class="doc-status-sub">{{ fileName }}</text>
       </view>
-    </view>
+    </Transition>
 
-    <view v-else-if="errorMessage" class="doc-viewer-overlay" role="alert">
+    <view v-if="errorMessage" class="doc-viewer-overlay" role="alert">
       <view class="doc-viewer-error-card zen-card">
         <text class="doc-error-title">文档暂时无法在线预览</text>
         <text class="doc-error-desc">{{ errorMessage }}</text>
@@ -96,6 +108,7 @@ const shellBounds = ref<{ width: number; height: number }>({ width: 0, height: 0
 
 let loadToken = 0
 let viewerToken = 0
+let fittedScale: number | null = null
 let cachedRuntimeAssetBase: string | null = null
 let fetchAbort: AbortController | null = null
 let waitAbort: AbortController | null = null
@@ -150,13 +163,63 @@ function resolveHtmlElement(raw: HTMLElement | { $el?: unknown } | null): HTMLEl
 
 function toZoomPayload(state: FileViewerZoomState | null | undefined): DocViewerZoomPayload {
   if (!state) return { ...DEFAULT_ZOOM }
+  const canReset = fittedScale !== null
+    ? Math.abs(state.scale - fittedScale) > 0.015
+    : state.canReset
   return {
     scale: state.scale,
     label: state.label,
     canZoomIn: state.canZoomIn,
     canZoomOut: state.canZoomOut,
-    canReset: state.canReset,
+    canReset,
   }
+}
+
+function waitForSettledPaint(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    let frameOne: number | ReturnType<typeof setTimeout> | null = null
+    let frameTwo: number | ReturnType<typeof setTimeout> | null = null
+    const useRaf = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+
+    const cancelPending = () => {
+      if (frameOne !== null) {
+        if (useRaf) window.cancelAnimationFrame(Number(frameOne))
+        else clearTimeout(frameOne)
+        frameOne = null
+      }
+      if (frameTwo !== null) {
+        if (useRaf) window.cancelAnimationFrame(Number(frameTwo))
+        else clearTimeout(frameTwo)
+        frameTwo = null
+      }
+    }
+
+    const onAbort = () => {
+      cancelPending()
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+    const schedule = (cb: () => void): number | ReturnType<typeof setTimeout> => (
+      useRaf ? window.requestAnimationFrame(() => cb()) : setTimeout(cb, 16)
+    )
+    frameOne = schedule(() => {
+      frameOne = null
+      if (signal.aborted) return
+      frameTwo = schedule(() => {
+        frameTwo = null
+        signal.removeEventListener('abort', onAbort)
+        if (signal.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'))
+          return
+        }
+        resolve()
+      })
+    })
+  })
 }
 
 type DivRenderHandler = FileRenderHandler<FileViewerRenderedInstance, HTMLDivElement>
@@ -251,6 +314,11 @@ async function downloadBlobWithProgress(
   }
 }
 
+function isPptxPresentation(fileName: string, mimeType: string): boolean {
+  if (/\.pptx$/i.test(fileName.trim())) return true
+  return mimeType.toLowerCase().includes('presentationml')
+}
+
 function isAbortException(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
@@ -265,6 +333,16 @@ function formatLoadError(error: unknown): string {
 
 function handleViewerEvent(event: FileViewerEvent, token: number): void {
   if (token !== loadToken) return
+  if (event.type === 'fit-change') {
+    if (event.payload.applied && typeof event.payload.scale === 'number' && Number.isFinite(event.payload.scale)) {
+      fittedScale = event.payload.scale
+    }
+    const latestZoom = viewer?.getZoomState()
+    if (latestZoom) {
+      emit('zoom-change', toZoomPayload(latestZoom))
+    }
+    return
+  }
   if (event.type === 'zoom-change') {
     emit('zoom-change', toZoomPayload(event.payload))
     return
@@ -372,6 +450,7 @@ function abortActiveWork(): void {
 
 async function loadDocument(): Promise<void> {
   const token = ++loadToken
+  fittedScale = null
   abortActiveWork()
   loading.value = Boolean(props.url)
   phase.value = 'downloading'
@@ -472,15 +551,20 @@ async function loadDocument(): Promise<void> {
     await destroyActiveViewer('replace')
     if (token !== loadToken) return
 
+    const isPptx = isPptxPresentation(props.fileName, props.mimeType)
     const instance = createViewer(surfaceEl, {
       options: {
         styleIsolation: 'none',
         theme: 'light',
         toolbar: false,
-        fit: {
-          mode: 'width',
-          resize: 'until-interaction',
-        },
+        fit: isPptx
+          ? undefined
+          : {
+              mode: 'width',
+              resize: 'until-interaction',
+              padding: 28,
+              maxScale: 1,
+            },
         pdf: {
           toolbar: false,
           navigation: false,
@@ -525,15 +609,22 @@ async function loadDocument(): Promise<void> {
     await waitForPdfReadiness(waitController.signal)
     if (token !== loadToken || waitController.signal.aborted) return
 
-    isReady.value = true
+    await waitForSettledPaint(waitController.signal)
+    if (token !== loadToken || waitController.signal.aborted) return
+
     const finalZoom = instance.getZoomState()
-    if (finalZoom) emit('zoom-change', toZoomPayload(finalZoom))
+    if (finalZoom && Number.isFinite(finalZoom.scale) && finalZoom.scale > 0) {
+      fittedScale = finalZoom.scale
+      emit('zoom-change', toZoomPayload(finalZoom))
+    }
     const finalView = instance.getViewState()
     if (finalView) {
       if (typeof finalView.page === 'number') currentPage.value = finalView.page
       if (typeof finalView.pageCount === 'number') totalPages.value = Math.max(1, finalView.pageCount)
       emit('page-change', currentPage.value, totalPages.value)
     }
+    isReady.value = true
+    loading.value = false
     emit('ready-change', true)
     await flushPendingActions(token, instance)
   } catch (error) {
@@ -591,7 +682,20 @@ onBeforeUnmount(() => {
 defineExpose({
   zoomIn: () => runViewerAction(instance => instance.zoomIn()),
   zoomOut: () => runViewerAction(instance => instance.zoomOut()),
-  resetZoom: () => runViewerAction(instance => instance.resetZoom()),
+  resetZoom: () => runViewerAction(async (instance) => {
+    const actionToken = loadToken
+    if (isPptxPresentation(props.fileName, props.mimeType)) {
+      await instance.resetZoom()
+    } else {
+      await instance.fitToView()
+    }
+    if (actionToken !== loadToken || viewer !== instance) return
+    const next = instance.getZoomState()
+    if (next && Number.isFinite(next.scale) && next.scale > 0) {
+      fittedScale = next.scale
+      emit('zoom-change', toZoomPayload(next))
+    }
+  }),
   rotateLeft: () => rotate(-90),
   rotateRight: () => rotate(90),
   prevPage: () => runViewerAction(instance => (
@@ -637,9 +741,62 @@ defineExpose({
   background: var(--color-bg-primary, #F7F2EB);
   --file-viewer-bg: var(--color-bg-primary, #F7F2EB);
   --file-viewer-render-surface-background: var(--color-bg-primary, #F7F2EB);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(107, 119, 98, 0.28) transparent !important;
+  -ms-overflow-style: auto !important;
 }
 
-.doc-viewer-surface :deep(.image-toolbar) {
+.doc-viewer-surface.is-ready {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-viewer-surface :deep(.docx-fit-viewer),
+.doc-viewer-surface :deep(.msdoc-zoom-viewer),
+.doc-viewer-surface :deep(.pdf-wrapper) {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(107, 119, 98, 0.28) transparent !important;
+  -ms-overflow-style: auto !important;
+}
+
+.doc-viewer-surface::-webkit-scrollbar,
+.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar),
+.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar),
+.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar) {
+  display: block !important;
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.doc-viewer-surface::-webkit-scrollbar-track,
+.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar-track),
+.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar-track),
+.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar-track) {
+  background: transparent !important;
+}
+
+.doc-viewer-surface::-webkit-scrollbar-thumb,
+.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar-thumb),
+.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar-thumb),
+.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar-thumb) {
+  background: rgba(107, 119, 98, 0.26) !important;
+  border-radius: 999px !important;
+}
+
+.doc-viewer-surface::-webkit-scrollbar-thumb:hover,
+.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar-thumb:hover),
+.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar-thumb:hover),
+.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar-thumb:hover) {
+  background: rgba(107, 119, 98, 0.42) !important;
+}
+
+.doc-viewer-surface :deep(.image-toolbar),
+.doc-viewer-surface :deep(.pdf-state:not(.pdf-state--error)),
+.doc-viewer-surface :deep(.pptx-loading),
+.doc-viewer-surface :deep(.ppt-binary-loading) {
   display: none !important;
 }
 
@@ -651,23 +808,38 @@ defineExpose({
   background: transparent !important;
 }
 
-.doc-viewer-surface :deep(.pdf-shell) {
-  padding-left: 14px;
+.doc-viewer-surface :deep(.pdfViewer) {
+  margin: 0 auto;
+  padding: 20px 14px 88px !important;
 }
 
-.doc-viewer-surface :deep(.pdf-pages),
+.doc-viewer-surface :deep(.pdfViewer .page) {
+  border-radius: 6px;
+  box-shadow: 0 6px 22px rgba(45, 55, 40, 0.08), 0 1px 4px rgba(45, 55, 40, 0.04);
+}
+
 .doc-viewer-surface :deep(.pptx-viewer-shell),
 .doc-viewer-surface :deep(.ppt-binary-shell) {
-  padding-bottom: 88px !important;
+  padding: 20px 18px 88px !important;
 }
 
 .doc-viewer-surface :deep(.docx-wrapper) {
-  padding: 16px 20px 88px 30px !important;
+  width: max-content !important;
+  min-width: 100% !important;
+  padding: 20px 14px 88px !important;
+  box-sizing: border-box;
 }
 
-.doc-viewer-surface :deep(.docx-wrapper > section.docx) {
+.doc-viewer-surface :deep(.docx-page-frame),
+.doc-viewer-surface :deep(.docx-flow-frame) {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.doc-viewer-surface :deep(.docx-page-frame > section.docx),
+.doc-viewer-surface :deep(.docx-flow-frame > section.docx) {
   border-radius: 10px;
-  box-shadow: 0 4px 18px rgba(45, 55, 40, 0.08);
+  box-shadow: 0 6px 24px rgba(45, 55, 40, 0.08), 0 1px 4px rgba(45, 55, 40, 0.04) !important;
   border: 1px solid rgba(45, 55, 40, 0.06);
 }
 
@@ -679,13 +851,111 @@ defineExpose({
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(247, 242, 235, 0.88);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--color-bg-primary, #F7F2EB);
   box-sizing: border-box;
 }
 
-.doc-viewer-status-card,
+.doc-overlay-fade-enter-active,
+.doc-overlay-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.doc-overlay-fade-enter-from,
+.doc-overlay-fade-leave-to {
+  opacity: 0;
+}
+
+.doc-loading-stage {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  height: min(460px, 78%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.doc-sheet-placeholder {
+  width: 100%;
+  height: 100%;
+  padding: 36px 40px;
+  border-radius: 16px;
+  background: rgba(255, 253, 249, 0.88);
+  border: 1px solid var(--border-subtle, rgba(45, 55, 40, 0.08));
+  box-shadow: 0 12px 32px rgba(45, 55, 40, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.doc-sheet-kicker,
+.doc-sheet-title,
+.doc-sheet-block,
+.doc-sheet-line {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(139, 154, 110, 0.08) 0%,
+    rgba(139, 154, 110, 0.16) 50%,
+    rgba(139, 154, 110, 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: docSheetShimmer 1.8s ease-in-out infinite;
+}
+
+.doc-sheet-kicker {
+  width: 34%;
+  height: 12px;
+  margin: 0 auto;
+}
+
+.doc-sheet-title {
+  width: 56%;
+  height: 24px;
+  margin: 4px auto 8px;
+}
+
+.doc-sheet-block {
+  width: 100%;
+  flex: 1;
+  min-height: 140px;
+  border-radius: 12px;
+}
+
+.doc-sheet-line {
+  width: 82%;
+  height: 14px;
+}
+
+.doc-sheet-line.is-short {
+  width: 58%;
+}
+
+@keyframes docSheetShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.doc-viewer-status-pill {
+  position: absolute;
+  width: min(320px, calc(100% - 32px));
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: var(--glass-surface-strong, rgba(252, 249, 244, 0.94));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 32px rgba(45, 55, 40, 0.1), 0 2px 6px rgba(45, 55, 40, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
 .doc-viewer-error-card {
   width: 100%;
   max-width: 360px;

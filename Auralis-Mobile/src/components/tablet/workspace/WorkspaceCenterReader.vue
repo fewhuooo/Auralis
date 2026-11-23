@@ -25,9 +25,9 @@
       </view>
 
       <view class="status-right">
-        <template v-if="centerView === 'preview' && selectedSource && previewUrl">
+        <template v-if="centerView === 'preview' && selectedSource && (previewUrl || (previewLoading && showCorePreviewControls))">
           <!-- #ifdef H5 -->
-          <view v-if="isCoreDocPreview" class="preview-controls-bar" aria-label="文档预览控制">
+          <view v-if="showCorePreviewControls" class="preview-controls-bar" aria-label="文档预览控制">
             <view class="preview-control-group">
               <button
                 type="button"
@@ -85,24 +85,26 @@
             <button
               type="button"
               class="status-icon-btn"
+              :disabled="!previewUrl"
               title="新窗口打开"
               aria-label="新窗口打开"
-              @click="openDocument(previewUrl)"
+              @click="previewUrl && openDocument(previewUrl)"
             >
               <LineIcon name="external-link" size="14px" color="var(--text-secondary)" />
             </button>
             <button
               type="button"
               class="status-icon-btn"
+              :disabled="!previewUrl"
               title="复制链接"
               aria-label="复制链接"
-              @click="copyLink(previewUrl, '已复制链接')"
+              @click="previewUrl && copyLink(previewUrl, '已复制链接')"
             >
               <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
             </button>
           </view>
 
-          <text v-if="!isCoreDocPreview" class="status-caption">文件预览</text>
+          <text v-if="!showCorePreviewControls" class="status-caption">文件预览</text>
         </template>
         <text v-else-if="centerView === 'preview'" class="status-caption">文件预览</text>
         <text v-else-if="centerView === 'summary'" class="status-caption">AI 总结</text>
@@ -144,9 +146,19 @@
           </text>
         </view>
 
-        <view v-if="previewLoading" class="preview-skeletons">
-          <view class="preview-skeleton-hero ui-shimmer"></view>
-          <view class="preview-skeleton-line ui-shimmer"></view>
+        <view v-if="previewLoading" class="reader-loading-stage" role="status">
+          <view class="reader-sheet-placeholder zen-card" aria-hidden="true">
+            <view class="reader-sheet-kicker"></view>
+            <view class="reader-sheet-title"></view>
+            <view class="reader-sheet-block"></view>
+            <view class="reader-sheet-line"></view>
+            <view class="reader-sheet-line is-short"></view>
+          </view>
+          <view class="reader-status-pill zen-card">
+            <view class="reader-spinner" aria-hidden="true"></view>
+            <text class="reader-status-title">正在准备文档预览…</text>
+            <text class="reader-status-sub">{{ selectedSource.title || previewOriginalName || '加载文档中' }}</text>
+          </view>
         </view>
 
         <view v-else-if="previewError" class="empty-state">
@@ -456,7 +468,22 @@
         @open-review="emit('open-review')"
       />
 
-      <!-- 6. 默认学科欢迎引导 -->
+      <!-- 6. 初始化过渡 / 默认学科欢迎引导 -->
+      <view v-else-if="initializing" class="reader-loading-stage" role="status">
+        <view class="reader-sheet-placeholder zen-card" aria-hidden="true">
+          <view class="reader-sheet-kicker"></view>
+          <view class="reader-sheet-title"></view>
+          <view class="reader-sheet-block"></view>
+          <view class="reader-sheet-line"></view>
+          <view class="reader-sheet-line is-short"></view>
+        </view>
+        <view class="reader-status-pill zen-card">
+          <view class="reader-spinner" aria-hidden="true"></view>
+          <text class="reader-status-title">正在进入学科工作区…</text>
+          <text class="reader-status-sub">{{ subjectName || '加载学习资料中' }}</text>
+        </view>
+      </view>
+
       <view v-else class="workspace-onboarding">
         <view class="onboarding-halo is-large">
           <LineIcon :name="`subj-${safeIcon}`" size="34px" color="var(--color-sage-ink)" />
@@ -518,6 +545,7 @@ export interface WorkspaceSummaryTarget {
 const props = defineProps<{
   centerView: WorkspaceCenterView
   tier2Open: boolean
+  initializing?: boolean
   subjectId: string
   subjectName: string
   subjectIcon?: string
@@ -595,6 +623,18 @@ const isCoreDocPreview = computed(() => {
   // #ifdef H5
   enabled = (
     Boolean(props.previewUrl)
+    && !isImageMedia(props.previewMimeType, previewMediaName.value)
+    && isCoreFileViewerKind(activePreviewKind.value)
+  )
+  // #endif
+  return enabled
+})
+
+const showCorePreviewControls = computed(() => {
+  let enabled = false
+  // #ifdef H5
+  enabled = (
+    Boolean(props.selectedSource?.assetId)
     && !isImageMedia(props.previewMimeType, previewMediaName.value)
     && isCoreFileViewerKind(activePreviewKind.value)
   )
@@ -855,9 +895,14 @@ onBeforeUnmount(() => {
   border: none;
 }
 
-.status-icon-btn:hover {
+.status-icon-btn:hover:not(:disabled) {
   border-color: var(--border-accent);
   background: var(--color-bg-tertiary);
+}
+
+.status-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .status-caption {
@@ -956,22 +1001,127 @@ onBeforeUnmount(() => {
   color: var(--color-sage-ink);
 }
 
-.preview-skeletons {
-  padding: 24px 28px;
+.reader-loading-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  background: var(--color-bg-primary, #F7F2EB);
+  box-sizing: border-box;
+}
+
+.reader-sheet-placeholder {
+  width: 100%;
+  max-width: 560px;
+  height: min(460px, 78%);
+  padding: 36px 40px;
+  border-radius: 16px;
+  background: rgba(255, 253, 249, 0.88);
+  border: 1px solid var(--border-subtle, rgba(45, 55, 40, 0.08));
+  box-shadow: 0 12px 32px rgba(45, 55, 40, 0.06);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.preview-skeleton-hero {
-  height: 240px;
-  border-radius: 16px;
-}
-
-.preview-skeleton-line {
-  height: 18px;
-  width: 60%;
+.reader-sheet-kicker,
+.reader-sheet-title,
+.reader-sheet-block,
+.reader-sheet-line {
   border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(139, 154, 110, 0.08) 0%,
+    rgba(139, 154, 110, 0.16) 50%,
+    rgba(139, 154, 110, 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: readerSheetShimmer 1.8s ease-in-out infinite;
+}
+
+.reader-sheet-kicker {
+  width: 34%;
+  height: 12px;
+  margin: 0 auto;
+}
+
+.reader-sheet-title {
+  width: 56%;
+  height: 24px;
+  margin: 4px auto 8px;
+}
+
+.reader-sheet-block {
+  width: 100%;
+  flex: 1;
+  min-height: 140px;
+  border-radius: 12px;
+}
+
+.reader-sheet-line {
+  width: 82%;
+  height: 14px;
+}
+
+.reader-sheet-line.is-short {
+  width: 58%;
+}
+
+@keyframes readerSheetShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.reader-status-pill {
+  position: absolute;
+  width: min(320px, calc(100% - 48px));
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: var(--glass-surface-strong, rgba(252, 249, 244, 0.94));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 32px rgba(45, 55, 40, 0.1), 0 2px 6px rgba(45, 55, 40, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.reader-spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(139, 154, 110, 0.24);
+  border-top-color: var(--color-zen-sage, #8B9A6E);
+  animation: readerSpin 0.8s linear infinite;
+}
+
+@keyframes readerSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.reader-status-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reader-status-sub {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-scroll {
