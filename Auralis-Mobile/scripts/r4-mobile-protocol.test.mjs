@@ -30,6 +30,11 @@ import { createLocalDataScope } from '../src/services/localDataScope.ts'
 import { createSseDecoder } from '../src/api/sse.ts'
 import { createRoutePreloader } from '../src/utils/pagePreload.ts'
 import { useLayoutStore } from '../src/store/useLayoutStore.ts'
+import {
+  buildPreviewFileName,
+  isCoreFileViewerKind,
+  resolveTabletPreviewKind,
+} from '../src/utils/tabletFilePreview.ts'
 
 test('resolves H5 and mini-program service addresses only from environment values', () => {
   const h5 = resolveRuntimeConfig({
@@ -818,4 +823,44 @@ test('statsApi.subject requests /api/stats/subjects/{subjectId} with subjectId, 
       query: { days: 7, timeZone: 'Asia/Shanghai' },
     },
   }])
+})
+
+test('tabletFilePreview resolves pdf, word, presentation, image, MIME fallback, and safe file names', () => {
+  assert.equal(resolveTabletPreviewKind('学生操作手册2026.pdf'), 'pdf')
+  assert.equal(resolveTabletPreviewKind('计划书_V24.5.docx'), 'word')
+  assert.equal(resolveTabletPreviewKind('lecture.DOC'), 'word')
+  assert.equal(resolveTabletPreviewKind('notes.rtf'), 'word')
+  assert.equal(resolveTabletPreviewKind('intro.odt'), 'word')
+  assert.equal(resolveTabletPreviewKind('slides.pptx'), 'presentation')
+  assert.equal(resolveTabletPreviewKind('slides.ppt'), 'presentation')
+  assert.equal(resolveTabletPreviewKind('diagram.PNG'), 'image')
+  assert.equal(resolveTabletPreviewKind('raw-blob', 'application/pdf'), 'pdf')
+  assert.equal(
+    resolveTabletPreviewKind('raw-blob', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+    'word',
+  )
+  assert.equal(
+    resolveTabletPreviewKind('raw-blob', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+    'presentation',
+  )
+  assert.equal(resolveTabletPreviewKind('archive.zip', 'application/zip'), 'unsupported')
+
+  assert.equal(isCoreFileViewerKind('pdf'), true)
+  assert.equal(isCoreFileViewerKind('word'), true)
+  assert.equal(isCoreFileViewerKind('presentation'), true)
+  assert.equal(isCoreFileViewerKind('image'), false)
+  assert.equal(isCoreFileViewerKind('unsupported'), false)
+
+  assert.equal(
+    buildPreviewFileName('e8ab6e14-7013-43aa', '学生操作手册2026.pdf', 'application/pdf'),
+    '学生操作手册2026.pdf',
+  )
+  assert.equal(
+    buildPreviewFileName('download-file', '未命名资料', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+    'download-file.docx',
+  )
+  assert.equal(
+    buildPreviewFileName('课件_V1.pptx', '课件', ''),
+    '课件_V1.pptx',
+  )
 })
