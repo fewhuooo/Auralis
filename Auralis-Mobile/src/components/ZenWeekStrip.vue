@@ -9,15 +9,6 @@
   >
     <view v-if="showHeader" class="week-nav">
       <text class="week-month num-tabular">{{ monthTitle }}</text>
-      <view
-        v-if="modelValue !== todayKey"
-        class="today-chip"
-        role="button"
-        aria-label="回到今天"
-        @click="emit('jump-today')"
-      >
-        <text>今天</text>
-      </view>
     </view>
 
     <view class="week-strip">
@@ -50,7 +41,6 @@ import { pad2, type WeekDayDescriptor } from '@/utils/dateKey'
 
 const props = defineProps<{
   modelValue: string
-  todayKey: string
   days: WeekDayDescriptor[]
   scheduledDates: Set<string>
   showHeader?: boolean
@@ -59,7 +49,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
-  (event: 'jump-today'): void
 }>()
 
 const monthTitle = computed(() => {
@@ -111,24 +100,6 @@ const monthTitle = computed(() => {
   font-weight: var(--font-weight-bold);
   color: var(--text-secondary);
   letter-spacing: 0.04em;
-}
-
-.today-chip {
-  height: 24px;
-  padding: 0 9px;
-  border-radius: var(--radius-full);
-  background-color: var(--color-sage-bg);
-  color: var(--color-sage-ink);
-  font-size: var(--text-2xs);
-  font-weight: var(--font-weight-semibold);
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-  transition: background-color 0.16s ease, transform 0.14s ease;
-}
-
-.today-chip:active {
-  transform: scale(0.95);
 }
 
 .week-strip {

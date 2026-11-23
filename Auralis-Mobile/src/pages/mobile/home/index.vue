@@ -26,7 +26,6 @@
       <view class="home-content">
         <ZenWeekStrip
           v-model="selectedDateKey"
-          :today-key="todayKey"
           :days="weekDays"
           :scheduled-dates="scheduledDateSet"
         />

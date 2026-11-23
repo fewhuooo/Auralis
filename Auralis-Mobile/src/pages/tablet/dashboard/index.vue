@@ -17,12 +17,10 @@
 
         <ZenWeekStrip
           v-model="selectedDateKey"
-          :today-key="todayKey"
           :days="weekDays"
           :scheduled-dates="scheduledDateSet"
           :show-header="true"
           :frameless="true"
-          @jump-today="jumpToToday"
         />
 
         <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
@@ -301,12 +299,6 @@ const scheduledDateSet = computed(() => {
   }
   return dates
 })
-
-function jumpToToday() {
-  nowClock.value = new Date()
-  todayKey.value = toLocalDateKey(nowClock.value)
-  selectedDateKey.value = todayKey.value
-}
 
 function isScheduledTaskLocked(task: Task): boolean {
   return Boolean((task.id && taskStore.updatingTaskIds.includes(task.id)) || isScheduledCompletionLocked(task, nowClock.value))
