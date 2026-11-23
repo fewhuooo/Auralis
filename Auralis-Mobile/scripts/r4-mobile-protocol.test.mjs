@@ -309,12 +309,15 @@ test('retired orphan mobile and tablet routes are removed', async () => {
 test('tablet workspace uses formal overview API and AI stream without fixed demo text', async () => {
   const workspaceSource = await readFile(new URL('../src/pages/tablet/workspace/index.vue', import.meta.url), 'utf8')
   const readerSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceCenterReader.vue', import.meta.url), 'utf8')
+  const overviewSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceOverviewPane.vue', import.meta.url), 'utf8')
   const aiPanelSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceAiPanel.vue', import.meta.url), 'utf8')
   assert.match(workspaceSource, /overviewApi/)
-  assert.match(readerSource, /outlineMarkdown/)
+  assert.match(readerSource, /WorkspaceOverviewPane/)
+  assert.match(overviewSource, /outlineMarkdown/)
+  assert.match(overviewSource, /summaryMarkdown/)
   assert.match(aiPanelSource, /chatWithAI/)
   assert.doesNotMatch(
-    `${workspaceSource}\n${readerSource}\n${aiPanelSource}`,
+    `${workspaceSource}\n${readerSource}\n${overviewSource}\n${aiPanelSource}`,
     /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/,
   )
 })

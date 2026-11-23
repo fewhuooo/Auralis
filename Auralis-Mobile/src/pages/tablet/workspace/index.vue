@@ -11,10 +11,10 @@
 
           <view
             class="tier1-btn"
-            :class="{ 'is-active': tier2Open && tier2Mode === 'files' }"
+            :class="{ 'is-active': centerView === 'preview' || centerView === 'onboarding' }"
             role="button"
             aria-label="学习资料"
-            @click="toggleTier2('files')"
+            @click="handleFilesRailClick"
           >
             <LineIcon name="file-text" size="19px" color="currentColor" />
             <text class="tier1-btn-text">资料</text>
@@ -22,10 +22,10 @@
 
           <view
             class="tier1-btn"
-            :class="{ 'is-active': tier2Open && tier2Mode === 'outline' }"
+            :class="{ 'is-active': centerView === 'overview' }"
             role="button"
             aria-label="总览"
-            @click="toggleTier2('outline')"
+            @click="openCenterSection('overview')"
           >
             <LineIcon name="list" size="19px" color="currentColor" />
             <text class="tier1-btn-text">总览</text>
@@ -72,33 +72,21 @@
         </view>
       </aside>
 
-      <!-- 2. 可折叠二级抽屉（学习资料 / 总览） -->
+      <!-- 2. 可折叠学习资料抽屉 -->
       <WorkspaceSourceRail
         :open="tier2Open"
-        :mode="tier2Mode"
-        :subject-name="subjectName"
         :sources="sources"
         :selected-source-id="selectedSourceId"
         :loading-sources="loadingSources"
         :sources-error="sourcesError"
         :uploading="uploading"
-        :subject-overview="subjectOverview"
-        :subject-overview-loading="subjectOverviewLoading"
-        :subject-overview-error="subjectOverviewError"
-        :file-overviews="fileOverviews"
-        :file-overview-loading="fileOverviewLoading"
-        :file-overview-errors="fileOverviewErrors"
         @upload="handleUploadFile"
         @refresh-sources="loadSources"
         @select-source="selectSource"
         @delete-source="handleDeleteSource"
-        @refresh-overviews="loadAllOverviews"
-        @open-subject-summary="openSubjectSummary"
-        @open-file-summary="openFileSummary"
-        @retry-file-overview="retryFileOverview"
       />
 
-      <!-- 3. 右侧主工作区（预览 / 总结 / 知识库 / 复习 / 统计） -->
+      <!-- 3. 右侧主工作区（预览 / 总览 / 知识库 / 复习 / 统计） -->
       <WorkspaceCenterReader
         :center-view="centerView"
         :tier2-open="tier2Open"
@@ -108,19 +96,29 @@
         :subject-icon="activeSubject?.icon"
         :subject-description="activeSubject?.description"
         :selected-source="selectedSource"
+        :sources="sources"
+        :loading-sources="loadingSources"
         :sources-count="sources.length"
         :preview-url="previewUrl"
         :preview-mime-type="previewMimeType"
         :preview-original-name="previewOriginalName"
         :preview-loading="previewLoading"
         :preview-error="previewError"
-        :summary-target="summaryTarget"
+        :overview-selection="overviewSelection"
+        :subject-overview="subjectOverview"
+        :subject-overview-loading="subjectOverviewLoading"
+        :subject-overview-error="subjectOverviewError"
+        :file-overviews="fileOverviews"
+        :file-overview-loading="fileOverviewLoading"
+        :file-overview-errors="fileOverviewErrors"
         :subject-blocks="subjectBlocks"
         @toggle-tier2="handleToggleTier2Collapse"
         @upload="handleUploadFile"
         @retry-preview="loadSourcePreview"
-        @close-summary="closeSummary"
-        @refresh-summary="refreshActiveSummary"
+        @select-overview="handleSelectOverview"
+        @refresh-all-overviews="loadAllOverviews"
+        @refresh-active-overview="refreshActiveOverview"
+        @open-source-preview="handleOpenSourcePreviewFromOverview"
         @view-block="openBlockDetail"
         @create-block="openCreateBlockModal"
         @delete-block="handleDeleteBlock"
@@ -297,8 +295,8 @@ import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import WorkspaceSourceRail from '@/components/tablet/workspace/WorkspaceSourceRail.vue'
 import WorkspaceCenterReader, {
   type WorkspaceCenterView,
-  type WorkspaceSummaryTarget,
 } from '@/components/tablet/workspace/WorkspaceCenterReader.vue'
+import type { WorkspaceOverviewSelection } from '@/components/tablet/workspace/WorkspaceOverviewPane.vue'
 import WorkspaceAiPanel from '@/components/tablet/workspace/WorkspaceAiPanel.vue'
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
@@ -320,7 +318,6 @@ const subjectId = ref('')
 const requestedPanel = ref('')
 const workspaceBooting = ref(true)
 const tier2Open = ref(true)
-const tier2Mode = ref<'files' | 'outline'>('files')
 const centerView = ref<WorkspaceCenterView>('onboarding')
 
 const sources = ref<SourceView[]>([])
@@ -341,8 +338,7 @@ const subjectOverviewError = ref('')
 const fileOverviews = ref<Record<string, OverviewResultView | null>>({})
 const fileOverviewLoading = ref<Record<string, boolean>>({})
 const fileOverviewErrors = ref<Record<string, string>>({})
-const summaryKind = ref<'subject' | 'file' | null>(null)
-const summarySourceId = ref<string | null>(null)
+const overviewSelection = ref<WorkspaceOverviewSelection>({ kind: 'subject' })
 
 const viewingBlockId = ref('')
 const showBlockModal = ref(false)
@@ -402,32 +398,6 @@ const viewingBlock = computed(() => (
     : null
 ))
 
-const summaryTarget = computed<WorkspaceSummaryTarget | null>(() => {
-  if (summaryKind.value === 'subject' && subjectId.value) {
-    return {
-      kind: 'subject',
-      id: subjectId.value,
-      title: subjectName.value,
-      overview: subjectOverview.value,
-      loading: subjectOverviewLoading.value,
-      error: subjectOverviewError.value,
-    }
-  }
-  if (summaryKind.value === 'file' && summarySourceId.value) {
-    const src = sources.value.find(item => item.id === summarySourceId.value)
-    if (!src?.id) return null
-    return {
-      kind: 'file',
-      id: src.id,
-      title: src.title || '未命名资料',
-      overview: fileOverviews.value[src.id] ?? null,
-      loading: Boolean(fileOverviewLoading.value[src.id]),
-      error: fileOverviewErrors.value[src.id] || '',
-    }
-  }
-  return null
-})
-
 const floatingShellStyle = computed(() => {
   if (aiExpanded.value || (dragX.value === 0 && dragY.value === 0)) return undefined
   return { transform: `translate3d(${dragX.value}px, ${dragY.value}px, 0)` }
@@ -465,14 +435,18 @@ function clearPreview() {
   previewError.value = ''
 }
 
-function toggleTier2(mode: 'files' | 'outline') {
+function handleFilesRailClick() {
   userChangedTier2 = true
-  if (tier2Open.value && tier2Mode.value === mode) {
-    tier2Open.value = false
+  userChangedCenterView = true
+  if (centerView.value === 'preview' || centerView.value === 'onboarding') {
+    tier2Open.value = !tier2Open.value
     return
   }
-  tier2Mode.value = mode
+  centerView.value = selectedSource.value ? 'preview' : 'onboarding'
   tier2Open.value = true
+  if (selectedSource.value && !previewUrl.value && !previewLoading.value && !previewError.value) {
+    void loadSourcePreview()
+  }
 }
 
 function handleToggleTier2Collapse() {
@@ -482,17 +456,22 @@ function handleToggleTier2Collapse() {
 
 function openFilesDrawer() {
   userChangedTier2 = true
-  tier2Mode.value = 'files'
+  userChangedCenterView = true
+  centerView.value = selectedSource.value ? 'preview' : 'onboarding'
   tier2Open.value = true
+  if (selectedSource.value && !previewUrl.value && !previewLoading.value && !previewError.value) {
+    void loadSourcePreview()
+  }
 }
 
-function openCenterSection(view: 'blocks' | 'review' | 'stats') {
+function openCenterSection(view: 'overview' | 'blocks' | 'review' | 'stats') {
   userChangedCenterView = true
   userChangedTier2 = true
-  summaryKind.value = null
-  summarySourceId.value = null
   centerView.value = view
   tier2Open.value = false
+  if (view === 'overview' && !subjectOverview.value && !subjectOverviewLoading.value) {
+    void loadAllOverviews()
+  }
 }
 
 async function loadSources() {
@@ -512,8 +491,11 @@ async function loadSources() {
         centerView.value = 'onboarding'
       }
     }
-    if (centerView.value === 'summary' && summaryKind.value === 'file' && summarySourceId.value && !list.some(item => item.id === summarySourceId.value)) {
-      closeSummary()
+    if (overviewSelection.value.kind === 'file') {
+      const targetId = overviewSelection.value.sourceId
+      if (!list.some(item => item.id === targetId)) {
+        overviewSelection.value = { kind: 'subject' }
+      }
     }
   } catch (error) {
     if (token !== sourceReqToken || !isFenceValid(fence, false)) return
@@ -617,8 +599,6 @@ function selectSource(source: SourceView) {
   const sourceChanged = selectedSourceId.value !== source.id
   userChangedCenterView = true
   selectedSourceId.value = source.id
-  summaryKind.value = null
-  summarySourceId.value = null
   centerView.value = 'preview'
   if (sourceChanged) {
     clearPreview()
@@ -629,58 +609,36 @@ function selectSource(source: SourceView) {
   }
 }
 
-function openSubjectSummary() {
-  userChangedCenterView = true
-  summaryKind.value = 'subject'
-  summarySourceId.value = null
-  centerView.value = 'summary'
-  if (!subjectOverview.value && !subjectOverviewLoading.value) {
-    void loadSubjectOverview()
+function handleSelectOverview(selection: WorkspaceOverviewSelection) {
+  overviewSelection.value = selection
+  if (selection.kind === 'subject') {
+    if (!subjectOverview.value && !subjectOverviewLoading.value) {
+      void loadSubjectOverview()
+    }
+    return
+  }
+  const src = sources.value.find(item => item.id === selection.sourceId)
+  if (src?.id && src.ingestionStatus === 'READY' && !fileOverviews.value[src.id] && !fileOverviewLoading.value[src.id]) {
+    void loadFileOverview(src)
   }
 }
 
-function openFileSummary(source: SourceView) {
-  if (!source.id) return
-  const sourceChanged = selectedSourceId.value !== source.id
-  userChangedCenterView = true
-  selectedSourceId.value = source.id
-  summaryKind.value = 'file'
-  summarySourceId.value = source.id
-  centerView.value = 'summary'
-  if (sourceChanged) {
-    clearPreview()
-    void loadSourcePreview()
-  } else if (!previewUrl.value && !previewLoading.value && !previewError.value) {
-    void loadSourcePreview()
-  }
-  if (source.ingestionStatus === 'READY' && !fileOverviews.value[source.id] && !fileOverviewLoading.value[source.id]) {
-    void loadFileOverview(source)
-  }
-}
-
-function retryFileOverview(source: SourceView) {
-  void loadFileOverview(source)
-}
-
-function refreshActiveSummary() {
-  if (summaryKind.value === 'subject') {
+function refreshActiveOverview() {
+  if (overviewSelection.value.kind === 'subject') {
     void loadSubjectOverview()
     return
   }
-  if (summaryKind.value === 'file' && summarySourceId.value) {
-    const src = sources.value.find(item => item.id === summarySourceId.value)
-    if (src) void loadFileOverview(src)
+  const targetId = overviewSelection.value.sourceId
+  const src = sources.value.find(item => item.id === targetId)
+  if (src) {
+    void loadFileOverview(src)
   }
 }
 
-function closeSummary() {
-  userChangedCenterView = true
-  summaryKind.value = null
-  summarySourceId.value = null
-  centerView.value = selectedSource.value ? 'preview' : 'onboarding'
-  if (selectedSource.value && !previewUrl.value && !previewLoading.value && !previewError.value) {
-    void loadSourcePreview()
-  }
+function handleOpenSourcePreviewFromOverview(source: SourceView) {
+  userChangedTier2 = true
+  tier2Open.value = false
+  selectSource(source)
 }
 
 async function handleUploadFile() {
@@ -725,6 +683,9 @@ function handleDeleteSource(source: SourceView) {
           selectedSourceId.value = null
           clearPreview()
           if (centerView.value === 'preview') centerView.value = 'onboarding'
+        }
+        if (overviewSelection.value.kind === 'file' && overviewSelection.value.sourceId === source.id) {
+          overviewSelection.value = { kind: 'subject' }
         }
         await Promise.all([loadSources(), subjectStore.loadSubjects(), loadSubjectOverview()])
         if (!isFenceValid(fence, false)) return
@@ -982,19 +943,15 @@ async function reloadAll() {
 
   const panel = requestedPanel.value
   if (!userChangedTier2) {
-    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+    if (panel === 'overview' || panel === 'blocks' || panel === 'review' || panel === 'stats') {
       tier2Open.value = false
-    } else if (panel === 'overview') {
-      tier2Mode.value = 'outline'
-      tier2Open.value = true
     } else {
-      tier2Mode.value = 'files'
       tier2Open.value = true
     }
   }
 
   if (!userChangedCenterView) {
-    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+    if (panel === 'overview' || panel === 'blocks' || panel === 'review' || panel === 'stats') {
       centerView.value = panel
     } else if (sources.value.length > 0 && sources.value[0].id) {
       if (!selectedSourceId.value) {
@@ -1024,13 +981,10 @@ onLoad((options) => {
   const panel = options?.panel || options?.tab
   if (typeof panel === 'string') {
     requestedPanel.value = panel
-    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
+    if (panel === 'overview' || panel === 'blocks' || panel === 'review' || panel === 'stats') {
       workspaceBooting.value = false
       centerView.value = panel
       tier2Open.value = false
-    } else if (panel === 'overview') {
-      tier2Mode.value = 'outline'
-      tier2Open.value = true
     }
   }
 })

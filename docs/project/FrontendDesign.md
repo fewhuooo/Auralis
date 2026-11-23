@@ -734,7 +734,7 @@ type-check exit0、相关scheduler/UI测试最终51/51通过；首轮旧静态�
 ### 平板：完整学习工作台
 
 - 仪表盘 60:40 双栏展示问候与 `+ 新建任务`、无底层卡片且无周切换箭头的 7 日真实日期条、可滚动当日日程（支持 `×` 取消排期移回待办）与待办清单（无行内「排期」按钮），右栏上方展示「学科空间」（无刷新按钮，点击进入对应工作区 `?id=`）与下方共享五项学习指标（不展示“继续上次学习”卡片）。
-- 工作区对齐 PC 端采用双栏布局：左侧 72px 一级导轨（`返回 / 资料 / 总览 / 知识库 / 复习 / 统计`）+ 可折叠二级抽屉 `WorkspaceSourceRail`（学习资料上传删除与折叠式学科/文件结构大纲总结列表），右侧主工作区 `WorkspaceCenterReader`（H5 端通过 `@file-viewer/core` 搭配仅 PDF / Word / Presentation 三个按需渲染器，在 `#F7F2EB` 暖燕麦画布上原地加载 PDF/DOCX/DOC/PPT/PPTX 与图片，去除浏览器原生黑壳并提供顶栏微缩放/旋转控制及底部居中悬浮毛玻璃页码胶囊，另有总结与结构大纲阅读、知识库卡片网格与详情弹窗、`WorkspaceReviewPane` 学科记忆规划与全生命周期抽卡、`WorkspaceStatsPane` 学科统计看板）；`WorkspaceAiPanel` 改为右下角非阻塞可拖拽/可放大浮窗（默认收起，点击右下角胶囊展开并懒挂载保活，严格绑定当前学科/READY 资料范围；AI 气泡保留「复制」「重试」「存块」与协议一完整能力）。
+- 工作区采用面向平板阅读的单激活双栏结构：左侧 72px 一级导轨（`返回 / 资料 / 总览 / 知识库 / 复习 / 统计`）+ 资料模式下可折叠的二级抽屉 `WorkspaceSourceRail`（纯学习资料上传、删除与切换列表），右侧主工作区 `WorkspaceCenterReader`（H5 端通过 `@file-viewer/core` 搭配仅 PDF / Word / Presentation 三个按需渲染器，在 `#F7F2EB` 暖燕麦画布上原地加载 PDF/DOCX/DOC/PPT/PPTX 与图片，去除浏览器原生黑壳并提供顶栏微缩放/旋转控制及底部居中悬浮毛玻璃页码胶囊；点击「总览」自动收起外层资料抽屉并进入独立全幅主从阅读视图 `WorkspaceOverviewPane`，左 244px 轻目录列切换「学科总览」与各文件、右宽幅纸面阅读区按「精炼总结 / 结构大纲」分段切换并支持单文件「查看原文」；另有知识库卡片网格与详情弹窗、`WorkspaceReviewPane` 学科记忆规划与全生命周期抽卡、`WorkspaceStatsPane` 学科统计看板）；`WorkspaceAiPanel` 改为右下角非阻塞可拖拽/可放大浮窗（默认收起，点击右下角胶囊展开并懒挂载保活，严格绑定当前学科/READY 资料范围；AI 气泡保留「复制」「重试」「存块」与协议一完整能力）。
 - 触控操作不依赖 hover，模态与表单确认窗挂载至 `TabletLayout` `#modal` 插槽；`tabletHandwritingNotesEnabled` 继续默认关闭。
 
 ### 本地自由画布
@@ -792,7 +792,7 @@ Tablet 页面在微信构建中被排除（已移除独立 `tablet/review`，统
 | --- | --- | --- |
 | dashboard | `/pages/tablet/dashboard/index` | 60:40 双栏：无框 7 日日程/待办（日程可 `×` 退回待办，待办无行内排期按钮）与右侧学科空间展示 + 核心统计 |
 | subject-hall | `/pages/tablet/subject-hall/index` | 禅意 3 列学科卡片浏览与新建（去重校验） |
-| workspace | `/pages/tablet/workspace/index` | PC 同源双栏工作区：72px 一级导轨 + 可折叠资料/总览抽屉、主工作区（预览/总结/知识库/生命周期复习/学科统计）与右下角可拖拽浮窗 AI 伴读 |
+| workspace | `/pages/tablet/workspace/index` | 平板双栏工作区：72px 单激活导轨 + 可折叠学习资料抽屉、主工作区（文档预览 / 全幅总览阅读 / 知识库 / 生命周期复习 / 学科统计）与右下角可拖拽浮窗 AI 伴读 |
 | handwriting | `/pages/tablet/handwriting/index` | 大屏手写；受 `tabletHandwritingNotesEnabled` 默认关闭 |
 | pomodoro | `/pages/tablet/pomodoro/index` | 横屏极简专注计时与任务关联 |
 | profile | `/pages/tablet/profile/index` | 禅意双栏个人中心、会话管理、同步与 AI 配额/BYOK |
@@ -815,7 +815,7 @@ Tablet 页面在微信构建中被排除（已移除独立 `tablet/review`，统
 ### Workspace
 
 - PC Chat 消息正文选中文字后显示「添加到对话」「保存为知识块」；引用操作不自动发送，知识块正文预填后由用户确认保存。FAILED 回复仅显示错误和重试，其他成功轮次、已提交题卡和 UNKNOWN/中断恢复展示保持各自状态。
-- 平板工作区对齐 PC `SubjectWorkspace` 改造为双栏布局：左侧 72px 一级导轨（`返回 / 资料 / 总览 / 知识库 / 复习 / 统计`）+ 可折叠二级抽屉 `WorkspaceSourceRail`（`学习资料` 列表支持纯文件上传、状态指示点、删除与 `3px` 左侧选中条；`总览` 模式提供默认折叠的「学科总览」卡及各文件结构大纲卡片与「总结」入口，非 `READY` 资料跳过 `getSource` 避免 409）；右侧主工作区 `WorkspaceCenterReader` 含 48px 顶部微状态栏与边缘折叠按钮，H5 端通过 `WorkspaceDocumentViewer` 动态接入 `@file-viewer/core`（仅 `pdf` / `word` / `presentation` 三个按需渲染器，在 `#F7F2EB` 暖燕麦画布原地渲染 PDF/DOCX/DOC/PPT/PPTX 与图片，搭配顶栏紧凑缩放/旋转微控制及底部居中毛玻璃浮动页码胶囊），同时包含全屏「精炼总结 / 结构大纲」阅读、搜索与卡片网格知识库（点击弹出 Markdown/TeX 详情阅读、复制/编辑/删除）、`WorkspaceReviewPane` 学科记忆规划与全生命周期抽卡，以及 `WorkspaceStatsPane`（`statsApi.subject` 近 7/30 天趋势、掌握度分段与行动跳转）；`WorkspaceAiPanel` 改为右下角非阻塞可拖拽/可放大浮窗（默认收起为右下角胶囊，懒挂载保活不中断流式状态，支持 `Escape` 优先级关闭，严格按 4 字段 `chatScope` 绑定历史与伴读，切换范围自动重置当前对话，保留协议一全部能力）。
+- 平板工作区针对触控与阅读场景采用单激活一级导轨（`返回 / 资料 / 总览 / 知识库 / 复习 / 统计`）：`资料` 搭配可折叠二级抽屉 `WorkspaceSourceRail`（纯学习资料列表，支持上传、状态指示点、删除与 `3px` 左侧选中条）；切换到 `总览` 时自动收起外层资料抽屉并在主工作区进入独立全幅主从视图 `WorkspaceOverviewPane`（左侧 244px 轻目录列展示置顶「学科总览」与简洁文件状态列表，右侧宽幅阅读区采用 `780px` 居中纸面卡片、顶部「精炼总结 / 结构大纲」分段切换、单文件一键「查看原文」及失败后保留旧缓存的内联重试条，非 `READY` 资料跳过 `getSource` 避免 409）；右侧主工作区 `WorkspaceCenterReader` 含 48px 顶部微状态栏与边缘折叠按钮（仅在非总览态显示），H5 端通过 `WorkspaceDocumentViewer` 动态接入 `@file-viewer/core`（仅 `pdf` / `word` / `presentation` 三个按需渲染器，在 `#F7F2EB` 暖燕麦画布原地渲染 PDF/DOCX/DOC/PPT/PPTX 与图片，搭配顶栏紧凑缩放/旋转微控制及底部居中毛玻璃浮动页码胶囊），同时包含搜索与卡片网格知识库（点击弹出 Markdown/TeX 详情阅读、复制/编辑/删除）、`WorkspaceReviewPane` 学科记忆规划与全生命周期抽卡，以及 `WorkspaceStatsPane`（`statsApi.subject` 近 7/30 天趋势、掌握度分段与行动跳转）；`WorkspaceAiPanel` 改为右下角非阻塞可拖拽/可放大浮窗（默认收起为右下角胶囊，懒挂载保活不中断流式状态，支持 `Escape` 优先级关闭，严格按 4 字段 `chatScope` 绑定历史与伴读，切换范围自动重置当前对话，保留协议一全部能力）。
 - Mobile 全端页面通过 `AppPageLayout` 顶部 `#overlay` 插槽将底部抽屉、任务关联与学科选择浮层统一挂载于浮动 `AppTabBar`（`z-index: 800`）之上，H5 端支持 `Escape` 键关闭；首页/仪表盘拆分「日期 + 星期」、结构化左时间轨与“今日无安排”晴日空态，取消标语与次要提示标签。
 - 禁止通过反复销毁 DOM 制造卡顿，面板与标签切换优先使用稳定状态；`tabletHandwritingNotesEnabled` 默认关闭，工作区不暴露批注条与标尺底纹。
 - PC 学科工作区的材料列表文件项负责选择并默认打开原文件；总览列表同时直接展示每个文件的大纲和总结快捷入口。

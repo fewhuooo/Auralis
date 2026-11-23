@@ -113,12 +113,14 @@ if (/historySessions\s*=\s*ref<HistorySession\[\]>\(\[\s*\{/.test(tabletAi)) {
 
 const tabletWorkspace = sources.get('src/pages/tablet/workspace/index.vue') || ''
 const tabletWorkspaceReader = sources.get('src/components/tablet/workspace/WorkspaceCenterReader.vue') || ''
+const tabletWorkspaceOverview = sources.get('src/components/tablet/workspace/WorkspaceOverviewPane.vue') || ''
 const tabletWorkspaceAi = sources.get('src/components/tablet/workspace/WorkspaceAiPanel.vue') || ''
 if (!tabletWorkspace.includes('overviewApi')
-  || !tabletWorkspaceReader.includes('outlineMarkdown')
+  || !tabletWorkspaceOverview.includes('outlineMarkdown')
+  || !tabletWorkspaceOverview.includes('summaryMarkdown')
   || !tabletWorkspaceAi.includes('chatWithAI')
   || /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/.test(
-    `${tabletWorkspace}\n${tabletWorkspaceReader}\n${tabletWorkspaceAi}`,
+    `${tabletWorkspace}\n${tabletWorkspaceReader}\n${tabletWorkspaceOverview}\n${tabletWorkspaceAi}`,
   )) {
   violations.push('src/pages/tablet/workspace/index.vue: summary must use overviewApi & AI stream, not fixed demo text')
 }

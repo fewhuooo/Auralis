@@ -3,9 +3,10 @@
     <!-- 顶部微状态栏 -->
     <header class="center-status-bar">
       <view class="status-left">
-        <text v-if="centerView === 'summary' && summaryTarget" class="status-title">
-          {{ summaryTarget.kind === 'subject' ? '学科总结' : '文件总结' }} · {{ summaryTarget.title }}
-        </text>
+        <view v-if="centerView === 'overview'" class="status-title-row">
+          <LineIcon name="list" size="14px" color="var(--text-muted)" />
+          <text class="status-title">学科总览 · {{ subjectName }}</text>
+        </view>
         <view v-else-if="centerView === 'preview' && selectedSource" class="status-title-row">
           <LineIcon name="file-text" size="14px" color="var(--text-muted)" />
           <text class="status-title">{{ selectedSource.title || '未命名资料' }}</text>
@@ -107,13 +108,16 @@
           <text v-if="!showCorePreviewControls" class="status-caption">文件预览</text>
         </template>
         <text v-else-if="centerView === 'preview'" class="status-caption">文件预览</text>
-        <text v-else-if="centerView === 'summary'" class="status-caption">AI 总结</text>
+        <text v-else-if="centerView === 'overview'" class="status-caption num-tabular">
+          {{ sourcesCount > 0 ? `${readySourcesCount} / ${sourcesCount} 份资料已就绪` : '总览' }}
+        </text>
       </view>
     </header>
 
     <!-- 主内容体 -->
     <view class="center-body">
       <view
+        v-if="centerView !== 'overview'"
         class="edge-collapse-btn"
         role="button"
         :aria-label="tier2Open ? '收起左侧面板' : '展开左侧面板'"
@@ -266,76 +270,25 @@
         <!-- #endif -->
       </view>
 
-      <!-- 2. 总结与大纲全屏阅读视图 -->
-      <view v-else-if="centerView === 'summary' && summaryTarget" class="summary-stage">
-        <view class="summary-header">
-          <button class="summary-back-btn" @click="emit('close-summary')">
-            <LineIcon name="chevron-left" size="14px" color="var(--text-primary)" />
-            <text>返回</text>
-          </button>
-
-          <view class="summary-title-box">
-            <text class="summary-kicker">{{ summaryTarget.kind === 'subject' ? '学科总结' : '文件总结' }}</text>
-            <text class="summary-title-text">{{ summaryTarget.title }}</text>
-          </view>
-
-          <view class="summary-actions">
-            <view class="ui-segmented compact-seg" role="tablist">
-              <view
-                class="ui-seg-item compact-seg-item"
-                :class="{ active: summaryMode === 'summary' }"
-                role="tab"
-                :aria-selected="summaryMode === 'summary'"
-                @click="summaryMode = 'summary'"
-              >
-                <text>精炼总结</text>
-              </view>
-              <view
-                class="ui-seg-item compact-seg-item"
-                :class="{ active: summaryMode === 'outline' }"
-                role="tab"
-                :aria-selected="summaryMode === 'outline'"
-                @click="summaryMode = 'outline'"
-              >
-                <text>结构大纲</text>
-              </view>
-            </view>
-            <view class="ui-icon-btn sm" role="button" aria-label="刷新" @click="emit('refresh-summary')">
-              <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
-            </view>
-            <view
-              v-if="activeSummaryMarkdown"
-              class="ui-icon-btn sm"
-              role="button"
-              aria-label="复制内容"
-              @click="copyLink(activeSummaryMarkdown, '已复制')"
-            >
-              <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
-            </view>
-          </view>
-        </view>
-
-        <scroll-view scroll-y :show-scrollbar="false" class="summary-scroll">
-          <view class="summary-body-wrap">
-            <view v-if="summaryTarget.loading && !summaryTarget.overview" class="paper-skeletons">
-              <view class="paper-skeleton-title ui-shimmer"></view>
-              <view class="paper-skeleton-line ui-shimmer"></view>
-              <view class="paper-skeleton-line mid ui-shimmer"></view>
-            </view>
-            <view v-else-if="summaryTarget.error && !summaryTarget.overview" class="empty-state">
-              <text class="state-title is-error">{{ summaryTarget.error }}</text>
-              <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh-summary')">重试</button>
-            </view>
-            <view v-else-if="!activeSummaryMarkdown" class="empty-state">
-              <text class="state-title">{{ summaryMode === 'summary' ? '暂无精炼总结' : '暂无结构大纲' }}</text>
-            </view>
-            <view v-else class="summary-paper zen-card">
-              <text v-if="summaryTarget.overview?.title" class="summary-doc-title">{{ summaryTarget.overview.title }}</text>
-              <MarkdownText :content="activeSummaryMarkdown" />
-            </view>
-          </view>
-        </scroll-view>
-      </view>
+      <!-- 2. 学科与文件总览主从阅读视图 -->
+      <WorkspaceOverviewPane
+        v-else-if="centerView === 'overview'"
+        :subject-name="subjectName"
+        :sources="sources"
+        :loading-sources="loadingSources"
+        :selection="overviewSelection"
+        :subject-overview="subjectOverview"
+        :subject-overview-loading="subjectOverviewLoading"
+        :subject-overview-error="subjectOverviewError"
+        :file-overviews="fileOverviews"
+        :file-overview-loading="fileOverviewLoading"
+        :file-overview-errors="fileOverviewErrors"
+        @select="emit('select-overview', $event)"
+        @refresh-all="emit('refresh-all-overviews')"
+        @refresh-active="emit('refresh-active-overview')"
+        @open-source-preview="emit('open-source-preview', $event)"
+        @upload="emit('upload')"
+      />
 
       <!-- 3. 知识库网格视图 -->
       <view v-else-if="centerView === 'blocks'" class="blocks-workspace">
@@ -504,7 +457,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
-import MarkdownText from '@/components/MarkdownText.vue'
+import WorkspaceOverviewPane, {
+  type WorkspaceOverviewSelection,
+} from '@/components/tablet/workspace/WorkspaceOverviewPane.vue'
 import WorkspaceReviewPane from '@/components/tablet/workspace/WorkspaceReviewPane.vue'
 import WorkspaceStatsPane from '@/components/tablet/workspace/WorkspaceStatsPane.vue'
 // #ifdef H5
@@ -531,16 +486,7 @@ import {
   resolveTabletPreviewKind,
 } from '@/utils/tabletFilePreview'
 
-export type WorkspaceCenterView = 'onboarding' | 'preview' | 'summary' | 'blocks' | 'review' | 'stats'
-
-export interface WorkspaceSummaryTarget {
-  kind: 'subject' | 'file'
-  id: string
-  title: string
-  overview: OverviewResultView | null
-  loading: boolean
-  error: string
-}
+export type WorkspaceCenterView = 'onboarding' | 'preview' | 'overview' | 'blocks' | 'review' | 'stats'
 
 const props = defineProps<{
   centerView: WorkspaceCenterView
@@ -551,13 +497,21 @@ const props = defineProps<{
   subjectIcon?: string
   subjectDescription?: string
   selectedSource: SourceView | null
+  sources: SourceView[]
+  loadingSources: boolean
   sourcesCount: number
   previewUrl: string
   previewMimeType: string
   previewOriginalName: string
   previewLoading: boolean
   previewError: string
-  summaryTarget: WorkspaceSummaryTarget | null
+  overviewSelection: WorkspaceOverviewSelection
+  subjectOverview: OverviewResultView | null
+  subjectOverviewLoading: boolean
+  subjectOverviewError: string
+  fileOverviews: Record<string, OverviewResultView | null>
+  fileOverviewLoading: Record<string, boolean>
+  fileOverviewErrors: Record<string, string>
   subjectBlocks: KnowledgeBlock[]
 }>()
 
@@ -565,8 +519,10 @@ const emit = defineEmits<{
   (event: 'toggle-tier2'): void
   (event: 'upload'): void
   (event: 'retry-preview'): void
-  (event: 'close-summary'): void
-  (event: 'refresh-summary'): void
+  (event: 'select-overview', selection: WorkspaceOverviewSelection): void
+  (event: 'refresh-all-overviews'): void
+  (event: 'refresh-active-overview'): void
+  (event: 'open-source-preview', source: SourceView): void
   (event: 'view-block', block: KnowledgeBlock): void
   (event: 'create-block'): void
   (event: 'delete-block', block: KnowledgeBlock): void
@@ -575,15 +531,7 @@ const emit = defineEmits<{
 }>()
 
 const safeIcon = computed(() => (props.subjectIcon && isSubjectIconKey(props.subjectIcon) ? props.subjectIcon : 'book'))
-
-const summaryMode = ref<'summary' | 'outline'>('summary')
-const activeSummaryMarkdown = computed(() => {
-  const overview = props.summaryTarget?.overview
-  if (!overview) return ''
-  return summaryMode.value === 'summary'
-    ? (overview.summaryMarkdown || '')
-    : (overview.outlineMarkdown || '')
-})
+const readySourcesCount = computed(() => props.sources.filter(item => item.ingestionStatus === 'READY').length)
 
 interface DocViewerHandle {
   zoomIn: () => void
@@ -1245,128 +1193,6 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.summary-stage {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.summary-header {
-  min-height: 54px;
-  padding: 8px 18px 8px 34px;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-
-.summary-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 11px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-tertiary);
-  color: var(--text-primary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.summary-title-box {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.summary-kicker {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.summary-title-text {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.compact-seg {
-  padding: 3px;
-  border-radius: var(--radius-full);
-}
-
-.compact-seg-item {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  font-size: 11.5px;
-}
-
-.summary-scroll {
-  flex: 1;
-  height: 0;
-  min-height: 0;
-}
-
-.summary-body-wrap {
-  padding: 20px 28px 84px;
-}
-
-.paper-skeletons {
-  max-width: 820px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.paper-skeleton-title {
-  height: 24px;
-  width: 45%;
-  border-radius: 8px;
-}
-
-.paper-skeleton-line {
-  height: 15px;
-  border-radius: 6px;
-}
-
-.paper-skeleton-line.mid {
-  width: 78%;
-}
-
-.summary-paper {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.summary-doc-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .blocks-workspace {
