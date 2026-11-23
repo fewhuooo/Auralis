@@ -3,8 +3,8 @@
     <!-- 顶部微状态栏 -->
     <header class="center-status-bar">
       <view class="status-left">
-        <view v-if="centerView === 'overview'" class="status-title-row">
-          <LineIcon name="list" size="14px" color="var(--text-muted)" />
+        <view v-if="centerView === 'subject-overview'" class="status-title-row">
+          <LineIcon name="book" size="14px" color="var(--color-sage-ink)" />
           <text class="status-title">学科总览 · {{ subjectName }}</text>
         </view>
         <view v-else-if="centerView === 'preview' && selectedSource" class="status-title-row">
@@ -26,98 +26,198 @@
       </view>
 
       <view class="status-right">
-        <template v-if="centerView === 'preview' && selectedSource && (previewUrl || (previewLoading && showCorePreviewControls))">
-          <!-- #ifdef H5 -->
-          <view v-if="showCorePreviewControls" class="preview-controls-bar" aria-label="文档预览控制">
-            <view class="preview-control-group">
-              <button
-                type="button"
-                class="preview-ctrl-btn"
-                :disabled="!viewerReady || !zoomState.canZoomOut"
-                aria-label="缩小"
-                title="缩小"
-                @click="docViewerRef?.zoomOut()"
-              >−</button>
-              <text class="preview-ctrl-value num-tabular">{{ zoomState.label }}</text>
-              <button
-                type="button"
-                class="preview-ctrl-btn"
-                :disabled="!viewerReady || !zoomState.canZoomIn"
-                aria-label="放大"
-                title="放大"
-                @click="docViewerRef?.zoomIn()"
-              >＋</button>
-              <button
-                type="button"
-                class="preview-ctrl-btn preview-ctrl-reset"
-                :disabled="!viewerReady || !zoomState.canReset"
-                aria-label="重置缩放"
-                @click="docViewerRef?.resetZoom()"
-              >重置</button>
+        <template v-if="centerView === 'subject-overview'">
+          <view class="ui-segmented compact-seg" role="tablist" aria-label="学科总览视图">
+            <view
+              class="ui-seg-item compact-seg-item"
+              :class="{ active: subjectOverviewMode === 'summary' }"
+              role="tab"
+              :aria-selected="subjectOverviewMode === 'summary'"
+              @click="subjectOverviewMode = 'summary'"
+            >
+              <text>精炼总结</text>
             </view>
-
-            <view class="preview-control-group">
-              <button
-                type="button"
-                class="preview-ctrl-btn"
-                :disabled="!viewerReady"
-                aria-label="向左旋转"
-                title="向左旋转"
-                @click="docViewerRef?.rotateLeft()"
-              >
-                <LineIcon name="rotate" size="13px" color="currentColor" />
-              </button>
-              <text class="preview-ctrl-value preview-ctrl-deg num-tabular">{{ previewRotation }}°</text>
-              <button
-                type="button"
-                class="preview-ctrl-btn"
-                :disabled="!viewerReady"
-                aria-label="向右旋转"
-                title="向右旋转"
-                @click="docViewerRef?.rotateRight()"
-              >
-                <LineIcon name="rotate-cw" size="13px" color="currentColor" />
-              </button>
+            <view
+              class="ui-seg-item compact-seg-item"
+              :class="{ active: subjectOverviewMode === 'outline' }"
+              role="tab"
+              :aria-selected="subjectOverviewMode === 'outline'"
+              @click="subjectOverviewMode = 'outline'"
+            >
+              <text>结构大纲</text>
             </view>
           </view>
-          <!-- #endif -->
 
-          <view class="preview-utility-actions">
+          <button
+            v-if="activeOverviewCopyText"
+            type="button"
+            class="status-icon-btn"
+            title="复制当前内容"
+            aria-label="复制当前内容"
+            @click="copyActiveOverview"
+          >
+            <LineIcon
+              :name="copiedOverview ? 'check' : 'copy'"
+              size="14px"
+              :color="copiedOverview ? 'var(--color-sage-ink)' : 'var(--text-secondary)'"
+            />
+          </button>
+
+          <button
+            type="button"
+            class="status-icon-btn"
+            title="刷新学科总览"
+            aria-label="刷新学科总览"
+            @click="emit('refresh-subject-overview')"
+          >
+            <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
+          </button>
+        </template>
+
+        <template v-else-if="centerView === 'preview' && selectedSource">
+          <view class="ui-segmented compact-seg" role="tablist" aria-label="文件视图模式">
+            <view
+              class="ui-seg-item compact-seg-item"
+              :class="{ active: fileReaderMode === 'document' }"
+              role="tab"
+              :aria-selected="fileReaderMode === 'document'"
+              @click="setFileReaderMode('document')"
+            >
+              <text>原文</text>
+            </view>
+            <view
+              class="ui-seg-item compact-seg-item"
+              :class="{ active: fileReaderMode === 'summary' }"
+              role="tab"
+              :aria-selected="fileReaderMode === 'summary'"
+              @click="setFileReaderMode('summary')"
+            >
+              <text>总结</text>
+            </view>
+            <view
+              class="ui-seg-item compact-seg-item"
+              :class="{ active: fileReaderMode === 'outline' }"
+              role="tab"
+              :aria-selected="fileReaderMode === 'outline'"
+              @click="setFileReaderMode('outline')"
+            >
+              <text>大纲</text>
+            </view>
+          </view>
+
+          <template v-if="fileReaderMode === 'document' && (previewUrl || (previewLoading && showCorePreviewControls))">
+            <!-- #ifdef H5 -->
+            <view v-if="showCorePreviewControls" class="preview-controls-bar" aria-label="文档预览控制">
+              <view class="preview-control-group">
+                <button
+                  type="button"
+                  class="preview-ctrl-btn"
+                  :disabled="!viewerReady || !zoomState.canZoomOut"
+                  aria-label="缩小"
+                  title="缩小"
+                  @click="docViewerRef?.zoomOut()"
+                >−</button>
+                <text class="preview-ctrl-value num-tabular">{{ zoomState.label }}</text>
+                <button
+                  type="button"
+                  class="preview-ctrl-btn"
+                  :disabled="!viewerReady || !zoomState.canZoomIn"
+                  aria-label="放大"
+                  title="放大"
+                  @click="docViewerRef?.zoomIn()"
+                >＋</button>
+                <button
+                  type="button"
+                  class="preview-ctrl-btn preview-ctrl-reset"
+                  :disabled="!viewerReady || !zoomState.canReset"
+                  aria-label="重置缩放"
+                  @click="docViewerRef?.resetZoom()"
+                >重置</button>
+              </view>
+
+              <view class="preview-control-group">
+                <button
+                  type="button"
+                  class="preview-ctrl-btn"
+                  :disabled="!viewerReady"
+                  aria-label="向左旋转"
+                  title="向左旋转"
+                  @click="docViewerRef?.rotateLeft()"
+                >
+                  <LineIcon name="rotate" size="13px" color="currentColor" />
+                </button>
+                <text class="preview-ctrl-value preview-ctrl-deg num-tabular">{{ previewRotation }}°</text>
+                <button
+                  type="button"
+                  class="preview-ctrl-btn"
+                  :disabled="!viewerReady"
+                  aria-label="向右旋转"
+                  title="向右旋转"
+                  @click="docViewerRef?.rotateRight()"
+                >
+                  <LineIcon name="rotate-cw" size="13px" color="currentColor" />
+                </button>
+              </view>
+            </view>
+            <!-- #endif -->
+
+            <view class="preview-utility-actions">
+              <button
+                type="button"
+                class="status-icon-btn"
+                :disabled="!previewUrl"
+                title="新窗口打开"
+                aria-label="新窗口打开"
+                @click="previewUrl && openDocument(previewUrl)"
+              >
+                <LineIcon name="external-link" size="14px" color="var(--text-secondary)" />
+              </button>
+              <button
+                type="button"
+                class="status-icon-btn"
+                :disabled="!previewUrl"
+                title="复制链接"
+                aria-label="复制链接"
+                @click="previewUrl && copyLink(previewUrl, '已复制链接')"
+              >
+                <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
+              </button>
+            </view>
+          </template>
+
+          <view v-else-if="fileReaderMode !== 'document'" class="preview-utility-actions">
             <button
+              v-if="activeOverviewCopyText"
               type="button"
               class="status-icon-btn"
-              :disabled="!previewUrl"
-              title="新窗口打开"
-              aria-label="新窗口打开"
-              @click="previewUrl && openDocument(previewUrl)"
+              title="复制当前内容"
+              aria-label="复制当前内容"
+              @click="copyActiveOverview"
             >
-              <LineIcon name="external-link" size="14px" color="var(--text-secondary)" />
+              <LineIcon
+                :name="copiedOverview ? 'check' : 'copy'"
+                size="14px"
+                :color="copiedOverview ? 'var(--color-sage-ink)' : 'var(--text-secondary)'"
+              />
             </button>
             <button
               type="button"
               class="status-icon-btn"
-              :disabled="!previewUrl"
-              title="复制链接"
-              aria-label="复制链接"
-              @click="previewUrl && copyLink(previewUrl, '已复制链接')"
+              title="刷新文件总览"
+              aria-label="刷新文件总览"
+              @click="emit('refresh-file-overview', selectedSource)"
             >
-              <LineIcon name="copy" size="14px" color="var(--text-secondary)" />
+              <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
             </button>
           </view>
-
-          <text v-if="!showCorePreviewControls" class="status-caption">文件预览</text>
         </template>
         <text v-else-if="centerView === 'preview'" class="status-caption">文件预览</text>
-        <text v-else-if="centerView === 'overview'" class="status-caption num-tabular">
-          {{ sourcesCount > 0 ? `${readySourcesCount} / ${sourcesCount} 份资料已就绪` : '总览' }}
-        </text>
       </view>
     </header>
 
     <!-- 主内容体 -->
     <view class="center-body">
       <view
-        v-if="centerView !== 'overview'"
         class="edge-collapse-btn"
         role="button"
         :aria-label="tier2Open ? '收起左侧面板' : '展开左侧面板'"
@@ -130,119 +230,138 @@
         />
       </view>
 
-      <!-- 1. 文件预览 -->
+      <!-- 1. 文件预览 / 总结 / 大纲一体阅读 -->
       <view v-if="centerView === 'preview' && selectedSource" class="preview-stage">
-        <view v-if="selectedSource.ingestionStatus === 'FAILED'" class="processing-alert-banner">
-          <view class="processing-alert-left">
-            <text class="processing-alert-badge">解析失败</text>
-            <text class="processing-alert-msg">{{ selectedSource.safeErrorDetail || '解析未完成，建议重新上传' }}</text>
-          </view>
-        </view>
-
-        <view v-else-if="selectedSource.ingestionStatus !== 'READY'" class="processing-info-banner">
-          <LineIcon name="info" size="14px" color="var(--color-sage-ink)" />
-          <text class="processing-info-text">
-            {{
-              selectedSource.ingestionStatus === 'PARSING' || selectedSource.ingestionStatus === 'INDEXING'
-                ? '正在解析并构建索引，索引完成后即可读取结构大纲'
-                : '等待 PC 端完成解析索引'
-            }}
-          </text>
-        </view>
-
-        <view v-if="previewLoading" class="reader-loading-stage" role="status">
-          <view class="reader-sheet-placeholder zen-card" aria-hidden="true">
-            <view class="reader-sheet-kicker"></view>
-            <view class="reader-sheet-title"></view>
-            <view class="reader-sheet-block"></view>
-            <view class="reader-sheet-line"></view>
-            <view class="reader-sheet-line is-short"></view>
-          </view>
-          <view class="reader-status-pill zen-card">
-            <view class="reader-spinner" aria-hidden="true"></view>
-            <text class="reader-status-title">正在准备文档预览…</text>
-            <text class="reader-status-sub">{{ selectedSource.title || previewOriginalName || '加载文档中' }}</text>
-          </view>
-        </view>
-
-        <view v-else-if="previewError" class="empty-state">
-          <text class="state-title is-error">{{ previewError }}</text>
-          <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">重试</button>
-        </view>
-
-        <view v-else-if="!selectedSource.assetId" class="empty-state">
-          <view class="doc-meta-card zen-card">
-            <view class="doc-icon-circle">
-              <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="doc-name">{{ selectedSource.title || '文本资料' }}</text>
-            <text class="doc-meta">{{ selectedSource.type }}</text>
-          </view>
-        </view>
-
-        <scroll-view
-          v-else-if="previewUrl && isImageMedia(previewMimeType, previewMediaName)"
-          scroll-y
-          :show-scrollbar="false"
-          class="preview-scroll"
-        >
-          <view class="image-preview-frame zen-card">
-            <image
-              :src="previewUrl"
-              mode="widthFix"
-              class="preview-image"
-              @click="previewImageUrl(previewUrl)"
-            />
-            <view class="preview-footer">
-              <text class="doc-meta">{{ selectedSource.title || previewOriginalName }}</text>
-              <button class="ui-btn ui-btn-secondary sm" @click="previewImageUrl(previewUrl)">全屏</button>
+        <template v-if="fileReaderMode === 'document'">
+          <view v-if="selectedSource.ingestionStatus === 'FAILED'" class="processing-alert-banner">
+            <view class="processing-alert-left">
+              <text class="processing-alert-badge">解析失败</text>
+              <text class="processing-alert-msg">{{ selectedSource.safeErrorDetail || '解析未完成，建议重新上传' }}</text>
             </view>
           </view>
-        </scroll-view>
 
-        <!-- #ifdef H5 -->
-        <WorkspaceDocumentViewer
-          v-else-if="previewUrl && isCoreFileViewerKind(activePreviewKind)"
-          ref="docViewerRef"
-          :url="previewUrl"
-          :file-name="previewCoreFileName"
-          :mime-type="previewMimeType"
-          :preview-kind="activePreviewKind"
-          :source-key="`${selectedSource.id}:${previewUrl}`"
-          @ready-change="viewerReady = $event"
-          @zoom-change="zoomState = $event"
-          @rotation-change="previewRotation = $event"
-          @page-change="handleViewerPageChange"
-          @open-external="openDocument(previewUrl)"
-        />
-        <!-- #endif -->
-
-        <view v-else-if="previewUrl" class="empty-state">
-          <view class="doc-meta-card zen-card">
-            <view class="doc-icon-circle">
-              <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="doc-name">{{ selectedSource.title || previewOriginalName }}</text>
-            <text class="doc-meta num-tabular">
-              {{ formatPreviewFileType(previewMediaName, previewMimeType) }}
-              {{ formatBytes(selectedSource.assetSizeBytes) ? ` · ${formatBytes(selectedSource.assetSizeBytes)}` : '' }}
+          <view v-else-if="selectedSource.ingestionStatus !== 'READY'" class="processing-info-banner">
+            <LineIcon name="info" size="14px" color="var(--color-sage-ink)" />
+            <text class="processing-info-text">
+              {{
+                selectedSource.ingestionStatus === 'PARSING' || selectedSource.ingestionStatus === 'INDEXING'
+                  ? '正在解析并构建索引，索引完成后即可读取结构大纲'
+                  : '等待 PC 端完成解析索引'
+              }}
             </text>
-            <view class="quick-actions-row">
-              <button class="ui-btn ui-btn-primary sm" @click="openDocument(previewUrl)">打开原文件</button>
-              <button class="ui-btn ui-btn-secondary sm" @click="copyLink(previewUrl, '已复制链接')">复制链接</button>
-              <button v-if="tabletHandwritingNotesEnabled" class="ui-btn ui-btn-secondary sm" @click="openHandwritingNotebook">手写笔记</button>
+          </view>
+        </template>
+
+        <view v-show="fileReaderMode === 'document'" class="document-preview-pane">
+          <view v-if="previewLoading" class="reader-loading-stage" role="status">
+            <view class="reader-sheet-placeholder zen-card" aria-hidden="true">
+              <view class="reader-sheet-kicker"></view>
+              <view class="reader-sheet-title"></view>
+              <view class="reader-sheet-block"></view>
+              <view class="reader-sheet-line"></view>
+              <view class="reader-sheet-line is-short"></view>
             </view>
+            <view class="reader-status-pill zen-card">
+              <view class="reader-spinner" aria-hidden="true"></view>
+              <text class="reader-status-title">正在准备文档预览…</text>
+              <text class="reader-status-sub">{{ selectedSource.title || previewOriginalName || '加载文档中' }}</text>
+            </view>
+          </view>
+
+          <view v-else-if="previewError" class="empty-state">
+            <text class="state-title is-error">{{ previewError }}</text>
+            <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">重试</button>
+          </view>
+
+          <view v-else-if="!selectedSource.assetId" class="empty-state">
+            <view class="doc-meta-card zen-card">
+              <view class="doc-icon-circle">
+                <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
+              </view>
+              <text class="doc-name">{{ selectedSource.title || '文本资料' }}</text>
+              <text class="doc-meta">{{ selectedSource.type }}</text>
+            </view>
+          </view>
+
+          <scroll-view
+            v-else-if="previewUrl && isImageMedia(previewMimeType, previewMediaName)"
+            scroll-y
+            :show-scrollbar="false"
+            class="preview-scroll"
+          >
+            <view class="image-preview-frame zen-card">
+              <image
+                :src="previewUrl"
+                mode="widthFix"
+                class="preview-image"
+                @click="previewImageUrl(previewUrl)"
+              />
+              <view class="preview-footer">
+                <text class="doc-meta">{{ selectedSource.title || previewOriginalName }}</text>
+                <button class="ui-btn ui-btn-secondary sm" @click="previewImageUrl(previewUrl)">全屏</button>
+              </view>
+            </view>
+          </scroll-view>
+
+          <!-- #ifdef H5 -->
+          <WorkspaceDocumentViewer
+            v-else-if="previewUrl && isCoreFileViewerKind(activePreviewKind)"
+            ref="docViewerRef"
+            :url="previewUrl"
+            :file-name="previewCoreFileName"
+            :mime-type="previewMimeType"
+            :preview-kind="activePreviewKind"
+            :source-key="`${selectedSource.id}:${previewUrl}`"
+            @ready-change="viewerReady = $event"
+            @zoom-change="zoomState = $event"
+            @rotation-change="previewRotation = $event"
+            @page-change="handleViewerPageChange"
+            @open-external="openDocument(previewUrl)"
+          />
+          <!-- #endif -->
+
+          <view v-else-if="previewUrl" class="empty-state">
+            <view class="doc-meta-card zen-card">
+              <view class="doc-icon-circle">
+                <LineIcon name="file-text" size="22px" color="var(--color-sage-ink)" />
+              </view>
+              <text class="doc-name">{{ selectedSource.title || previewOriginalName }}</text>
+              <text class="doc-meta num-tabular">
+                {{ formatPreviewFileType(previewMediaName, previewMimeType) }}
+                {{ formatBytes(selectedSource.assetSizeBytes) ? ` · ${formatBytes(selectedSource.assetSizeBytes)}` : '' }}
+              </text>
+              <view class="quick-actions-row">
+                <button class="ui-btn ui-btn-primary sm" @click="openDocument(previewUrl)">打开原文件</button>
+                <button class="ui-btn ui-btn-secondary sm" @click="copyLink(previewUrl, '已复制链接')">复制链接</button>
+                <button v-if="tabletHandwritingNotesEnabled" class="ui-btn ui-btn-secondary sm" @click="openHandwritingNotebook">手写笔记</button>
+              </view>
+            </view>
+          </view>
+
+          <view v-else class="empty-state">
+            <text class="state-title">暂无预览</text>
+            <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">获取预览</button>
           </view>
         </view>
 
-        <view v-else class="empty-state">
-          <text class="state-title">暂无预览</text>
-          <button class="ui-btn ui-btn-secondary sm" @click="emit('retry-preview')">获取预览</button>
-        </view>
+        <WorkspaceOverviewPane
+          v-if="fileReaderMode !== 'document'"
+          kind="file"
+          :mode="fileReaderMode"
+          :title="selectedSource.title || '未命名资料'"
+          :sources-count="sourcesCount"
+          :source="selectedSource"
+          :overview="activeFileOverview"
+          :loading="activeFileOverviewLoading"
+          :error="activeFileOverviewError"
+          @refresh="emit('refresh-file-overview', selectedSource)"
+          @switch-mode="setFileReaderMode($event)"
+          @open-document="setFileReaderMode('document')"
+        />
 
         <!-- #ifdef H5 -->
         <view
-          v-if="isCoreDocPreview && viewerReady && previewPageCount > 1"
+          v-if="fileReaderMode === 'document' && isCoreDocPreview && viewerReady && previewPageCount > 1"
           class="floating-page-pill"
           role="navigation"
           aria-label="文档翻页"
@@ -270,24 +389,18 @@
         <!-- #endif -->
       </view>
 
-      <!-- 2. 学科与文件总览主从阅读视图 -->
+      <!-- 2. 学科总览全幅阅读 -->
       <WorkspaceOverviewPane
-        v-else-if="centerView === 'overview'"
-        :subject-name="subjectName"
-        :sources="sources"
-        :loading-sources="loadingSources"
-        :selection="overviewSelection"
-        :subject-overview="subjectOverview"
-        :subject-overview-loading="subjectOverviewLoading"
-        :subject-overview-error="subjectOverviewError"
-        :file-overviews="fileOverviews"
-        :file-overview-loading="fileOverviewLoading"
-        :file-overview-errors="fileOverviewErrors"
-        @select="emit('select-overview', $event)"
-        @refresh-all="emit('refresh-all-overviews')"
-        @refresh-active="emit('refresh-active-overview')"
-        @open-source-preview="emit('open-source-preview', $event)"
-        @upload="emit('upload')"
+        v-else-if="centerView === 'subject-overview'"
+        kind="subject"
+        :mode="subjectOverviewMode"
+        :title="subjectName || '当前学科'"
+        :sources-count="sourcesCount"
+        :overview="subjectOverview"
+        :loading="subjectOverviewLoading"
+        :error="subjectOverviewError"
+        @refresh="emit('refresh-subject-overview')"
+        @switch-mode="subjectOverviewMode = $event"
       />
 
       <!-- 3. 知识库网格视图 -->
@@ -457,9 +570,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
-import WorkspaceOverviewPane, {
-  type WorkspaceOverviewSelection,
-} from '@/components/tablet/workspace/WorkspaceOverviewPane.vue'
+import WorkspaceOverviewPane from '@/components/tablet/workspace/WorkspaceOverviewPane.vue'
 import WorkspaceReviewPane from '@/components/tablet/workspace/WorkspaceReviewPane.vue'
 import WorkspaceStatsPane from '@/components/tablet/workspace/WorkspaceStatsPane.vue'
 // #ifdef H5
@@ -486,7 +597,7 @@ import {
   resolveTabletPreviewKind,
 } from '@/utils/tabletFilePreview'
 
-export type WorkspaceCenterView = 'onboarding' | 'preview' | 'overview' | 'blocks' | 'review' | 'stats'
+export type WorkspaceCenterView = 'onboarding' | 'preview' | 'subject-overview' | 'blocks' | 'review' | 'stats'
 
 const props = defineProps<{
   centerView: WorkspaceCenterView
@@ -497,15 +608,12 @@ const props = defineProps<{
   subjectIcon?: string
   subjectDescription?: string
   selectedSource: SourceView | null
-  sources: SourceView[]
-  loadingSources: boolean
   sourcesCount: number
   previewUrl: string
   previewMimeType: string
   previewOriginalName: string
   previewLoading: boolean
   previewError: string
-  overviewSelection: WorkspaceOverviewSelection
   subjectOverview: OverviewResultView | null
   subjectOverviewLoading: boolean
   subjectOverviewError: string
@@ -519,10 +627,9 @@ const emit = defineEmits<{
   (event: 'toggle-tier2'): void
   (event: 'upload'): void
   (event: 'retry-preview'): void
-  (event: 'select-overview', selection: WorkspaceOverviewSelection): void
-  (event: 'refresh-all-overviews'): void
-  (event: 'refresh-active-overview'): void
-  (event: 'open-source-preview', source: SourceView): void
+  (event: 'refresh-subject-overview'): void
+  (event: 'refresh-file-overview', source: SourceView): void
+  (event: 'ensure-file-overview', source: SourceView): void
   (event: 'view-block', block: KnowledgeBlock): void
   (event: 'create-block'): void
   (event: 'delete-block', block: KnowledgeBlock): void
@@ -531,7 +638,84 @@ const emit = defineEmits<{
 }>()
 
 const safeIcon = computed(() => (props.subjectIcon && isSubjectIconKey(props.subjectIcon) ? props.subjectIcon : 'book'))
-const readySourcesCount = computed(() => props.sources.filter(item => item.ingestionStatus === 'READY').length)
+const fileReaderMode = ref<'document' | 'summary' | 'outline'>('document')
+const subjectOverviewMode = ref<'summary' | 'outline'>('summary')
+const copiedOverview = ref(false)
+let copiedOverviewTimer: ReturnType<typeof setTimeout> | null = null
+
+const activeFileOverview = computed(() => {
+  const id = props.selectedSource?.id
+  return id ? (props.fileOverviews[id] ?? null) : null
+})
+
+const activeFileOverviewLoading = computed(() => {
+  const id = props.selectedSource?.id
+  return id ? Boolean(props.fileOverviewLoading[id]) : false
+})
+
+const activeFileOverviewError = computed(() => {
+  const id = props.selectedSource?.id
+  return id ? (props.fileOverviewErrors[id] || '') : ''
+})
+
+const activeOverviewCopyText = computed(() => {
+  if (props.centerView === 'subject-overview') {
+    const overview = props.subjectOverview
+    if (!overview) return ''
+    return subjectOverviewMode.value === 'summary'
+      ? (overview.summaryMarkdown || '')
+      : (overview.outlineMarkdown || '')
+  }
+  if (props.centerView === 'preview' && fileReaderMode.value !== 'document') {
+    const overview = activeFileOverview.value
+    if (!overview) return ''
+    return fileReaderMode.value === 'summary'
+      ? (overview.summaryMarkdown || '')
+      : (overview.outlineMarkdown || '')
+  }
+  return ''
+})
+
+function setFileReaderMode(mode: 'document' | 'summary' | 'outline') {
+  fileReaderMode.value = mode
+  if (mode !== 'document' && props.selectedSource) {
+    emit('ensure-file-overview', props.selectedSource)
+  }
+}
+
+async function copyActiveOverview() {
+  if (!activeOverviewCopyText.value) return
+  const ok = await copyTextWithFallback(activeOverviewCopyText.value)
+  if (!ok) {
+    uni.showToast({ title: '复制失败，请手动复制', icon: 'none' })
+    return
+  }
+  copiedOverview.value = true
+  uni.showToast({ title: '已复制', icon: 'none' })
+  if (copiedOverviewTimer) clearTimeout(copiedOverviewTimer)
+  copiedOverviewTimer = setTimeout(() => {
+    copiedOverview.value = false
+    copiedOverviewTimer = null
+  }, 1500)
+}
+
+watch(
+  () => props.centerView,
+  (next, prev) => {
+    if (prev === 'subject-overview' && next === 'preview') {
+      fileReaderMode.value = 'document'
+    }
+  },
+)
+
+watch(
+  () => props.selectedSource?.id,
+  () => {
+    if (props.centerView === 'preview' && fileReaderMode.value !== 'document' && props.selectedSource) {
+      emit('ensure-file-overview', props.selectedSource)
+    }
+  },
+)
 
 interface DocViewerHandle {
   zoomIn: () => void
@@ -698,6 +882,10 @@ onBeforeUnmount(() => {
     clearTimeout(copiedResetTimer)
     copiedResetTimer = null
   }
+  if (copiedOverviewTimer) {
+    clearTimeout(copiedOverviewTimer)
+    copiedOverviewTimer = null
+  }
 })
 </script>
 
@@ -714,15 +902,28 @@ onBeforeUnmount(() => {
 }
 
 .center-status-bar {
-  height: 48px;
-  padding: 0 20px;
+  min-height: 48px;
+  padding: 6px 20px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.compact-seg {
+  padding: 3px;
+  border-radius: var(--radius-full);
+}
+
+.compact-seg-item {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  font-size: 11.5px;
 }
 
 .status-left {
@@ -894,6 +1095,14 @@ onBeforeUnmount(() => {
 
 .preview-stage {
   position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.document-preview-pane {
   flex: 1;
   min-height: 0;
   display: flex;

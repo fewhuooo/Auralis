@@ -11,24 +11,13 @@
 
           <view
             class="tier1-btn"
-            :class="{ 'is-active': centerView === 'preview' || centerView === 'onboarding' }"
+            :class="{ 'is-active': centerView === 'preview' || centerView === 'subject-overview' || centerView === 'onboarding' }"
             role="button"
             aria-label="学习资料"
             @click="handleFilesRailClick"
           >
             <LineIcon name="file-text" size="19px" color="currentColor" />
             <text class="tier1-btn-text">资料</text>
-          </view>
-
-          <view
-            class="tier1-btn"
-            :class="{ 'is-active': centerView === 'overview' }"
-            role="button"
-            aria-label="总览"
-            @click="openCenterSection('overview')"
-          >
-            <LineIcon name="list" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">总览</text>
           </view>
 
           <view
@@ -72,7 +61,7 @@
         </view>
       </aside>
 
-      <!-- 2. 可折叠学习资料抽屉 -->
+      <!-- 2. 可折叠学习资料与学科总览抽屉 -->
       <WorkspaceSourceRail
         :open="tier2Open"
         :sources="sources"
@@ -80,13 +69,18 @@
         :loading-sources="loadingSources"
         :sources-error="sourcesError"
         :uploading="uploading"
+        :subject-overview-active="centerView === 'subject-overview'"
+        :subject-overview="subjectOverview"
+        :subject-overview-loading="subjectOverviewLoading"
+        :subject-overview-error="subjectOverviewError"
         @upload="handleUploadFile"
         @refresh-sources="loadSources"
         @select-source="selectSource"
         @delete-source="handleDeleteSource"
+        @select-subject-overview="openSubjectOverview"
       />
 
-      <!-- 3. 右侧主工作区（预览 / 总览 / 知识库 / 复习 / 统计） -->
+      <!-- 3. 右侧主工作区（预览/总结/大纲 / 学科总览 / 知识库 / 复习 / 统计） -->
       <WorkspaceCenterReader
         :center-view="centerView"
         :tier2-open="tier2Open"
@@ -96,15 +90,12 @@
         :subject-icon="activeSubject?.icon"
         :subject-description="activeSubject?.description"
         :selected-source="selectedSource"
-        :sources="sources"
-        :loading-sources="loadingSources"
         :sources-count="sources.length"
         :preview-url="previewUrl"
         :preview-mime-type="previewMimeType"
         :preview-original-name="previewOriginalName"
         :preview-loading="previewLoading"
         :preview-error="previewError"
-        :overview-selection="overviewSelection"
         :subject-overview="subjectOverview"
         :subject-overview-loading="subjectOverviewLoading"
         :subject-overview-error="subjectOverviewError"
@@ -115,10 +106,9 @@
         @toggle-tier2="handleToggleTier2Collapse"
         @upload="handleUploadFile"
         @retry-preview="loadSourcePreview"
-        @select-overview="handleSelectOverview"
-        @refresh-all-overviews="loadAllOverviews"
-        @refresh-active-overview="refreshActiveOverview"
-        @open-source-preview="handleOpenSourcePreviewFromOverview"
+        @refresh-subject-overview="loadSubjectOverview"
+        @refresh-file-overview="loadFileOverview"
+        @ensure-file-overview="ensureFileOverview"
         @view-block="openBlockDetail"
         @create-block="openCreateBlockModal"
         @delete-block="handleDeleteBlock"
@@ -296,7 +286,6 @@ import WorkspaceSourceRail from '@/components/tablet/workspace/WorkspaceSourceRa
 import WorkspaceCenterReader, {
   type WorkspaceCenterView,
 } from '@/components/tablet/workspace/WorkspaceCenterReader.vue'
-import type { WorkspaceOverviewSelection } from '@/components/tablet/workspace/WorkspaceOverviewPane.vue'
 import WorkspaceAiPanel from '@/components/tablet/workspace/WorkspaceAiPanel.vue'
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
@@ -338,7 +327,6 @@ const subjectOverviewError = ref('')
 const fileOverviews = ref<Record<string, OverviewResultView | null>>({})
 const fileOverviewLoading = ref<Record<string, boolean>>({})
 const fileOverviewErrors = ref<Record<string, string>>({})
-const overviewSelection = ref<WorkspaceOverviewSelection>({ kind: 'subject' })
 
 const viewingBlockId = ref('')
 const showBlockModal = ref(false)
@@ -438,7 +426,11 @@ function clearPreview() {
 function handleFilesRailClick() {
   userChangedTier2 = true
   userChangedCenterView = true
-  if (centerView.value === 'preview' || centerView.value === 'onboarding') {
+  if (
+    centerView.value === 'preview'
+    || centerView.value === 'subject-overview'
+    || centerView.value === 'onboarding'
+  ) {
     tier2Open.value = !tier2Open.value
     return
   }
@@ -464,13 +456,29 @@ function openFilesDrawer() {
   }
 }
 
-function openCenterSection(view: 'overview' | 'blocks' | 'review' | 'stats') {
+function openCenterSection(view: 'blocks' | 'review' | 'stats') {
   userChangedCenterView = true
   userChangedTier2 = true
   centerView.value = view
   tier2Open.value = false
-  if (view === 'overview' && !subjectOverview.value && !subjectOverviewLoading.value) {
-    void loadAllOverviews()
+}
+
+function openSubjectOverview() {
+  userChangedCenterView = true
+  centerView.value = 'subject-overview'
+  if (!subjectOverview.value && !subjectOverviewLoading.value) {
+    void loadSubjectOverview()
+  }
+}
+
+function ensureFileOverview(source: SourceView) {
+  if (
+    source.id
+    && source.ingestionStatus === 'READY'
+    && !fileOverviews.value[source.id]
+    && !fileOverviewLoading.value[source.id]
+  ) {
+    void loadFileOverview(source)
   }
 }
 
@@ -489,12 +497,6 @@ async function loadSources() {
       clearPreview()
       if (centerView.value === 'preview') {
         centerView.value = 'onboarding'
-      }
-    }
-    if (overviewSelection.value.kind === 'file') {
-      const targetId = overviewSelection.value.sourceId
-      if (!list.some(item => item.id === targetId)) {
-        overviewSelection.value = { kind: 'subject' }
       }
     }
   } catch (error) {
@@ -604,41 +606,7 @@ function selectSource(source: SourceView) {
     clearPreview()
   }
   void loadSourcePreview()
-  if (source.ingestionStatus === 'READY' && !fileOverviews.value[source.id]) {
-    void loadFileOverview(source)
-  }
-}
-
-function handleSelectOverview(selection: WorkspaceOverviewSelection) {
-  overviewSelection.value = selection
-  if (selection.kind === 'subject') {
-    if (!subjectOverview.value && !subjectOverviewLoading.value) {
-      void loadSubjectOverview()
-    }
-    return
-  }
-  const src = sources.value.find(item => item.id === selection.sourceId)
-  if (src?.id && src.ingestionStatus === 'READY' && !fileOverviews.value[src.id] && !fileOverviewLoading.value[src.id]) {
-    void loadFileOverview(src)
-  }
-}
-
-function refreshActiveOverview() {
-  if (overviewSelection.value.kind === 'subject') {
-    void loadSubjectOverview()
-    return
-  }
-  const targetId = overviewSelection.value.sourceId
-  const src = sources.value.find(item => item.id === targetId)
-  if (src) {
-    void loadFileOverview(src)
-  }
-}
-
-function handleOpenSourcePreviewFromOverview(source: SourceView) {
-  userChangedTier2 = true
-  tier2Open.value = false
-  selectSource(source)
+  ensureFileOverview(source)
 }
 
 async function handleUploadFile() {
@@ -683,9 +651,6 @@ function handleDeleteSource(source: SourceView) {
           selectedSourceId.value = null
           clearPreview()
           if (centerView.value === 'preview') centerView.value = 'onboarding'
-        }
-        if (overviewSelection.value.kind === 'file' && overviewSelection.value.sourceId === source.id) {
-          overviewSelection.value = { kind: 'subject' }
         }
         await Promise.all([loadSources(), subjectStore.loadSubjects(), loadSubjectOverview()])
         if (!isFenceValid(fence, false)) return
@@ -943,7 +908,7 @@ async function reloadAll() {
 
   const panel = requestedPanel.value
   if (!userChangedTier2) {
-    if (panel === 'overview' || panel === 'blocks' || panel === 'review' || panel === 'stats') {
+    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
       tier2Open.value = false
     } else {
       tier2Open.value = true
@@ -951,8 +916,10 @@ async function reloadAll() {
   }
 
   if (!userChangedCenterView) {
-    if (panel === 'overview' || panel === 'blocks' || panel === 'review' || panel === 'stats') {
+    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
       centerView.value = panel
+    } else if (panel === 'overview') {
+      centerView.value = 'subject-overview'
     } else if (sources.value.length > 0 && sources.value[0].id) {
       if (!selectedSourceId.value) {
         selectedSourceId.value = sources.value[0].id
@@ -981,10 +948,14 @@ onLoad((options) => {
   const panel = options?.panel || options?.tab
   if (typeof panel === 'string') {
     requestedPanel.value = panel
-    if (panel === 'overview' || panel === 'blocks' || panel === 'review' || panel === 'stats') {
+    if (panel === 'blocks' || panel === 'review' || panel === 'stats') {
       workspaceBooting.value = false
       centerView.value = panel
       tier2Open.value = false
+    } else if (panel === 'overview') {
+      workspaceBooting.value = false
+      centerView.value = 'subject-overview'
+      tier2Open.value = true
     }
   }
 })

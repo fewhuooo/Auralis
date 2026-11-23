@@ -19,6 +19,26 @@
         </view>
       </view>
 
+      <!-- 置顶固定入口：学科总览 -->
+      <view
+        class="drawer-subject-entry"
+        :class="{ 'is-active': subjectOverviewActive }"
+        role="button"
+        @click="emit('select-subject-overview')"
+      >
+        <view class="drawer-subject-badge">
+          <LineIcon name="book" size="14px" color="var(--color-sage-ink)" />
+        </view>
+        <view class="drawer-subject-meta">
+          <text class="drawer-subject-title">学科总览</text>
+          <text class="drawer-subject-sub num-tabular">{{ subjectOverviewSubtitle }}</text>
+        </view>
+      </view>
+
+      <view class="drawer-divider-row">
+        <text class="drawer-divider-label num-tabular">资料文件 · {{ sources.length }}</text>
+      </view>
+
       <view v-if="loadingSources && sources.length === 0" class="drawer-skeletons">
         <view v-for="n in 4" :key="n" class="drawer-skeleton ui-shimmer"></view>
       </view>
@@ -38,7 +58,7 @@
             v-for="src in sources"
             :key="src.id"
             class="drawer-item"
-            :class="{ 'is-active': src.id === selectedSourceId }"
+            :class="{ 'is-active': !subjectOverviewActive && src.id === selectedSourceId }"
             role="button"
             @click="src.id && emit('select-source', src)"
           >
@@ -71,17 +91,23 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
 import { formatBytes, getSourceStatusMeta } from '@/utils/sourceFormat'
 
-defineProps<{
+const props = defineProps<{
   open: boolean
   sources: SourceView[]
   selectedSourceId: string | null
   loadingSources: boolean
   sourcesError: string
   uploading: boolean
+  subjectOverviewActive: boolean
+  subjectOverview: OverviewResultView | null
+  subjectOverviewLoading: boolean
+  subjectOverviewError: string
 }>()
 
 const emit = defineEmits<{
@@ -89,7 +115,15 @@ const emit = defineEmits<{
   (event: 'refresh-sources'): void
   (event: 'select-source', source: SourceView): void
   (event: 'delete-source', source: SourceView): void
+  (event: 'select-subject-overview'): void
 }>()
+
+const subjectOverviewSubtitle = computed(() => {
+  if (props.subjectOverviewLoading && !props.subjectOverview) return '加载中…'
+  if (props.subjectOverviewError && !props.subjectOverview) return '加载失败'
+  const hasContent = Boolean(props.subjectOverview?.summaryMarkdown || props.subjectOverview?.outlineMarkdown)
+  return `${props.sources.length} 份资料 · ${hasContent ? '已就绪' : '暂无内容'}`
+})
 </script>
 
 <style scoped>
@@ -165,6 +199,90 @@ const emit = defineEmits<{
 .drawer-add-btn.is-busy {
   opacity: 0.45;
   pointer-events: none;
+}
+
+.drawer-subject-entry {
+  position: relative;
+  margin: 0 10px 8px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-elevated);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.drawer-subject-entry:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.drawer-subject-entry.is-active {
+  border-color: rgba(139, 154, 110, 0.42);
+  background: linear-gradient(90deg, rgba(139, 154, 110, 0.16) 0%, rgba(139, 154, 110, 0.05) 100%);
+}
+
+.drawer-subject-entry.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-zen-sage);
+}
+
+.drawer-subject-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.drawer-subject-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drawer-subject-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.drawer-subject-entry.is-active .drawer-subject-title {
+  color: var(--color-sage-ink);
+}
+
+.drawer-subject-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-divider-row {
+  padding: 6px 14px 4px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.drawer-divider-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .drawer-scroll {
