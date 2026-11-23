@@ -92,6 +92,8 @@
         :selected-source="selectedSource"
         :sources-count="sources.length"
         :preview-url="previewUrl"
+        :preview-buffer="previewBuffer"
+        :preview-asset-id="previewAssetId"
         :preview-mime-type="previewMimeType"
         :preview-original-name="previewOriginalName"
         :preview-loading="previewLoading"
@@ -105,7 +107,7 @@
         :subject-blocks="subjectBlocks"
         @toggle-tier2="handleToggleTier2Collapse"
         @upload="handleUploadFile"
-        @retry-preview="loadSourcePreview"
+        @retry-preview="loadSourcePreview(true)"
         @refresh-subject-overview="loadSubjectOverview"
         @refresh-file-overview="loadFileOverview"
         @ensure-file-overview="ensureFileOverview"
@@ -276,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
@@ -291,9 +293,15 @@ import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
 import { sourceApi, type SourceView } from '@/api/sourceApi'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { localDataScope } from '@/services/localDataScope'
+import { localDb } from '@/services/localDb'
+// #ifdef H5
+import { deleteCachedDocument, getCachedDocument } from '@/services/localDocumentCache'
+// #endif
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { useSyncStore } from '@/store/useSyncStore'
 import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { formatShortDateTime } from '@/utils/sourceFormat'
@@ -302,6 +310,7 @@ import { isSubjectIconKey } from '@/utils/subjectIcon'
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
+const syncStore = useSyncStore()
 
 const subjectId = ref('')
 const requestedPanel = ref('')
@@ -316,6 +325,7 @@ const selectedSourceId = ref<string | null>(null)
 const uploading = ref(false)
 
 const previewUrl = ref('')
+const previewBuffer = shallowRef<ArrayBuffer | null>(null)
 const previewMimeType = ref('')
 const previewOriginalName = ref('')
 const previewLoading = ref(false)
@@ -373,6 +383,7 @@ const selectedSource = computed(() => {
   if (!selectedSourceId.value) return null
   return sources.value.find(item => item.id === selectedSourceId.value) || null
 })
+const previewAssetId = computed(() => selectedSource.value?.assetId || '')
 
 const subjectBlocks = computed(() => blockStore.recentBlocks.filter((item) => {
   if (item.is_deleted) return false
@@ -417,6 +428,7 @@ function isFenceValid(fence: ReturnType<typeof captureFence>, checkSource = true
 function clearPreview() {
   previewReqToken++
   previewUrl.value = ''
+  previewBuffer.value = null
   previewMimeType.value = ''
   previewOriginalName.value = ''
   previewLoading.value = false
@@ -436,7 +448,7 @@ function handleFilesRailClick() {
   }
   centerView.value = selectedSource.value ? 'preview' : 'onboarding'
   tier2Open.value = true
-  if (selectedSource.value && !previewUrl.value && !previewLoading.value && !previewError.value) {
+  if (selectedSource.value && !previewUrl.value && !previewBuffer.value && !previewLoading.value && !previewError.value) {
     void loadSourcePreview()
   }
 }
@@ -451,7 +463,7 @@ function openFilesDrawer() {
   userChangedCenterView = true
   centerView.value = selectedSource.value ? 'preview' : 'onboarding'
   tier2Open.value = true
-  if (selectedSource.value && !previewUrl.value && !previewLoading.value && !previewError.value) {
+  if (selectedSource.value && !previewUrl.value && !previewBuffer.value && !previewLoading.value && !previewError.value) {
     void loadSourcePreview()
   }
 }
@@ -482,6 +494,16 @@ function ensureFileOverview(source: SourceView) {
   }
 }
 
+function reconcileSelectedSource(list: SourceView[]) {
+  if (selectedSourceId.value && !list.some(item => item.id === selectedSourceId.value)) {
+    selectedSourceId.value = null
+    clearPreview()
+    if (centerView.value === 'preview') {
+      centerView.value = 'onboarding'
+    }
+  }
+}
+
 async function loadSources() {
   if (!subjectId.value) return
   const token = ++sourceReqToken
@@ -489,16 +511,21 @@ async function loadSources() {
   loadingSources.value = true
   sourcesError.value = ''
   try {
-    const list = await sourceApi.listAllBySubject(subjectId.value)
+    try {
+      const cached = await localDb.getSourceViews(fence.subjectId)
+      if (token !== sourceReqToken || !isFenceValid(fence, false)) return
+      if (cached.length > 0 && sources.value.length === 0) {
+        sources.value = cached
+      }
+    } catch {
+      // Ignore local source cache failure and proceed to network fetch.
+    }
+
+    const list = await sourceApi.listAllBySubject(fence.subjectId)
     if (token !== sourceReqToken || !isFenceValid(fence, false)) return
     sources.value = list
-    if (selectedSourceId.value && !list.some(item => item.id === selectedSourceId.value)) {
-      selectedSourceId.value = null
-      clearPreview()
-      if (centerView.value === 'preview') {
-        centerView.value = 'onboarding'
-      }
-    }
+    void localDb.replaceSubjectSources(fence.subjectId, list).catch(() => {})
+    reconcileSelectedSource(list)
   } catch (error) {
     if (token !== sourceReqToken || !isFenceValid(fence, false)) return
     sourcesError.value = error instanceof Error && error.message ? error.message : '资料列表加载失败'
@@ -507,7 +534,7 @@ async function loadSources() {
   }
 }
 
-async function loadSourcePreview() {
+async function loadSourcePreview(bypassCache = false) {
   const source = selectedSource.value
   if (!source || !source.assetId) {
     clearPreview()
@@ -515,10 +542,28 @@ async function loadSourcePreview() {
   }
   const token = ++previewReqToken
   const fence = captureFence()
+  const activeScope = localDataScope.current()
   previewLoading.value = true
   previewError.value = ''
   previewUrl.value = ''
+  previewBuffer.value = null
   try {
+    // #ifdef H5
+    if (bypassCache) {
+      await deleteCachedDocument(activeScope, source.assetId)
+      if (token !== previewReqToken || !isFenceValid(fence)) return
+    } else {
+      const cached = await getCachedDocument(activeScope, source.assetId)
+      if (token !== previewReqToken || !isFenceValid(fence)) return
+      if (cached) {
+        previewBuffer.value = cached.buffer
+        previewMimeType.value = cached.mimeType || ''
+        previewOriginalName.value = cached.originalName || source.title || ''
+        return
+      }
+    }
+    // #endif
+
     const res = await assetApi.downloadUrl(source.assetId)
     if (token !== previewReqToken || !isFenceValid(fence)) return
     previewUrl.value = res.url || ''
@@ -542,9 +587,24 @@ async function loadSubjectOverview() {
   subjectOverviewLoading.value = true
   subjectOverviewError.value = ''
   try {
-    const result = await overviewApi.getSubject(subjectId.value)
+    try {
+      const cached = await localDb.getSubjectOverviewCache(fence.subjectId)
+      if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
+      if (cached && !subjectOverview.value) {
+        subjectOverview.value = cached
+      }
+    } catch {
+      // Ignore local overview cache failure and fall back to remote request.
+    }
+
+    const result = await overviewApi.getSubject(fence.subjectId)
     if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
     subjectOverview.value = result
+    if (result) {
+      void localDb.saveSubjectOverviewCache(fence.subjectId, result).catch(() => {})
+    } else {
+      void localDb.deleteSubjectOverviewCache(fence.subjectId).catch(() => {})
+    }
   } catch (error) {
     if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
     subjectOverviewError.value = error instanceof Error && error.message ? error.message : '学科总览加载失败'
@@ -568,9 +628,24 @@ async function loadFileOverview(source: SourceView) {
   fileOverviewLoading.value = { ...fileOverviewLoading.value, [srcId]: true }
   fileOverviewErrors.value = { ...fileOverviewErrors.value, [srcId]: '' }
   try {
+    try {
+      const cached = await localDb.getSourceOverviewCache(srcId, source.ingestionRevision)
+      if (token !== fileOverviewTokens[srcId] || !isFenceValid(fence, false)) return
+      if (cached && !fileOverviews.value[srcId]) {
+        fileOverviews.value = { ...fileOverviews.value, [srcId]: cached }
+      }
+    } catch {
+      // Ignore local file overview cache failure and fall back to remote request.
+    }
+
     const result = await overviewApi.getSource(srcId, source.ingestionRevision)
     if (token !== fileOverviewTokens[srcId] || !isFenceValid(fence, false)) return
     fileOverviews.value = { ...fileOverviews.value, [srcId]: result }
+    if (result) {
+      void localDb.saveSourceOverviewCache(srcId, fence.subjectId, source.ingestionRevision, result).catch(() => {})
+    } else {
+      void localDb.deleteSourceOverviewCache(srcId).catch(() => {})
+    }
   } catch (error) {
     if (token !== fileOverviewTokens[srcId] || !isFenceValid(fence, false)) return
     fileOverviewErrors.value = {
@@ -638,6 +713,7 @@ async function handleUploadFile() {
 function handleDeleteSource(source: SourceView) {
   if (!source.id) return
   const fence = captureFence()
+  const activeScope = localDataScope.current()
   uni.showModal({
     title: '删除资料',
     content: `确定删除《${source.title || '未命名资料'}》吗？`,
@@ -647,6 +723,12 @@ function handleDeleteSource(source: SourceView) {
       try {
         await sourceApi.delete(source.id, source.version ?? 0)
         if (!isFenceValid(fence, false)) return
+        void localDb.deleteSourceFile(source.id).catch(() => {})
+        // #ifdef H5
+        if (source.assetId) {
+          void deleteCachedDocument(activeScope, source.assetId)
+        }
+        // #endif
         if (selectedSourceId.value === source.id) {
           selectedSourceId.value = null
           clearPreview()
@@ -989,6 +1071,21 @@ onBeforeUnmount(() => {
     window.removeEventListener('resize', handleWindowResize)
   }
 })
+
+watch(
+  () => syncStore.lastSyncedAt,
+  (next) => {
+    if (!next || !subjectId.value || loadingSources.value) return
+    const fence = captureFence()
+    void localDb.getSourceViews(fence.subjectId).then((cached) => {
+      if (!isFenceValid(fence, false)) return
+      if (cached.length > 0 || sources.value.length > 0) {
+        sources.value = cached
+        reconcileSelectedSource(cached)
+      }
+    }).catch(() => {})
+  },
+)
 </script>
 
 <style scoped>

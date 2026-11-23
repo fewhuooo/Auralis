@@ -281,6 +281,7 @@
 import { computed, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { statsApi, type SubjectStats } from '@/api/statsApi'
+import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { detectLocalTimeZone, toLocalDateKey } from '@/utils/dateKey'
 
@@ -327,10 +328,22 @@ async function loadStats() {
 
   loading.value = true
   loadError.value = ''
+  const timeZone = detectLocalTimeZone()
   try {
-    const result = await statsApi.subject(targetSubjectId, detectLocalTimeZone(), requestedDays)
+    try {
+      const cached = await localDb.getSubjectStatsCache(targetSubjectId, requestedDays, timeZone)
+      if (!isCurrent()) return
+      if (cached) {
+        stats.value = cached
+      }
+    } catch {
+      // Ignore local stats cache read failure and fall back to remote fetch.
+    }
+
+    const result = await statsApi.subject(targetSubjectId, timeZone, requestedDays)
     if (!isCurrent()) return
     stats.value = result
+    void localDb.saveSubjectStatsCache(targetSubjectId, requestedDays, timeZone, result).catch(() => {})
   } catch (error) {
     if (!isCurrent()) return
     loadError.value = error instanceof Error && error.message ? error.message : '学科统计加载失败'
@@ -553,6 +566,15 @@ const taskCompletionRate = computed(() => {
   background: var(--color-danger-bg);
   border: 1px solid rgba(201, 59, 59, 0.24);
   color: var(--color-danger);
+}
+
+.stats-notice .ui-btn {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.stats-notice .ui-btn::after {
+  border: none;
 }
 
 .notice-text {

@@ -48,6 +48,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+// #ifdef H5
+import { localDataScope } from '@/services/localDataScope'
+import { deleteCachedDocument, putCachedDocument } from '@/services/localDocumentCache'
+// #endif
 import type {
   FileRenderContext,
   FileRenderHandler,
@@ -78,6 +82,8 @@ const DEFAULT_ZOOM: DocViewerZoomPayload = {
 
 const props = defineProps<{
   url: string
+  assetId?: string
+  cachedBuffer?: ArrayBuffer | null
   fileName: string
   mimeType: string
   previewKind: 'pdf' | 'word' | 'presentation'
@@ -91,6 +97,7 @@ const emit = defineEmits<{
   (event: 'page-change', page: number, pageCount: number): void
   (event: 'error', message: string): void
   (event: 'open-external'): void
+  (event: 'retry-source'): void
 }>()
 
 const shellRef = ref<HTMLElement | { $el?: unknown } | null>(null)
@@ -452,8 +459,9 @@ async function loadDocument(): Promise<void> {
   const token = ++loadToken
   fittedScale = null
   abortActiveWork()
-  loading.value = Boolean(props.url)
-  phase.value = 'downloading'
+  const hasSource = Boolean(props.url || props.cachedBuffer)
+  loading.value = hasSource
+  phase.value = props.cachedBuffer ? 'rendering' : 'downloading'
   downloadProgress.value = null
   errorMessage.value = ''
   isReady.value = false
@@ -466,13 +474,14 @@ async function loadDocument(): Promise<void> {
   emit('rotation-change', 0)
   emit('page-change', 1, 1)
 
-  if (!props.url) {
+  if (!hasSource) {
     await destroyActiveViewer('reset')
     if (token === loadToken) loading.value = false
     return
   }
 
   // #ifdef H5
+  const cacheScope = localDataScope.current()
   await nextTick()
   if (token !== loadToken) return
   const surfaceEl = resolveHtmlElement(surfaceRef.value)
@@ -506,21 +515,35 @@ async function loadDocument(): Promise<void> {
     )
     setDefaultFileViewerAssetBaseUrl(runtimeAssetBase)
 
-    const dlController = new AbortController()
-    fetchAbort = dlController
-    const { blob, contentType } = await downloadBlobWithProgress(
-      props.url,
-      props.mimeType,
-      dlController.signal,
-      (percent) => {
-        if (token === loadToken) downloadProgress.value = percent
-      },
-    )
-    if (token !== loadToken) return
-    fetchAbort = null
-
-    phase.value = 'rendering'
-    downloadProgress.value = null
+    let buffer: ArrayBuffer
+    let cacheCopy: ArrayBuffer | null = null
+    let contentType = props.mimeType || 'application/octet-stream'
+    if (props.cachedBuffer) {
+      phase.value = 'rendering'
+      downloadProgress.value = null
+      // Clone before passing to pdf.js or renderer in case it transfers/detaches the ArrayBuffer.
+      buffer = props.cachedBuffer.slice(0)
+    } else {
+      const dlController = new AbortController()
+      fetchAbort = dlController
+      const downloaded = await downloadBlobWithProgress(
+        props.url,
+        props.mimeType,
+        dlController.signal,
+        (percent) => {
+          if (token === loadToken) downloadProgress.value = percent
+        },
+      )
+      if (token !== loadToken) return
+      fetchAbort = null
+      contentType = downloaded.contentType
+      phase.value = 'rendering'
+      downloadProgress.value = null
+      buffer = await downloaded.blob.arrayBuffer()
+      if (token !== loadToken) return
+      // Snapshot before instance.load may transfer/detach buffer; persist only after decode succeeds.
+      cacheCopy = props.assetId ? buffer.slice(0) : null
+    }
 
     const waitController = new AbortController()
     waitAbort = waitController
@@ -592,7 +615,6 @@ async function loadDocument(): Promise<void> {
     viewer = instance
     viewerToken = token
 
-    const buffer = await blob.arrayBuffer()
     if (token !== loadToken || waitController.signal.aborted) return
     const file = new File([buffer], props.fileName, { type: contentType })
     await instance.load(
@@ -612,6 +634,15 @@ async function loadDocument(): Promise<void> {
     await waitForSettledPaint(waitController.signal)
     if (token !== loadToken || waitController.signal.aborted) return
 
+    if (cacheCopy && props.assetId && localDataScope.current() === cacheScope) {
+      void putCachedDocument(cacheScope, {
+        assetId: props.assetId,
+        mimeType: contentType,
+        originalName: props.fileName,
+        buffer: cacheCopy,
+      })
+    }
+
     const finalZoom = instance.getZoomState()
     if (finalZoom && Number.isFinite(finalZoom.scale) && finalZoom.scale > 0) {
       fittedScale = finalZoom.scale
@@ -630,6 +661,10 @@ async function loadDocument(): Promise<void> {
   } catch (error) {
     if (token !== loadToken || isAbortException(error)) return
     const message = formatLoadError(error)
+    if (props.cachedBuffer && props.assetId && localDataScope.current() === cacheScope) {
+      await deleteCachedDocument(cacheScope, props.assetId)
+      if (token !== loadToken) return
+    }
     errorMessage.value = message
     isReady.value = false
     emit('ready-change', false)
@@ -646,6 +681,10 @@ async function loadDocument(): Promise<void> {
 
 function retry(): void {
   if (loading.value) return
+  if (props.cachedBuffer && !props.url) {
+    emit('retry-source')
+    return
+  }
   void loadDocument()
 }
 
@@ -663,7 +702,7 @@ onMounted(() => {
 })
 
 watch(
-  () => [props.sourceKey, props.url, props.fileName],
+  () => [props.sourceKey, props.url, props.cachedBuffer, props.fileName],
   () => { void loadDocument() },
   { immediate: true },
 )

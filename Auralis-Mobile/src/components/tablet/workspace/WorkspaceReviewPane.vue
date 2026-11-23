@@ -399,6 +399,7 @@ import MarkdownText from '@/components/MarkdownText.vue'
 import { ApiProblemError } from '@/api/protocol'
 import { reviewApi, type ReviewState } from '@/api/reviewApi'
 import { useMobileLifecycleReview } from '@/composables/useMobileLifecycleReview'
+import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import type { KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -545,6 +546,20 @@ async function loadPlanningStates() {
   statesLoading.value = true
   statesError.value = ''
   try {
+    try {
+      const [cached, loadedMarker] = await Promise.all([
+        localDb.getReviewStatesBySubject(targetSubjectId),
+        localDb.hasLoadedReviewStates(targetSubjectId),
+      ])
+      if (!isCurrent()) return
+      if (!statesLoaded.value && (cached.length > 0 || loadedMarker)) {
+        states.value = cached
+        statesLoaded.value = true
+      }
+    } catch {
+      // Ignore local review-state cache read error and proceed to network fetch.
+    }
+
     const collected: ReviewState[] = []
     let cursor: string | undefined
     do {
@@ -561,6 +576,7 @@ async function loadPlanningStates() {
     if (!isCurrent()) return
     states.value = collected
     statesLoaded.value = true
+    void localDb.replaceSubjectReviewStates(targetSubjectId, collected).catch(() => {})
   } catch (error) {
     if (!isCurrent()) return
     const isPendingLocalSubject = (targetSubject?.version ?? 0) === 0
@@ -572,7 +588,8 @@ async function loadPlanningStates() {
       statesError.value = ''
       return
     }
-    statesError.value = error instanceof Error && error.message ? error.message : '复习状态读取失败'
+    const msg = error instanceof Error && error.message ? error.message : '复习状态读取失败'
+    statesError.value = statesLoaded.value ? `刷新失败，当前展示本地缓存状态：${msg}` : msg
   } finally {
     if (isCurrent()) statesLoading.value = false
   }

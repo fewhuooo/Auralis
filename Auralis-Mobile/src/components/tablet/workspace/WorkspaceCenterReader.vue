@@ -105,7 +105,7 @@
             </view>
           </view>
 
-          <template v-if="fileReaderMode === 'document' && (previewUrl || (previewLoading && showCorePreviewControls))">
+          <template v-if="fileReaderMode === 'document' && (hasPreviewSource || (previewLoading && showCorePreviewControls))">
             <!-- #ifdef H5 -->
             <view v-if="showCorePreviewControls" class="preview-controls-bar" aria-label="文档预览控制">
               <view class="preview-control-group">
@@ -165,10 +165,10 @@
               <button
                 type="button"
                 class="status-icon-btn"
-                :disabled="!previewUrl"
+                :disabled="!hasPreviewSource"
                 title="新窗口打开"
                 aria-label="新窗口打开"
-                @click="previewUrl && openDocument(previewUrl)"
+                @click="openActiveDocument"
               >
                 <LineIcon name="external-link" size="14px" color="var(--text-secondary)" />
               </button>
@@ -305,18 +305,21 @@
 
           <!-- #ifdef H5 -->
           <WorkspaceDocumentViewer
-            v-else-if="previewUrl && isCoreFileViewerKind(activePreviewKind)"
+            v-else-if="hasPreviewSource && isCoreFileViewerKind(activePreviewKind)"
             ref="docViewerRef"
             :url="previewUrl"
+            :asset-id="previewAssetId || selectedSource.assetId || ''"
+            :cached-buffer="previewBuffer || null"
             :file-name="previewCoreFileName"
             :mime-type="previewMimeType"
             :preview-kind="activePreviewKind"
-            :source-key="`${selectedSource.id}:${previewUrl}`"
+            :source-key="`${selectedSource.id}:${previewAssetId || ''}:${previewUrl || 'cached'}`"
             @ready-change="viewerReady = $event"
             @zoom-change="zoomState = $event"
             @rotation-change="previewRotation = $event"
             @page-change="handleViewerPageChange"
-            @open-external="openDocument(previewUrl)"
+            @open-external="openActiveDocument"
+            @retry-source="emit('retry-preview')"
           />
           <!-- #endif -->
 
@@ -610,6 +613,8 @@ const props = defineProps<{
   selectedSource: SourceView | null
   sourcesCount: number
   previewUrl: string
+  previewBuffer?: ArrayBuffer | null
+  previewAssetId?: string
   previewMimeType: string
   previewOriginalName: string
   previewLoading: boolean
@@ -750,11 +755,13 @@ const activePreviewKind = computed(() => (
   resolveTabletPreviewKind(previewMediaName.value, props.previewMimeType)
 ))
 
+const hasPreviewSource = computed(() => Boolean(props.previewUrl || props.previewBuffer))
+
 const isCoreDocPreview = computed(() => {
   let enabled = false
   // #ifdef H5
   enabled = (
-    Boolean(props.previewUrl)
+    hasPreviewSource.value
     && !isImageMedia(props.previewMimeType, previewMediaName.value)
     && isCoreFileViewerKind(activePreviewKind.value)
   )
@@ -784,7 +791,7 @@ function handleViewerPageChange(page: number, pageCount: number) {
 }
 
 watch(
-  () => [props.selectedSource?.id, props.previewUrl],
+  () => [props.selectedSource?.id, props.previewUrl, props.previewBuffer],
   () => {
     viewerReady.value = false
     zoomState.value = { ...DEFAULT_VIEWER_ZOOM }
@@ -847,6 +854,23 @@ async function copyBlockCard(block: KnowledgeBlock) {
 
 function previewImageUrl(url: string) {
   uni.previewImage({ urls: [url], current: url })
+}
+
+function openActiveDocument() {
+  if (props.previewUrl) {
+    openDocument(props.previewUrl)
+    return
+  }
+  // #ifdef H5
+  if (props.previewBuffer && typeof window !== 'undefined' && typeof URL !== 'undefined') {
+    const blob = new Blob([props.previewBuffer.slice(0)], {
+      type: props.previewMimeType || 'application/octet-stream',
+    })
+    const blobUrl = URL.createObjectURL(blob)
+    window.open(blobUrl, '_blank', 'noopener')
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+  }
+  // #endif
 }
 
 function openDocument(url: string) {

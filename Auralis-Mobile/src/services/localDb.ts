@@ -1,9 +1,13 @@
+import type { OverviewResultView } from '@/api/overviewApi';
+import type { ReviewState } from '@/api/reviewApi';
+import type { SourceView } from '@/api/sourceApi';
+import type { SubjectStats } from '@/api/statsApi';
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
 import { buildSyncedBlockRecord } from '@/utils/blockSyncMapper';
 import { formatLocalTimeHHmm } from '@/utils/dateKey';
 import { normalizeTaskPosition } from '@/utils/taskSyncMapper';
-import { localDataScope } from './localDataScope';
+import { localDataScope } from './localDataScope.ts';
 
 function databaseIdentity() {
   const scope = localDataScope.current();
@@ -472,6 +476,78 @@ const sqlite = {
 };
 
 const inFlightMutationIds = new Set<string>();
+const cacheWriteQueues = new Map<string, Promise<void>>();
+
+function escSql(val: string | null | undefined): string {
+  return (val || '').replace(/'/g, "''");
+}
+
+function parseJsonSafely<T>(raw: unknown): T | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function safeFiniteInt(raw: unknown, fallback = 0): number {
+  const num = Number(raw);
+  return Number.isFinite(num) ? Math.trunc(num) : fallback;
+}
+
+function reviewStatesLoadedMetaKey(subjectId: string): string {
+  return `review_states_loaded:${subjectId}`;
+}
+
+function subjectOverviewCacheKey(subjectId: string): string {
+  return `SUBJECT:${subjectId}:subject-v1`;
+}
+
+function sourceOverviewCacheKey(sourceId: string, revisionKey: string): string {
+  return `FILE:${sourceId}:${revisionKey}`;
+}
+
+function subjectStatsCacheKey(subjectId: string, days: 7 | 30, timeZone: string): string {
+  return `${subjectId}:${days}:${timeZone}`;
+}
+
+function safeCurrentScope(): string | null {
+  try {
+    return localDataScope.current();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Serializes derived-cache writes per scope/table and verifies scope invariance
+ * right before committing so account switches or H5 storage quota limits cannot corrupt state.
+ */
+function serializeCacheWrite(bucket: string, operation: () => Promise<void>): Promise<void> {
+  const expectedScope = safeCurrentScope();
+  if (!expectedScope) return Promise.resolve();
+  const queueKey = `${expectedScope}:${bucket}`;
+  const previous = cacheWriteQueues.get(queueKey) ?? Promise.resolve();
+  const run = previous.then(async () => {
+    const activeScope = safeCurrentScope();
+    if (!activeScope || activeScope !== expectedScope) return;
+    try {
+      await operation();
+    } catch (error) {
+      if (typeof uni === 'undefined' && typeof plus === 'undefined') return;
+      console.warn(`[SQLite Mobile] Cache persistence skipped (${bucket}):`, error);
+    }
+  });
+  const tail = run.then(() => undefined, () => undefined);
+  cacheWriteQueues.set(queueKey, tail);
+  void tail.finally(() => {
+    if (cacheWriteQueues.get(queueKey) === tail) {
+      cacheWriteQueues.delete(queueKey);
+    }
+  });
+  return run;
+}
 
 export const localDb = {
   async executeSql(sql: string, params?: any[]): Promise<any> {
@@ -585,7 +661,37 @@ export const localDb = {
         catalog_json TEXT,
         block_count INTEGER DEFAULT 0,
         created_at INTEGER,
-        version INTEGER DEFAULT 0
+        version INTEGER DEFAULT 0,
+        payload_json TEXT
+      )
+    `);
+    await sqlite.execute(`
+      CREATE TABLE IF NOT EXISTS ai_overview_cache (
+        cache_key TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        subject_id TEXT,
+        revision_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    await sqlite.execute(`
+      CREATE TABLE IF NOT EXISTS review_states_cache (
+        knowledge_block_id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    await sqlite.execute(`
+      CREATE TABLE IF NOT EXISTS subject_stats_cache (
+        cache_key TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        days INTEGER NOT NULL,
+        time_zone TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       )
     `);
     await sqlite.execute(`
@@ -681,6 +787,9 @@ export const localDb = {
     } catch (e) {}
     try {
       await sqlite.execute("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE source_files ADD COLUMN payload_json TEXT");
     } catch (e) {}
     try {
       await sqlite.execute("ALTER TABLE subjects DROP COLUMN color");
@@ -1266,57 +1375,341 @@ export const localDb = {
   },
 
   async deleteSubject(id: string): Promise<void> {
-    const escId = id.replace(/'/g, "''");
+    const escId = escSql(id);
+    const subjectSources = await sqlite.select(`SELECT id FROM source_files WHERE subject_id = '${escId}'`);
+    for (const row of subjectSources) {
+      if (row.id) {
+        await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(String(row.id))}'`);
+      }
+    }
     await sqlite.execute(`DELETE FROM source_files WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM ai_overview_cache WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM review_states_cache WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM subject_stats_cache WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM sync_metadata WHERE key = '${escSql(reviewStatesLoadedMetaKey(id))}'`);
     await sqlite.execute(`UPDATE knowledge_blocks SET subject_id = NULL WHERE subject_id = '${escId}'`);
     await sqlite.execute(`UPDATE task_blocks SET subject_id = NULL WHERE subject_id = '${escId}'`);
     await sqlite.execute(`DELETE FROM subjects WHERE id = '${escId}'`);
   },
 
-  // Source Files CRUD
+  // Source Files CRUD & SourceView Projection
   async getSourceFiles(subjectId: string): Promise<any[]> {
-    const escId = subjectId.replace(/'/g, "''");
+    const escId = escSql(subjectId);
     return sqlite.select(`SELECT * FROM source_files WHERE subject_id = '${escId}' ORDER BY created_at DESC`);
   },
 
   async saveSourceFile(file: any): Promise<void> {
-    const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const exists = await sqlite.select(`SELECT id FROM source_files WHERE id = '${esc(file.id)}'`);
-    const catalogJsonVal = file.catalog_json || '';
-    const blockCountVal = file.block_count || 0;
+    const fileId = String(file.id || '');
+    const exists = await sqlite.select(`SELECT id, payload_json FROM source_files WHERE id = '${escSql(fileId)}'`);
+    const catalogJsonVal = typeof file.catalog_json === 'string' ? file.catalog_json : '';
+    const blockCountVal = safeFiniteInt(file.block_count, 0);
+    const fileSizeVal = Math.max(0, safeFiniteInt(file.file_size ?? file.assetSizeBytes, 0));
+    const createdAtVal = safeFiniteInt(file.created_at, Date.now());
+    const versionVal = safeFiniteInt(file.version, 0);
+    const existingPayload = exists && exists.length > 0 && typeof exists[0].payload_json === 'string'
+      ? exists[0].payload_json
+      : '';
+    const payloadJsonVal = typeof file.payload_json === 'string' && file.payload_json.trim()
+      ? file.payload_json
+      : existingPayload;
+
     if (exists && exists.length > 0) {
       await sqlite.execute(`
-        UPDATE source_files SET 
-          name = '${esc(file.name)}', 
-          file_path = '${esc(file.file_path)}', 
-          file_type = '${esc(file.file_type)}', 
-          file_size = ${file.file_size}, 
-          catalog_json = '${esc(catalogJsonVal)}', 
+        UPDATE source_files SET
+          name = '${escSql(file.name)}',
+          file_path = '${escSql(file.file_path)}',
+          file_type = '${escSql(file.file_type)}',
+          file_size = ${fileSizeVal},
+          catalog_json = '${escSql(catalogJsonVal)}',
           block_count = ${blockCountVal},
-          version = ${Number(file.version || 0)}
-        WHERE id = '${esc(file.id)}'
+          version = ${versionVal},
+          payload_json = '${escSql(payloadJsonVal)}'
+        WHERE id = '${escSql(fileId)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at, version)
+        INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at, version, payload_json)
         VALUES (
-          '${esc(file.id)}', 
-          '${esc(file.subject_id)}', 
-          '${esc(file.name)}', 
-          '${esc(file.file_path)}', 
-          '${esc(file.file_type)}', 
-          ${file.file_size}, 
-          '${esc(catalogJsonVal)}', 
-          ${blockCountVal}, 
-          ${file.created_at || Date.now()},
-          ${Number(file.version || 0)}
+          '${escSql(fileId)}',
+          '${escSql(file.subject_id)}',
+          '${escSql(file.name)}',
+          '${escSql(file.file_path)}',
+          '${escSql(file.file_type)}',
+          ${fileSizeVal},
+          '${escSql(catalogJsonVal)}',
+          ${blockCountVal},
+          ${createdAtVal},
+          ${versionVal},
+          '${escSql(payloadJsonVal)}'
         )
       `);
     }
   },
 
   async deleteSourceFile(id: string): Promise<void> {
-    const escId = id.replace(/'/g, "''");
+    const escId = escSql(id);
+    await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escId}'`);
     await sqlite.execute(`DELETE FROM source_files WHERE id = '${escId}'`);
+  },
+
+  async getSourceViews(subjectId: string): Promise<SourceView[]> {
+    if (!subjectId) return [];
+    const rows = await sqlite.select(
+      `SELECT * FROM source_files WHERE subject_id = '${escSql(subjectId)}' ORDER BY created_at DESC`,
+    );
+    const result: SourceView[] = [];
+    for (const row of rows as Array<Record<string, unknown>>) {
+      const parsed = parseJsonSafely<SourceView>(row.payload_json);
+      if (parsed && parsed.id) {
+        if (!parsed.deletedAt) result.push(parsed);
+        continue;
+      }
+      if (!row.id) continue;
+      const rawType = String(row.file_type || '').toUpperCase();
+      const sourceType: SourceView['type'] = rawType === 'TEXT' || rawType === 'URL' ? rawType : 'FILE';
+      result.push({
+        id: String(row.id),
+        subjectId: String(row.subject_id || subjectId),
+        type: sourceType,
+        title: String(row.name || '未命名资料'),
+        assetSizeBytes: typeof row.file_size === 'number' && Number.isFinite(row.file_size) ? row.file_size : undefined,
+        version: safeFiniteInt(row.version, 0),
+        createdAt: typeof row.created_at === 'number' && Number.isFinite(row.created_at)
+          ? new Date(row.created_at).toISOString()
+          : undefined,
+      });
+    }
+    return result;
+  },
+
+  async replaceSubjectSources(subjectId: string, items: SourceView[]): Promise<void> {
+    if (!subjectId) return;
+    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+      const activeItems = items.filter((item): item is SourceView & { id: string } => Boolean(item.id && !item.deletedAt));
+      const nextIds = new Set(activeItems.map(item => item.id));
+      const existingRows = await sqlite.select(
+        `SELECT id FROM source_files WHERE subject_id = '${escSql(subjectId)}'`,
+      ) as Array<{ id?: unknown }>;
+
+      for (const row of existingRows) {
+        const existingId = row.id ? String(row.id) : '';
+        if (existingId && !nextIds.has(existingId)) {
+          await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(existingId)}'`);
+          await sqlite.execute(`DELETE FROM source_files WHERE id = '${escSql(existingId)}'`);
+        }
+      }
+
+      for (const item of activeItems) {
+        const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN;
+        await this.saveSourceFile({
+          id: item.id,
+          subject_id: item.subjectId || subjectId,
+          name: item.title || '未命名资料',
+          file_path: item.originUrl || item.assetId || '',
+          file_type: item.type || 'FILE',
+          file_size: item.assetSizeBytes ?? 0,
+          created_at: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+          version: item.version ?? 0,
+          payload_json: JSON.stringify(item),
+        });
+      }
+    });
+  },
+
+  // Derived AI Overview Cache (subject-v1 & ingestionRevision-scoped files)
+  async getSubjectOverviewCache(subjectId: string): Promise<OverviewResultView | null> {
+    if (!subjectId) return null;
+    const key = subjectOverviewCacheKey(subjectId);
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+    ) as Array<{ payload_json?: unknown }>;
+    return rows.length > 0 ? parseJsonSafely<OverviewResultView>(rows[0].payload_json) : null;
+  },
+
+  async saveSubjectOverviewCache(subjectId: string, view: OverviewResultView): Promise<void> {
+    if (!subjectId) return;
+    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async () => {
+      const key = subjectOverviewCacheKey(subjectId);
+      const updatedAt = view.updatedAt || new Date().toISOString();
+      const payload = JSON.stringify(view);
+      const exists = await sqlite.select(
+        `SELECT cache_key FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE ai_overview_cache SET scope_type = 'SUBJECT', scope_id = '${escSql(subjectId)}', subject_id = '${escSql(subjectId)}', revision_key = 'subject-v1', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE cache_key = '${escSql(key)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO ai_overview_cache (cache_key, scope_type, scope_id, subject_id, revision_key, payload_json, updated_at) VALUES ('${escSql(key)}', 'SUBJECT', '${escSql(subjectId)}', '${escSql(subjectId)}', 'subject-v1', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  async deleteSubjectOverviewCache(subjectId: string): Promise<void> {
+    if (!subjectId) return;
+    const key = subjectOverviewCacheKey(subjectId);
+    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async () => {
+      await sqlite.execute(`DELETE FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`);
+    });
+  },
+
+  async getSourceOverviewCache(sourceId: string, ingestionRevision?: string): Promise<OverviewResultView | null> {
+    if (!sourceId) return null;
+    const revision = ingestionRevision?.trim();
+    if (revision) {
+      const key = sourceOverviewCacheKey(sourceId, revision);
+      const rows = await sqlite.select(
+        `SELECT payload_json FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+      ) as Array<{ payload_json?: unknown }>;
+      return rows.length > 0 ? parseJsonSafely<OverviewResultView>(rows[0].payload_json) : null;
+    }
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(sourceId)}' ORDER BY updated_at DESC`,
+    ) as Array<{ payload_json?: unknown }>;
+    return rows.length > 0 ? parseJsonSafely<OverviewResultView>(rows[0].payload_json) : null;
+  },
+
+  async saveSourceOverviewCache(
+    sourceId: string,
+    subjectId: string,
+    ingestionRevision: string | undefined,
+    view: OverviewResultView,
+  ): Promise<void> {
+    if (!sourceId) return;
+    await serializeCacheWrite(`overview:FILE:${sourceId}`, async () => {
+      const revisionKey = (ingestionRevision || view.ingestionRevision || 'latest').trim() || 'latest';
+      const key = sourceOverviewCacheKey(sourceId, revisionKey);
+      const updatedAt = view.updatedAt || new Date().toISOString();
+      const payload = JSON.stringify(view);
+      // Prune stale ingestion revisions so H5 localStorage stays compact.
+      await sqlite.execute(
+        `DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(sourceId)}' AND revision_key != '${escSql(revisionKey)}'`,
+      );
+      const exists = await sqlite.select(
+        `SELECT cache_key FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE ai_overview_cache SET scope_type = 'FILE', scope_id = '${escSql(sourceId)}', subject_id = '${escSql(subjectId)}', revision_key = '${escSql(revisionKey)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE cache_key = '${escSql(key)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO ai_overview_cache (cache_key, scope_type, scope_id, subject_id, revision_key, payload_json, updated_at) VALUES ('${escSql(key)}', 'FILE', '${escSql(sourceId)}', '${escSql(subjectId)}', '${escSql(revisionKey)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  async deleteSourceOverviewCache(sourceId: string): Promise<void> {
+    if (!sourceId) return;
+    await serializeCacheWrite(`overview:FILE:${sourceId}`, async () => {
+      await sqlite.execute(
+        `DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(sourceId)}'`,
+      );
+    });
+  },
+
+  // Review States Read Projection Cache
+  async getReviewStatesBySubject(subjectId: string): Promise<ReviewState[]> {
+    if (!subjectId) return [];
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM review_states_cache WHERE subject_id = '${escSql(subjectId)}'`,
+    ) as Array<{ payload_json?: unknown }>;
+    const states: ReviewState[] = [];
+    for (const row of rows) {
+      const parsed = parseJsonSafely<ReviewState>(row.payload_json);
+      if (parsed && parsed.knowledgeBlockId) {
+        states.push(parsed);
+      }
+    }
+    return states;
+  },
+
+  async hasLoadedReviewStates(subjectId: string): Promise<boolean> {
+    if (!subjectId) return false;
+    return (await this.getMetadata(reviewStatesLoadedMetaKey(subjectId))) === '1';
+  },
+
+  async replaceSubjectReviewStates(subjectId: string, states: ReviewState[]): Promise<void> {
+    if (!subjectId) return;
+    await serializeCacheWrite(`review_states:${subjectId}`, async () => {
+      await sqlite.execute(`DELETE FROM review_states_cache WHERE subject_id = '${escSql(subjectId)}'`);
+      const now = new Date().toISOString();
+      for (const state of states) {
+        if (!state.knowledgeBlockId) continue;
+        const kbId = state.knowledgeBlockId;
+        const payload = JSON.stringify(state);
+        const updatedAt = state.updatedAt || now;
+        const exists = await sqlite.select(
+          `SELECT knowledge_block_id FROM review_states_cache WHERE knowledge_block_id = '${escSql(kbId)}'`,
+        );
+        if (exists.length > 0) {
+          await sqlite.execute(
+            `UPDATE review_states_cache SET subject_id = '${escSql(subjectId)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE knowledge_block_id = '${escSql(kbId)}'`,
+          );
+        } else {
+          await sqlite.execute(
+            `INSERT INTO review_states_cache (knowledge_block_id, subject_id, payload_json, updated_at) VALUES ('${escSql(kbId)}', '${escSql(subjectId)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+          );
+        }
+      }
+      await this.setMetadata(reviewStatesLoadedMetaKey(subjectId), '1');
+    });
+  },
+
+  async upsertReviewState(subjectId: string, state: ReviewState): Promise<void> {
+    if (!subjectId || !state.knowledgeBlockId) return;
+    await serializeCacheWrite(`review_states:${subjectId}`, async () => {
+      const kbId = state.knowledgeBlockId as string;
+      const payload = JSON.stringify(state);
+      const updatedAt = state.updatedAt || new Date().toISOString();
+      const exists = await sqlite.select(
+        `SELECT knowledge_block_id FROM review_states_cache WHERE knowledge_block_id = '${escSql(kbId)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE review_states_cache SET subject_id = '${escSql(subjectId)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE knowledge_block_id = '${escSql(kbId)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO review_states_cache (knowledge_block_id, subject_id, payload_json, updated_at) VALUES ('${escSql(kbId)}', '${escSql(subjectId)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  // Subject Stats Snapshot Cache
+  async getSubjectStatsCache(subjectId: string, days: 7 | 30, timeZone: string): Promise<SubjectStats | null> {
+    if (!subjectId || !timeZone) return null;
+    const key = subjectStatsCacheKey(subjectId, days, timeZone);
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM subject_stats_cache WHERE cache_key = '${escSql(key)}'`,
+    ) as Array<{ payload_json?: unknown }>;
+    if (rows.length === 0) return null;
+    const parsed = parseJsonSafely<SubjectStats>(rows[0].payload_json);
+    return parsed && (!parsed.subjectId || parsed.subjectId === subjectId) ? parsed : null;
+  },
+
+  async saveSubjectStatsCache(subjectId: string, days: 7 | 30, timeZone: string, stats: SubjectStats): Promise<void> {
+    if (!subjectId || !timeZone) return;
+    await serializeCacheWrite(`stats:${subjectId}`, async () => {
+      const key = subjectStatsCacheKey(subjectId, days, timeZone);
+      const payload = JSON.stringify(stats);
+      const updatedAt = stats.generatedAt || new Date().toISOString();
+      const exists = await sqlite.select(
+        `SELECT cache_key FROM subject_stats_cache WHERE cache_key = '${escSql(key)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE subject_stats_cache SET subject_id = '${escSql(subjectId)}', days = ${days}, time_zone = '${escSql(timeZone)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE cache_key = '${escSql(key)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO subject_stats_cache (cache_key, subject_id, days, time_zone, payload_json, updated_at) VALUES ('${escSql(key)}', '${escSql(subjectId)}', ${days}, '${escSql(timeZone)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
   }
 };

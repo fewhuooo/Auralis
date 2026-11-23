@@ -11,6 +11,7 @@ import type {
   reviewApi,
 } from '@/api/reviewApi'
 import { ApiProblemError } from '@/api/protocol'
+import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -355,6 +356,9 @@ export function useMobileLifecycleReview(
       }
       cursor = page.hasMore ? page.nextCursor : undefined
     } while (cursor)
+    if (checkScope() && typeof localDb?.replaceSubjectReviewStates === 'function') {
+      void localDb.replaceSubjectReviewStates(subjectId, collected).catch(() => {})
+    }
     return collected
   }
 
@@ -870,6 +874,9 @@ export function useMobileLifecycleReview(
         removeStoredPendingIfMatch(storageKey, rawPending.body.clientCommandId)
       }
       if (!isScopeCurrent(snap)) return
+      if (response.state && typeof localDb?.upsertReviewState === 'function') {
+        void localDb.upsertReviewState(rawPending.subjectId, response.state).catch(() => {})
+      }
       pendingCommand.value = null
       pendingIsConflict.value = false
 

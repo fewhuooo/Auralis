@@ -51,11 +51,12 @@ export interface SyncControllerDeps {
   syncApi: Pick<typeof useSyncApi, 'push' | 'pull' | 'snapshot'>
   localDb: SyncLocalDbAdapter
   localDataScope: {
+    current?: () => string
     reset: (userId: string, serverDeviceId: string) => string
   }
   prefStorage: PreferenceStorage
   onDataChanged: () => Promise<void>
-  onLocalScopeReset?: () => Promise<void> | void
+  onLocalScopeReset?: (previousScope?: string) => Promise<void> | void
   onStateChange?: (state: SyncControllerState) => void
   onSyncCompleted?: () => void
   onTaskMutationRejected?: (taskIds: string[]) => void
@@ -194,16 +195,21 @@ export function createSyncController(deps: SyncControllerDeps) {
         await deps.localDb.deleteSourceFile(resourceId)
         return
       }
-      await deps.localDb.saveSourceFile({
+      const nextVersion = Number(payload?.version ?? version ?? 0)
+      const fullSourcePayload = {
         ...payload,
         id: resourceId,
+        version: Number.isFinite(nextVersion) ? nextVersion : 0,
+      }
+      await deps.localDb.saveSourceFile({
+        ...fullSourcePayload,
         subject_id: payload?.subjectId,
         name: payload?.title || payload?.name || 'Untitled',
-        file_path: payload?.uri || payload?.filePath || '',
+        file_path: payload?.originUrl || payload?.uri || payload?.filePath || payload?.assetId || '',
         file_type: payload?.type || payload?.sourceType || payload?.mimeType || '',
-        file_size: payload?.size || 0,
+        file_size: Number(payload?.assetSizeBytes ?? payload?.size ?? 0) || 0,
         created_at: Date.parse(String(payload?.createdAt || '')) || Date.now(),
-        version: payload?.version ?? version,
+        payload_json: JSON.stringify(fullSourcePayload),
       })
       return
     }
@@ -505,10 +511,11 @@ export function createSyncController(deps: SyncControllerDeps) {
         if (pulled.resetRequired) {
           const snapshot = await deps.syncApi.snapshot()
           if (!isCurrent()) return
+          const previousScope = deps.localDataScope.current?.()
           deps.localDataScope.reset(userId, serverDeviceId)
           await deps.localDb.init()
           if (!isCurrent()) return
-          await deps.onLocalScopeReset?.()
+          await deps.onLocalScopeReset?.(previousScope)
           const protectedKeys = await getProtectedResourceKeys()
           if (!isCurrent()) return
           await applySnapshot(snapshot, cursorStorageKey, protectedKeys)
@@ -605,6 +612,7 @@ export function createSyncController(deps: SyncControllerDeps) {
     notify()
 
     try {
+      const previousScope = deps.localDataScope.current?.()
       deps.localDataScope.reset(userId, serverDeviceId)
       state.conflicts = []
       state.lastError = null
@@ -614,7 +622,7 @@ export function createSyncController(deps: SyncControllerDeps) {
 
       await deps.localDb.init()
       if (!isCurrent()) return
-      await deps.onLocalScopeReset?.()
+      await deps.onLocalScopeReset?.(previousScope)
       if (!isCurrent()) return
       await deps.onDataChanged()
     } finally {

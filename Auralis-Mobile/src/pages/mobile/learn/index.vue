@@ -562,6 +562,7 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -814,13 +815,28 @@ async function loadDueCounts() {
       try {
         const states = await fetchPagedStates(sub.id, isStillCurrent)
         if (!states) return null
+        void localDb.replaceSubjectReviewStates(sub.id, states).catch(() => {})
         const summary = summarizeSubjectReview(localBlocks, states, EMPTY_DUE_IDS)
         return { id: sub.id, badgeCount: summary.badgeCount }
       } catch (err) {
         const isPendingLocalSubject = (sub.version ?? 0) === 0
           && err instanceof ApiProblemError
           && (err.status === 404 || err.code === 'RESOURCE_NOT_FOUND')
-        return isPendingLocalSubject ? { id: sub.id, badgeCount: 0 } : null
+        if (isPendingLocalSubject) return { id: sub.id, badgeCount: 0 }
+        try {
+          const [cached, loadedMarker] = await Promise.all([
+            localDb.getReviewStatesBySubject(sub.id),
+            localDb.hasLoadedReviewStates(sub.id),
+          ])
+          if (!isStillCurrent()) return null
+          if (cached.length > 0 || loadedMarker) {
+            const summary = summarizeSubjectReview(localBlocks, cached, EMPTY_DUE_IDS)
+            return { id: sub.id, badgeCount: summary.badgeCount }
+          }
+        } catch {
+          // Ignore local cache fallback failure
+        }
+        return null
       }
     }),
   )
@@ -853,8 +869,36 @@ async function loadActiveSubjectReview(subjectId: string) {
   statesLoading.value = true
   statesError.value = ''
   try {
+    if (!Array.isArray(reviewStatesByScope.value[cacheKey])) {
+      try {
+        const [cached, loadedMarker] = await Promise.all([
+          localDb.getReviewStatesBySubject(subjectId),
+          localDb.hasLoadedReviewStates(subjectId),
+        ])
+        if (!isCurrent()) return
+        if (cached.length > 0 || loadedMarker) {
+          reviewStatesByScope.value = {
+            ...reviewStatesByScope.value,
+            [cacheKey]: cached,
+          }
+          const summary = summarizeSubjectReview(
+            filterSubjectBlocks(blockStore.recentBlocks, subjectId, ''),
+            cached,
+            EMPTY_DUE_IDS,
+          )
+          badgeCountMap.value = {
+            ...badgeCountMap.value,
+            [subjectId]: summary.badgeCount,
+          }
+        }
+      } catch {
+        // Ignore local review cache failure and proceed to network fetch.
+      }
+    }
+
     const states = await fetchPagedStates(subjectId, isCurrent)
     if (!states || !isCurrent()) return
+    void localDb.replaceSubjectReviewStates(subjectId, states).catch(() => {})
     reviewStatesByScope.value = {
       ...reviewStatesByScope.value,
       [cacheKey]: states,
