@@ -508,8 +508,18 @@ async function loadDocument(): Promise<void> {
     viewer = instance
     viewerToken = token
 
-    const file = new File([blob], props.fileName, { type: contentType })
-    await instance.load({ file }, { signal: waitController.signal })
+    const buffer = await blob.arrayBuffer()
+    if (token !== loadToken || waitController.signal.aborted) return
+    const file = new File([buffer], props.fileName, { type: contentType })
+    await instance.load(
+      {
+        buffer,
+        file,
+        filename: props.fileName,
+        size: buffer.byteLength,
+      },
+      { signal: waitController.signal },
+    )
     if (token !== loadToken || waitController.signal.aborted) return
 
     await waitForPdfReadiness(waitController.signal)
