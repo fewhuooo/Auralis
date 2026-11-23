@@ -698,13 +698,22 @@ const milestoneSubtitle = computed(() => {
   width: 100%;
 }
 
-.review-pane {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 24px 28px 84px;
+.review-pane-scroll :deep(.uni-scroll-view-content) {
+  min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+}
+
+.review-pane {
+  width: 100%;
+  max-width: 1040px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 28px 36px 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
   box-sizing: border-box;
 }
 
@@ -738,21 +747,48 @@ const milestoneSubtitle = computed(() => {
   flex-shrink: 0;
 }
 
+.pane-notice .ui-btn,
+.milestone-actions .ui-btn,
+.voluntary-btn,
+.nav-back-btn,
+.nav-end-btn,
+.reopen-btn,
+.rate-pill,
+.study-btn-wide,
+.study-btn {
+  margin: 0;
+  line-height: 1;
+}
+
+.pane-notice .ui-btn::after,
+.milestone-actions .ui-btn::after,
+.voluntary-btn::after,
+.nav-back-btn::after,
+.nav-end-btn::after,
+.reopen-btn::after,
+.rate-pill::after,
+.study-btn-wide::after,
+.study-btn::after {
+  border: none;
+}
+
 .plan-card {
-  padding: 24px;
-  border-radius: 20px;
+  min-height: clamp(440px, 56vh, 580px);
+  padding: 40px 48px;
+  border-radius: 26px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  justify-content: space-between;
+  gap: 28px;
 }
 
 .plan-skeleton-hero {
-  height: 124px;
+  height: 170px;
   border-radius: 14px;
 }
 
 .plan-skeleton-row {
-  height: 140px;
+  height: 156px;
   border-radius: 14px;
 }
 
@@ -760,45 +796,50 @@ const milestoneSubtitle = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 48px;
 }
 
 .plan-meta {
   flex: 1;
   min-width: 0;
+  max-width: 600px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .plan-badge {
   align-self: flex-start;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-full);
   background: var(--color-sage-bg);
   color: var(--color-sage-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .plan-title {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 34px;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   margin-top: 2px;
 }
 
 .plan-subtitle {
-  font-size: var(--text-sm);
+  font-size: 15px;
   color: var(--text-muted);
 }
 
 .segment-wrap {
-  margin-top: 10px;
+  margin-top: 22px;
+  width: 100%;
+  max-width: 520px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .segment-header {
@@ -810,7 +851,7 @@ const milestoneSubtitle = computed(() => {
 }
 
 .segment-title {
-  font-size: var(--text-xs);
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -826,7 +867,7 @@ const milestoneSubtitle = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -883,8 +924,8 @@ const milestoneSubtitle = computed(() => {
 
 .mastery-ring {
   position: relative;
-  width: 118px;
-  height: 118px;
+  width: 172px;
+  height: 172px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -898,12 +939,12 @@ const milestoneSubtitle = computed(() => {
 
 .ring-track {
   stroke: rgba(139, 154, 110, 0.16);
-  stroke-width: 7;
+  stroke-width: 6;
 }
 
 .ring-progress {
   stroke: var(--color-zen-sage);
-  stroke-width: 7;
+  stroke-width: 6.4;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.35s var(--ease-out);
 }
@@ -912,8 +953,8 @@ const milestoneSubtitle = computed(() => {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  -webkit-mask: radial-gradient(circle, transparent 43px, #000 44px);
-  mask: radial-gradient(circle, transparent 43px, #000 44px);
+  -webkit-mask: radial-gradient(circle, transparent 64px, #000 65px);
+  mask: radial-gradient(circle, transparent 64px, #000 65px);
 }
 
 .ring-inner {
@@ -923,12 +964,12 @@ const milestoneSubtitle = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .ring-percent {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
   color: var(--text-primary);
   line-height: 1.1;
 }
@@ -936,36 +977,38 @@ const milestoneSubtitle = computed(() => {
 .ring-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
+  gap: 5px;
+  padding: 3px 11px;
   border-radius: var(--radius-full);
   background: var(--color-sage-bg);
 }
 
 .ring-pill-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--color-zen-sage);
 }
 
 .ring-pill-text {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-sage-ink);
 }
 
 .panels-container {
-  padding: 16px;
-  border-radius: 16px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin-top: 8px;
 }
 
 .panels-toolbar {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -975,7 +1018,12 @@ const milestoneSubtitle = computed(() => {
 .group-size-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  height: 32px;
+  padding: 3px 4px 3px 11px;
+  border-radius: 10px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
 }
 
 .group-size-label {
@@ -985,13 +1033,13 @@ const milestoneSubtitle = computed(() => {
 }
 
 .group-size-btn {
-  padding: 4px 11px;
-  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  border-radius: 7px;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-secondary);
-  background: var(--glass-sub-bg);
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
 }
 
@@ -1005,15 +1053,16 @@ const milestoneSubtitle = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: var(--radius-full);
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 10px;
   border: 1px solid var(--border-accent);
   background: var(--color-sage-bg);
   color: var(--color-sage-ink);
   font-size: var(--text-xs);
   font-weight: 600;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .voluntary-btn.is-disabled {
@@ -1027,17 +1076,19 @@ const milestoneSubtitle = computed(() => {
 .panels-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 20px;
 }
 
 .action-panel {
-  padding: 16px;
-  border-radius: 14px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
+  padding: 22px 24px;
+  min-height: 112px;
+  border-radius: 16px;
+  background: var(--color-bg-tertiary);
+  border: 1.5px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 14px;
   cursor: pointer;
   transition: border-color 0.16s ease, transform 0.14s var(--ease-out);
 }
@@ -1085,7 +1136,7 @@ const milestoneSubtitle = computed(() => {
 }
 
 .action-name {
-  font-size: var(--text-base);
+  font-size: 15.5px;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -1094,9 +1145,10 @@ const milestoneSubtitle = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 11px;
+  padding: 5px 13px;
+  height: 29px;
   border-radius: var(--radius-full);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: #FFFFFF;
   flex-shrink: 0;
@@ -1111,7 +1163,7 @@ const milestoneSubtitle = computed(() => {
 }
 
 .action-hint {
-  font-size: var(--text-xs);
+  font-size: 12.5px;
   color: var(--text-muted);
   line-height: 1.45;
 }
@@ -1175,11 +1227,13 @@ const milestoneSubtitle = computed(() => {
 }
 
 .study-card {
-  padding: 22px 24px;
-  border-radius: 20px;
+  padding: 36px 44px 32px;
+  border-radius: 26px;
+  min-height: clamp(460px, 58vh, 620px);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 22px;
 }
 
 .study-card-head {
@@ -1218,8 +1272,8 @@ const milestoneSubtitle = computed(() => {
 }
 
 .study-title {
-  font-size: 19px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   color: var(--text-primary);
   line-height: 1.35;
 }
@@ -1233,12 +1287,14 @@ const milestoneSubtitle = computed(() => {
 .recall-zone {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 10px;
 }
 
 .frosted-canvas {
   position: relative;
-  min-height: 220px;
+  min-height: 260px;
+  flex: 1;
   padding: 22px;
   border-radius: 14px;
   background: var(--color-bg-tertiary);
@@ -1420,11 +1476,13 @@ const milestoneSubtitle = computed(() => {
 }
 
 .milestone-card {
-  padding: 40px 24px;
-  border-radius: 20px;
+  min-height: 360px;
+  padding: 44px 32px;
+  border-radius: 26px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
   gap: 12px;
 }
@@ -1462,9 +1520,48 @@ const milestoneSubtitle = computed(() => {
   flex-wrap: wrap;
 }
 
+@media (max-width: 960px) {
+  .review-pane {
+    padding: 20px 22px 84px;
+  }
+
+  .plan-card {
+    padding: 28px 28px;
+    min-height: 0;
+  }
+
+  .plan-top {
+    gap: 28px;
+  }
+
+  .plan-title {
+    font-size: 28px;
+  }
+
+  .mastery-ring {
+    width: 144px;
+    height: 144px;
+  }
+
+  .ring-conic-track {
+    -webkit-mask: radial-gradient(circle, transparent 53px, #000 54px);
+    mask: radial-gradient(circle, transparent 53px, #000 54px);
+  }
+
+  .ring-percent {
+    font-size: 30px;
+  }
+
+  .study-card {
+    padding: 24px 24px;
+    min-height: 0;
+  }
+}
+
 @media (max-width: 720px) {
   .review-pane {
     padding: 16px 16px 84px;
+    justify-content: flex-start;
   }
 
   .plan-top {
