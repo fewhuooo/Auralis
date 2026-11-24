@@ -286,7 +286,7 @@
                         v-model="customProvider"
                         placeholder="例如 DEEPSEEK"
                         placeholder-style="color: #9A9A95;"
-                        :disabled="aiInitializing"
+                        :disabled="aiBusy"
                       />
                     </view>
                   </view>
@@ -1132,11 +1132,12 @@ async function submitPasswordChange() {
     uni.showToast({ title: '密码已更新，其他设备已下线', icon: 'none' })
     await authStore.refreshAccessToken().catch(() => false)
     if (generation !== authStore.getLoginGeneration()) return
-    void useAuthApi.me().then((me) => {
+    await useAuthApi.me().then((me) => {
       if (generation === authStore.getLoginGeneration() && me?.id) {
         authStore.syncUserProfile(me)
       }
     }).catch(() => {})
+    if (generation !== authStore.getLoginGeneration()) return
     void loadSessions()
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
@@ -1346,6 +1347,7 @@ function resetProfileState() {
   testingConnection.value = false
   savingAi.value = false
   aiInitializing.value = false
+  aiConnectionGeneration += 1
   sessionsLoadId += 1
   loadingSessions.value = false
   sessionsError.value = ''

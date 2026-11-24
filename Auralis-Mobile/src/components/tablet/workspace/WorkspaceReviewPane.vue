@@ -403,6 +403,7 @@ import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import type { KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { useSyncStore } from '@/store/useSyncStore'
 import { plainMarkdownExcerpt } from '@/utils/markdown'
 import {
   summarizeSubjectReview,
@@ -420,6 +421,7 @@ const EMPTY_DUE_IDS = new Set<string>()
 
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
+const syncStore = useSyncStore()
 
 const inRound = ref(false)
 const groupSize = ref<MobileGroupSize>(5)
@@ -611,6 +613,15 @@ watch(
     void loadPlanningStates()
   },
   { immediate: true },
+)
+
+watch(
+  () => syncStore.lastSyncedAt,
+  (syncedAt) => {
+    if (syncedAt && authStore.isAuthenticated && props.subjectId && !inRound.value) {
+      void loadPlanningStates()
+    }
+  },
 )
 
 function enterRound(mode: MobileStudyMode) {

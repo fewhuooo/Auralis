@@ -11,11 +11,12 @@ interface RealtimeEvent {
 }
 
 let socketTask: UniApp.SocketTask | null = null
+let activeSocketIdentity = ''
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempt = 0
 let explicitlyDisconnected = false
 let connectSeq = 0
-let activeConnectFlight: { seq: number; promise: Promise<void> } | null = null
+let activeConnectFlight: { seq: number; identity: string; promise: Promise<void> } | null = null
 const recentEvents = new Set<string>()
 
 function scheduleReconnect() {
@@ -38,8 +39,18 @@ function rememberEvent(event: RealtimeEvent): boolean {
 
 export async function connectRealtimeSync() {
   const auth = useAuthStore()
-  if (socketTask || !auth.isAuthenticated) return
-  if (activeConnectFlight && activeConnectFlight.seq === connectSeq) {
+  const targetIdentity = auth.user?.id && auth.serverDeviceId ? `${auth.user.id}:${auth.serverDeviceId}` : ''
+  if (!auth.isAuthenticated || !targetIdentity) return
+
+  if (
+    (socketTask && activeSocketIdentity !== targetIdentity)
+    || (activeConnectFlight && activeConnectFlight.identity !== targetIdentity)
+  ) {
+    disconnectRealtimeSync()
+  }
+
+  if (socketTask && activeSocketIdentity === targetIdentity) return
+  if (activeConnectFlight && activeConnectFlight.seq === connectSeq && activeConnectFlight.identity === targetIdentity) {
     return activeConnectFlight.promise
   }
 
@@ -66,6 +77,7 @@ export async function connectRealtimeSync() {
       const url = resolveWebsocketUrl(path, getRuntimeConfig())
       const task = uni.connectSocket({ url, complete: () => {} }) as unknown as UniApp.SocketTask
       socketTask = task
+      activeSocketIdentity = targetIdentity
       task.onOpen(() => {
         if (socketTask !== task || !isCurrentAttempt()) {
           task.close({})
@@ -88,11 +100,13 @@ export async function connectRealtimeSync() {
       task.onClose(() => {
         if (socketTask !== task) return
         socketTask = null
+        activeSocketIdentity = ''
         if (isCurrentAttempt()) scheduleReconnect()
       })
       task.onError(() => {
         if (socketTask !== task) return
         socketTask = null
+        activeSocketIdentity = ''
         if (isCurrentAttempt()) scheduleReconnect()
       })
     } catch (error) {
@@ -105,7 +119,7 @@ export async function connectRealtimeSync() {
     }
   })()
 
-  activeConnectFlight = { seq, promise: flight }
+  activeConnectFlight = { seq, identity: targetIdentity, promise: flight }
   return flight
 }
 
@@ -116,6 +130,8 @@ export function disconnectRealtimeSync() {
   if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = null
   reconnectAttempt = 0
+  activeSocketIdentity = ''
+  recentEvents.clear()
   const activeSocket = socketTask
   socketTask = null
   activeSocket?.close({})

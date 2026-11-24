@@ -335,7 +335,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
@@ -343,6 +343,7 @@ import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import type { LocalUploadFile } from '@/services/assetUpload'
+import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -358,7 +359,7 @@ import {
   getWeekDays,
   toLocalDateKey,
 } from '@/utils/dateKey'
-import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
+import { pickLocalDocument, uploadSubjectFile, validateUploadFile } from '@/utils/filePicker'
 import { formatBytes } from '@/utils/sourceFormat'
 
 const authStore = useAuthStore()
@@ -426,16 +427,27 @@ async function toggleComplete(id: string) {
     uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
     return
   }
-  await taskStore.toggleTaskComplete(id)
+  const generation = authStore.getLoginGeneration()
+  try {
+    await taskStore.toggleTaskComplete(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+  }
 }
 
 function confirmDeleteTask(id: string, title: string) {
+  const generation = authStore.getLoginGeneration()
   uni.showModal({
     title: '删除待办',
     content: `确定要删除「${title}」吗？`,
     confirmColor: '#C93B3B',
     success: (res) => {
-      if (res.confirm) void taskStore.removeTask(id)
+      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
+      void taskStore.removeTask(id).catch((err) => {
+        if (generation !== authStore.getLoginGeneration()) return
+        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
+      })
     },
   })
 }
@@ -475,6 +487,10 @@ const uploadForm = reactive<{
   file: null,
   title: '',
 })
+
+function hasSubject(id: string): boolean {
+  return Boolean(id && subjectStore.subjects.some(item => item.id === id))
+}
 
 function defaultSubjectId(): string {
   return subjectStore.subjects[0]?.id || ''
@@ -560,9 +576,9 @@ function onModeTouchEnd(event: { changedTouches?: ArrayLike<{ clientX?: number }
 function openCaptureSheet(mode: CaptureMode) {
   captureMode.value = mode
   const fallbackSubId = defaultSubjectId()
-  if (!taskForm.subjectId) taskForm.subjectId = fallbackSubId
-  if (!blockForm.subjectId) blockForm.subjectId = fallbackSubId
-  if (!uploadForm.subjectId) uploadForm.subjectId = fallbackSubId
+  if (!hasSubject(taskForm.subjectId)) taskForm.subjectId = fallbackSubId
+  if (!hasSubject(blockForm.subjectId)) blockForm.subjectId = fallbackSubId
+  if (!hasSubject(uploadForm.subjectId)) uploadForm.subjectId = fallbackSubId
   showCaptureSheet.value = true
 }
 
@@ -601,9 +617,12 @@ async function submitInlineSubject() {
     newSubjectName.value = ''
     uni.showToast({ title: `已创建「${trimmed}」`, icon: 'none' })
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: err instanceof Error ? err.message : '创建失败', icon: 'none' })
   } finally {
-    creatingSubject.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      creatingSubject.value = false
+    }
   }
 }
 
@@ -641,9 +660,12 @@ async function submitTask() {
     showCaptureSheet.value = false
     uni.showToast({ title: '已加入待办', icon: 'none' })
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
-    submittingCapture.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      submittingCapture.value = false
+    }
   }
 }
 
@@ -677,20 +699,26 @@ async function submitQuickBlock() {
     showCaptureSheet.value = false
     uni.showToast({ title: '已保存知识块', icon: 'none' })
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
-    submittingCapture.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      submittingCapture.value = false
+    }
   }
 }
 
 async function chooseFileToUpload() {
   if (submittingCapture.value) return
+  const generation = authStore.getLoginGeneration()
   try {
     const file = await pickLocalDocument()
-    if (!file) return
+    if (!file || generation !== authStore.getLoginGeneration()) return
+    validateUploadFile(file)
     uploadForm.file = file
     if (!uploadForm.title.trim()) uploadForm.title = file.name
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: err instanceof Error ? err.message : '选择失败', icon: 'none' })
   }
 }
@@ -706,23 +734,39 @@ async function submitFileUpload() {
     uni.showToast({ title: '请选择文件', icon: 'none' })
     return
   }
+  try {
+    validateUploadFile(uploadForm.file)
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '不支持的文件格式', icon: 'none' })
+    return
+  }
   const generation = authStore.getLoginGeneration()
   submittingCapture.value = true
   try {
-    await uploadSubjectFile({
+    const created = await uploadSubjectFile({
       subjectId: subject.id,
       file: uploadForm.file,
       title: uploadForm.title,
     })
+    if (generation !== authStore.getLoginGeneration()) return
+    await localDb.upsertSourceView(subject.id, created).catch(() => {})
+    if (generation !== authStore.getLoginGeneration()) return
+    if (syncStore.autoSyncEnabled) {
+      void syncStore.triggerSync().catch(() => {})
+    }
+    await subjectStore.loadSubjects().catch(() => {})
     if (generation !== authStore.getLoginGeneration()) return
     uploadForm.file = null
     uploadForm.title = ''
     showCaptureSheet.value = false
     uni.showToast({ title: `已归入「${subject.name}」`, icon: 'none' })
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: err instanceof Error ? err.message : '上传失败', icon: 'none' })
   } finally {
-    submittingCapture.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      submittingCapture.value = false
+    }
   }
 }
 
@@ -761,6 +805,48 @@ async function submitActiveCapture() {
 }
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
+let lastHomeAuthScope = `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
+
+function resetHomeCaptureState() {
+  showCaptureSheet.value = false
+  submittingCapture.value = false
+  creatingSubject.value = false
+  newSubjectName.value = ''
+  taskForm.name = ''
+  taskForm.subjectId = ''
+  taskForm.duration = 60
+  taskForm.dueDateKey = ''
+  blockForm.subjectId = ''
+  blockForm.title = ''
+  blockForm.content = ''
+  uploadForm.subjectId = ''
+  uploadForm.file = null
+  uploadForm.title = ''
+}
+
+watch(
+  () => subjectStore.subjects,
+  () => {
+    const fallbackSubId = defaultSubjectId()
+    if (!hasSubject(taskForm.subjectId)) taskForm.subjectId = fallbackSubId
+    if (!hasSubject(blockForm.subjectId)) blockForm.subjectId = fallbackSubId
+    if (!hasSubject(uploadForm.subjectId)) uploadForm.subjectId = fallbackSubId
+  },
+)
+
+watch(
+  () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
+  (nextScope) => {
+    if (nextScope === lastHomeAuthScope) return
+    lastHomeAuthScope = nextScope
+    resetHomeCaptureState()
+    selectedDateKey.value = todayKey.value
+    if (authStore.isAuthenticated) {
+      void subjectStore.loadSubjects()
+      void taskStore.fetchTasks()
+    }
+  },
+)
 
 onShow(syncClockToWeek)
 

@@ -1,6 +1,6 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-11-19
+更新时间：2026-11-24
 
 文档状态：现行模块说明
 
@@ -54,7 +54,7 @@ Task 契约不包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Sto
 
 ```text
 Auralis-Mobile/src/
-├── api/          # 请求、AI、同步、设备、E2EE
+├── api/          # 请求、AI、同步、Realtime、Asset、Stats
 ├── components/   # 手机和平板共享/专用组件
 ├── config/       # feature flags
 ├── pages/        # launch、mobile、tablet
@@ -149,8 +149,6 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
 | `useFocusStore.ts` | 专注计时墙钟状态、本地日计数与受 `auralis.settings.autoSync` 约束的后台 outbox 冲刷 |
 | `useDeviceStore.ts` | 设备与端类型 |
 | `useLayoutStore.ts` | 当前端导航和布局状态 |
-| `useSettingsStore.ts` | 偏好和主题 |
-| `persist.ts` | Store 持久化辅助 |
 
 ## API 与服务
 
@@ -158,10 +156,8 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
 
 - `api/request.ts`、`requestCore.ts`：环境基址、Bearer、Problem Details 和共享单次 refresh。
 - `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation、`/api/ai/messages/stream`、`getRunStatus`/`recoverRunAttempt`、`decodeStreamChunk`（兼容 `Uint8Array`/`ArrayBuffer`/字符串流式 UTF-8 解码）、H5 `#ifdef H5` `fetch` `ReadableStream` 真流式 SSE（共享 `createChatStreamSession`/`buildAiStreamError` 与 401 单次刷新及 `AbortController`）与 `uni.request` 微信小程序回退；`mobileAiChat.ts` 提供 `isConversationProtocolSupported` 拦截旧协议会话写入。
-- `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset、`/ws/events` 一次性 ticket，`uni.connectSocket` 传入 `complete` 回调以返回 `SocketTask`，并以 `connectSeq` + `activeConnectFlight` 围栏隔离建连/断开与登录世代切换。
+- `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset、`/ws/events` 一次性 ticket，`uni.connectSocket` 传入 `complete` 回调以返回 `SocketTask`，并以 `connectSeq` + `activeConnectFlight` + `activeSocketIdentity` 围栏隔离直切账号建连/断开与登录世代切换。
 - `api/assetApi.ts`、`sourceApi.ts`、`overviewApi.ts`、`focusApi.ts`、`reviewApi.ts`、`statsApi.ts`：预签名上传与下载链接、学科资料分页与删除、正式结构大纲/精炼总结读取、幂等专注记录上传、到期复习与强类型本地时区统计（含 `/api/stats/subjects/{subjectId}` 单学科统计）。
-- `api/device.ts`：设备相关能力。
-- `api/e2ee.ts`：加密辅助。
 - `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。
 - `api/generated/client.ts`：约束路径、HTTP 方法、path/query/body 与成功响应的轻量请求适配器。
 
@@ -188,7 +184,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
 | `composables/useEscapeKey.ts` | H5 端弹窗与抽屉 `Escape` 键关闭钩子（卸载自动解绑） |
 | `syncController.ts` / `syncPreferences.ts`（`services/`） | 纯 TS 同步/离线重置状态机（同步互斥锁、登录世代与账户切换取消）及 `auralis.settings.autoSync` 持久化读写 |
 | `utils/filePicker.ts`、`markdown.ts`、`mobileAiChat.ts`、`mobileChatParts.ts`、`smoothStreamBuffer.ts`、`mobileLearning.ts`、`sha256.ts`、`sourceFormat.ts`、`profileHelpers.ts` | 跨平台纯文件选择/上传、安全的 `<rich-text>` Markdown 与 TeX 数学公式转译（含列表 `1.55em` `outside` 悬挂缩进、`11px` 列表项间距、非思考态卡片化滚动 `<table>`、 `mutedReasoning` 思考区低对比风格、链接/图片协议过滤、代码隔离与 `plainMarkdownExcerpt`）、`mobileAiChat.ts`（AI 范围绑定、空态数量锚点、`processTimeline` 交叉步骤归约、`buildVisibleMobileTimelineGroups` 按平滑已披露字符预算推进、受控抽屉持有/关闭裁决 `resolveMobileProcessDrawerOpen`、`resolveMobileTextDrainAction` 与新消息 `animateOnMount`、`sanitizeMobileReasoningText`、大小写兼容 `normalizeMobileToolTraceStatus`、`restoreConversationMessages`/`applyRunStatusSnapshot` 活动轮恢复与 `evaluateSmartScroll` 程序化滚动隔离）、`mobileChatParts.ts`（6 类块投影与规范 `string \| string[]` `activity_submission` 校验）、平缓连续 `computeSmoothStreamTargetSpeed` 与空池冷却复位及带 `destroy()` 重入防线的 `smoothStreamBuffer.ts`、手机端学习生命周期辅助计算、与 Java `StandardCharsets.UTF_8` 严格对齐的 `sha256Utf8Hex`、资料状态与个人页纯函数计算 |
-| `notebookStorage.ts` | 笔记存储兼容层 |
+| `notebookStorage.ts` | 平板本地笔记仓库兼容入口（复用 `tabletNoteRepository`） |
 | `tabletNoteModel.ts` | `NoteDocument` 模型与序列化 |
 | `tabletNoteRepository.ts` | 平台仓库入口 |
 | `tabletNoteRepositoryCore.ts` | 可测试的核心仓库逻辑 |
@@ -250,7 +246,7 @@ node scripts/mobile-preview-server.mjs
 
 ## 当前限制
 
-- 2026-11-18 完成真实后端联调前置阻塞修复（H5 流式 `Uint8Array` SSE 解码、401 刷新重试失败透传、错误响应分块解析、`uni.connectSocket` `complete` 回调与 `connectSeq` 断开围栏、`useFocusStore` 遵守 `autoSync`、本地重置清理待确认复习键、改密主动续期及历史会话/AI 断流恢复）、H5 `localDb` 修复及首屏路由预加载；2026-11-19～20 完成两页式「学习」方案 A 重构及全生命周期迁移、Mobile 同步与过期任务自动完成收敛、跨端 AI 协议 1 交互与视觉排版统一对齐，以及平板仪表盘简化（无底框无箭头周历、去掉待办行内排期按钮、去掉“今天”冗余胶囊、学科空间展示）与平板工作区 PC 双栏化+AI 浮窗化改造；2026-11-23 在 `feat/tablet-file-viewer` 分支为平板工作区 H5 端接入 PC 同源 `@file-viewer/core`（仅保留 `pdf` / `word` / `presentation` 三个按需渲染器，替代原生 `<iframe :src>` 黑壳与 `.docx` 兜底卡）与底部浮动页码胶囊，最终落盘代码通过 `vue-tsc --noEmit`、`check:r4-mobile`（扫描 85 个生产文件）、`test:r4-mobile`（113/113）、`test:tablet`、`build:h5` 与 `build:mp-weixin`；新「学习 → 复习」两页真实联调、平板新工作区与 H5 原地文档阅读（PDF/DOCX/PPTX 触控缩放与连续换文件）/AI 浮窗真机交互、全端真实 Provider 流式与题卡联调及微信开发者工具真机验证仍待实机验收。
+- 2026-11-18～20 完成真实后端联调前置阻塞修复、两页式「学习」方案 A 重构及全生命周期迁移、跨端 AI 协议 1 与流式排版统一，以及平板仪表盘简化与工作区 PC 双栏化+AI 浮窗化改造；2026-11-23～24 进一步为平板工作区 H5 端接入 PC 同源 `@file-viewer/core`（仅保留 `pdf` / `word` / `presentation` 按需渲染器）与 `localDocumentCache` IndexedDB LRU 原文缓存、对齐平板首页/专注/AI 对话/设置页视觉交互、落地工作区本地持久化缓存，并完成两轮深度持久化与跨账号隔离审计修复（`resolveBlockSourceLabel` / `resolveEditedBlockSourceLink` 编辑保真 `sourceFileId`、直切账号 WebSocket 重建与 `recentEvents` 清理、手机四页与工作台/弹窗跨账号清理、`validateUploadFile` 与 `localDb.upsertSourceView` 上传落盘、工作区子面板响应 `syncStore.lastSyncedAt`、AI 停止流令牌保护、`useAiUsage` 非闪烁静默续期及孤立死代码清理），最终落盘代码通过 `vue-tsc --noEmit`、`check:r4-mobile`（84 个生产文件）、`test:r4-mobile`（126/126）、`test:tablet`、`check-tablet-sidebar-transition`、`build:h5` 与 `build:mp-weixin`；新「学习 → 复习」两页真实联调、平板新工作区与 H5 原地文档阅读（PDF/DOCX/PPTX 触控缩放与连续换文件）/AI 浮窗真机交互、全端真实 Provider 流式与题卡联调及微信开发者工具真机验证仍待实机验收。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
 - Mobile 将 TypeScript 固定为 5.3.3 以匹配 vue-tsc 1.8.27。
 - Tablet 复杂交互需要真实触控屏。

@@ -633,7 +633,7 @@ let badgeCountReqId = 0
 let subjectReviewReqId = 0
 let lastAuthScope = ''
 let hasShownOnce = false
-let refreshInFlight: Promise<void> | null = null
+let refreshInFlight: { scope: string; promise: Promise<void> } | null = null
 let lastObservedScrollLeft = 0
 let stripScrollTimer: ReturnType<typeof setTimeout> | null = null
 let isPageUnmounted = false
@@ -797,17 +797,22 @@ async function fetchPagedStates(subjectId: string, isCurrent: () => boolean): Pr
   return collected
 }
 
-async function loadDueCounts() {
+async function loadDueCounts(excludeSubjectId?: string) {
   if (!authStore.isAuthenticated || subjectStore.subjects.length === 0) {
     badgeCountMap.value = {}
     return
   }
+  const targets = excludeSubjectId
+    ? subjectStore.subjects.filter(sub => sub.id !== excludeSubjectId)
+    : subjectStore.subjects
+  if (targets.length === 0) return
+
   const reqId = ++badgeCountReqId
   const generation = authStore.getLoginGeneration()
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
   const entries = await Promise.all(
-    subjectStore.subjects.map(async (sub) => {
+    targets.map(async (sub) => {
       const localBlocks = filterSubjectBlocks(blockStore.recentBlocks, sub.id, '')
       const isStillCurrent = () => (
         reqId === badgeCountReqId && isSameAuthSnapshot(generation, userId, serverDeviceId)
@@ -955,7 +960,8 @@ function reconcileActiveSubject(): boolean {
 }
 
 function refreshPageData(): Promise<void> {
-  if (refreshInFlight) return refreshInFlight
+  const scope = scopeKeyForAuth()
+  if (refreshInFlight?.scope === scope) return refreshInFlight.promise
   const task = (async () => {
     const generation = authStore.getLoginGeneration()
     const userId = authStore.user?.id
@@ -967,16 +973,16 @@ function refreshPageData(): Promise<void> {
     if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
 
     reconcileActiveSubject()
-    void loadDueCounts()
+    void loadDueCounts(selectedSubjectId.value || undefined)
     if (selectedSubjectId.value) {
       void loadActiveSubjectReview(selectedSubjectId.value)
     }
   })().finally(() => {
-    if (refreshInFlight === task) {
+    if (refreshInFlight?.promise === task) {
       refreshInFlight = null
     }
   })
-  refreshInFlight = task
+  refreshInFlight = { scope, promise: task }
   return task
 }
 
@@ -1268,7 +1274,9 @@ async function submitBlockModal() {
     if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
     blockModalError.value = err instanceof Error ? err.message : '保存失败，请重试'
   } finally {
-    savingBlock.value = false
+    if (isSameAuthSnapshot(generation, userId, serverDeviceId)) {
+      savingBlock.value = false
+    }
   }
 }
 
@@ -1292,6 +1300,7 @@ function confirmDeleteBlock(block: KnowledgeBlock) {
         void loadDueCounts()
         if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
       }).catch(() => {
+        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
         uni.showToast({ title: '删除失败，请重试', icon: 'none' })
       })
     },
@@ -1299,9 +1308,12 @@ function confirmDeleteBlock(block: KnowledgeBlock) {
 }
 
 watch(
-  () => `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
+  () => `${authStore.isAuthenticated ? '1' : '0'}:${scopeKeyForAuth()}`,
   (nextScope) => {
     if (lastAuthScope && lastAuthScope !== nextScope) {
+      badgeCountReqId += 1
+      subjectReviewReqId += 1
+      refreshInFlight = null
       badgeCountMap.value = {}
       reviewStatesByScope.value = {}
       statesLoading.value = false
@@ -1310,11 +1322,17 @@ watch(
       readingBlockId.value = ''
       showSubjectPicker.value = false
       showBlockModal.value = false
+      savingBlock.value = false
+      editingBlockId.value = ''
+      blockModalError.value = ''
       selectedSubjectId.value = ''
       ++stripScrollSeq
       stripScrollLeft.value = 0
       lastObservedScrollLeft = 0
       clearStripScrollTimer()
+      if (authStore.isAuthenticated) {
+        void refreshPageData()
+      }
     }
     lastAuthScope = nextScope
   },
@@ -1325,8 +1343,9 @@ watch(
   () => subjectStore.subjects,
   () => {
     const changed = reconcileActiveSubject()
-    if (changed && !refreshInFlight && selectedSubjectId.value) {
-      void loadDueCounts()
+    const inSameRefresh = refreshInFlight?.scope === scopeKeyForAuth()
+    if (changed && !inSameRefresh && selectedSubjectId.value) {
+      void loadDueCounts(selectedSubjectId.value)
       void loadActiveSubjectReview(selectedSubjectId.value)
     }
   },
@@ -1347,7 +1366,7 @@ watch(
   () => syncStore.lastSyncedAt,
   (syncedAt) => {
     if (!syncedAt || !authStore.isAuthenticated) return
-    void loadDueCounts()
+    void loadDueCounts(selectedSubjectId.value || undefined)
     if (selectedSubjectId.value) {
       void loadActiveSubjectReview(selectedSubjectId.value)
     }

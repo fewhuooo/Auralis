@@ -296,7 +296,8 @@ function matchRow(row: any, conditions: WhereCondition[]): boolean {
 
 function executeH5Query(sql: string) {
   const trimmed = sql.trim();
-  if (trimmed.toUpperCase().startsWith('CREATE TABLE')) {
+  const upperStart = trimmed.toUpperCase();
+  if (upperStart.startsWith('CREATE TABLE') || upperStart.startsWith('ALTER TABLE')) {
     return;
   }
   if (trimmed.toUpperCase().startsWith('INSERT INTO')) {
@@ -362,6 +363,9 @@ function executeH5Query(sql: string) {
     table = table.filter(row => !matchRow(row, where));
     h5Db.saveTable(tableName, table);
     return;
+  }
+  if (trimmed) {
+    console.warn('[H5 DB] Unhandled SQL statement:', trimmed);
   }
 }
 
@@ -846,15 +850,17 @@ export const localDb = {
       await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN color");
     } catch (e) {}
 
-    const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
-    for (const mutation of taskMutations) {
-      if (!mutation.payload) continue;
-      const result = cleanTaskMutationPayload(mutation.payload);
-      if (result.status === 'invalid') warnInvalidTaskPayload(true)
-      if (result.status === 'changed') {
-        const sanitized = result.payload.replace(/'/g, "''");
-        const esc = (value: string) => value.replace(/'/g, "''");
-        await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+    if (!isH5) {
+      const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
+      for (const mutation of taskMutations) {
+        if (!mutation.payload) continue;
+        const result = cleanTaskMutationPayload(mutation.payload);
+        if (result.status === 'invalid') warnInvalidTaskPayload(true)
+        if (result.status === 'changed') {
+          const sanitized = result.payload.replace(/'/g, "''");
+          const esc = (value: string) => value.replace(/'/g, "''");
+          await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+        }
       }
     }
   },
@@ -1523,6 +1529,24 @@ export const localDb = {
     if (activeScope && parsed?.assetId) {
       void deleteCachedDocument(activeScope, parsed.assetId);
     }
+  },
+
+  async upsertSourceView(subjectId: string, item: SourceView): Promise<void> {
+    if (!subjectId || !item.id || item.deletedAt) return;
+    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+      const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN;
+      await this.saveSourceFile({
+        id: item.id,
+        subject_id: item.subjectId || subjectId,
+        name: item.title || '未命名资料',
+        file_path: item.originUrl || item.assetId || '',
+        file_type: item.type || 'FILE',
+        file_size: item.assetSizeBytes ?? 0,
+        created_at: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+        version: item.version ?? 0,
+        payload_json: JSON.stringify(item),
+      });
+    });
   },
 
   async getSourceViews(subjectId: string): Promise<SourceView[]> {

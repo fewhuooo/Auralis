@@ -264,18 +264,26 @@ async function syncFocusState() {
 
 watch(
   () => [focusStore.isTaskLocked, focusStore.focusMinutes],
-  ensureStandardFocusMinutes,
+  ([locked]) => {
+    if (locked) {
+      showTaskSheet.value = false
+    }
+    ensureStandardFocusMinutes()
+  },
   { immediate: true },
 )
 
 watch(
-  () => [authStore.sessionId, authStore.user?.id, authStore.serverDeviceId],
+  () => [authStore.isAuthenticated, authStore.sessionId, authStore.user?.id, authStore.serverDeviceId],
   () => {
     userManuallySelected = false
     syncTaskFlight = null
     tasksLoaded.value = false
     showTaskSheet.value = false
     completingTask.value = false
+    if (authStore.isAuthenticated) {
+      void syncFocusState()
+    }
   },
 )
 
@@ -333,12 +341,25 @@ async function completeBoundTask() {
     uni.showToast({ title: '已标记完成', icon: 'none' })
     focusStore.dismissCompletedTaskPrompt()
   } catch (err) {
+    if (
+      generation !== authStore.getLoginGeneration()
+      || userId !== authStore.user?.id
+      || serverDeviceId !== authStore.serverDeviceId
+    ) {
+      return
+    }
     uni.showToast({
       title: err instanceof Error ? err.message : '标记完成失败，请重试',
       icon: 'none',
     })
   } finally {
-    completingTask.value = false
+    if (
+      generation === authStore.getLoginGeneration()
+      && userId === authStore.user?.id
+      && serverDeviceId === authStore.serverDeviceId
+    ) {
+      completingTask.value = false
+    }
   }
 }
 </script>

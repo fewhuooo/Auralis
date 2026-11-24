@@ -366,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import {
@@ -410,6 +410,7 @@ import {
   reduceMobileChatPartEvent,
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
+import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
 import { uuidv7 } from '@/utils/uuid'
 
@@ -469,6 +470,7 @@ let chatViewportHeight = 0
 let touchStartY = 0
 let touchPullUpDetected = false
 let programmaticScrollUntil = 0
+let lastAuthScope = `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
 const pendingSubmissionIds: Record<string, string> = {}
 const activityVersions: Record<string, number> = {}
 
@@ -773,6 +775,12 @@ function resetChatState() {
   activeStreamToken += 1
   activeViewToken += 1
   stopRunPolling()
+  const abortFn = abortLocalStream
+  abortLocalStream = null
+  abortFn?.()
+  isTyping.value = false
+  isStopping.value = false
+  showScopeMenu.value = false
   currentConversationId.value = ''
   conversationScopeState.value = 'UNBOUND'
   selectedSubjectId.value = null
@@ -787,7 +795,6 @@ function resetChatState() {
   drainingMessageIds.value = {}
   prevScrollTop = 0
   touchPullUpDetected = false
-  abortLocalStream = null
   clearMapKeys(pendingSubmissionIds)
   clearMapKeys(activityVersions)
 }
@@ -807,17 +814,15 @@ function submitStarterPrompt(prompt: string) {
   void sendMessage()
 }
 
-function copyText(text: string) {
-  uni.setClipboardData({
-    data: text,
-    success: () => uni.showToast({ title: '已复制', icon: 'none' }),
-  })
+async function copyText(text: string) {
+  const ok = await copyTextWithFallback(text)
+  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
 }
 
 function copyAssistantMessage(msg: MobileChatMessage) {
   const text = extractPartsPlainText(msg.parts, msg.content).trim()
   if (!text) return
-  copyText(text)
+  void copyText(text)
 }
 
 function openSaveBlockModal(msg: MobileChatMessage) {
@@ -859,7 +864,9 @@ async function openHistoryDrawer() {
     if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: '加载失败', icon: 'none' })
   } finally {
-    loadingHistory.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      loadingHistory.value = false
+    }
   }
 }
 
@@ -889,7 +896,9 @@ async function loadConversation(conversationId: string) {
     activeAttemptId.value = ''
     isConversationUnsupported.value = !isConversationProtocolSupported(detail)
     preSendError.value = isConversationUnsupported.value ? '旧版对话仅供查看，请在历史对话中开启新对话' : ''
+    const abortFn = abortLocalStream
     abortLocalStream = null
+    abortFn?.()
     drainingMessageIds.value = {}
     clearMapKeys(pendingSubmissionIds)
     clearMapKeys(activityVersions)
@@ -1074,8 +1083,8 @@ async function stopGeneration() {
     messages.value[lastIndex] = applyTerminalState(targetMsg, 'cancelled')
   }
 
-  activeStreamToken += 1
-  activeViewToken += 1
+  const stopStreamToken = ++activeStreamToken
+  const stopViewToken = ++activeViewToken
   const abortFn = abortLocalStream
   abortLocalStream = null
   abortFn?.()
@@ -1087,11 +1096,13 @@ async function stopGeneration() {
   } catch {
     // Server-side run may have already settled; UI stays safely unlocked.
   } finally {
-    isStopping.value = false
-    isTyping.value = false
-    activeRunId.value = ''
-    activeAttemptId.value = ''
-    scrollToBottom(false)
+    if (stopStreamToken === activeStreamToken && stopViewToken === activeViewToken) {
+      isStopping.value = false
+      isTyping.value = false
+      activeRunId.value = ''
+      activeAttemptId.value = ''
+      scrollToBottom(false)
+    }
   }
 }
 
@@ -1431,6 +1442,26 @@ async function handleSubmitActivity(questionId: string, answer: MobileChatActivi
     ),
   })
 }
+
+watch(
+  () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
+  (nextScope) => {
+    if (nextScope === lastAuthScope) return
+    lastAuthScope = nextScope
+    resetChatState()
+    conversations.value = []
+    hydratedUserKey = ''
+    subjectsLoadPromise = null
+    loadingHistory.value = false
+    showHistorySheet.value = false
+    showSaveBlockModal.value = false
+    saveBlockSeedTitle.value = ''
+    saveBlockSeedContent.value = ''
+    if (authStore.isAuthenticated) {
+      void ensureSubjectsLoaded()
+    }
+  },
+)
 
 onMounted(() => {
   void ensureSubjectsLoaded()

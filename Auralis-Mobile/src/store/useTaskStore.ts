@@ -194,7 +194,7 @@ export const useTaskStore = defineStore('task', () => {
       }
 
       if (recoveredCount > 0 && isSameScope(scope, currentRetentionScope()) && !syncStore.isSyncing && !syncStore.isResettingOffline) {
-        void syncPendingChanges()
+        void syncPendingChanges().catch(() => {})
       }
     } finally {
       recoveringOverdue = false

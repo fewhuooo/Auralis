@@ -483,7 +483,7 @@
               </view>
 
               <view class="block-card-footer">
-                <text class="block-footer-source">{{ block.source || '自主整理' }}</text>
+                <text class="block-footer-source">{{ resolveBlockSourceLabel(block, props.sources ?? []) }}</text>
                 <text class="block-footer-time num-tabular">{{ formatShortDateTime(block.time) }}</text>
               </view>
             </view>
@@ -584,6 +584,7 @@ import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
 import type { KnowledgeBlock } from '@/store/useBlockStore'
+import { resolveBlockSourceLabel } from '@/utils/blockSyncMapper'
 import { plainMarkdownExcerpt } from '@/utils/markdown'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
 import {
@@ -626,6 +627,7 @@ const props = defineProps<{
   fileOverviewLoading: Record<string, boolean>
   fileOverviewErrors: Record<string, string>
   subjectBlocks: KnowledgeBlock[]
+  sources?: SourceView[]
 }>()
 
 const emit = defineEmits<{
@@ -823,7 +825,7 @@ const filteredBlocks = computed(() => {
   return props.subjectBlocks.filter(b => (
     b.title.toLowerCase().includes(kw)
     || b.preview.toLowerCase().includes(kw)
-    || (b.source || '').toLowerCase().includes(kw)
+    || resolveBlockSourceLabel(b, props.sources ?? []).toLowerCase().includes(kw)
   ))
 })
 

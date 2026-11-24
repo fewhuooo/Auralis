@@ -406,6 +406,7 @@ import {
   reduceMobileChatPartEvent,
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
+import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
 import { uuidv7 } from '@/utils/uuid'
 
@@ -916,7 +917,9 @@ async function switchConversation(conversationId: string) {
     isTyping.value = false
     activeRunId.value = ''
     activeAttemptId.value = ''
+    const abortFn = abortLocalStream
     abortLocalStream = null
+    abortFn?.()
     drainingMessageIds.value = {}
     clearMapKeys(pendingSubmissionIds)
     clearMapKeys(activityVersions)
@@ -1015,17 +1018,15 @@ async function ensureConversation(seedTitle: string, generation: symbol, isCurre
   return created.id
 }
 
-function copyText(text: string) {
-  uni.setClipboardData({
-    data: text,
-    success: () => uni.showToast({ title: '已复制', icon: 'none' }),
-  })
+async function copyText(text: string) {
+  const ok = await copyTextWithFallback(text)
+  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
 }
 
 function copyAssistantMessage(msg: MobileChatMessage) {
   const text = extractPartsPlainText(msg.parts, msg.content).trim()
   if (!text) return
-  copyText(text)
+  void copyText(text)
 }
 
 function openSaveBlockModal(msg: MobileChatMessage) {
@@ -1063,8 +1064,8 @@ async function stopGeneration() {
     messages.value[lastIndex] = applyTerminalState(targetMsg, 'cancelled')
   }
 
-  activeStreamToken += 1
-  activeViewToken += 1
+  const stopStreamToken = ++activeStreamToken
+  const stopViewToken = ++activeViewToken
   const abortFn = abortLocalStream
   abortLocalStream = null
   abortFn?.()
@@ -1076,11 +1077,13 @@ async function stopGeneration() {
   } catch {
     // Server-side run may have settled already
   } finally {
-    isStopping.value = false
-    isTyping.value = false
-    activeRunId.value = ''
-    activeAttemptId.value = ''
-    scrollToBottom(false)
+    if (stopStreamToken === activeStreamToken && stopViewToken === activeViewToken) {
+      isStopping.value = false
+      isTyping.value = false
+      activeRunId.value = ''
+      activeAttemptId.value = ''
+      scrollToBottom(false)
+    }
   }
 }
 
