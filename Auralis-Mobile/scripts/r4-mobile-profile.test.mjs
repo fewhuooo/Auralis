@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { ApiProblemError } from '../src/api/protocol.ts'
+import { ApiProblemError, parseProblemDetails } from '../src/api/protocol.ts'
 import { createRequestExecutor, isPasswordConfirmationFailure } from '../src/api/requestCore.ts'
 import { createFocusController } from '../src/services/focusController.ts'
 import { createSyncController } from '../src/services/syncController.ts'
 import { readAutoSyncPreference, writeAutoSyncPreference } from '../src/services/syncPreferences.ts'
+import { validateUploadFile } from '../src/utils/uploadValidation.ts'
 import {
   buildSubjectDistribution,
   canProbeSavedAiSettings,
@@ -198,11 +199,11 @@ test('requestCore does not refresh tokens on wrong-password 401 or logout 401, w
 
   await assert.rejects(
     execute({ url: '/api/auth/password', method: 'PUT', data: { currentPassword: 'wrong' } }),
-    error => error instanceof ApiProblemError && error.status === 401 && error.problem.detail === 'Invalid credentials',
+    error => error instanceof ApiProblemError && error.status === 401 && error.problem.detail === '账号或密码错误，请重新输入',
   )
   await assert.rejects(
     execute({ url: '/api/auth/me', method: 'DELETE', data: { password: 'wrong' } }),
-    error => error instanceof ApiProblemError && error.status === 401 && error.problem.detail === 'Invalid credentials',
+    error => error instanceof ApiProblemError && error.status === 401 && error.problem.detail === '账号或密码错误，请重新输入',
   )
   await assert.rejects(
     execute({ url: '/api/auth/logout', method: 'POST' }),
@@ -1009,4 +1010,33 @@ test('syncController suppresses onSyncCompleted on reset, offline exit, and conf
   await inflight
   assert.equal(completedCallbacks, 1)
   assert.deepEqual(rejectedTaskEvents, [['t-overdue-bad']])
+})
+
+test('parseProblemDetails localizes common server English details and validateUploadFile rejects empty browser files', () => {
+  const credProblem = parseProblemDetails({
+    status: 401,
+    code: 'UNAUTHENTICATED',
+    detail: 'Invalid credentials',
+  })
+  assert.match(credProblem.detail, /账号或密码错误/)
+
+  const overlapProblem = parseProblemDetails({
+    status: 400,
+    code: 'VALIDATION_FAILED',
+    detail: 'Task schedule overlaps another active task',
+  })
+  assert.match(overlapProblem.detail, /时间冲突/)
+
+  const streamProblem = parseProblemDetails({
+    status: 500,
+    code: 'AI_STREAM_ERROR',
+    detail: 'AI stream failed',
+  })
+  assert.match(streamProblem.detail, /生成失败/)
+
+  assert.throws(
+    () => validateUploadFile({ name: 'empty.pdf', size: 0, file: {} }),
+    /文件为空/,
+  )
+  assert.doesNotThrow(() => validateUploadFile({ name: 'notes.pdf', size: 1024 }))
 })

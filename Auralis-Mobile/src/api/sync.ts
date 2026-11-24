@@ -6,8 +6,21 @@ import { useSyncStore } from '@/store/useSyncStore'
 
 interface RealtimeEvent {
   type?: string
+  resourceType?: string
+  resourceId?: string
   cursor?: string
   eventId?: string
+}
+
+export type OverviewRealtimeListener = (event: { resourceType?: string; resourceId?: string }) => void
+
+const overviewListeners = new Set<OverviewRealtimeListener>()
+
+export function subscribeOverviewUpdated(listener: OverviewRealtimeListener): () => void {
+  overviewListeners.add(listener)
+  return () => {
+    overviewListeners.delete(listener)
+  }
 }
 
 let socketTask: UniApp.SocketTask | null = null
@@ -90,7 +103,19 @@ export async function connectRealtimeSync() {
         if (socketTask !== task || !isCurrentAttempt()) return
         try {
           const event = JSON.parse(String(message.data)) as RealtimeEvent
-          if (rememberEvent(event) && (event.type === 'SYNC_CHANGED' || event.type === 'REVIEW_UPDATED')) {
+          if (!rememberEvent(event)) return
+          if (event.type === 'OVERVIEW_UPDATED') {
+            for (const listener of overviewListeners) {
+              listener({ resourceType: event.resourceType, resourceId: event.resourceId })
+            }
+            return
+          }
+          if (
+            event.type === 'SYNC_CHANGED'
+            || event.type === 'REVIEW_UPDATED'
+            || event.type === 'TASK_UPDATED'
+            || event.type === 'KNOWLEDGE_UPDATED'
+          ) {
             void useSyncStore().triggerSync()
           }
         } catch (error) {

@@ -56,6 +56,7 @@
               :maxlength="mode === 'login' ? 254 : 64"
               :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
               :disabled="pending"
+              @confirm="submit"
             />
 
             <template v-if="mode !== 'login'">
@@ -65,6 +66,7 @@
                 :maxlength="254"
                 placeholder="邮箱"
                 :disabled="pending"
+                @confirm="submit"
               />
               <view class="code-field">
                 <input
@@ -74,6 +76,7 @@
                   :maxlength="6"
                   placeholder="验证码"
                   :disabled="pending"
+                  @confirm="submit"
                 />
                 <button
                   class="code-button"
@@ -92,6 +95,7 @@
               password
               :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
               :disabled="pending"
+              @confirm="submit"
             />
 
             <input
@@ -101,6 +105,7 @@
               password
               placeholder="确认密码"
               :disabled="pending"
+              @confirm="submit"
             />
           </view>
 
@@ -120,12 +125,25 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useAuthForm } from '@/composables/useAuthForm'
+import { useAuthStore } from '@/store/useAuthStore'
 
+const authStore = useAuthStore()
 const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
   = useAuthForm('/pages/tablet/dashboard/index')
+
+function redirectIfAuthenticated() {
+  if (authStore.isAuthenticated) {
+    uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
+  }
+}
+
+onMounted(redirectIfAuthenticated)
+onShow(redirectIfAuthenticated)
 </script>
 
 <style scoped>

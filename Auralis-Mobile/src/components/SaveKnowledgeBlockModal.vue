@@ -24,7 +24,27 @@
             </view>
           </view>
         </scroll-view>
-        <text v-else class="save-subject-empty">暂无可用学科，请先创建学科</text>
+        <view v-else class="save-subject-empty-box">
+          <text class="save-subject-empty">暂无可用学科，请先创建学科</text>
+          <view class="save-quick-subject-row">
+            <input
+              v-model="quickSubjectName"
+              class="save-block-input save-quick-subject-input"
+              maxlength="20"
+              placeholder="输入学科名称快速创建…"
+              :disabled="creatingSubject || saving"
+              @confirm="createQuickSubject"
+            />
+            <view
+              class="save-quick-subject-btn"
+              :class="{ disabled: creatingSubject || !quickSubjectName.trim() }"
+              role="button"
+              @click="createQuickSubject"
+            >
+              <text>{{ creatingSubject ? '创建中' : '创建学科' }}</text>
+            </view>
+          </view>
+        </view>
       </view>
 
       <view class="save-block-field">
@@ -34,6 +54,7 @@
           class="save-block-input"
           :maxlength="80"
           placeholder="输入知识块标题…"
+          @confirm="confirmSave"
         />
       </view>
 
@@ -97,6 +118,8 @@ const title = ref('')
 const content = ref('')
 const selectedSubjectId = ref('')
 const saving = ref(false)
+const quickSubjectName = ref('')
+const creatingSubject = ref(false)
 let openToken = 0
 
 const hasValidSubject = computed(() => subjectStore.subjects.some(s => s.id === selectedSubjectId.value))
@@ -167,6 +190,35 @@ function handleClose() {
 
 useEscapeKey(() => props.visible && !saving.value, handleClose)
 
+async function createQuickSubject() {
+  if (creatingSubject.value || saving.value) return
+  const name = quickSubjectName.value.trim()
+  if (!name) {
+    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  creatingSubject.value = true
+  try {
+    const createdId = await subjectStore.addSubject(name, '', 'other')
+    if (generation !== authStore.getLoginGeneration()) return
+    quickSubjectName.value = ''
+    if (createdId) {
+      selectedSubjectId.value = createdId
+    } else {
+      resolveDefaultSubject()
+    }
+    uni.showToast({ title: '已创建学科', icon: 'none' })
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '创建学科失败', icon: 'none' })
+  } finally {
+    if (generation === authStore.getLoginGeneration()) {
+      creatingSubject.value = false
+    }
+  }
+}
+
 async function confirmSave() {
   if (saving.value) return
   const targetSubject = subjectStore.subjects.find(s => s.id === selectedSubjectId.value)
@@ -230,6 +282,9 @@ async function confirmSave() {
   background-color: #FAF7F2;
   border: 1px solid #EAE6DD;
   box-shadow: 0 18px 42px rgba(45, 55, 40, 0.14);
+  max-height: 86vh;
+  max-height: 86dvh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -305,9 +360,46 @@ async function confirmSave() {
   font-weight: var(--font-weight-semibold);
 }
 
+.save-subject-empty-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .save-subject-empty {
   font-size: 12px;
   color: var(--color-warning-ink);
+}
+
+.save-quick-subject-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.save-quick-subject-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.save-quick-subject-btn {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background-color: #EEF2E6;
+  border: 1px solid #8B9A6E;
+  color: var(--color-sage-ink);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.save-quick-subject-btn.disabled {
+  opacity: 0.45;
 }
 
 .save-block-input,
@@ -320,6 +412,12 @@ async function confirmSave() {
   font-size: 14px;
   color: var(--text-primary);
   box-sizing: border-box;
+}
+
+.save-block-input {
+  height: 40px;
+  min-height: 40px;
+  line-height: 20px;
 }
 
 .save-block-textarea {

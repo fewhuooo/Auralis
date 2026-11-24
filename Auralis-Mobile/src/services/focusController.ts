@@ -39,6 +39,7 @@ export interface FocusControllerDeps {
   recordSession: (command: FocusSessionCommand) => Promise<unknown>
   canSyncSession: () => boolean
   getLoginGeneration: () => symbol
+  hasPendingTaskSync?: (taskId: string) => Promise<boolean> | boolean
 }
 
 export const FOCUS_PRESETS = [15, 25, 45, 60] as const
@@ -367,10 +368,29 @@ export function createFocusController(deps: FocusControllerDeps) {
         return flushed
       }
       const command = queue[i]
+      if (command.taskId && await deps.hasPendingTaskSync?.(command.taskId)) {
+        if (deps.getLoginGeneration() !== generation || deps.getScope() !== capturedScope) {
+          return flushed
+        }
+        remaining.push(command)
+        continue
+      }
       try {
         await deps.recordSession(command)
         flushed++
       } catch (error) {
+        if (
+          error instanceof ApiProblemError
+          && error.status === 404
+          && command.taskId
+          && await deps.hasPendingTaskSync?.(command.taskId)
+        ) {
+          if (deps.getLoginGeneration() !== generation || deps.getScope() !== capturedScope) {
+            return flushed
+          }
+          remaining.push(command)
+          continue
+        }
         if (isTerminalOutboxError(error)) {
           continue
         }

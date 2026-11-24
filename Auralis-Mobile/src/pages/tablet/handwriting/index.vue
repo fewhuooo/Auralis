@@ -348,7 +348,15 @@ const exportPDF = async () => {
 
 const goBack = () => {
   save()
-  uni.navigateBack()
+  try {
+    if (getCurrentPages().length > 1) {
+      uni.navigateBack()
+      return
+    }
+  } catch {
+    // Fallback to redirect when history stack cannot be inspected
+  }
+  uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
 }
 </script>
 

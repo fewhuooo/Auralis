@@ -176,6 +176,10 @@ onMounted(() => {
 
   const pages = getCurrentPages()
   const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+  if (!nowRoute.includes('/login') && !authStore.isAuthenticated) {
+    uni.reLaunch({ url: '/pages/tablet/login/index' })
+    return
+  }
   const targetIdx = getIndexByUrl(nowRoute)
   currentPath.value = nowRoute
   layoutStore.setActiveNav(targetIdx, nowRoute)

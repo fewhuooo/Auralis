@@ -492,7 +492,7 @@ const totalFeedbackCount = computed(() => (
 const nextGroupCount = computed(() => Math.min(groupSize.value, remainingIds.value.length))
 
 const milestoneTitle = computed(() => {
-  if (loading.value) return '正在准备学习队列…'
+  if (!subjectsHydrated.value || loading.value) return '正在准备学习队列…'
   if (hasPendingCommand.value) return '存在待确认的学习操作'
   if (loadError.value) return loadError.value
   if (!subjectStore.subjects.length) return '暂无学科'
@@ -512,7 +512,7 @@ const milestoneTitle = computed(() => {
 })
 
 const milestoneSubtitle = computed(() => {
-  if (loading.value) return ''
+  if (!subjectsHydrated.value || loading.value) return ''
   if (hasPendingCommand.value) {
     return '请点击上方「原样重试」确认上次提交，或点击「刷新状态」同步最新进度'
   }
@@ -546,15 +546,29 @@ onLoad((query) => {
   queryReady.value = true
 })
 
+const subjectsHydrated = ref(false)
+
+async function hydrateSubjectsForScope() {
+  const gen = authStore.getLoginGeneration()
+  try {
+    await subjectStore.loadSubjects()
+  } finally {
+    if (gen === authStore.getLoginGeneration()) {
+      subjectsHydrated.value = true
+    }
+  }
+}
+
 watch(
   () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
   (nextScope) => {
     if (nextScope === lastReviewAuthScope) return
     lastReviewAuthScope = nextScope
+    subjectsHydrated.value = false
     routeSubjectParam.value = ''
     selectedSubjectId.value = ''
     if (authStore.isAuthenticated) {
-      void subjectStore.loadSubjects()
+      void hydrateSubjectsForScope()
     }
   },
 )
@@ -582,7 +596,7 @@ watch(
 
 onMounted(() => {
   if (!queryReady.value) queryReady.value = true
-  void subjectStore.loadSubjects()
+  void hydrateSubjectsForScope()
 })
 
 function handleStartSelfTest() {

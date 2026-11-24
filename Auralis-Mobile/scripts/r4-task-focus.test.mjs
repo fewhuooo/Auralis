@@ -22,6 +22,7 @@ import {
 } from '../src/utils/dateKey.ts'
 import {
   compareTaskPosition,
+  findOverlappingScheduledTask,
   fromServerTaskPayload,
   getPendingTodos,
   getScheduledTasksForLocalDate,
@@ -1188,4 +1189,110 @@ test('useTaskStore clears stale tasks synchronously on account switch, fences lo
   generation = Symbol('gen-user-a-2')
   resetActive = true
   assert.equal(await store.recoverOverdueTasks(), 0)
+})
+
+test('findOverlappingScheduledTask matches backend interval overlap rules and skips cancelled/deleted tasks', () => {
+  const existing = [
+    {
+      id: 't-active',
+      name: 'Morning Math',
+      scheduledAt: combineLocalDateAndTime('2026-11-25', '09:00'),
+      duration: 30,
+      status: 'scheduled',
+      is_deleted: false,
+    },
+    {
+      id: 't-cancelled',
+      name: 'Cancelled Slot',
+      scheduledAt: combineLocalDateAndTime('2026-11-25', '10:00'),
+      duration: 60,
+      status: 'cancelled',
+      is_deleted: false,
+    },
+    {
+      id: 't-deleted',
+      name: 'Deleted Slot',
+      scheduledAt: combineLocalDateAndTime('2026-11-25', '11:00'),
+      duration: 60,
+      status: 'scheduled',
+      is_deleted: true,
+    },
+  ]
+
+  // Overlapping 09:15 (during 09:00-09:30) conflicts with active task
+  const hit = findOverlappingScheduledTask(existing, {
+    scheduledAtIso: combineLocalDateAndTime('2026-11-25', '09:15'),
+    durationMinutes: 30,
+  })
+  assert.equal(hit?.id, 't-active')
+
+  // Adjacent 09:30 (right after 09:00-09:30) does not overlap
+  assert.equal(findOverlappingScheduledTask(existing, {
+    scheduledAtIso: combineLocalDateAndTime('2026-11-25', '09:30'),
+    durationMinutes: 30,
+  }), null)
+
+  // Cancelled & deleted slots do not block scheduling
+  assert.equal(findOverlappingScheduledTask(existing, {
+    scheduledAtIso: combineLocalDateAndTime('2026-11-25', '10:15'),
+    durationMinutes: 30,
+  }), null)
+  assert.equal(findOverlappingScheduledTask(existing, {
+    scheduledAtIso: combineLocalDateAndTime('2026-11-25', '11:15'),
+    durationMinutes: 30,
+  }), null)
+})
+
+test('focus outbox defers session linked to unsynced task until task sync completes without dropping on 404', async () => {
+  const store = new Map()
+  const nowMs = new Date(2026, 10, 25, 9, 0, 0).getTime()
+  const pendingTasks = new Set(['task-offline'])
+  const attempts = []
+
+  const controller = createFocusController({
+    storage: {
+      get: key => store.get(key),
+      set: (key, value) => store.set(key, value),
+    },
+    getScope: () => 'user-a:dev-1',
+    getLoginGeneration: () => Symbol.for('gen-a'),
+    canSyncSession: () => true,
+    now: () => nowMs,
+    createId: () => 'session-gen',
+    hasPendingTaskSync: taskId => pendingTasks.has(taskId),
+    recordSession: async (cmd) => {
+      attempts.push(cmd.clientSessionId)
+      if (cmd.taskId && pendingTasks.has(cmd.taskId)) {
+        throw new ApiProblemError({ title: 'Not Found', status: 404, detail: 'Task missing', fieldErrors: [] })
+      }
+    },
+  })
+
+  store.set('auralis:local:user-a:dev-1:focus_outbox', [
+    {
+      clientSessionId: 's-offline-task',
+      taskId: 'task-offline',
+      startedAt: new Date(nowMs).toISOString(),
+      endedAt: new Date(nowMs + 1_500_000).toISOString(),
+      durationSeconds: 1500,
+      completed: true,
+    },
+    {
+      clientSessionId: 's-independent',
+      startedAt: new Date(nowMs).toISOString(),
+      endedAt: new Date(nowMs + 900_000).toISOString(),
+      durationSeconds: 900,
+      completed: true,
+    },
+  ])
+
+  const firstPass = await controller.flushOutbox()
+  assert.equal(firstPass, 1)
+  assert.deepEqual(attempts, ['s-independent'])
+  assert.deepEqual(controller.readOutbox().map(item => item.clientSessionId), ['s-offline-task'])
+
+  pendingTasks.delete('task-offline')
+  const secondPass = await controller.flushOutbox()
+  assert.equal(secondPass, 1)
+  assert.equal(controller.readOutbox().length, 0)
 })

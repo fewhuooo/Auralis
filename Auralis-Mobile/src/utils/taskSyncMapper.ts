@@ -197,3 +197,32 @@ export function getPendingTodos<T extends Pick<SyncableTask, 'id' | 'scheduledAt
 ): T[] {
   return getVisiblePendingTodos(tasks)
 }
+
+function effectiveScheduleDurationMinutes(duration: unknown): number {
+  const numeric = Number(duration)
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 30
+}
+
+export function findOverlappingScheduledTask<
+  T extends Pick<SyncableTask, 'id' | 'name' | 'scheduledAt' | 'duration' | 'is_deleted'> & { status?: string },
+>(
+  tasks: readonly T[],
+  candidate: { scheduledAtIso: string; durationMinutes?: number; excludeTaskId?: string },
+): T | null {
+  const leftStart = Date.parse(candidate.scheduledAtIso)
+  if (!Number.isFinite(leftStart)) return null
+  const leftEnd = leftStart + effectiveScheduleDurationMinutes(candidate.durationMinutes) * 60_000
+  if (leftStart >= leftEnd) return null
+
+  for (const task of tasks) {
+    if (task.is_deleted || isCancelledStatus(task.status) || !task.scheduledAt) continue
+    if (candidate.excludeTaskId && task.id === candidate.excludeTaskId) continue
+    const rightStart = Date.parse(task.scheduledAt)
+    if (!Number.isFinite(rightStart)) continue
+    const rightEnd = rightStart + effectiveScheduleDurationMinutes(task.duration) * 60_000
+    if (rightStart < rightEnd && leftStart < rightEnd && rightStart < leftEnd) {
+      return task
+    }
+  }
+  return null
+}

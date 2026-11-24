@@ -50,11 +50,11 @@
               </view>
             </view>
 
-            <view v-if="scheduledForSelectedDay.length === 0" class="empty-stage">
+            <view v-if="hydrated && scheduledForSelectedDay.length === 0" class="empty-stage">
               <text class="empty-whisper">当日暂无日程</text>
             </view>
 
-            <scroll-view v-else scroll-y :show-scrollbar="false" class="zone-scroll">
+            <scroll-view v-else-if="scheduledForSelectedDay.length > 0" scroll-y :show-scrollbar="false" class="zone-scroll">
               <view class="card-list">
                 <ZenTaskRow
                   v-for="item in scheduledForSelectedDay"
@@ -94,7 +94,7 @@
               </view>
             </scroll-view>
 
-            <view v-else class="ghost-todo-stage">
+            <view v-else-if="hydrated" class="ghost-todo-stage">
               <button
                 class="ghost-todo-btn"
                 aria-label="点击添加第一条待办"
@@ -834,16 +834,29 @@ watch(
   },
 )
 
+const hydrated = ref(false)
+
+async function hydrateHomeData() {
+  const gen = authStore.getLoginGeneration()
+  try {
+    await Promise.all([subjectStore.loadSubjects(), taskStore.fetchTasks()])
+  } finally {
+    if (gen === authStore.getLoginGeneration()) {
+      hydrated.value = true
+    }
+  }
+}
+
 watch(
   () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
   (nextScope) => {
     if (nextScope === lastHomeAuthScope) return
     lastHomeAuthScope = nextScope
+    hydrated.value = false
     resetHomeCaptureState()
     selectedDateKey.value = todayKey.value
     if (authStore.isAuthenticated) {
-      void subjectStore.loadSubjects()
-      void taskStore.fetchTasks()
+      void hydrateHomeData()
     }
   },
 )
@@ -852,8 +865,7 @@ onShow(syncClockToWeek)
 
 onMounted(async () => {
   clockTimer = setInterval(syncClockToWeek, 30000)
-  await subjectStore.loadSubjects()
-  await taskStore.fetchTasks()
+  await hydrateHomeData()
 })
 
 onUnmounted(() => {

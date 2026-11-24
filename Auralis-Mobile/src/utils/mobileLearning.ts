@@ -376,6 +376,7 @@ export function copyTextWithFallback(text: string): Promise<boolean> {
     try {
       uni.setClipboardData({
         data: text,
+        showToast: false,
         success: () => resolve(true),
         fail: () => resolve(fallbackCopyInBrowser(text)),
       })

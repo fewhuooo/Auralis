@@ -3,6 +3,7 @@ import { watch } from 'vue'
 import { onHide, onLaunch, onShow } from '@dcloudio/uni-app'
 import { connectRealtimeSync, disconnectRealtimeSync } from '@/api/sync'
 import { localDb } from '@/services/localDb'
+import { cursorKeyForAuth } from '@/services/syncController'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -12,8 +13,10 @@ let runtimeFlight: { token: symbol; key: string; promise: Promise<void> } | null
 
 async function startAuthenticatedRuntime() {
   const authStore = useAuthStore()
-  if (!authStore.isAuthenticated || !authStore.user?.id || !authStore.serverDeviceId) return
-  const runtimeKey = `${authStore.user.id}:${authStore.serverDeviceId}`
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  if (!authStore.isAuthenticated || !userId || !serverDeviceId) return
+  const runtimeKey = `${userId}:${serverDeviceId}`
   if (runtimeFlight?.key === runtimeKey) {
     return runtimeFlight.promise
   }
@@ -27,7 +30,15 @@ async function startAuthenticatedRuntime() {
     const focusStore = useFocusStore()
     focusStore.reconcileNow(false)
     const syncStore = useSyncStore()
-    await syncStore.triggerSync()
+    const existingCursor = await localDb.getMetadata(
+      cursorKeyForAuth(userId, serverDeviceId),
+    )
+    if (generation !== authStore.getLoginGeneration()) return
+    if (!existingCursor) {
+      await syncStore.syncNow()
+    } else {
+      await syncStore.triggerSync()
+    }
     if (generation !== authStore.getLoginGeneration()) return
     await focusStore.flushPendingSessions()
     if (generation !== authStore.getLoginGeneration()) return

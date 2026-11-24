@@ -24,7 +24,7 @@
           </view>
         </view>
 
-        <view v-if="subjects.length === 0" class="empty-hall zen-card">
+        <view v-if="hydrated && subjects.length === 0" class="empty-hall zen-card">
           <LineIcon name="book" size="30px" color="var(--color-zen-sage)" />
           <text class="empty-title">暂无学科空间</text>
           <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
@@ -33,12 +33,12 @@
           </view>
         </view>
 
-        <view v-else-if="filteredSubjects.length === 0" class="empty-hall zen-card">
+        <view v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
           <text class="empty-title">无匹配学科</text>
           <view class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</view>
         </view>
 
-        <view v-else class="grid">
+        <view v-else-if="hydrated" class="grid">
           <view
             v-for="subj in filteredSubjects"
             :key="subj.id"
@@ -137,6 +137,7 @@
                 maxlength="20"
                 placeholder="例如: 算法与数据结构、应用物理学"
                 :disabled="savingSubject"
+                @confirm="handleSave"
               />
             </view>
 
@@ -336,24 +337,36 @@ function enterWorkspace(id: string) {
   uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${id}` })
 }
 
+const hydrated = ref(false)
+
+async function hydrateHallData() {
+  const gen = authStore.getLoginGeneration()
+  try {
+    await Promise.all([blockStore.fetchBlocks(), subjectStore.loadSubjects()])
+  } finally {
+    if (gen === authStore.getLoginGeneration()) {
+      hydrated.value = true
+    }
+  }
+}
+
 watch(
   () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
   () => {
+    hydrated.value = false
     showModal.value = false
     savingSubject.value = false
     editingId.value = null
     searchQuery.value = ''
     modalError.value = ''
     if (!authStore.isAuthenticated) return
-    void blockStore.fetchBlocks()
-    void subjectStore.loadSubjects()
+    void hydrateHallData()
   },
 )
 
 onMounted(async () => {
   if (!authStore.isAuthenticated) return
-  await blockStore.fetchBlocks()
-  await subjectStore.loadSubjects()
+  await hydrateHallData()
 })
 </script>
 
