@@ -1,64 +1,92 @@
 <template>
   <TabletLayout>
     <view class="t-ai-layout">
-      <view class="history-card zen-panel">
-        <view class="history-header">
-          <view class="ui-btn ui-btn-primary new-chat-btn" role="button" @click="startNewChat">
-            <LineIcon name="plus" size="15px" color="#FFFFFF" />
-            <text>新对话</text>
-          </view>
+      <view class="history-card">
+        <view class="history-header-row">
+          <text class="history-heading-title">历史对话</text>
+          <text v-if="!loadingSessions && conversations.length > 0" class="history-heading-count num-tabular">
+            {{ conversations.length }}
+          </text>
+        </view>
+
+        <view
+          class="history-new-btn"
+          :class="{ disabled: isTyping || isStopping }"
+          role="button"
+          aria-label="开启新对话"
+          @click="startNewChat"
+        >
+          <LineIcon name="plus" size="14px" color="var(--color-sage-ink)" />
+          <text>开启新对话</text>
         </view>
 
         <scroll-view scroll-y :show-scrollbar="false" class="history-scroll">
-          <view v-if="loadingSessions" class="history-empty">加载中…</view>
-          <view v-else-if="conversations.length === 0" class="history-empty">暂无历史</view>
+          <view v-if="loadingSessions" class="history-empty">加载历史对话…</view>
+          <view v-else-if="conversations.length === 0" class="history-empty">暂无历史对话</view>
 
-          <view
-            v-for="item in conversations"
-            :key="item.id"
-            class="history-item"
-            :class="{ active: currentConversationId === item.id }"
-            role="button"
-            @click="item.id && switchConversation(item.id)"
-          >
-            <view class="history-info">
-              <text class="history-title">{{ item.title || '新对话' }}</text>
-              <text class="history-time num-tabular">{{ formatConvDate(item.updatedAt || item.createdAt) }}</text>
-            </view>
+          <view v-else class="history-list">
             <view
-              v-if="item.id"
-              class="history-del"
+              v-for="item in conversations"
+              :key="item.id"
+              class="history-item"
+              :class="{ active: currentConversationId === item.id }"
               role="button"
-              aria-label="删除对话"
-              @click.stop="deleteConversation(item.id, item.version ?? 0)"
+              @click="item.id && switchConversation(item.id)"
             >
-              <LineIcon name="close" size="13px" color="var(--text-muted)" />
+              <view class="history-info">
+                <text class="history-title">{{ item.title || '新对话' }}</text>
+                <view class="history-subline">
+                  <text class="history-time num-tabular">{{ formatConvDate(item.updatedAt || item.createdAt) }}</text>
+                  <text v-if="item.chatScopeState === 'BOUND'" class="history-scope-tag">
+                    {{ resolveConversationScope(item, subjectStore.subjects).label }}
+                  </text>
+                </view>
+              </view>
+              <view
+                v-if="item.id"
+                class="history-del"
+                role="button"
+                aria-label="删除对话"
+                @click.stop="confirmDeleteConversation(item.id, item.version ?? 0)"
+              >
+                <LineIcon name="trash" size="14px" color="var(--text-muted)" />
+              </view>
             </view>
           </view>
         </scroll-view>
       </view>
 
-      <view class="chat-card zen-panel">
+      <view class="chat-card">
         <view class="chat-header">
           <text class="chat-title">{{ currentConversationTitle }}</text>
           <text v-if="isConversationUnsupported" class="unsupported-badge">旧版对话只读</text>
         </view>
 
-        <view v-if="messages.length === 0" class="welcome-box">
-          <BrandLogo size="44px" />
-          <view v-if="preSendError" class="pre-send-error" role="alert">
-            <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-            <text class="pre-send-error-text">{{ preSendError }}</text>
-          </view>
-          <view class="prompt-chips">
-            <view
-              v-for="prompt in quickPrompts"
-              :key="prompt"
-              class="prompt-chip"
-              role="button"
-              @click="submitStarterPrompt(prompt)"
-            >
-              <text>{{ prompt }}</text>
+        <view v-if="messages.length === 0" class="welcome-stage">
+          <view class="welcome-inner">
+            <view class="welcome-hero">
+              <text class="welcome-title">{{ welcomeTitle }}</text>
+              <text class="welcome-subtitle num-tabular">{{ welcomeSubtitle }}</text>
+            </view>
+
+            <view class="starter-section">
+              <view v-if="preSendError" class="pre-send-error" role="alert">
+                <LineIcon name="alert" size="14px" color="var(--color-danger)" />
+                <text class="pre-send-error-text">{{ preSendError }}</text>
+              </view>
+
+              <view class="starter-cards">
+                <view
+                  v-for="item in starterItems"
+                  :key="item.prompt"
+                  class="starter-card"
+                  role="button"
+                  @click="submitStarterPrompt(item.prompt)"
+                >
+                  <text class="starter-card-title">{{ item.prompt }}</text>
+                  <text class="starter-card-hint">{{ item.hint }}</text>
+                </view>
+              </view>
             </view>
           </view>
         </view>
@@ -85,7 +113,7 @@
                 <text class="user-text">{{ msg.content }}</text>
               </view>
 
-              <view v-else class="assistant-bubble zen-chat-assistant-bubble">
+              <view v-else class="assistant-entry">
                 <MobileChatProcessArea
                   :reasoning="msg.reasoningText"
                   :tools="msg.tools"
@@ -167,64 +195,176 @@
         </scroll-view>
 
         <view class="input-dock">
-          <view
-            v-if="autoScrollLocked && messages.length > 0"
-            class="scroll-resume-pill"
-            role="button"
-            aria-label="回到最新"
-            @click="resumeAutoScroll"
-          >
-            <view v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></view>
-            <text class="scroll-resume-text">↓ 回到最新</text>
-          </view>
-
-          <view class="input-capsule">
-            <input
-              class="chat-input"
-              v-model="query"
-              :placeholder="composerPlaceholder"
-              confirm-type="send"
-              :disabled="isConversationUnsupported"
-              @input="onQueryInput"
-              @confirm="sendMessage"
-            />
+          <view class="input-dock-inner">
             <view
-              v-if="isTyping || isStopping"
-              class="stop-btn"
-              :class="{ disabled: isStopping }"
+              v-if="autoScrollLocked && messages.length > 0"
+              class="scroll-resume-pill"
               role="button"
-              aria-label="停止生成"
-              @click="stopGeneration"
+              aria-label="回到最新"
+              @click="resumeAutoScroll"
             >
-              <view class="stop-square"></view>
+              <view v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></view>
+              <text class="scroll-resume-text">↓ 回到最新</text>
             </view>
-            <view
-              v-else
-              class="send-btn"
-              :class="{ disabled: !query.trim() || isConversationUnsupported }"
-              role="button"
-              aria-label="发送"
-              @click="sendMessage"
-            >
-              <LineIcon name="arrow-up" size="16px" color="#FFFFFF" />
+
+            <view class="composer-card">
+              <textarea
+                v-model="query"
+                class="composer-textarea"
+                auto-height
+                :maxlength="2000"
+                :show-confirm-bar="false"
+                confirm-type="send"
+                :disabled="isConversationUnsupported"
+                :placeholder="composerPlaceholder"
+                placeholder-style="color: #8A8A85"
+                @input="onQueryInput"
+                @confirm="sendMessage"
+                @keydown="handleComposerKeydown"
+              />
+
+              <view class="composer-toolbar">
+                <view class="composer-tools-left">
+                  <view class="scope-dropdown-anchor">
+                    <view
+                      class="scope-capsule"
+                      :class="{ 'is-locked': isScopeLocked || isTyping || isStopping, 'is-open': showScopeMenu }"
+                      role="button"
+                      :aria-expanded="showScopeMenu"
+                      :aria-label="isScopeLocked ? `当前检索范围已锁定为${activeScopeLabel}` : `选择检索范围，当前为${activeScopeLabel}`"
+                      @click="handleScopePillClick"
+                    >
+                      <view
+                        class="scope-status-dot"
+                        :class="{ 'is-locked': isScopeLocked }"
+                        aria-hidden="true"
+                      ></view>
+                      <text class="scope-capsule-text">{{ activeScopeLabel }}</text>
+                      <LineIcon
+                        v-if="!isScopeLocked"
+                        class="scope-capsule-chevron"
+                        :class="{ 'is-rotated': showScopeMenu }"
+                        name="chevron-down"
+                        size="12px"
+                        color="var(--text-muted)"
+                      />
+                    </view>
+
+                    <view v-if="showScopeMenu" class="scope-dropdown-mask" @click="showScopeMenu = false"></view>
+
+                    <view v-if="showScopeMenu" class="scope-dropdown-menu" @click.stop>
+                      <scroll-view scroll-y :show-scrollbar="false" class="scope-dropdown-scroll">
+                        <view class="dropdown-section-header">
+                          <text>检索范围</text>
+                        </view>
+                        <view
+                          class="dropdown-item"
+                          :class="{ 'is-active': selectedSubjectId === null }"
+                          role="button"
+                          @click="selectScope(null)"
+                        >
+                          <view class="dropdown-item-icon">
+                            <view
+                              class="scope-status-dot"
+                              :class="{ 'is-muted': selectedSubjectId !== null }"
+                              aria-hidden="true"
+                            ></view>
+                          </view>
+                          <view class="dropdown-item-text">
+                            <text class="dropdown-item-label">全部资料</text>
+                            <text class="dropdown-item-desc">检索全部学科已就绪资料</text>
+                          </view>
+                        </view>
+
+                        <template v-if="subjectStore.subjects.length > 0">
+                          <view class="dropdown-divider"></view>
+                          <view class="dropdown-section-header">
+                            <text>按学科限定</text>
+                          </view>
+                          <view
+                            v-for="sub in subjectStore.subjects"
+                            :key="sub.id"
+                            class="dropdown-item"
+                            :class="{ 'is-active': selectedSubjectId === sub.id }"
+                            role="button"
+                            @click="selectScope(sub.id)"
+                          >
+                            <view class="dropdown-item-icon">
+                              <LineIcon
+                                :name="resolveSubjectIcon(sub.icon)"
+                                size="15px"
+                                :color="selectedSubjectId === sub.id ? 'var(--color-sage-ink)' : 'var(--text-muted)'"
+                              />
+                            </view>
+                            <view class="dropdown-item-text">
+                              <text class="dropdown-item-label">{{ sub.name }}</text>
+                              <text class="dropdown-item-desc num-tabular">{{ formatSubjectStats(sub) }}</text>
+                            </view>
+                          </view>
+                        </template>
+
+                        <view v-else class="dropdown-empty-hint">
+                          <text>暂无学科，可先使用「全部资料」</text>
+                        </view>
+                      </scroll-view>
+                    </view>
+                  </view>
+
+                  <view
+                    v-if="messages.length > 0 || currentConversationId"
+                    class="composer-tool-btn"
+                    :class="{ disabled: isTyping || isStopping }"
+                    role="button"
+                    aria-label="开启新对话"
+                    @click="startNewChat"
+                  >
+                    <LineIcon name="plus" size="15px" color="var(--color-sage-ink)" />
+                  </view>
+                </view>
+
+                <view
+                  v-if="isTyping || isStopping"
+                  class="composer-action-btn stop-btn"
+                  :class="{ disabled: isStopping }"
+                  role="button"
+                  aria-label="停止生成"
+                  @click="stopGeneration"
+                >
+                  <view class="stop-square"></view>
+                </view>
+                <view
+                  v-else
+                  class="composer-action-btn send-btn"
+                  :class="{ disabled: isConversationUnsupported || !query.trim() }"
+                  role="button"
+                  aria-label="发送"
+                  @click="sendMessage"
+                >
+                  <LineIcon name="arrow-up" size="17px" color="#FFFFFF" />
+                </view>
+              </view>
             </view>
           </view>
         </view>
       </view>
     </view>
 
-    <SaveKnowledgeBlockModal
-      :visible="showSaveBlockModal"
-      :initial-title="saveBlockSeedTitle"
-      :initial-preview="saveBlockSeedContent"
-      @close="showSaveBlockModal = false"
-      @saved="showSaveBlockModal = false"
-    />
+    <template #modal>
+      <SaveKnowledgeBlockModal
+        :visible="showSaveBlockModal"
+        :default-subject-id="selectedSubjectId"
+        :initial-title="saveBlockSeedTitle"
+        :initial-preview="saveBlockSeedContent"
+        @close="showSaveBlockModal = false"
+        @saved="showSaveBlockModal = false"
+      />
+    </template>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import {
   chatWithAI,
@@ -233,24 +373,32 @@ import {
   type ChatStreamEnvelope,
   type ChatWithAiOptions,
 } from '@/api/aiClient'
-import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MobileChatPartList from '@/components/MobileChatPartList.vue'
 import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
 import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useBlockStore } from '@/store/useBlockStore'
+import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import {
   applyContentDelta,
   applyReasoningDelta,
   applyRunStatusSnapshot,
   applyTerminalState,
   applyToolEvent,
+  buildMobileReadingContext,
+  buildMobileStarterPrompts,
+  canSelectMobileScope,
   createAssistantPlaceholder,
   deriveKnowledgeBlockTitle,
   evaluateSmartScroll,
+  formatMobileAiScopeAnchor,
   isConversationProtocolSupported,
+  resolveConversationScope,
   restoreConversationMessages,
+  safeDecodeQueryParam,
   type MobileChatMessage,
 } from '@/utils/mobileAiChat'
 import {
@@ -258,15 +406,27 @@ import {
   reduceMobileChatPartEvent,
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 import { uuidv7 } from '@/utils/uuid'
 
+const STARTER_HINTS = [
+  '定位高频考点与薄弱项',
+  '拆解核心异同与边界',
+  '随堂检验掌握度并附解析',
+] as const
+
 const authStore = useAuthStore()
+const blockStore = useBlockStore()
+const subjectStore = useSubjectStore()
 const instanceProxy = getCurrentInstance()?.proxy
 
 const conversations = ref<ConversationView[]>([])
 const loadingSessions = ref(false)
 const currentConversationId = ref('')
 const currentConversationTitle = ref('新对话')
+const conversationScopeState = ref<'UNBOUND' | 'BOUND'>('UNBOUND')
+const selectedSubjectId = ref<string | null>(null)
+const boundScopeLabelOverride = ref<string | null>(null)
 const messages = ref<MobileChatMessage[]>([])
 const query = ref('')
 const isTyping = ref(false)
@@ -280,15 +440,22 @@ const anchorId = 'tablet-chat-anchor'
 const autoScrollLocked = ref(false)
 const drainingMessageIds = ref<Record<string, boolean>>({})
 
+const showScopeMenu = ref(false)
 const showSaveBlockModal = ref(false)
 const saveBlockSeedTitle = ref('')
 const saveBlockSeedContent = ref('')
+
+useEscapeKey(() => showScopeMenu.value, () => {
+  showScopeMenu.value = false
+})
 
 let activeStreamToken = 0
 let activeViewToken = 0
 let scrollTimer: ReturnType<typeof setTimeout> | null = null
 let runPollTimer: ReturnType<typeof setTimeout> | null = null
 let abortLocalStream: (() => void) | null = null
+let subjectsLoadPromise: Promise<void> | null = null
+let hydratedUserKey = ''
 let prevScrollTop = 0
 let chatViewportHeight = 0
 let touchStartY = 0
@@ -297,15 +464,62 @@ let programmaticScrollUntil = 0
 const pendingSubmissionIds: Record<string, string> = {}
 const activityVersions: Record<string, number> = {}
 
-const quickPrompts = [
-  '梳理本周重点待复习知识块',
-  '对比几种常见正则化方法',
-  '用清晰结构总结一个核心定理',
-]
-
-const composerPlaceholder = computed(() => (
-  isConversationUnsupported.value ? '旧版对话仅供查看，请开启新对话继续提问' : '提问…'
+const selectedSubject = computed(() => (
+  selectedSubjectId.value
+    ? subjectStore.subjects.find(item => item.id === selectedSubjectId.value) || null
+    : null
 ))
+
+const selectedSubjectName = computed(() => selectedSubject.value?.name?.trim() || null)
+
+const isScopeLocked = computed(() => conversationScopeState.value === 'BOUND' || messages.value.length > 0)
+
+const activeScopeLabel = computed(() => {
+  if (boundScopeLabelOverride.value) return boundScopeLabelOverride.value
+  if (selectedSubjectId.value) return selectedSubjectName.value || '指定学科'
+  return '全部资料'
+})
+
+const totalBlockCount = computed(() => (
+  blockStore.recentBlocks.length > 0
+    ? blockStore.recentBlocks.filter(item => !item.is_deleted).length
+    : undefined
+))
+
+const welcomeTitle = computed(() => (
+  selectedSubjectName.value ? `《${selectedSubjectName.value}》想先看哪部分？` : '想先攻克哪部分？'
+))
+
+const welcomeSubtitle = computed(() => formatMobileAiScopeAnchor({
+  selectedSubject: selectedSubject.value,
+  subjects: subjectStore.subjects,
+  totalBlockCount: totalBlockCount.value,
+}))
+
+const composerPlaceholder = computed(() => {
+  if (isConversationUnsupported.value) return '旧版对话仅供查看，请开启新对话继续提问'
+  return selectedSubjectName.value ? `在《${selectedSubjectName.value}》中提问…` : '输入学习问题…'
+})
+
+const starterItems = computed(() => (
+  buildMobileStarterPrompts(selectedSubjectName.value).map((prompt, index) => ({
+    prompt,
+    hint: STARTER_HINTS[index] || STARTER_HINTS[STARTER_HINTS.length - 1],
+  }))
+))
+
+function resolveSubjectIcon(icon?: string | null): string {
+  const key = icon?.trim()
+  if (key && isSubjectIconKey(key)) return `subj-${key}`
+  return 'subj-book'
+}
+
+function formatSubjectStats(subject: Subject): string {
+  const files = subject.fileCount ?? 0
+  const blocks = subject.blockCount ?? 0
+  if (files === 0 && blocks === 0) return '暂无资料与知识块'
+  return `${files} 份资料 · ${blocks} 个知识块`
+}
 
 function clearMapKeys(map: Record<string, string> | Record<string, number>) {
   for (const key of Object.keys(map)) {
@@ -457,6 +671,19 @@ function onQueryInput() {
   }
 }
 
+function handleComposerKeydown(event: unknown) {
+  const e = event as {
+    key?: string
+    shiftKey?: boolean
+    isComposing?: boolean
+    preventDefault?: () => void
+  }
+  if (e?.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault?.()
+    void sendMessage()
+  }
+}
+
 function toggleProcess(index: number) {
   const target = messages.value[index]
   if (!target || (!target.reasoningText && target.tools.length === 0)) return
@@ -474,33 +701,99 @@ function formatConvDate(iso?: string): string {
   return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function ensureSubjectsLoaded(): Promise<void> {
+  const currentUserKey = `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
+  if (hydratedUserKey === currentUserKey && subjectStore.subjects.length > 0) {
+    return Promise.resolve()
+  }
+  if (!subjectsLoadPromise) {
+    subjectsLoadPromise = Promise.all([
+      subjectStore.loadSubjects(),
+      blockStore.loadLocalBlocks(),
+    ]).then(() => {
+      if (currentUserKey === `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`) {
+        hydratedUserKey = currentUserKey
+      }
+    }).finally(() => {
+      subjectsLoadPromise = null
+    })
+  }
+  return subjectsLoadPromise
+}
+
+function handleScopePillClick() {
+  if (isTyping.value || isStopping.value || isScopeLocked.value) {
+    showScopeMenu.value = false
+    notifyScopeLocked()
+    return
+  }
+  if (showScopeMenu.value) {
+    showScopeMenu.value = false
+    return
+  }
+  void openScopeMenu()
+}
+
+async function openScopeMenu() {
+  if (!canSelectMobileScope({ isTyping: isTyping.value, isStopping: isStopping.value, scopeLocked: isScopeLocked.value })) {
+    notifyScopeLocked()
+    return
+  }
+  await ensureSubjectsLoaded()
+  if (!canSelectMobileScope({ isTyping: isTyping.value, isStopping: isStopping.value, scopeLocked: isScopeLocked.value })) return
+  showScopeMenu.value = true
+}
+
+function notifyScopeLocked() {
+  uni.showToast({
+    title: '当前对话范围已锁定，切换范围可点击左侧开启新对话',
+    icon: 'none',
+  })
+}
+
+function selectScope(subjectId: string | null) {
+  if (!canSelectMobileScope({ isTyping: isTyping.value, isStopping: isStopping.value, scopeLocked: isScopeLocked.value })) {
+    showScopeMenu.value = false
+    notifyScopeLocked()
+    return
+  }
+  selectedSubjectId.value = subjectId
+  boundScopeLabelOverride.value = null
+  showScopeMenu.value = false
+}
+
 async function loadHistory() {
   const generation = authStore.getLoginGeneration()
   loadingSessions.value = true
   try {
+    await ensureSubjectsLoaded()
     const list = await aiApi.listConversations()
     if (generation !== authStore.getLoginGeneration()) return
     conversations.value = list.filter(item => !item.deletedAt)
   } catch {
     // Keep silent offline
   } finally {
-    loadingSessions.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      loadingSessions.value = false
+    }
   }
 }
 
-function startNewChat() {
-  if (isTyping.value || isStopping.value) {
-    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
-    return
-  }
+function resetChatState() {
   activeStreamToken += 1
   activeViewToken += 1
   stopRunPolling()
   abortLocalStream = null
   currentConversationId.value = ''
   currentConversationTitle.value = '新对话'
+  conversationScopeState.value = 'UNBOUND'
+  selectedSubjectId.value = null
+  boundScopeLabelOverride.value = null
+  showScopeMenu.value = false
   messages.value = []
   query.value = ''
+  isTyping.value = false
+  isStopping.value = false
   activeRunId.value = ''
   activeAttemptId.value = ''
   isConversationUnsupported.value = false
@@ -511,6 +804,14 @@ function startNewChat() {
   touchPullUpDetected = false
   clearMapKeys(pendingSubmissionIds)
   clearMapKeys(activityVersions)
+}
+
+function startNewChat() {
+  if (isTyping.value || isStopping.value) {
+    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    return
+  }
+  resetChatState()
 }
 
 async function recoverUnknownRun(
@@ -529,7 +830,7 @@ async function recoverUnknownRun(
       activeRunId.value = recovered.runId
       activeAttemptId.value = recovered.currentAttemptId || attemptId
       isTyping.value = true
-      scheduleRunPolling(conversationId, recovered.runId, viewToken, generation)
+      scheduleRunPolling(convIdOrFallback(conversationId), recovered.runId, viewToken, generation)
       return
     }
     isTyping.value = false
@@ -541,6 +842,10 @@ async function recoverUnknownRun(
     activeRunId.value = ''
     activeAttemptId.value = ''
   }
+}
+
+function convIdOrFallback(id: string): string {
+  return id || currentConversationId.value
 }
 
 function scheduleRunPolling(
@@ -597,7 +902,9 @@ async function switchConversation(conversationId: string) {
   }
   const generation = authStore.getLoginGeneration()
   const viewToken = ++activeViewToken
+  showScopeMenu.value = false
   try {
+    await ensureSubjectsLoaded()
     const detail = await aiApi.getConversation(conversationId)
     if (generation !== authStore.getLoginGeneration() || viewToken !== activeViewToken || isTyping.value || isStopping.value) {
       return
@@ -616,6 +923,14 @@ async function switchConversation(conversationId: string) {
     currentConversationTitle.value = detail.title || '新对话'
     isConversationUnsupported.value = !isConversationProtocolSupported(detail)
     preSendError.value = isConversationUnsupported.value ? '旧版对话仅供查看，请开启新对话继续提问' : ''
+
+    const resolvedScope = resolveConversationScope(detail, subjectStore.subjects)
+    conversationScopeState.value = resolvedScope.locked ? 'BOUND' : 'UNBOUND'
+    selectedSubjectId.value = resolvedScope.subjectId
+    boundScopeLabelOverride.value = resolvedScope.locked && resolvedScope.label.includes('指定资料')
+      ? resolvedScope.label
+      : null
+
     messages.value = restoreConversationMessages(detail)
 
     if (detail.activeRun?.executionActive && detail.activeRun.runId) {
@@ -634,6 +949,9 @@ async function switchConversation(conversationId: string) {
         scheduleRunPolling(currentConversationId.value, detail.activeRun.runId, viewToken, generation)
       }
     }
+    if (isConversationUnsupported.value && messages.value.length > 0) {
+      uni.showToast({ title: '旧版对话仅供查看，请开启新对话继续提问', icon: 'none' })
+    }
     scrollToBottom(true)
   } catch {
     if (generation !== authStore.getLoginGeneration() || viewToken !== activeViewToken) return
@@ -641,18 +959,33 @@ async function switchConversation(conversationId: string) {
   }
 }
 
-async function deleteConversation(conversationId: string, baseVersion: number) {
+function confirmDeleteConversation(conversationId: string, baseVersion: number) {
   if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) {
     uni.showToast({ title: '请先停止当前回答', icon: 'none' })
     return
   }
+  uni.showModal({
+    title: '删除对话',
+    content: '删除后无法恢复该对话记录',
+    confirmText: '删除',
+    confirmColor: '#C93B3B',
+    success: (res) => {
+      if (res.confirm) {
+        void deleteConversation(conversationId, baseVersion)
+      }
+    },
+  })
+}
+
+async function deleteConversation(conversationId: string, baseVersion: number) {
+  if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) return
   const generation = authStore.getLoginGeneration()
   try {
     await aiApi.deleteConversation(conversationId, baseVersion)
     if (generation !== authStore.getLoginGeneration()) return
     conversations.value = conversations.value.filter(item => item.id !== conversationId)
     if (currentConversationId.value === conversationId) {
-      startNewChat()
+      resetChatState()
     }
     uni.showToast({ title: '已删除', icon: 'none' })
   } catch {
@@ -661,7 +994,7 @@ async function deleteConversation(conversationId: string, baseVersion: number) {
   }
 }
 
-async function ensureConversation(seedTitle: string, generation: symbol): Promise<string> {
+async function ensureConversation(seedTitle: string, generation: symbol, isCurrent: () => boolean): Promise<string> {
   if (currentConversationId.value) return currentConversationId.value
   const created = await aiApi.createConversation({
     title: seedTitle.slice(0, 24) || 'AI 问答',
@@ -671,9 +1004,11 @@ async function ensureConversation(seedTitle: string, generation: symbol): Promis
   if (generation !== authStore.getLoginGeneration()) {
     throw new Error('登录状态已变化，请重试')
   }
-  if (!created.id) throw new Error('创建失败')
-  currentConversationId.value = created.id
-  currentConversationTitle.value = created.title || seedTitle.slice(0, 24) || '新对话'
+  if (!created.id) throw new Error('创建对话失败')
+  if (isCurrent()) {
+    currentConversationId.value = created.id
+    currentConversationTitle.value = created.title || seedTitle.slice(0, 24) || '新对话'
+  }
   conversations.value = [created, ...conversations.value.filter(item => item.id !== created.id)]
   return created.id
 }
@@ -803,6 +1138,7 @@ async function runStreamIntoSlot(params: {
   invoke: (conversationId: string, onDelta: (delta: string) => void, options: ChatWithAiOptions) => Promise<void>
   restoreDraftText?: string
   dropPairOnPreAdmitError?: boolean
+  readingContext?: ReturnType<typeof buildMobileReadingContext>
 }) {
   const { aiIndex, streamToken, generation } = params
   const isCurrent = () => streamToken === activeStreamToken && generation === authStore.getLoginGeneration()
@@ -832,42 +1168,49 @@ async function runStreamIntoSlot(params: {
     }
   }
 
+  const markAdmitted = () => {
+    if (admittedTurn) return
+    admittedTurn = true
+    conversationScopeState.value = 'BOUND'
+  }
+
   try {
     const conversationId = await params.resolveConversationId()
     if (!isCurrent()) return
 
     await params.invoke(conversationId, (delta) => {
       if (!isCurrent()) return
-      admittedTurn = true
+      markAdmitted()
       messages.value[aiIndex] = applyContentDelta(messages.value[aiIndex], delta)
       scrollToBottom(false)
     }, {
+      readingContext: params.readingContext,
       onRunStarted: ({ runId, attemptId }) => {
         if (!isCurrent()) return
-        admittedTurn = true
+        markAdmitted()
         activeRunId.value = runId
         activeAttemptId.value = attemptId
         messages.value[aiIndex] = { ...messages.value[aiIndex], runId }
       },
       onEnvelope: (envelope) => {
         if (!isCurrent()) return
-        admittedTurn = true
+        markAdmitted()
         applyEnvelopeToSlot(aiIndex, envelope)
       },
       onReasoningDelta: (delta) => {
         if (!isCurrent()) return
-        admittedTurn = true
+        markAdmitted()
         messages.value[aiIndex] = applyReasoningDelta(messages.value[aiIndex], delta)
         scrollToBottom(false)
       },
       onToolEvent: (ev) => {
         if (!isCurrent()) return
-        admittedTurn = true
+        markAdmitted()
         messages.value[aiIndex] = applyToolEvent(messages.value[aiIndex], ev)
       },
       onTerminal: ({ status }) => {
         if (!isCurrent()) return
-        admittedTurn = true
+        markAdmitted()
         terminalStatus = status
       },
       onAbortReady: (abortFn) => {
@@ -955,9 +1298,12 @@ async function sendMessage() {
   const streamToken = ++activeStreamToken
   const generation = authStore.getLoginGeneration()
   const wasEmptyConversation = messages.value.length === 0
+  const chosenSubjectId = selectedSubjectId.value
+  const readingContext = buildMobileReadingContext(chosenSubjectId, conversationScopeState.value)
 
   preSendError.value = ''
   query.value = ''
+  showScopeMenu.value = false
   messages.value.push({
     id: `user-${uuidv7()}`,
     role: 'user',
@@ -983,7 +1329,10 @@ async function sendMessage() {
     generation,
     restoreDraftText: text,
     dropPairOnPreAdmitError: wasEmptyConversation,
-    resolveConversationId: () => ensureConversation(text, generation),
+    readingContext,
+    resolveConversationId: () => ensureConversation(text, generation, () => (
+      streamToken === activeStreamToken && generation === authStore.getLoginGeneration()
+    )),
     invoke: (conversationId, onDelta, options) => chatWithAI(text, [], onDelta, conversationId, options),
   })
 }
@@ -1048,6 +1397,7 @@ async function handleSubmitActivity(questionId: string, answer: MobileChatActivi
   const generation = authStore.getLoginGeneration()
 
   preSendError.value = ''
+  showScopeMenu.value = false
   messages.value.push(createAssistantPlaceholder(`assistant-${uuidv7()}`, 'activity_submission'))
   const aiIndex = messages.value.length - 1
   isTyping.value = true
@@ -1069,6 +1419,20 @@ async function handleSubmitActivity(questionId: string, answer: MobileChatActivi
   })
 }
 
+watch(
+  () => [authStore.sessionId, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    hydratedUserKey = ''
+    subjectsLoadPromise = null
+    showSaveBlockModal.value = false
+    conversations.value = []
+    resetChatState()
+    if (authStore.isAuthenticated) {
+      void loadHistory()
+    }
+  },
+)
+
 onMounted(() => {
   void loadHistory()
   void measureChatViewport()
@@ -1084,6 +1448,26 @@ onBeforeUnmount(() => {
   }
   abortLocalStream?.()
   abortLocalStream = null
+})
+
+onLoad((options) => {
+  if (options?.subjectId) {
+    const incomingSubjectId = safeDecodeQueryParam(options.subjectId).trim()
+    if (incomingSubjectId && !isScopeLocked.value) {
+      selectedSubjectId.value = incomingSubjectId
+    }
+  }
+  if (options?.q) {
+    const initialQuestion = safeDecodeQueryParam(options.q)
+    if (!initialQuestion.trim()) return
+    const viewToken = activeViewToken
+    const generation = authStore.getLoginGeneration()
+    query.value = initialQuestion
+    void ensureSubjectsLoaded().then(() => {
+      if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+      void sendMessage()
+    })
+  }
 })
 </script>
 
@@ -1101,23 +1485,69 @@ onBeforeUnmount(() => {
 }
 
 .history-card {
-  width: 244px;
+  width: 260px;
   flex-shrink: 0;
-  padding: 14px;
+  height: 100%;
+  background-color: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid #EAE6DD;
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
-.history-header {
+.history-header-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 18px 16px 12px;
   flex-shrink: 0;
 }
 
-.new-chat-btn {
-  width: 100%;
+.history-heading-title {
+  font-size: 16px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+}
+
+.history-heading-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.history-new-btn {
+  margin: 0 14px 12px;
   height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background-color: #EEF2E6;
+  border: 1px solid #DCE3CE;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-ink);
+  flex-shrink: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: transform 0.14s var(--ease-out), background-color 0.16s ease;
+}
+
+.history-new-btn:hover:not(.disabled) {
+  background-color: #E5ECD9;
+}
+
+.history-new-btn:active {
+  transform: scale(0.98);
+}
+
+.history-new-btn.disabled {
+  opacity: 0.42;
 }
 
 .history-scroll {
@@ -1127,31 +1557,42 @@ onBeforeUnmount(() => {
 }
 
 .history-empty {
-  padding: 28px 0;
+  padding: 36px 16px;
   text-align: center;
   font-size: var(--font-size-xs);
   color: var(--text-muted);
+}
+
+.history-list {
+  padding: 2px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
 }
 
 .history-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-radius: 12px;
-  margin-bottom: 4px;
+  background-color: transparent;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+/* #ifdef H5 */
 .history-item:hover {
-  background-color: var(--color-bg-tertiary);
+  background-color: rgba(28, 28, 26, 0.035);
 }
+/* #endif */
 
 .history-item.active {
-  background-color: var(--color-sage-bg);
-  border-color: var(--border-accent);
+  background-color: #FFFFFF;
+  border-color: #EAE6DD;
+  box-shadow: 0 1px 3px rgba(72, 62, 46, 0.04);
 }
 
 .history-info {
@@ -1159,16 +1600,28 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .history-title {
-  font-size: 13px;
-  font-weight: var(--font-weight-semibold);
+  font-size: 13.5px;
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.history-item.active .history-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-ink);
+}
+
+.history-subline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .history-time {
@@ -1176,37 +1629,53 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
+.history-scope-tag {
+  font-size: 10.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-sage-ink);
+  background-color: #EEF2E6;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+}
+
 .history-del {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  opacity: 0.72;
+  opacity: 0.68;
   transition: opacity 0.14s ease, background-color 0.14s ease;
 }
 
+/* #ifdef H5 */
 .history-del:hover {
   opacity: 1;
   background-color: var(--color-danger-bg);
 }
+/* #endif */
 
 .chat-card {
   position: relative;
   flex: 1;
   min-width: 0;
   height: 100%;
+  background-color: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid #EAE6DD;
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .chat-header {
   height: 52px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid rgba(45, 55, 40, 0.06);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1232,59 +1701,120 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.welcome-box {
+.welcome-stage {
   flex: 1;
   min-height: 0;
-  padding: 40px 24px;
+  padding: 28px 28px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
+.welcome-inner {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+}
+
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 8px;
+}
+
+.welcome-title {
+  font-size: 26px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.welcome-subtitle {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.starter-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .pre-send-error {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 10px;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background-color: var(--color-danger-bg);
   border: 1px solid rgba(201, 59, 59, 0.22);
 }
 
 .pre-send-error-text {
-  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
   color: var(--color-danger);
+  line-height: 1.45;
+  word-break: break-word;
 }
 
-.prompt-chips {
+.starter-cards {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
   gap: 10px;
-  max-width: 560px;
 }
 
-.prompt-chip {
-  padding: 10px 16px;
-  border-radius: var(--radius-full);
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
-  font-size: 13px;
-  color: var(--text-primary);
+.starter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 15px;
+  background-color: #FFFFFF;
+  border: 1px solid #EAE6DD;
+  box-shadow: 0 1px 2px rgba(72, 62, 46, 0.03);
   cursor: pointer;
-  transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.14s ease;
+  transition: transform 0.14s var(--ease-out), border-color 0.16s ease, box-shadow 0.16s ease;
+  box-sizing: border-box;
 }
 
-.prompt-chip:hover {
-  border-color: var(--border-accent);
-  background-color: var(--color-sage-bg);
+/* #ifdef H5 */
+.starter-card:hover {
+  border-color: #D7D0C2;
+  box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06);
   transform: translateY(-1px);
+}
+/* #endif */
+
+.starter-card:active {
+  transform: scale(0.988);
+}
+
+.starter-card-title {
+  font-size: 15px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  line-height: 1.38;
+  letter-spacing: -0.015em;
+}
+
+.starter-card-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .chat-scroll {
@@ -1295,11 +1825,13 @@ onBeforeUnmount(() => {
 
 .chat-stream {
   width: 100%;
-  padding: 20px clamp(24px, 5vw, 80px);
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 20px 28px 36px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .chat-row {
@@ -1311,8 +1843,12 @@ onBeforeUnmount(() => {
   align-items: flex-end;
 }
 
+.chat-row.user:not(:first-child) {
+  margin-top: 12px;
+}
+
 .chat-row.assistant {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .user-bubble {
@@ -1320,41 +1856,46 @@ onBeforeUnmount(() => {
 }
 
 .user-text {
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 1.55;
   color: var(--text-primary, #262522);
+  letter-spacing: -0.005em;
   word-break: break-word;
 }
 
-.assistant-bubble {
+.assistant-entry {
   width: 100%;
-  max-width: 760px;
-  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 2px 4px;
   box-sizing: border-box;
 }
 
 .assistant-error-banner {
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 12px;
-  border-radius: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background-color: var(--color-danger-bg);
   border: 1px solid rgba(201, 59, 59, 0.22);
 }
 
 .assistant-error-text {
-  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
   color: var(--color-danger);
   line-height: 1.45;
   word-break: break-word;
 }
 
 .assistant-status-note {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -1363,51 +1904,94 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 2px;
+  margin-top: 4px;
+  animation: footerFadeIn 0.22s ease both;
+}
+
+@keyframes footerFadeIn {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 .footer-action-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 28px;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  background-color: rgba(28, 28, 26, 0.045);
+  padding: 0 7px;
+  border-radius: 8px;
+  background-color: transparent;
   cursor: pointer;
+  transition: background-color 0.14s ease, transform 0.12s ease;
 }
 
+.footer-action-chip:active {
+  transform: scale(0.96);
+  background-color: rgba(28, 28, 26, 0.05);
+}
+
+/* #ifdef H5 */
+.footer-action-chip:hover {
+  background-color: rgba(28, 28, 26, 0.05);
+}
+/* #endif */
+
 .footer-action-label {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
 }
 
 .bottom-anchor {
-  height: 8px;
+  height: 24px;
 }
 
 .input-dock {
   position: relative;
-  padding: 12px clamp(24px, 5vw, 80px) 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  z-index: 120;
+  padding: 6px 28px 18px;
+  background-color: var(--color-bg-primary, #F7F2EB);
   flex-shrink: 0;
+}
+
+.input-dock::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -26px;
+  height: 26px;
+  background: linear-gradient(to bottom, rgba(247, 242, 235, 0) 0%, #F7F2EB 100%);
+  pointer-events: none;
+}
+
+.input-dock-inner {
+  position: relative;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
 }
 
 .scroll-resume-pill {
   position: absolute;
-  top: -34px;
+  top: -42px;
+  right: 4px;
+  z-index: 125;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 30px;
   padding: 0 12px;
   border-radius: var(--radius-full);
-  background-color: #FFFFFF;
-  border: 1px solid #EAE6DD;
-  box-shadow: 0 4px 12px rgba(28, 28, 26, 0.08);
+  background-color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(28, 28, 26, 0.08);
+  box-shadow: 0 4px 12px rgba(72, 62, 46, 0.09);
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.scroll-resume-pill:active {
+  transform: scale(0.96);
 }
 
 .scroll-resume-dot {
@@ -1415,64 +1999,348 @@ onBeforeUnmount(() => {
   height: 6px;
   border-radius: 50%;
   background-color: #556B3D;
+  animation: zenTypingPulse 1.2s ease-in-out infinite;
 }
 
 .scroll-resume-text {
-  font-size: 11.5px;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-sage-ink);
-  font-weight: 500;
 }
 
-.input-capsule {
-  width: 100%;
+.composer-card {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 6px 6px 16px;
-  border-radius: var(--radius-full);
-  background-color: var(--glass-surface-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 10px 18px;
+  border-radius: 22px;
+  background-color: #FFFFFF;
+  border: 1px solid rgba(28, 28, 26, 0.08);
+  box-shadow: 0 6px 20px rgba(72, 62, 46, 0.07), 0 1px 3px rgba(72, 62, 46, 0.03);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  box-sizing: border-box;
 }
 
 /* #ifdef H5 */
-.input-capsule:focus-within {
-  border-color: var(--color-zen-sage);
-  background-color: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+.composer-card:focus-within {
+  border-color: rgba(110, 127, 80, 0.55);
+  box-shadow: 0 12px 32px rgba(72, 62, 46, 0.14), 0 4px 12px rgba(85, 107, 61, 0.10);
 }
 /* #endif */
 
-.chat-input {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
+.composer-textarea {
+  width: 100%;
+  min-height: 28px;
+  max-height: 124px;
+  padding: 2px 4px 0 0;
   font-size: 14.5px;
+  line-height: 1.5;
   color: var(--text-primary);
+  background-color: transparent;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
-.send-btn,
-.stop-btn {
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.composer-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.scope-dropdown-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scope-capsule {
+  position: relative;
+  z-index: 35;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background-color: #F6F3EC;
+  border: 1px solid #EAE6DD;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.14s ease;
+  box-sizing: border-box;
+}
+
+/* #ifdef H5 */
+.scope-capsule:hover {
+  background-color: #EFF3E8;
+  border-color: rgba(85, 107, 61, 0.35);
+}
+
+.scope-capsule.is-locked:hover {
+  background-color: #F4F1EA;
+  border-color: #EAE6DD;
+}
+/* #endif */
+
+.scope-capsule:active {
+  transform: scale(0.97);
+}
+
+.scope-capsule.is-open {
+  background-color: #EFF3E8;
+  border-color: rgba(85, 107, 61, 0.35);
+}
+
+.scope-capsule.is-locked {
+  background-color: #F4F1EA;
+  border-color: #EAE6DD;
+}
+
+.scope-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-sage-ink);
+  flex-shrink: 0;
+}
+
+.scope-status-dot.is-locked,
+.scope-status-dot.is-muted {
+  background-color: var(--color-zen-stone);
+}
+
+.scope-capsule-text {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.scope-capsule.is-locked .scope-capsule-text {
+  color: var(--text-secondary);
+}
+
+.scope-capsule-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.scope-capsule-chevron.is-rotated {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+.scope-dropdown-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 25;
+  background-color: transparent;
+}
+
+.scope-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 40;
+  width: 268px;
+  max-width: calc(100vw - 48px);
+  padding: 8px;
+  background-color: #FCFBF9;
+  border: 1px solid #EAE6DD;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(72, 62, 46, 0.08);
+  box-sizing: border-box;
+  transform-origin: bottom left;
+  animation: scopePopUp 0.18s var(--ease-out) both;
+}
+
+@keyframes scopePopUp {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.scope-dropdown-scroll {
+  max-height: 290px;
+  max-height: min(290px, 46vh);
+}
+
+.dropdown-section-header {
+  padding: 6px 10px 4px;
+  font-size: 11.5px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background-color: var(--border-subtle);
+  margin: 4px 6px;
+}
+
+.dropdown-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+/* #ifdef H5 */
+.dropdown-item:hover {
+  background-color: rgba(28, 28, 26, 0.04);
+}
+/* #endif */
+
+.dropdown-item:active {
+  background-color: rgba(28, 28, 26, 0.06);
+}
+
+.dropdown-item.is-active {
+  background-color: var(--color-sage-bg);
+}
+
+.dropdown-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background-color: var(--color-zen-sage);
+}
+
+.dropdown-item-icon {
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dropdown-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dropdown-item-label {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-item.is-active .dropdown-item-label {
+  color: var(--color-sage-ink);
+  font-weight: var(--font-weight-bold);
+}
+
+.dropdown-item-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-item.is-active .dropdown-item-desc {
+  color: var(--color-sage-ink);
+  opacity: 0.85;
+}
+
+.dropdown-empty-hint {
+  padding: 10px 10px 6px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.composer-tool-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #F6F3EC;
+  border: 1px solid #EAE6DD;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.composer-tool-btn:active {
+  transform: scale(0.92);
+}
+
+.composer-tool-btn.disabled {
+  opacity: 0.4;
+}
+
+.composer-action-btn {
   width: 36px;
   height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   flex-shrink: 0;
+  cursor: pointer;
   transition: transform 0.14s ease, opacity 0.14s ease;
 }
 
+.composer-action-btn:active {
+  transform: scale(0.92);
+}
+
+.composer-action-btn.disabled {
+  opacity: 0.36;
+  box-shadow: none;
+}
+
 .send-btn {
-  background: var(--accent-gradient);
+  background-color: #556B3D;
+  background-image: linear-gradient(135deg, #6B7D4D 0%, #556B3D 100%);
 }
 
 .stop-btn {
-  background-color: #2C2C28;
+  background-color: #556B3D;
+  background-image: linear-gradient(135deg, #6B7D4D 0%, #556B3D 100%);
 }
 
 .stop-square {
@@ -1482,19 +2350,21 @@ onBeforeUnmount(() => {
   background-color: #FFFFFF;
 }
 
-.send-btn:active,
-.stop-btn:active {
-  transform: scale(0.92);
-}
-
-.send-btn.disabled,
-.stop-btn.disabled {
-  opacity: 0.4;
-}
-
 @media (max-width: 820px) {
   .history-card {
-    width: 196px;
+    width: 204px;
+  }
+
+  .welcome-stage {
+    padding: 20px 18px 16px;
+  }
+
+  .chat-stream {
+    padding: 16px 18px 32px;
+  }
+
+  .input-dock {
+    padding: 6px 16px 14px;
   }
 }
 </style>
