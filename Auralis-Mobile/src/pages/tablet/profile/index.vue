@@ -18,9 +18,6 @@
                     <text>本周专注天数</text>
                     <text class="streak-count num-tabular">{{ weeklyFocusDays }}</text>
                   </view>
-                  <view class="device-pill">
-                    <text>{{ deviceLabel }}</text>
-                  </view>
                 </view>
               </view>
             </view>
@@ -744,9 +741,6 @@ function handleMetricsLoaded(payload: { weeklyFocusDays: number }) {
 
 const displayName = computed(() => authStore.user?.displayName || authStore.username || 'Auralis')
 const avatarInitial = computed(() => displayName.value.trim().slice(0, 1).toUpperCase() || 'A')
-const deviceLabel = computed(() => (
-  authStore.serverDeviceId ? `设备 ${authStore.serverDeviceId.slice(0, 8)}` : '未绑定设备'
-))
 const subjectDistItems = computed(() => buildSubjectDistribution(subjectStore.subjects))
 
 const syncStatusView = computed(() => resolveProfileSyncStatus({
@@ -1549,17 +1543,6 @@ onUnmounted(() => {
 .streak-count {
   color: #875727;
   font-weight: var(--font-weight-bold);
-}
-
-.device-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: var(--radius-full);
-  font-size: 11.5px;
-  background-color: rgba(0, 0, 0, 0.04);
-  color: var(--text-secondary);
-  border: 1px solid rgba(0, 0, 0, 0.07);
 }
 
 .study-stats-card,
