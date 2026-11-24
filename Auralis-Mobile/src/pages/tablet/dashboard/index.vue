@@ -350,7 +350,7 @@ import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
-import { isScheduledCompletionLocked } from '@/utils/taskSyncMapper'
+import { findOverlappingScheduledTask, isScheduledCompletionLocked } from '@/utils/taskSyncMapper'
 import {
   combineLocalDateAndTime,
   endOfLocalDateIso,
@@ -492,9 +492,29 @@ const canSubmitTask = computed(() => (
   && Boolean(taskForm.subjectId)
 ))
 
+function findAvailableStartTime(dateKey: string, durationMinutes: number, preferredHHmm: string): string {
+  const preferredIso = combineLocalDateAndTime(dateKey, preferredHHmm)
+  if (!findOverlappingScheduledTask(taskStore.allTasks, { scheduledAtIso: preferredIso, durationMinutes })) {
+    return preferredHHmm
+  }
+  for (let mins = 8 * 60; mins <= 22 * 60; mins += 30) {
+    const hh = String(Math.floor(mins / 60)).padStart(2, '0')
+    const mm = String(mins % 60).padStart(2, '0')
+    const candidate = `${hh}:${mm}`
+    const candidateIso = combineLocalDateAndTime(dateKey, candidate)
+    if (!findOverlappingScheduledTask(taskStore.allTasks, { scheduledAtIso: candidateIso, durationMinutes })) {
+      return candidate
+    }
+  }
+  return preferredHHmm
+}
+
 function openCreateModal() {
   if (!taskForm.subjectId || !subjectStore.subjects.some(item => item.id === taskForm.subjectId)) {
     taskForm.subjectId = subjectStore.subjects[0]?.id || ''
+  }
+  if (taskForm.scheduled) {
+    taskForm.timeHHmm = findAvailableStartTime(selectedDateKey.value, taskForm.duration, taskForm.timeHHmm)
   }
   showCreateModal.value = true
 }
@@ -542,12 +562,26 @@ async function submitCreateTask() {
     return
   }
 
+  const scheduledAt = taskForm.scheduled
+    ? combineLocalDateAndTime(selectedDateKey.value, taskForm.timeHHmm)
+    : undefined
+  if (scheduledAt) {
+    const overlap = findOverlappingScheduledTask(taskStore.allTasks, {
+      scheduledAtIso: scheduledAt,
+      durationMinutes: taskForm.duration,
+    })
+    if (overlap) {
+      uni.showToast({
+        title: `与日程「${overlap.name}」时段冲突，请调整时间或关闭按时段排期`,
+        icon: 'none',
+      })
+      return
+    }
+  }
+
   const generation = authStore.getLoginGeneration()
   savingTask.value = true
   try {
-    const scheduledAt = taskForm.scheduled
-      ? combineLocalDateAndTime(selectedDateKey.value, taskForm.timeHHmm)
-      : undefined
     const dueAt = taskForm.dueDateKey ? endOfLocalDateIso(taskForm.dueDateKey) : undefined
     await taskStore.addTask({
       name: title,

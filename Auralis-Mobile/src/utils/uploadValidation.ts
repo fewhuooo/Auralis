@@ -36,7 +36,10 @@ export function inferUploadMimeType(name: string, fallback?: string): string {
   return MIME_TYPE_MAP[ext] || 'application/octet-stream'
 }
 
-export function validateUploadFile(file: { name: string; size?: number }): void {
+export function validateUploadFile(file: { name: string; size?: number; file?: unknown }): void {
+  if (typeof file.size === 'number' && ((Boolean(file.file) && file.size <= 0) || file.size < 0)) {
+    throw new Error('所选文件为空，无法上传')
+  }
   if (typeof file.size === 'number' && file.size > MAX_UPLOAD_FILE_SIZE_BYTES) {
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1)
     throw new Error(`文件大小 ${sizeMb} MB 超过上限 ${MAX_UPLOAD_FILE_SIZE_MB} MB，请压缩后重试`)

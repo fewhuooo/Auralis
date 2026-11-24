@@ -435,7 +435,7 @@
                     <view class="ui-shimmer shimmer-line"></view>
                   </view>
 
-                  <view v-else-if="aiUsageError" class="quota-error">
+                  <view v-else-if="aiUsageError && !aiUsage" class="quota-error">
                     <text class="error-msg">{{ aiUsageError }}</text>
                     <view class="action-btn secondary" role="button" @click="fetchAiUsage">
                       <text>重试</text>
@@ -1046,6 +1046,10 @@ async function saveAiSettings() {
 
   const generation = authStore.getLoginGeneration()
   const key = customApiKey.value.trim()
+  if (!currentProviderSetting.value?.hasApiKey && !key) {
+    uni.showToast({ title: '首次配置该服务商请填写 API Key', icon: 'none' })
+    return
+  }
   const effectiveBaseUrl = effectiveAiBaseUrl.value
   const effectiveModel = customChatModel.value.trim() || DEFAULT_DEEPSEEK_MODEL
   savingAi.value = true

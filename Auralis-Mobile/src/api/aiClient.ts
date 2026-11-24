@@ -201,7 +201,7 @@ function buildAiStreamError(
 ): ApiProblemError {
   const problem = parseProblemDetails(payload, statusCode)
   const quotaTitle = formatAiQuotaMessage(problem.code)
-  let title = quotaTitle === 'AI 请求失败' ? (problem.title || 'AI stream failed') : quotaTitle
+  let title = quotaTitle === 'AI 请求失败' ? (problem.title || 'AI 回复生成失败，请检查模型配置或稍后重试') : quotaTitle
 
   let parsedRetryAfter = parseRetryAfter(problem.retryAfterSeconds)
   if (parsedRetryAfter === undefined && retryAfterHeader) {
@@ -303,8 +303,8 @@ function createChatStreamSession(
       options?.onTerminal?.({ status: 'FAILED', safeErrorCode: payload?.safeErrorCode })
       onFailed(new ApiProblemError(parseProblemDetails({
         status: 500,
-        title: payload?.message || 'AI stream failed',
-        detail: payload?.message || '',
+        title: payload?.message || 'AI 回复生成失败，请检查模型配置或稍后重试',
+        detail: payload?.message || 'AI 回复生成失败，请检查模型配置或稍后重试',
         code: payload?.safeErrorCode || 'AI_REQUEST_FAILED',
       }, 500)))
     }

@@ -27,6 +27,23 @@ export const useFocusStore = defineStore('focus', () => {
     recordSession: command => focusApi.recordSession(command),
     canSyncSession: () => auth.isAuthenticated,
     getLoginGeneration: () => auth.getLoginGeneration(),
+    hasPendingTaskSync: async (taskId: string) => {
+      if (!taskId) return false
+      try {
+        const [{ useTaskStore }, { localDb }] = await Promise.all([
+          import('./useTaskStore'),
+          import('@/services/localDb'),
+        ])
+        const inMemory = useTaskStore().allTasks.find(item => item.id === taskId)
+        if (inMemory?.sync_status === 'pending_create') return true
+        const pending = await localDb.getUnsyncedMutations()
+        return pending.some(
+          row => row.entity_type === 'task' && row.entity_id === taskId && String(row.action).toLowerCase() === 'create',
+        )
+      } catch {
+        return false
+      }
+    },
   })
 
   const state = ref<PersistedFocusState>(createDefaultFocusState())

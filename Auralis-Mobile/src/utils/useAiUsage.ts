@@ -67,7 +67,7 @@ export function useAiUsage() {
 
   onMounted(() => {
     const identity = currentAccountIdentity()
-    if (identity) {
+    if (identity && identity !== lastOwnerIdentity) {
       lastOwnerIdentity = identity
       void fetchAiUsage()
     }

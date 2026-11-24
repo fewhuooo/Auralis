@@ -77,9 +77,16 @@ export const useSyncStore = defineStore('sync', () => {
     },
     onTaskMutationRejected: (taskIds) => {
       useTaskStore().suppressOverdueRecovery(taskIds)
+      uni.showToast({
+        title: '部分日程与云端已有安排冲突或无效，已同步最新状态',
+        icon: 'none',
+      })
     },
     onSyncCompleted: () => {
       void useTaskStore().recoverOverdueTasks()
+      void import('./useFocusStore').then(({ useFocusStore }) => {
+        void useFocusStore().flushPendingSessions()
+      })
     },
     onStateChange: (next) => {
       isSyncing.value = next.isSyncing
