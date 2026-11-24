@@ -41,7 +41,7 @@
     <view class="ring-conic-track" :style="{ background: ringBackground }"></view>
     <!-- #endif -->
 
-    <view class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill }">
+    <view class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill, 'is-large': large }">
       <text v-if="isBreak && !showBottomPill" class="break-kicker">休息</text>
       <view class="time-container">
         <text class="time-text num-tabular">{{ formattedTime }}</text>
@@ -76,6 +76,7 @@ const props = defineProps<{
   cycleCount?: number
   isBreak?: boolean
   showBottomPill?: boolean
+  large?: boolean
   ariaLabel?: string
 }>()
 
@@ -206,6 +207,10 @@ const formattedTime = computed(() => {
   color: var(--color-warning-ink);
 }
 
+.ring-inner.has-bottom-pill.is-large .time-container {
+  margin-top: -16px;
+}
+
 .time-text {
   font-size: clamp(50px, 6vw, 72px);
   font-weight: var(--font-weight-bold);
@@ -217,6 +222,11 @@ const formattedTime = computed(() => {
 .ring-inner.has-bottom-pill .time-text {
   font-size: clamp(48px, 15.5vw, 66px);
   letter-spacing: -2px;
+}
+
+.ring-inner.has-bottom-pill.is-large .time-text {
+  font-size: clamp(68px, 6.6vw, 88px);
+  letter-spacing: -2.5px;
 }
 
 .ring-pill {

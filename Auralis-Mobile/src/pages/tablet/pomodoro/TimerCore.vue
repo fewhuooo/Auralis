@@ -1,70 +1,80 @@
 <template>
   <view class="timer-core">
-    <view class="preset-row">
-      <view
-        v-for="mins in presets"
-        :key="mins"
-        class="preset-chip num-tabular"
-        :class="{
-          active: focusStore.focusMinutes === mins,
-          disabled: focusStore.isTaskLocked,
-        }"
-        role="button"
-        @click="choosePreset(mins)"
-      >
-        <text>{{ mins }}m</text>
+    <view class="time-row">
+      <view class="datetime-pill num-tabular">
+        <view class="datetime-dot" aria-hidden="true"></view>
+        <text>{{ dateText }} {{ timeText }}</text>
       </view>
     </view>
 
-    <PomodoroRing
-      size="296px"
-      :total-seconds="focusStore.totalSeconds"
-      :remaining-seconds="focusStore.remainingSeconds"
-      :is-running="focusStore.isRunning"
-      :color="focusStore.ringColor"
-      :cycle-count="focusStore.cycleCount"
-      :is-break="focusStore.isBreakPhase"
-      @center-click="$emit('center-click')"
-    />
+    <view class="center-block">
+      <PomodoroRing
+        size="min(400px, 44vw, 52vh)"
+        :total-seconds="focusStore.totalSeconds"
+        :remaining-seconds="focusStore.remainingSeconds"
+        :is-running="focusStore.isRunning"
+        :color="focusStore.ringColor"
+        :is-break="focusStore.isBreakPhase"
+        :show-bottom-pill="true"
+        :large="true"
+        :aria-label="focusStore.isRunning ? '点击暂停专注' : '点击开始专注'"
+        @center-click="focusStore.toggle()"
+      />
 
-    <view class="controls">
-      <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
-        <text>重置</text>
+      <view class="phase-status">
+        <view
+          class="phase-pill"
+          :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
+        >
+          <view class="phase-beacon" aria-hidden="true"></view>
+          <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
+        </view>
       </view>
-      <view
-        class="main-btn"
-        :class="{ 'is-break': focusStore.isBreakPhase }"
-        role="button"
-        :aria-label="focusStore.isRunning ? '暂停' : '开始'"
-        @click="focusStore.toggle()"
-      >
-        <LineIcon :name="focusStore.isRunning ? 'pause' : 'play'" size="24px" color="#FFFFFF" />
+
+      <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
+        <view
+          v-for="idx in 4"
+          :key="idx"
+          class="dot"
+          :class="{
+            'is-filled': focusStore.cycleCount >= idx,
+            'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
+          }"
+        ></view>
       </view>
-      <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
-        <text>跳过</text>
+
+      <view class="controls">
+        <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
+          <text>重置</text>
+        </view>
+        <view
+          class="main-btn"
+          :class="{ 'is-running': focusStore.isRunning, 'is-break': focusStore.isBreakPhase }"
+          role="button"
+          :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
+          @click="focusStore.toggle()"
+        >
+          <view v-if="focusStore.isRunning" class="pause-icon"></view>
+          <view v-else class="play-icon"></view>
+        </view>
+        <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
+          <text>跳过</text>
+        </view>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
-import { FOCUS_PRESETS } from '@/services/focusController'
 import { useFocusStore } from '@/store/useFocusStore'
 
-defineEmits(['center-click'])
+defineProps<{
+  dateText: string
+  timeText: string
+}>()
 
 const focusStore = useFocusStore()
-const presets = FOCUS_PRESETS
-
-function choosePreset(minutes: number) {
-  if (focusStore.isTaskLocked) {
-    uni.showToast({ title: '重置后可调整时长', icon: 'none' })
-    return
-  }
-  focusStore.setFocusMinutes(minutes)
-}
 </script>
 
 <style scoped>
@@ -75,42 +85,134 @@ function choosePreset(minutes: number) {
   justify-content: center;
   width: 100%;
   height: 100%;
-  gap: 24px;
+  position: relative;
   user-select: none;
 }
 
-.preset-row {
-  display: flex;
+.time-row {
+  position: absolute;
+  top: 10px;
+  left: 8px;
+}
+
+.datetime-pill {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.preset-chip {
-  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--text-muted, #7A7A75);
+  font-weight: 600;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 6px 16px;
   border-radius: var(--radius-full);
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
-  font-size: 12.5px;
-  color: var(--text-muted);
-  font-weight: var(--font-weight-semibold);
-  cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  letter-spacing: 0.2px;
 }
 
-.preset-chip.active {
-  background-color: rgba(139, 154, 110, 0.16);
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
-  color: var(--color-sage-ink);
-  font-weight: var(--font-weight-bold);
+.datetime-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8B9A6E;
+  opacity: 0.8;
+  flex-shrink: 0;
 }
 
-.preset-chip.disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.center-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.phase-status {
+  text-align: center;
+  margin-top: 18px;
+}
+
+.phase-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 18px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--color-sage-ink, #556B3D);
+  border: 1px solid rgba(139, 154, 110, 0.28);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.08);
+  transition: all 0.35s var(--ease-out);
+}
+
+.phase-beacon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8B9A6E;
+  transition: all 0.3s ease;
+}
+
+.phase-pill.is-active .phase-beacon {
+  animation: beacon-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(139, 154, 110, 0.8);
+}
+
+@keyframes beacon-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+}
+
+.phase-pill.is-break {
+  background: rgba(200, 155, 109, 0.15);
+  color: #9C7240;
+  border-color: rgba(200, 155, 109, 0.32);
+  box-shadow: 0 2px 8px rgba(200, 155, 109, 0.1);
+}
+
+.phase-pill.is-break .phase-beacon {
+  background: #C89B6D;
+}
+
+.phase-pill.is-break.is-active .phase-beacon {
+  box-shadow: 0 0 6px rgba(200, 155, 109, 0.8);
+}
+
+.progress-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 4px 8px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(139, 154, 110, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: all 0.35s var(--ease-out);
+}
+
+.dot.is-filled {
+  background: #8B9A6E;
+  box-shadow: 0 0 10px rgba(139, 154, 110, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
+  transform: scale(1.18);
+}
+
+.dot.is-break-filled {
+  background: #C89B6D;
+  box-shadow: 0 0 10px rgba(200, 155, 109, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .controls {
@@ -118,56 +220,94 @@ function choosePreset(minutes: number) {
   justify-content: center;
   align-items: center;
   gap: 28px;
+  margin-top: 26px;
 }
 
 .ctrl-btn {
   font-size: 13px;
   color: var(--text-secondary);
-  font-weight: var(--font-weight-semibold);
-  padding: 9px 22px;
+  font-weight: 600;
+  padding: 9px 20px;
   border-radius: var(--radius-full);
-  background-color: var(--glass-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-subtle);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   cursor: pointer;
-  transition: transform 0.18s var(--ease-out), border-color 0.18s ease, color 0.18s ease;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  transition: all 0.22s var(--ease-out);
+  letter-spacing: 0.3px;
 }
 
 .ctrl-btn:hover {
-  border-color: var(--color-zen-sage);
-  color: var(--color-sage-ink);
-  transform: translateY(-1px);
+  border-color: #8B9A6E;
+  color: #8B9A6E;
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.18);
 }
 
 .ctrl-btn:active {
-  transform: scale(0.96);
+  transform: translateY(0.5px) scale(0.96);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .main-btn {
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: var(--accent-gradient);
-  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.25s var(--ease-out);
   cursor: pointer;
-  transition: transform 0.2s var(--ease-out), box-shadow 0.2s ease;
 }
 
 .main-btn:hover {
-  transform: translateY(-2px) scale(1.04);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 10px 30px rgba(139, 154, 110, 0.52), 0 3px 8px rgba(0, 0, 0, 0.06);
 }
 
 .main-btn:active {
-  transform: scale(0.96);
+  transform: translateY(1px) scale(0.96);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.36);
 }
 
 .main-btn.is-break {
   background: linear-gradient(135deg, #D6AF83 0%, #C89B6D 100%);
   box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.main-btn.is-break:hover {
+  box-shadow: 0 10px 30px rgba(200, 155, 109, 0.52), 0 3px 8px rgba(0, 0, 0, 0.06);
+}
+
+.play-icon {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 12px 0 12px 19px;
+  border-color: transparent transparent transparent #FFFFFF;
+  margin-left: 4px;
+}
+
+.pause-icon {
+  width: 16px;
+  height: 20px;
+  border-left: 5px solid #FFFFFF;
+  border-right: 5px solid #FFFFFF;
+  border-radius: 1px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 960px) {
+  .timer-core {
+    padding-top: 46px;
+    padding-bottom: 12px;
+  }
+
+  .time-row {
+    top: 4px;
+    left: 4px;
+  }
 }
 </style>
