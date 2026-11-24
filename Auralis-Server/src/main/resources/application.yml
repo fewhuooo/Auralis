@@ -31,7 +31,7 @@ springdoc:
 
 auralis:
   api:
-    allowed-origins: ${AURALIS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost}
+    allowed-origins: ${AURALIS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1,http://tauri.localhost,http://192.168.*:*,http://192.168.*,http://10.*:*,http://10.*}
   upload:
     max-file-size-bytes: 52428800
     storage-provider: ${AURALIS_UPLOAD_STORAGE_PROVIDER:unavailable}

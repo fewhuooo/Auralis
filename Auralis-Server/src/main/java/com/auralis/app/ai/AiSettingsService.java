@@ -65,10 +65,20 @@ public class AiSettingsService {
 
     @Transactional(readOnly = true)
     public ResolvedSettings resolve(UUID userId, AiProviderType provider) {
-        AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
+        AiCredentialEntity entity = null;
+        if (provider == AiProviderType.OPENAI_COMPATIBLE) {
+            entity = credentialRepository.findAllByUserIdOrderByUpdatedAtDesc(userId).stream()
+                    .filter(candidate -> candidate.getEncryptedApiKey() != null
+                            && !candidate.getEncryptedApiKey().isBlank())
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (entity == null) {
+            entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
+        }
         if (entity != null && entity.getEncryptedApiKey() != null && !entity.getEncryptedApiKey().isBlank()) {
             LOGGER.info("AI_SETTINGS_RESOLVED userId={} provider={} source=BYOK endpointHost={} chatModel={}",
-                    userId, provider, safeHost(entity.getBaseUrl()), entity.getChatModel());
+                    userId, entity.getProvider(), safeHost(entity.getBaseUrl()), entity.getChatModel());
             return new ResolvedSettings(
                     entity.getProvider(),
                     entity.getChatModel(),

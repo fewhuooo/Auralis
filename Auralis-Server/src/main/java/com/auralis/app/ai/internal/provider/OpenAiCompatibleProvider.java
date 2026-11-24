@@ -108,31 +108,34 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             Long responseTimeoutMillis,
             AiProviderCallCancellation cancellation) {
         validateCredential(credential);
+        Long effectiveTimeoutMillis = (responseTimeoutMillis == null || responseTimeoutMillis <= 0L)
+                ? null
+                : responseTimeoutMillis;
         try {
             URI baseUri = URI.create(credential.baseUrl().trim());
             ResolvedProviderEndpoint endpoint = cancellation instanceof OverviewCancellation overviewCancellation
-                    ? endpointPolicy.resolve(providerType, baseUri, responseTimeoutMillis, overviewCancellation)
+                    ? endpointPolicy.resolve(providerType, baseUri, effectiveTimeoutMillis, overviewCancellation)
                     : endpointPolicy.resolve(providerType, baseUri);
             JsonNode body;
             if (cancellation != null) {
                 body = httpClient.postJsonCancellable(endpoint, "/chat/completions", credential.apiKey(),
                         requestBody(request, credential), JsonNode.class,
-                        responseTimeoutMillis == null ? 10_000 : responseTimeoutMillis, cancellation,
+                        effectiveTimeoutMillis == null ? 10_000 : effectiveTimeoutMillis, cancellation,
                         overviewResponseByteLimit(request));
-            } else if (!request.overviewCapacityRequest() && responseTimeoutMillis == null) {
+            } else if (!request.overviewCapacityRequest() && effectiveTimeoutMillis == null) {
                 body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
                         requestBody(request, credential), JsonNode.class);
             } else if (!request.overviewCapacityRequest()) {
                 body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
-                        requestBody(request, credential), JsonNode.class, responseTimeoutMillis, cancellation);
-            } else if (responseTimeoutMillis == null) {
+                        requestBody(request, credential), JsonNode.class, effectiveTimeoutMillis, cancellation);
+            } else if (effectiveTimeoutMillis == null) {
                 body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
                         requestBody(request, credential), JsonNode.class, cancellation,
                         overviewResponseByteLimit(request));
             } else {
                 body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
                         requestBody(request, credential), JsonNode.class,
-                        responseTimeoutMillis, cancellation, overviewResponseByteLimit(request));
+                        effectiveTimeoutMillis, cancellation, overviewResponseByteLimit(request));
             }
             return parseResponse(body, request);
         } catch (DomainException exception) {
