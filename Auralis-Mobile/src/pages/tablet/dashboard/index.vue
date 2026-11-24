@@ -144,93 +144,193 @@
     </view>
 
     <template #modal>
-      <view v-if="showCreateModal" class="zen-modal-mask" @click="closeCreateModal">
-        <view class="zen-modal-body create-modal" @click.stop>
+      <view v-if="showCreateModal" class="zen-modal-mask task-modal-mask" @click="closeCreateModal">
+        <view
+          class="task-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="新建学习任务"
+          @click.stop
+        >
           <view class="modal-header">
-            <text class="modal-title">新建任务</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeCreateModal">
-              <LineIcon name="close" size="16px" color="var(--text-muted)" />
+            <text class="modal-title">新建学习任务</text>
+            <view
+              class="modal-close-btn"
+              :class="{ 'is-disabled': savingTask }"
+              role="button"
+              aria-label="关闭"
+              @click="closeCreateModal"
+            >
+              <LineIcon name="close" size="15px" color="var(--text-muted)" />
             </view>
           </view>
 
-          <view class="modal-form">
-            <input
-              class="ui-input"
-              v-model="taskForm.name"
-              placeholder="任务名称"
-              :disabled="savingTask"
-            />
+          <view class="modal-body">
+            <!-- 任务名称 -->
+            <view class="modal-form-group">
+              <view class="modal-form-label">
+                <text>任务名称</text>
+                <text class="required">*</text>
+              </view>
+              <input
+                v-model="taskForm.name"
+                class="modal-form-input"
+                maxlength="80"
+                placeholder="请输入学习或专注任务名称..."
+                :disabled="savingTask"
+                @confirm="submitCreateTask"
+              />
+            </view>
 
-            <view v-if="subjectStore.subjects.length === 0" class="empty-text">暂无学科</view>
-            <view v-else class="chips-row">
-              <view
-                v-for="sub in subjectStore.subjects"
-                :key="sub.id"
-                class="chip-item"
-                :class="{ active: taskForm.subjectId === sub.id }"
-                role="button"
-                @click="taskForm.subjectId = sub.id"
-              >
-                <text>{{ sub.name }}</text>
+            <!-- 所属学科 -->
+            <view class="modal-form-group">
+              <view class="subject-header">
+                <view class="modal-form-label">
+                  <text>所属学科</text>
+                  <text class="required">*</text>
+                </view>
+                <text v-if="subjectStore.subjects.length > 0" class="subject-count-hint num-tabular">
+                  共 {{ subjectStore.subjects.length }} 门
+                </text>
+              </view>
+              <view v-if="subjectStore.subjects.length === 0" class="empty-hint">
+                暂无学科，请先创建学科空间
+              </view>
+              <view v-else class="subject-grid">
+                <view
+                  v-for="sub in subjectStore.subjects"
+                  :key="sub.id"
+                  class="subject-chip"
+                  :class="{ active: taskForm.subjectId === sub.id }"
+                  role="button"
+                  @click="!savingTask && (taskForm.subjectId = sub.id)"
+                >
+                  <LineIcon
+                    :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
+                    size="13px"
+                    :color="taskForm.subjectId === sub.id ? '#76855B' : 'var(--text-secondary)'"
+                  />
+                  <text class="chip-name">{{ sub.name }}</text>
+                </view>
               </view>
             </view>
 
-            <view class="chips-row">
-              <view
-                v-for="mins in [30, 60, 90, 120]"
-                :key="mins"
-                class="chip-item num-tabular"
-                :class="{ active: taskForm.duration === mins }"
-                role="button"
-                @click="taskForm.duration = mins"
-              >
-                <text>{{ mins }}m</text>
+            <!-- 专注时长（PC 同源 7 档整半小时分段滑轨） -->
+            <view class="modal-form-group">
+              <view class="duration-header">
+                <text class="modal-form-label">专注时长</text>
+                <view class="duration-value-pill num-tabular">
+                  <LineIcon name="clock" size="13px" color="#76855B" />
+                  <text>{{ taskForm.duration }} 分钟（{{ (taskForm.duration / 60).toFixed(1) }} 小时）</text>
+                </view>
               </view>
-            </view>
 
-            <view class="switch-row">
-              <text class="field-label">排入 {{ selectedDateHeading }}</text>
-              <switch :checked="taskForm.scheduled" color="#8B9A6E" @change="onScheduledSwitch" />
-            </view>
-
-            <view class="dual-row">
-              <view v-if="taskForm.scheduled" class="picker-col">
-                <picker mode="time" :value="taskForm.timeHHmm" @change="onModalTimeChange">
-                  <view class="picker-box num-tabular">
-                    <LineIcon name="clock" size="13px" color="var(--color-sage-ink)" />
-                    <text>{{ taskForm.timeHHmm }}</text>
+              <view class="duration-segmented-track">
+                <view class="track-segments-row">
+                  <view class="active-thumb-pill" :style="durationThumbStyle">
+                    <text class="active-thumb-text num-tabular">{{ activeDurationLabel }}</text>
                   </view>
-                </picker>
-              </view>
-              <view class="picker-col">
-                <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onModalDueDateChange">
-                  <view class="picker-box num-tabular">
-                    <LineIcon name="calendar" size="13px" color="var(--text-muted)" />
-                    <text>{{ taskForm.dueDateKey || '截止日期' }}</text>
+                  <view
+                    v-for="opt in DURATION_OPTIONS"
+                    :key="opt.minutes"
+                    class="track-segment-item"
+                    :class="{ active: taskForm.duration === opt.minutes }"
+                    role="button"
+                    @click="!savingTask && (taskForm.duration = opt.minutes)"
+                  >
+                    <text class="segment-label num-tabular">{{ opt.label }}</text>
                   </view>
-                </picker>
+                </view>
               </view>
             </view>
 
-            <view class="quick-date-row">
-              <view
-                v-for="preset in dueDatePresets"
-                :key="preset.label"
-                class="chip-item sm"
-                :class="{ active: taskForm.dueDateKey === preset.key }"
-                role="button"
-                @click="toggleDuePreset(preset.key)"
+            <!-- 日程安排（平板专属直接排程） -->
+            <view class="modal-form-group">
+              <view class="modal-form-label">
+                <text>日程安排</text>
+                <text class="optional-tag">可选</text>
+              </view>
+              <view class="schedule-row-card">
+                <text class="schedule-date-label">排入 {{ selectedDateHeading }}</text>
+                <view class="schedule-controls">
+                  <picker
+                    v-if="taskForm.scheduled"
+                    mode="time"
+                    :value="taskForm.timeHHmm"
+                    :disabled="savingTask"
+                    @change="onModalTimeChange"
+                  >
+                    <view class="time-pill num-tabular">
+                      <LineIcon name="clock" size="13px" color="#76855B" />
+                      <text>{{ taskForm.timeHHmm }}</text>
+                    </view>
+                  </picker>
+                  <switch
+                    :checked="taskForm.scheduled"
+                    :disabled="savingTask"
+                    color="#8B9A6E"
+                    style="transform: scale(0.84); transform-origin: right center;"
+                    @change="onScheduledSwitch"
+                  />
+                </view>
+              </view>
+            </view>
+
+            <!-- 截止时间 -->
+            <view class="modal-form-group">
+              <view class="due-header">
+                <view class="modal-form-label">
+                  <text>截止时间</text>
+                  <text class="optional-tag">可选</text>
+                </view>
+                <text
+                  v-if="taskForm.dueDateKey && !savingTask"
+                  class="due-clear-btn"
+                  role="button"
+                  @click="taskForm.dueDateKey = ''"
+                >清除</text>
+              </view>
+
+              <picker
+                mode="date"
+                :value="taskForm.dueDateKey || selectedDateKey"
+                :disabled="savingTask"
+                @change="onModalDueDateChange"
               >
-                <text>{{ preset.label }}</text>
+                <view class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
+                  <LineIcon name="calendar" size="14px" :color="taskForm.dueDateKey ? '#76855B' : '#8B9A6E'" />
+                  <text class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</text>
+                </view>
+              </picker>
+
+              <view class="quick-date-row">
+                <view
+                  v-for="preset in dueDatePresets"
+                  :key="preset.label"
+                  class="due-preset-chip"
+                  :class="{ active: taskForm.dueDateKey === preset.key }"
+                  role="button"
+                  @click="!savingTask && toggleDuePreset(preset.key)"
+                >
+                  <text>{{ preset.label }}</text>
+                </view>
               </view>
             </view>
           </view>
 
           <view class="modal-footer">
-            <view class="ui-btn ui-btn-ghost" role="button" @click="closeCreateModal">取消</view>
-            <view class="ui-btn ui-btn-primary" :class="{ 'is-disabled': savingTask }" role="button" @click="submitCreateTask">
-              {{ savingTask ? '保存中…' : '保存' }}
-            </view>
+            <button
+              type="button"
+              class="modal-btn modal-btn-secondary"
+              :disabled="savingTask"
+              @click="closeCreateModal"
+            >取消</button>
+            <button
+              type="button"
+              class="modal-btn modal-btn-primary"
+              :disabled="!canSubmitTask"
+              @click="submitCreateTask"
+            >{{ savingTask ? '保存中…' : taskForm.scheduled ? '加入日程' : '添加到待办' }}</button>
           </view>
         </view>
       </view>
@@ -330,6 +430,16 @@ function confirmDeleteTodo(id: string, title: string) {
   })
 }
 
+const DURATION_OPTIONS = [
+  { minutes: 30, label: '30m' },
+  { minutes: 60, label: '1h' },
+  { minutes: 90, label: '1.5h' },
+  { minutes: 120, label: '2h' },
+  { minutes: 150, label: '2.5h' },
+  { minutes: 180, label: '3h' },
+  { minutes: 240, label: '4h' },
+] as const
+
 const showCreateModal = ref(false)
 const savingTask = ref(false)
 const taskForm = reactive({
@@ -341,8 +451,31 @@ const taskForm = reactive({
   dueDateKey: '',
 })
 
+const activeDurationIndex = computed(() => {
+  const idx = DURATION_OPTIONS.findIndex(opt => opt.minutes === taskForm.duration)
+  return idx !== -1 ? idx : 1
+})
+
+const activeDurationLabel = computed(() => (
+  DURATION_OPTIONS[activeDurationIndex.value]?.label || '1h'
+))
+
+const durationThumbStyle = computed(() => {
+  const stepPercent = 100 / DURATION_OPTIONS.length
+  return {
+    left: `${activeDurationIndex.value * stepPercent}%`,
+    width: `${stepPercent}%`,
+  }
+})
+
+const canSubmitTask = computed(() => (
+  !savingTask.value
+  && taskForm.name.trim().length > 0
+  && Boolean(taskForm.subjectId)
+))
+
 function openCreateModal() {
-  if (!taskForm.subjectId) {
+  if (!taskForm.subjectId || !subjectStore.subjects.some(item => item.id === taskForm.subjectId)) {
     taskForm.subjectId = subjectStore.subjects[0]?.id || ''
   }
   showCreateModal.value = true
@@ -709,98 +842,380 @@ onUnmounted(() => {
   font-weight: var(--font-weight-medium);
 }
 
-.create-modal {
-  max-width: 460px;
-  padding: 22px;
+.task-modal-mask {
+  background-color: rgba(28, 28, 26, 0.42);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  padding: 24px;
+}
+
+.task-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 24px 64px -12px rgba(0, 0, 0, 0.13),
+    0 8px 24px -6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  overflow: hidden;
+  box-sizing: border-box;
+  animation: uiModalIn 0.22s var(--ease-out) both;
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  padding: 24px 28px 12px;
+  flex-shrink: 0;
 }
 
 .modal-title {
-  font-size: 18px;
-  font-weight: var(--font-weight-bold);
+  font-size: 16.5px;
+  font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
-.modal-form {
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.18s ease, transform 0.2s var(--ease-out);
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+.modal-close-btn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.modal-body {
+  padding: 8px 28px 18px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
+  box-sizing: border-box;
 }
 
-.chips-row {
+.modal-form-group {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
 }
 
-.chip-item {
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.chip-item.active {
-  background-color: rgba(139, 154, 110, 0.16);
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
-  color: var(--color-sage-ink);
-  font-weight: var(--font-weight-bold);
-}
-
-.switch-row {
+.modal-form-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 0;
-}
-
-.field-label {
+  gap: 4px;
   font-size: 13px;
-  font-weight: var(--font-weight-semibold);
+  font-weight: 600;
   color: var(--text-secondary);
 }
 
-.dual-row {
-  display: flex;
-  gap: 10px;
+.modal-form-label .required {
+  color: #D14343;
+  font-weight: 700;
 }
 
-.picker-col {
-  flex: 1;
+.optional-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 2px;
 }
 
-.picker-box {
+.modal-form-input {
+  width: 100%;
   height: 40px;
-  padding: 0 12px;
+  box-sizing: border-box;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04), 0 0.5px 1.5px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
+}
+
+/* #ifdef H5 */
+.modal-form-input:focus {
+  outline: none;
+  border-color: var(--color-zen-sage);
+  background: #FDFBF8;
+  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
+}
+/* #endif */
+
+.subject-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.subject-count-hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.subject-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 3px 3px 6px;
+}
+
+.subject-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6.5px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s var(--ease-out);
+  max-width: 100%;
+}
+
+.subject-chip:hover {
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1px);
+}
+
+.subject-chip.active {
+  background: rgba(139, 154, 110, 0.14);
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.16), 0 3px 10px rgba(139, 154, 110, 0.18);
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.duration-value-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-sage-dark);
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.2);
+  padding: 3px 12px;
+  border-radius: var(--radius-full);
+}
+
+.duration-segmented-track {
+  position: relative;
+  height: 44px;
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1.5px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1.5px 4px rgba(0, 0, 0, 0.04);
+  user-select: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.duration-segmented-track:hover {
+  border-color: rgba(139, 154, 110, 0.35);
+}
+
+.track-segments-row {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+.active-thumb-pill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.36), 0 1px 2px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
+  z-index: 2;
+  pointer-events: none;
+  box-sizing: border-box;
+  transition: left 0.22s var(--ease-out);
+}
+
+.active-thumb-text {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.01em;
+}
+
+.track-segment-item {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border-radius: var(--radius-full);
   cursor: pointer;
+}
+
+.track-segment-item.active {
+  opacity: 0;
+}
+
+.segment-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color 0.16s ease;
+}
+
+.track-segment-item:hover .segment-label {
+  color: var(--text-primary);
+}
+
+.schedule-row-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-sizing: border-box;
+}
+
+.schedule-date-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.schedule-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-pill {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background: rgba(139, 154, 110, 0.14);
+  border: 1px solid rgba(139, 154, 110, 0.28);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-sage-dark);
+  cursor: pointer;
+}
+
+.due-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.due-clear-btn {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-sage-dark);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.16s ease;
+}
+
+.due-clear-btn:hover {
+  background: rgba(139, 154, 110, 0.12);
+}
+
+.due-picker-box {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.due-picker-box:hover {
+  border-color: rgba(139, 154, 110, 0.4);
+}
+
+.due-picker-box.has-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  border-color: rgba(139, 154, 110, 0.45);
+}
+
+.due-picker-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .quick-date-row {
@@ -809,18 +1224,91 @@ onUnmounted(() => {
   gap: 6px;
 }
 
-.chip-item.sm {
-  height: 28px;
-  padding: 0 10px;
+.due-preset-chip {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   display: inline-flex;
   align-items: center;
   font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.due-preset-chip:hover {
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
+}
+
+.due-preset-chip.active {
+  background: rgba(139, 154, 110, 0.14);
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
+  font-weight: 600;
 }
 
 .modal-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
+  padding: 12px 28px 24px;
+  flex-shrink: 0;
+}
+
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 20px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.2s var(--ease-out);
+}
+
+.modal-btn::after {
+  border: none;
+}
+
+.modal-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-btn-secondary {
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  color: var(--text-primary);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.065);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.modal-btn-primary {
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.32), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 @media (max-width: 900px) {
