@@ -26,6 +26,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import AppTabBar from '@/components/AppTabBar.vue'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 
 const props = defineProps({
@@ -47,6 +48,7 @@ const props = defineProps({
   },
 })
 
+const authStore = useAuthStore()
 const layoutStore = useLayoutStore()
 const currentRoute = ref('')
 const isEntering = ref(!props.disableAnimation)
@@ -66,10 +68,15 @@ watch(() => props.disableAnimation, (newVal) => {
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
+  let route = ''
   try {
     const pages = getCurrentPages()
-    const route = pages.length > 0 ? '/' + (pages[pages.length - 1]?.route || '') : ''
+    route = pages.length > 0 ? '/' + (pages[pages.length - 1]?.route || '') : ''
     currentRoute.value = route
+    if (!route.includes('/login') && !authStore.isAuthenticated) {
+      uni.reLaunch({ url: '/pages/mobile/login/index' })
+      return
+    }
     if (!props.animOrigin) {
       if (route.includes('profile')) {
         animOrigin.value = 'slide-right'

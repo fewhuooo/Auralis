@@ -162,6 +162,7 @@ function goToAi() {
   const layoutStore = useLayoutStore()
   if (nowRoute === aiAssistantPath || layoutStore.isExiting) return
 
+  if (nowRoute) layoutStore.setReturnRoute(nowRoute)
   navigateWithTransition(aiAssistantPath, 'right', nowRoute)
 }
 </script>

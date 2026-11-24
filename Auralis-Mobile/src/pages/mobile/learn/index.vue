@@ -19,7 +19,25 @@
             <LineIcon name="book" size="24px" color="var(--color-sage-ink)" />
           </view>
           <text class="empty-title">暂无学科空间</text>
-          <text class="empty-subtitle">请先在 PC 或平板端创建学科并同步后再开始学习</text>
+          <text class="empty-subtitle">可在此直接创建第一门学科，或等待其他端同步</text>
+          <view class="empty-quick-create">
+            <input
+              v-model="quickSubjectName"
+              class="ui-input empty-quick-input"
+              maxlength="20"
+              placeholder="输入学科名称…"
+              :disabled="creatingQuickSubject"
+              @confirm="createQuickSubject"
+            />
+            <button
+              class="ui-btn ui-btn-primary empty-quick-btn"
+              :loading="creatingQuickSubject"
+              :disabled="creatingQuickSubject || !quickSubjectName.trim()"
+              @click="createQuickSubject"
+            >
+              创建
+            </button>
+          </view>
         </view>
       </view>
 
@@ -502,6 +520,7 @@
                 maxlength="120"
                 placeholder="请输入知识块标题…"
                 :disabled="savingBlock"
+                @confirm="submitBlockModal"
               />
             </view>
 
@@ -524,6 +543,7 @@
                 maxlength="80"
                 placeholder="可选，如教材章节或资料名"
                 :disabled="savingBlock"
+                @confirm="submitBlockModal"
               />
             </view>
 
@@ -622,6 +642,8 @@ const showBlockModal = ref(false)
 const editingBlockId = ref('')
 const savingBlock = ref(false)
 const blockModalError = ref('')
+const quickSubjectName = ref('')
+const creatingQuickSubject = ref(false)
 const blockForm = reactive({
   title: '',
   preview: '',
@@ -984,6 +1006,35 @@ function refreshPageData(): Promise<void> {
   })
   refreshInFlight = { scope, promise: task }
   return task
+}
+
+async function createQuickSubject() {
+  if (creatingQuickSubject.value) return
+  const name = quickSubjectName.value.trim()
+  if (!name) {
+    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  creatingQuickSubject.value = true
+  try {
+    const createdId = await subjectStore.addSubject(name, '', 'other')
+    if (generation !== authStore.getLoginGeneration()) return
+    quickSubjectName.value = ''
+    if (createdId) {
+      selectedSubjectId.value = createdId
+      subjectStore.setActiveSubject(createdId)
+    }
+    await refreshPageData()
+    uni.showToast({ title: '已创建学科', icon: 'none' })
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '创建学科失败', icon: 'none' })
+  } finally {
+    if (generation === authStore.getLoginGeneration()) {
+      creatingQuickSubject.value = false
+    }
+  }
 }
 
 function selectSubject(subjectId: string) {
@@ -1502,6 +1553,27 @@ onUnmounted(() => {
   font-size: 12.5px;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+.empty-quick-create {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.empty-quick-input {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.empty-quick-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
 .subject-strip-wrap {

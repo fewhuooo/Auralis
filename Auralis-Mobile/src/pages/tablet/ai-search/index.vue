@@ -169,11 +169,11 @@
                     v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && !isConversationUnsupported && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
                     class="footer-action-chip"
                     role="button"
-                    aria-label="重新生成"
+                    :aria-label="msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成'"
                     @click="regenerateAssistantMessage(msg.id)"
                   >
                     <LineIcon name="refresh" size="13px" color="var(--text-muted)" />
-                    <text class="footer-action-label">重新生成</text>
+                    <text class="footer-action-label">{{ msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成' }}</text>
                   </view>
                   <view
                     v-if="hasCopyableContent(msg)"
@@ -373,6 +373,7 @@ import {
   type ChatStreamEnvelope,
   type ChatWithAiOptions,
 } from '@/api/aiClient'
+import { ApiProblemError } from '@/api/protocol'
 import LineIcon from '@/components/LineIcon.vue'
 import MobileChatPartList from '@/components/MobileChatPartList.vue'
 import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
@@ -982,11 +983,47 @@ function confirmDeleteConversation(conversationId: string, baseVersion: number) 
   })
 }
 
+async function syncConversationMeta(conversationId: string, generation: symbol) {
+  try {
+    const detail = await aiApi.getConversation(conversationId)
+    if (generation !== authStore.getLoginGeneration()) return
+    const idx = conversations.value.findIndex(item => item.id === conversationId)
+    const nextItem: ConversationView = {
+      id: detail.id ?? conversationId,
+      title: detail.title,
+      version: detail.version,
+      chatScopeState: detail.chatScopeState,
+      chatScope: detail.chatScope,
+      updatedAt: detail.updatedAt,
+      createdAt: detail.createdAt,
+    }
+    if (idx >= 0) {
+      conversations.value = conversations.value.map(item => (
+        item.id === conversationId ? { ...item, ...nextItem } : item
+      ))
+    } else {
+      conversations.value = [nextItem, ...conversations.value]
+    }
+  } catch {
+    // Keep existing conversation list item when offline
+  }
+}
+
 async function deleteConversation(conversationId: string, baseVersion: number) {
   if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) return
   const generation = authStore.getLoginGeneration()
   try {
-    await aiApi.deleteConversation(conversationId, baseVersion)
+    try {
+      await aiApi.deleteConversation(conversationId, baseVersion)
+    } catch (error) {
+      if (error instanceof ApiProblemError && error.status === 409) {
+        const latest = await aiApi.getConversation(conversationId)
+        if (generation !== authStore.getLoginGeneration()) return
+        await aiApi.deleteConversation(conversationId, Number(latest.version ?? baseVersion))
+      } else {
+        throw error
+      }
+    }
     if (generation !== authStore.getLoginGeneration()) return
     conversations.value = conversations.value.filter(item => item.id !== conversationId)
     if (currentConversationId.value === conversationId) {
@@ -1285,6 +1322,9 @@ async function runStreamIntoSlot(params: {
         activeRunId.value = ''
         activeAttemptId.value = ''
       }
+      if (admittedTurn && currentConversationId.value) {
+        void syncConversationMeta(currentConversationId.value, generation)
+      }
       scrollToBottom(false)
     }
   }
@@ -1385,6 +1425,33 @@ async function regenerateAssistantMessage(msgId: string) {
     }
   }
   if (!promptText) return
+
+  if (target.status === 'failed' || target.status === 'cancelled') {
+    stopRunPolling()
+    activeViewToken += 1
+    const streamToken = ++activeStreamToken
+    const generation = authStore.getLoginGeneration()
+    const readingContext = buildMobileReadingContext(selectedSubjectId.value, conversationScopeState.value)
+    setMessageDraining(target.id, false)
+    messages.value[msgIndex] = createAssistantPlaceholder(target.id, target.originatingKind)
+    isTyping.value = true
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+    scrollToBottom(true)
+
+    await runStreamIntoSlot({
+      aiIndex: msgIndex,
+      streamToken,
+      generation,
+      readingContext,
+      resolveConversationId: () => ensureConversation(promptText, generation, () => (
+        streamToken === activeStreamToken && generation === authStore.getLoginGeneration()
+      )),
+      invoke: (conversationId, onDelta, options) => chatWithAI(promptText, [], onDelta, conversationId, options),
+    })
+    return
+  }
+
   query.value = promptText
   await sendMessage()
 }

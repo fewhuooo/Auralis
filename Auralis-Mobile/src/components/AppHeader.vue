@@ -107,14 +107,6 @@ const topLevelRoutes = [
 function handleBack() {
   emit('back-click')
   layoutStore.triggerReturn(360)
-  if (props.backUrl) {
-    if (topLevelRoutes.some(route => props.backUrl.includes(route.replace('/pages/mobile/', '')))) {
-      uni.reLaunch({ url: props.backUrl })
-      return
-    }
-    uni.navigateTo({ url: props.backUrl })
-    return
-  }
 
   try {
     const pages = getCurrentPages()
@@ -123,8 +115,19 @@ function handleBack() {
       return
     }
   } catch {
-    // Fall back to home
+    // Ignore page stack inspection failures
   }
+
+  const returnTarget = layoutStore.consumeReturnRoute() || props.backUrl
+  if (returnTarget) {
+    if (topLevelRoutes.some(route => returnTarget.includes(route.replace('/pages/mobile/', '')))) {
+      uni.reLaunch({ url: returnTarget })
+      return
+    }
+    uni.redirectTo({ url: returnTarget })
+    return
+  }
+
   uni.reLaunch({ url: '/pages/mobile/home/index' })
 }
 

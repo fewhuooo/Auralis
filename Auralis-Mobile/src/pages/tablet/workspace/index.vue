@@ -428,6 +428,14 @@ const floatingShellStyle = computed(() => {
 })
 
 function goBack() {
+  try {
+    if (getCurrentPages().length > 1) {
+      uni.navigateBack()
+      return
+    }
+  } catch {
+    // Fallback to subject hall when launched directly
+  }
   uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
 }
 
@@ -765,6 +773,10 @@ async function handleSubmitUpload(payload: { file: LocalUploadFile; title: strin
       },
     })
     if (!isFenceValid(fence, false)) return
+    if (created.id) {
+      await localDb.upsertSourceView(payload.subjectId, created).catch(() => {})
+      if (!isFenceValid(fence, false)) return
+    }
 
     if (payload.subjectId === fence.subjectId) {
       await loadSources()
@@ -824,13 +836,23 @@ function handleDeleteSource(source: SourceView) {
           void deleteCachedDocument(activeScope, source.assetId)
         }
         // #endif
-        if (selectedSourceId.value === source.id) {
+        const wasSelected = selectedSourceId.value === source.id
+        if (wasSelected) {
           selectedSourceId.value = null
           clearPreview()
-          if (centerView.value === 'preview') centerView.value = 'onboarding'
         }
         await loadSources()
         if (!isFenceValid(fence, false)) return
+        if (wasSelected) {
+          const nextSource = sources.value[0]
+          if (nextSource?.id) {
+            selectedSourceId.value = nextSource.id
+            centerView.value = 'preview'
+            void loadSourcePreview()
+          } else if (centerView.value === 'preview') {
+            centerView.value = 'onboarding'
+          }
+        }
         await Promise.all([subjectStore.loadSubjects(), loadSubjectOverview()])
         if (!isFenceValid(fence, false)) return
         uni.showToast({ title: '已删除', icon: 'none' })
@@ -1106,7 +1128,7 @@ async function reloadAll() {
   const fence = captureFence()
   await Promise.all([
     subjectStore.loadSubjects(),
-    blockStore.fetchBlocks(undefined, subjectId.value),
+    blockStore.fetchBlocks(),
     loadSources(),
   ])
   if (!isFenceValid(fence, false)) return

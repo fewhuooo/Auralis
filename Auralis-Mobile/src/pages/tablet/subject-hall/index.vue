@@ -137,6 +137,7 @@
                 maxlength="20"
                 placeholder="例如: 算法与数据结构、应用物理学"
                 :disabled="savingSubject"
+                @confirm="handleSave"
               />
             </view>
 

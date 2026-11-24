@@ -73,10 +73,23 @@ export const useLayoutStore = defineStore('layout', () => {
   const isInitialRender = ref(true)
   const activeNavIndex = ref(0)
   const activeNavPath = ref('/pages/tablet/dashboard/index')
+  const aiReturnRoute = ref('')
 
   const setActiveNav = (idx: number, path: string) => {
     activeNavIndex.value = idx
     activeNavPath.value = path
+  }
+
+  const setReturnRoute = (route: string) => {
+    if (route && !route.includes('/login')) {
+      aiReturnRoute.value = route
+    }
+  }
+
+  const consumeReturnRoute = (): string => {
+    const next = aiReturnRoute.value
+    aiReturnRoute.value = ''
+    return next
   }
 
   return {
@@ -97,5 +110,7 @@ export const useLayoutStore = defineStore('layout', () => {
     activeNavIndex,
     activeNavPath,
     setActiveNav,
+    setReturnRoute,
+    consumeReturnRoute,
   }
 })
