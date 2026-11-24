@@ -118,6 +118,7 @@ export async function uploadSubjectFile(options: {
   title?: string
   onProgress?: UploadProgressCallback
 }): Promise<SourceView> {
+  validateUploadFile(options.file)
   const assetId = await uploadAsset(options.file, uuidv7(), options.onProgress)
   options.onProgress?.(85, '正在关联学科资料...')
   const created = await sourceApi.create({

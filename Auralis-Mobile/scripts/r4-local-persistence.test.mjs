@@ -5,6 +5,7 @@ import test from 'node:test'
 import { createSyncController } from '../src/services/syncController.ts'
 import { selectEvictableCacheKeys } from '../src/services/localDocumentCache.ts'
 import { resolveBlockSourceLabel, resolveEditedBlockSourceLink } from '../src/utils/blockSyncMapper.ts'
+import { MAX_UPLOAD_FILE_SIZE_BYTES, validateUploadFile } from '../src/utils/uploadValidation.ts'
 
 function setupLocalDbTestEnv(context, options = {}) {
   const storage = new Map()
@@ -592,5 +593,53 @@ test('resolveBlockSourceLabel and resolveEditedBlockSourceLink preserve synced s
       sources,
     }),
     { source: '第三章_特征工程.pdf', sourceFileId: 'src-1' },
+  )
+})
+
+test('localDb.upsertSourceView persists uploaded source view without overwriting siblings, and validateUploadFile enforces format and size bounds', async (context) => {
+  setupLocalDbTestEnv(context)
+  const { localDataScope } = await import('../src/services/localDataScope.ts?local-upsert-source')
+  const { localDb } = await import('../src/services/localDb.ts?local-upsert-source')
+
+  localDataScope.activate('user-src-upsert', 'dev-1')
+  await localDb.init()
+
+  await localDb.replaceSubjectSources('sub-u1', [
+    {
+      id: 'src-existing',
+      subjectId: 'sub-u1',
+      type: 'FILE',
+      title: 'Existing.pdf',
+      assetId: 'asset-existing',
+      version: 1,
+      createdAt: '2026-11-23T08:00:00.000Z',
+    },
+  ])
+
+  await localDb.upsertSourceView('sub-u1', {
+    id: 'src-mobile-home',
+    subjectId: 'sub-u1',
+    type: 'FILE',
+    title: 'MobileCapture.docx',
+    assetId: 'asset-mobile-home',
+    ingestionStatus: 'PENDING',
+    assetSizeBytes: 2048,
+    version: 0,
+    createdAt: '2026-11-24T09:00:00.000Z',
+  })
+
+  const views = await localDb.getSourceViews('sub-u1')
+  assert.equal(views.length, 2)
+  assert.equal(views[0].id, 'src-mobile-home')
+  assert.equal(views[0].title, 'MobileCapture.docx')
+  assert.equal(views[1].id, 'src-existing')
+
+  assert.throws(
+    () => validateUploadFile({ path: '/tmp/bad.exe', name: 'bad.exe', size: 1024, mimeType: 'application/octet-stream' }),
+    /仅支持/,
+  )
+  assert.throws(
+    () => validateUploadFile({ path: '/tmp/huge.pdf', name: 'huge.pdf', size: MAX_UPLOAD_FILE_SIZE_BYTES + 1, mimeType: 'application/pdf' }),
+    /50 MB/,
   )
 })

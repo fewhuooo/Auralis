@@ -1525,6 +1525,24 @@ export const localDb = {
     }
   },
 
+  async upsertSourceView(subjectId: string, item: SourceView): Promise<void> {
+    if (!subjectId || !item.id || item.deletedAt) return;
+    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+      const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN;
+      await this.saveSourceFile({
+        id: item.id,
+        subject_id: item.subjectId || subjectId,
+        name: item.title || '未命名资料',
+        file_path: item.originUrl || item.assetId || '',
+        file_type: item.type || 'FILE',
+        file_size: item.assetSizeBytes ?? 0,
+        created_at: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+        version: item.version ?? 0,
+        payload_json: JSON.stringify(item),
+      });
+    });
+  },
+
   async getSourceViews(subjectId: string): Promise<SourceView[]> {
     if (!subjectId) return [];
     const rows = await sqlite.select(

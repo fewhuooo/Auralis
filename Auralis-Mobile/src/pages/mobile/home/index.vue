@@ -343,6 +343,7 @@ import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import type { LocalUploadFile } from '@/services/assetUpload'
+import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -358,7 +359,7 @@ import {
   getWeekDays,
   toLocalDateKey,
 } from '@/utils/dateKey'
-import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
+import { pickLocalDocument, uploadSubjectFile, validateUploadFile } from '@/utils/filePicker'
 import { formatBytes } from '@/utils/sourceFormat'
 
 const authStore = useAuthStore()
@@ -713,6 +714,7 @@ async function chooseFileToUpload() {
   try {
     const file = await pickLocalDocument()
     if (!file || generation !== authStore.getLoginGeneration()) return
+    validateUploadFile(file)
     uploadForm.file = file
     if (!uploadForm.title.trim()) uploadForm.title = file.name
   } catch (err) {
@@ -732,14 +734,27 @@ async function submitFileUpload() {
     uni.showToast({ title: '请选择文件', icon: 'none' })
     return
   }
+  try {
+    validateUploadFile(uploadForm.file)
+  } catch (err) {
+    uni.showToast({ title: err instanceof Error ? err.message : '不支持的文件格式', icon: 'none' })
+    return
+  }
   const generation = authStore.getLoginGeneration()
   submittingCapture.value = true
   try {
-    await uploadSubjectFile({
+    const created = await uploadSubjectFile({
       subjectId: subject.id,
       file: uploadForm.file,
       title: uploadForm.title,
     })
+    if (generation !== authStore.getLoginGeneration()) return
+    await localDb.upsertSourceView(subject.id, created).catch(() => {})
+    if (generation !== authStore.getLoginGeneration()) return
+    if (syncStore.autoSyncEnabled) {
+      void syncStore.triggerSync().catch(() => {})
+    }
+    await subjectStore.loadSubjects().catch(() => {})
     if (generation !== authStore.getLoginGeneration()) return
     uploadForm.file = null
     uploadForm.title = ''

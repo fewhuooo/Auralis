@@ -411,21 +411,39 @@ async function toggleTaskItem(id: string) {
     uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
     return
   }
-  await taskStore.toggleTaskComplete(id)
+  const generation = authStore.getLoginGeneration()
+  try {
+    await taskStore.toggleTaskComplete(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+  }
 }
 
 async function unscheduleTaskItem(id: string) {
-  await taskStore.unscheduleTask(id)
-  uni.showToast({ title: '已移回待办', icon: 'none' })
+  const generation = authStore.getLoginGeneration()
+  try {
+    await taskStore.unscheduleTask(id)
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: '已移回待办', icon: 'none' })
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '移回失败，请重试', icon: 'none' })
+  }
 }
 
 function confirmDeleteTodo(id: string, title: string) {
+  const generation = authStore.getLoginGeneration()
   uni.showModal({
     title: '删除待办',
     content: `确定删除「${title}」？`,
     confirmColor: '#C93B3B',
     success: (res) => {
-      if (res.confirm) void taskStore.removeTask(id)
+      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
+      void taskStore.removeTask(id).catch((err) => {
+        if (generation !== authStore.getLoginGeneration()) return
+        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
+      })
     },
   })
 }

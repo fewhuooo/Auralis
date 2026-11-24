@@ -797,17 +797,22 @@ async function fetchPagedStates(subjectId: string, isCurrent: () => boolean): Pr
   return collected
 }
 
-async function loadDueCounts() {
+async function loadDueCounts(excludeSubjectId?: string) {
   if (!authStore.isAuthenticated || subjectStore.subjects.length === 0) {
     badgeCountMap.value = {}
     return
   }
+  const targets = excludeSubjectId
+    ? subjectStore.subjects.filter(sub => sub.id !== excludeSubjectId)
+    : subjectStore.subjects
+  if (targets.length === 0) return
+
   const reqId = ++badgeCountReqId
   const generation = authStore.getLoginGeneration()
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
   const entries = await Promise.all(
-    subjectStore.subjects.map(async (sub) => {
+    targets.map(async (sub) => {
       const localBlocks = filterSubjectBlocks(blockStore.recentBlocks, sub.id, '')
       const isStillCurrent = () => (
         reqId === badgeCountReqId && isSameAuthSnapshot(generation, userId, serverDeviceId)
@@ -968,7 +973,7 @@ function refreshPageData(): Promise<void> {
     if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
 
     reconcileActiveSubject()
-    void loadDueCounts()
+    void loadDueCounts(selectedSubjectId.value || undefined)
     if (selectedSubjectId.value) {
       void loadActiveSubjectReview(selectedSubjectId.value)
     }
@@ -1340,7 +1345,7 @@ watch(
     const changed = reconcileActiveSubject()
     const inSameRefresh = refreshInFlight?.scope === scopeKeyForAuth()
     if (changed && !inSameRefresh && selectedSubjectId.value) {
-      void loadDueCounts()
+      void loadDueCounts(selectedSubjectId.value)
       void loadActiveSubjectReview(selectedSubjectId.value)
     }
   },
@@ -1361,7 +1366,7 @@ watch(
   () => syncStore.lastSyncedAt,
   (syncedAt) => {
     if (!syncedAt || !authStore.isAuthenticated) return
-    void loadDueCounts()
+    void loadDueCounts(selectedSubjectId.value || undefined)
     if (selectedSubjectId.value) {
       void loadActiveSubjectReview(selectedSubjectId.value)
     }

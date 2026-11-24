@@ -850,8 +850,8 @@ async function stopGeneration() {
     messages.value[lastIndex] = applyTerminalState(targetMsg, 'cancelled')
   }
 
-  activeStreamToken += 1
-  activeViewToken += 1
+  const stopStreamToken = ++activeStreamToken
+  const stopViewToken = ++activeViewToken
   const abortFn = abortLocalStream
   abortLocalStream = null
   abortFn?.()
@@ -863,11 +863,13 @@ async function stopGeneration() {
   } catch {
     // Ignore when server run has already completed
   } finally {
-    isStopping.value = false
-    isTyping.value = false
-    activeRunId.value = ''
-    activeAttemptId.value = ''
-    scrollToBottom(false)
+    if (stopStreamToken === activeStreamToken && stopViewToken === activeViewToken) {
+      isStopping.value = false
+      isTyping.value = false
+      activeRunId.value = ''
+      activeAttemptId.value = ''
+      scrollToBottom(false)
+    }
   }
 }
 

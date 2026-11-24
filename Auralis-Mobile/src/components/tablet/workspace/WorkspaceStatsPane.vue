@@ -283,6 +283,7 @@ import LineIcon from '@/components/LineIcon.vue'
 import { statsApi, type SubjectStats } from '@/api/statsApi'
 import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useSyncStore } from '@/store/useSyncStore'
 import { detectLocalTimeZone, toLocalDateKey } from '@/utils/dateKey'
 
 const props = defineProps<{
@@ -296,6 +297,7 @@ const emit = defineEmits<{
 }>()
 
 const authStore = useAuthStore()
+const syncStore = useSyncStore()
 
 const days = ref<7 | 30>(7)
 const stats = ref<SubjectStats | null>(null)
@@ -383,6 +385,15 @@ watch(
     loadError.value = ''
     loading.value = false
     if (authStore.isAuthenticated && props.subjectId) {
+      void loadStats()
+    }
+  },
+)
+
+watch(
+  () => syncStore.lastSyncedAt,
+  (syncedAt) => {
+    if (syncedAt && authStore.isAuthenticated && props.subjectId) {
       void loadStats()
     }
   },

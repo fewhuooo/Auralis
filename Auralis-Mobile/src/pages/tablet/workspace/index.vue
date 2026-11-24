@@ -1258,15 +1258,11 @@ watch(
 watch(
   () => syncStore.lastSyncedAt,
   (next) => {
-    if (!next || !subjectId.value || loadingSources.value) return
-    const fence = captureFence()
-    void localDb.getSourceViews(fence.subjectId).then((cached) => {
-      if (!isFenceValid(fence, false)) return
-      if (cached.length > 0 || sources.value.length > 0) {
-        sources.value = cached
-        reconcileSelectedSource(cached)
-      }
-    }).catch(() => {})
+    if (!next || !authStore.isAuthenticated || !subjectId.value) return
+    void loadSources()
+    if (centerView.value === 'subject-overview') {
+      void loadSubjectOverview()
+    }
   },
 )
 </script>
