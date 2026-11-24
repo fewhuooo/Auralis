@@ -83,3 +83,42 @@ export function buildSyncedBlockRecord(
 export function toServerBlockBaseVersion(payload: Record<string, unknown>): number {
   return resolveBlockSyncVersion(payload, 0)
 }
+
+/** Resolves display source label from the linked source title first, falling back to stored text. */
+export function resolveBlockSourceLabel(
+  block: { source?: string; sourceFileId?: string },
+  sources: ReadonlyArray<{ id?: string; title?: string }>,
+): string {
+  if (block.sourceFileId) {
+    const matched = sources.find(item => item.id === block.sourceFileId)
+    const matchedTitle = matched?.title?.trim()
+    if (matchedTitle) return matchedTitle
+  }
+  const rawSource = block.source?.trim()
+  if (rawSource) return rawSource
+  return '自主整理'
+}
+
+/** Preserves existing sourceFileId across edits unless the user intentionally changes or clears the source label. */
+export function resolveEditedBlockSourceLink(params: {
+  draftSource: string
+  initialSourceLabel: string
+  existingSource?: string
+  existingSourceFileId?: string
+  sources: ReadonlyArray<{ id?: string; title?: string }>
+}): { source: string; sourceFileId?: string } {
+  const trimmed = params.draftSource.trim() || '自主整理'
+  if (trimmed !== '自主整理') {
+    const matched = params.sources.find(item => (item.title || '').trim() === trimmed)
+    if (matched?.id) {
+      return { source: trimmed, sourceFileId: matched.id }
+    }
+  }
+  if (params.existingSourceFileId && trimmed === params.initialSourceLabel) {
+    return {
+      source: trimmed === '自主整理' ? (params.existingSource || '') : trimmed,
+      sourceFileId: params.existingSourceFileId,
+    }
+  }
+  return { source: trimmed, sourceFileId: undefined }
+}

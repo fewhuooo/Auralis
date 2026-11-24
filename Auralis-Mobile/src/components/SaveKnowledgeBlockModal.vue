@@ -54,7 +54,7 @@
         </view>
         <view
           class="save-block-confirm"
-          :class="{ disabled: saving || !selectedSubjectId || !title.trim() || !content.trim() }"
+          :class="{ disabled: saving || !hasValidSubject || !title.trim() || !content.trim() }"
           role="button"
           @click="confirmSave"
         >
@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -98,6 +98,8 @@ const content = ref('')
 const selectedSubjectId = ref('')
 const saving = ref(false)
 let openToken = 0
+
+const hasValidSubject = computed(() => subjectStore.subjects.some(s => s.id === selectedSubjectId.value))
 
 function resolveDefaultSubject() {
   const candidate = props.defaultSubjectId
@@ -135,6 +137,27 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => subjectStore.subjects,
+  () => {
+    if (props.visible) {
+      resolveDefaultSubject()
+    }
+  },
+)
+
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    openToken += 1
+    saving.value = false
+    selectedSubjectId.value = ''
+    if (props.visible) {
+      emit('close')
+    }
+  },
 )
 
 function handleClose() {
@@ -176,7 +199,9 @@ async function confirmSave() {
     if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: '保存失败，请重试', icon: 'none' })
   } finally {
-    saving.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      saving.value = false
+    }
   }
 }
 </script>

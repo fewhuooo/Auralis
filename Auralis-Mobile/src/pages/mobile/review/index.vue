@@ -354,6 +354,7 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { useMobileLifecycleReview } from '@/composables/useMobileLifecycleReview'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { plainMarkdownExcerpt } from '@/utils/markdown'
@@ -363,8 +364,11 @@ import {
   type MobileStudyMode,
 } from '@/utils/mobileLearning'
 
+const authStore = useAuthStore()
 const layoutStore = useLayoutStore()
 const subjectStore = useSubjectStore()
+
+let lastReviewAuthScope = `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
 
 const selectedSubjectId = ref('')
 const routeSubjectParam = ref('')
@@ -543,15 +547,31 @@ onLoad((query) => {
 })
 
 watch(
+  () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
+  (nextScope) => {
+    if (nextScope === lastReviewAuthScope) return
+    lastReviewAuthScope = nextScope
+    routeSubjectParam.value = ''
+    selectedSubjectId.value = ''
+    if (authStore.isAuthenticated) {
+      void subjectStore.loadSubjects()
+    }
+  },
+)
+
+watch(
   () => subjectStore.subjects,
   (list) => {
     if (!list.length) {
       if (!routeSubjectParam.value) selectedSubjectId.value = ''
       return
     }
-    if (routeSubjectParam.value && list.some(item => item.id === routeSubjectParam.value)) {
-      selectedSubjectId.value = routeSubjectParam.value
-      return
+    if (routeSubjectParam.value) {
+      if (list.some(item => item.id === routeSubjectParam.value)) {
+        selectedSubjectId.value = routeSubjectParam.value
+        return
+      }
+      routeSubjectParam.value = ''
     }
     if (selectedSubjectId.value && list.some(item => item.id === selectedSubjectId.value)) return
     const preferred = subjectStore.activeSubjectId

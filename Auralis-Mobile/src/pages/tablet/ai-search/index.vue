@@ -916,7 +916,9 @@ async function switchConversation(conversationId: string) {
     isTyping.value = false
     activeRunId.value = ''
     activeAttemptId.value = ''
+    const abortFn = abortLocalStream
     abortLocalStream = null
+    abortFn?.()
     drainingMessageIds.value = {}
     clearMapKeys(pendingSubmissionIds)
     clearMapKeys(activityVersions)

@@ -4,6 +4,7 @@ import test from 'node:test'
 
 import { createSyncController } from '../src/services/syncController.ts'
 import { selectEvictableCacheKeys } from '../src/services/localDocumentCache.ts'
+import { resolveBlockSourceLabel, resolveEditedBlockSourceLink } from '../src/utils/blockSyncMapper.ts'
 
 function setupLocalDbTestEnv(context, options = {}) {
   const storage = new Map()
@@ -520,4 +521,76 @@ test('localDb preserves subjects.sortKey, updates source_files.subject_id, sanit
   assert.equal(storage.has(`auralis:local:${scope}:subjects`), false)
   assert.equal(storage.has(`auralis:local:${scope}:task_blocks`), false)
   assert.equal(storage.has(`auralis:local:${scope}:focus_state`), false)
+})
+
+test('resolveBlockSourceLabel and resolveEditedBlockSourceLink preserve synced sourceFileId across edits', () => {
+  const sources = [
+    { id: 'src-1', title: '第三章_特征工程.pdf' },
+    { id: 'src-2', title: '期末复习提纲.docx' },
+  ]
+
+  // Synced block arrives with empty source text and valid sourceFileId
+  const syncedBlock = { source: '', sourceFileId: 'src-1' }
+  const initialLabel = resolveBlockSourceLabel(syncedBlock, sources)
+  assert.equal(initialLabel, '第三章_特征工程.pdf')
+
+  // Editing title/preview without touching source preserves sourceFileId and resolves label
+  assert.deepEqual(
+    resolveEditedBlockSourceLink({
+      draftSource: initialLabel,
+      initialSourceLabel: initialLabel,
+      existingSource: '',
+      existingSourceFileId: 'src-1',
+      sources,
+    }),
+    { source: '第三章_特征工程.pdf', sourceFileId: 'src-1' },
+  )
+
+  // Editing while sources list has not loaded yet preserves sourceFileId without coercing to manual
+  const unloadedLabel = resolveBlockSourceLabel(syncedBlock, [])
+  assert.equal(unloadedLabel, '自主整理')
+  assert.deepEqual(
+    resolveEditedBlockSourceLink({
+      draftSource: unloadedLabel,
+      initialSourceLabel: unloadedLabel,
+      existingSource: '',
+      existingSourceFileId: 'src-1',
+      sources: [],
+    }),
+    { source: '', sourceFileId: 'src-1' },
+  )
+
+  // Switching to another matched source updates sourceFileId
+  assert.deepEqual(
+    resolveEditedBlockSourceLink({
+      draftSource: '期末复习提纲.docx',
+      initialSourceLabel: initialLabel,
+      existingSource: '',
+      existingSourceFileId: 'src-1',
+      sources,
+    }),
+    { source: '期末复习提纲.docx', sourceFileId: 'src-2' },
+  )
+
+  // Explicitly changing source to 自主整理 unlinks sourceFileId
+  assert.deepEqual(
+    resolveEditedBlockSourceLink({
+      draftSource: '自主整理',
+      initialSourceLabel: initialLabel,
+      existingSource: '',
+      existingSourceFileId: 'src-1',
+      sources,
+    }),
+    { source: '自主整理', sourceFileId: undefined },
+  )
+
+  // Creating a new block matches exact source title when present
+  assert.deepEqual(
+    resolveEditedBlockSourceLink({
+      draftSource: '第三章_特征工程.pdf',
+      initialSourceLabel: '',
+      sources,
+    }),
+    { source: '第三章_特征工程.pdf', sourceFileId: 'src-1' },
+  )
 })

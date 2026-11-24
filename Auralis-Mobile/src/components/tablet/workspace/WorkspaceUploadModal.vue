@@ -191,10 +191,12 @@ const selectedFileHint = computed(() => {
   return sizeLabel ? `${sizeLabel} · 点击可更换其他文件` : '点击可更换其他文件'
 })
 
+const hasValidSubject = computed(() => props.subjects.some(item => item.id === selectedSubjectId.value))
+
 const canSubmit = computed(() => (
   Boolean(selectedFile.value)
   && fileName.value.trim().length > 0
-  && selectedSubjectId.value.length > 0
+  && hasValidSubject.value
 ))
 
 function resolveInitialSubjectId(): string {
@@ -223,9 +225,9 @@ watch(
 )
 
 watch(
-  () => props.defaultSubjectId,
+  () => [props.defaultSubjectId, props.subjects] as const,
   () => {
-    if (props.visible && !selectedSubjectId.value) {
+    if (props.visible && !hasValidSubject.value) {
       selectedSubjectId.value = resolveInitialSubjectId()
     }
   },
@@ -300,7 +302,7 @@ function handleSubmit() {
     localError.value = '请输入文件名称'
     return
   }
-  if (!selectedSubjectId.value) {
+  if (!hasValidSubject.value) {
     localError.value = '请选择归档学科'
     return
   }

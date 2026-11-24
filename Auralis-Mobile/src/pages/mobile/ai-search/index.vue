@@ -366,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import {
@@ -469,6 +469,7 @@ let chatViewportHeight = 0
 let touchStartY = 0
 let touchPullUpDetected = false
 let programmaticScrollUntil = 0
+let lastAuthScope = `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
 const pendingSubmissionIds: Record<string, string> = {}
 const activityVersions: Record<string, number> = {}
 
@@ -773,6 +774,12 @@ function resetChatState() {
   activeStreamToken += 1
   activeViewToken += 1
   stopRunPolling()
+  const abortFn = abortLocalStream
+  abortLocalStream = null
+  abortFn?.()
+  isTyping.value = false
+  isStopping.value = false
+  showScopeMenu.value = false
   currentConversationId.value = ''
   conversationScopeState.value = 'UNBOUND'
   selectedSubjectId.value = null
@@ -787,7 +794,6 @@ function resetChatState() {
   drainingMessageIds.value = {}
   prevScrollTop = 0
   touchPullUpDetected = false
-  abortLocalStream = null
   clearMapKeys(pendingSubmissionIds)
   clearMapKeys(activityVersions)
 }
@@ -859,7 +865,9 @@ async function openHistoryDrawer() {
     if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: '加载失败', icon: 'none' })
   } finally {
-    loadingHistory.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      loadingHistory.value = false
+    }
   }
 }
 
@@ -889,7 +897,9 @@ async function loadConversation(conversationId: string) {
     activeAttemptId.value = ''
     isConversationUnsupported.value = !isConversationProtocolSupported(detail)
     preSendError.value = isConversationUnsupported.value ? '旧版对话仅供查看，请在历史对话中开启新对话' : ''
+    const abortFn = abortLocalStream
     abortLocalStream = null
+    abortFn?.()
     drainingMessageIds.value = {}
     clearMapKeys(pendingSubmissionIds)
     clearMapKeys(activityVersions)
@@ -1431,6 +1441,26 @@ async function handleSubmitActivity(questionId: string, answer: MobileChatActivi
     ),
   })
 }
+
+watch(
+  () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
+  (nextScope) => {
+    if (nextScope === lastAuthScope) return
+    lastAuthScope = nextScope
+    resetChatState()
+    conversations.value = []
+    hydratedUserKey = ''
+    subjectsLoadPromise = null
+    loadingHistory.value = false
+    showHistorySheet.value = false
+    showSaveBlockModal.value = false
+    saveBlockSeedTitle.value = ''
+    saveBlockSeedContent.value = ''
+    if (authStore.isAuthenticated) {
+      void ensureSubjectsLoaded()
+    }
+  },
+)
 
 onMounted(() => {
   void ensureSubjectsLoaded()

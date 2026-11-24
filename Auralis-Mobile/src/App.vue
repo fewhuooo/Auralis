@@ -51,13 +51,19 @@ onLaunch(async () => {
   watch(
     () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
     ([isAuthed, userId, serverDeviceId]) => {
-      if (isAuthed && userId && serverDeviceId) {
-        void startAuthenticatedRuntime()
-        return
+      const nextKey = isAuthed && userId && serverDeviceId ? `${userId}:${serverDeviceId}` : ''
+      if (
+        !nextKey
+        || (activeRuntimeKey && activeRuntimeKey !== nextKey)
+        || (runtimeFlight && runtimeFlight.key !== nextKey)
+      ) {
+        activeRuntimeKey = ''
+        runtimeFlight = null
+        disconnectRealtimeSync()
       }
-      activeRuntimeKey = ''
-      runtimeFlight = null
-      disconnectRealtimeSync()
+      if (nextKey) {
+        void startAuthenticatedRuntime()
+      }
     },
     { flush: 'sync' },
   )

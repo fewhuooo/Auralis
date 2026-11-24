@@ -105,6 +105,7 @@
         :file-overview-loading="fileOverviewLoading"
         :file-overview-errors="fileOverviewErrors"
         :subject-blocks="subjectBlocks"
+        :sources="sources"
         @toggle-tier2="handleToggleTier2Collapse"
         @upload="openUploadModal"
         @retry-preview="loadSourcePreview(true)"
@@ -193,7 +194,7 @@
             <view class="detail-head-meta">
               <text class="modal-title">{{ viewingBlock.title }}</text>
               <text class="detail-sub-meta num-tabular">
-                {{ viewingBlock.source || '自主整理' }} · {{ formatShortDateTime(viewingBlock.time) }}
+                {{ resolveBlockSourceLabel(viewingBlock, sources) }} · {{ formatShortDateTime(viewingBlock.time) }}
               </text>
             </view>
             <view class="ui-icon-btn sm" role="button" aria-label="关闭" @click="closeBlockDetail">
@@ -319,6 +320,7 @@ import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { uploadSubjectFile, validateUploadFile } from '@/utils/filePicker'
+import { resolveBlockSourceLabel, resolveEditedBlockSourceLink } from '@/utils/blockSyncMapper'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { formatShortDateTime } from '@/utils/sourceFormat'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
@@ -361,8 +363,10 @@ const fileOverviewErrors = ref<Record<string, string>>({})
 const viewingBlockId = ref('')
 const showBlockModal = ref(false)
 const editingBlockId = ref<string | null>(null)
+const editingInitialSourceLabel = ref('')
 const submittingBlock = ref(false)
 const blockDraft = ref({ title: '', source: '', preview: '' })
+const subjectsHydrated = ref(false)
 
 const aiPanelMounted = ref(false)
 const aiPanelVisible = ref(false)
@@ -865,6 +869,7 @@ function editViewingBlock() {
 
 function openCreateBlockModal() {
   editingBlockId.value = null
+  editingInitialSourceLabel.value = ''
   blockDraft.value = {
     title: '',
     source: selectedSource.value?.title || '自主整理',
@@ -875,9 +880,11 @@ function openCreateBlockModal() {
 
 function openEditBlockModal(block: KnowledgeBlock) {
   editingBlockId.value = block.id
+  const resolvedLabel = resolveBlockSourceLabel(block, sources.value)
+  editingInitialSourceLabel.value = resolvedLabel
   blockDraft.value = {
     title: block.title,
-    source: block.source || '',
+    source: resolvedLabel,
     preview: block.preview,
   }
   showBlockModal.value = true
@@ -886,13 +893,13 @@ function openEditBlockModal(block: KnowledgeBlock) {
 function closeBlockModal() {
   if (submittingBlock.value) return
   showBlockModal.value = false
+  editingInitialSourceLabel.value = ''
 }
 
 async function submitBlockModal() {
   if (submittingBlock.value || !subjectId.value) return
   const title = blockDraft.value.title.trim()
   const preview = blockDraft.value.preview.trim()
-  const source = blockDraft.value.source.trim() || '自主整理'
   if (!title) {
     uni.showToast({ title: '请输入知识块标题', icon: 'none' })
     return
@@ -903,33 +910,42 @@ async function submitBlockModal() {
   }
 
   const fence = captureFence()
-  const matchedSource = source === '自主整理'
-    ? undefined
-    : sources.value.find(item => (item.title || '') === source)
   submittingBlock.value = true
   try {
     if (editingBlockId.value) {
       const existing = subjectBlocks.value.find(item => item.id === editingBlockId.value)
       if (!existing) throw new Error('未找到待更新的知识块')
+      const resolvedLink = resolveEditedBlockSourceLink({
+        draftSource: blockDraft.value.source,
+        initialSourceLabel: editingInitialSourceLabel.value,
+        existingSource: existing.source,
+        existingSourceFileId: existing.sourceFileId,
+        sources: sources.value,
+      })
       await blockStore.updateBlock({
         ...existing,
         title,
-        source,
+        source: resolvedLink.source,
         preview,
         subject: subjectName.value,
         subjectId: fence.subjectId,
-        sourceFileId: matchedSource?.id,
+        sourceFileId: resolvedLink.sourceFileId,
       })
       if (!isFenceValid(fence, false)) return
       uni.showToast({ title: '知识块已更新', icon: 'none' })
     } else {
+      const resolvedLink = resolveEditedBlockSourceLink({
+        draftSource: blockDraft.value.source,
+        initialSourceLabel: '',
+        sources: sources.value,
+      })
       await blockStore.addBlock({
         title,
-        source,
+        source: resolvedLink.source,
         preview,
         subject: subjectName.value,
         subjectId: fence.subjectId,
-        sourceFileId: matchedSource?.id,
+        sourceFileId: resolvedLink.sourceFileId,
         color: '#8B9A6E',
       })
       if (!isFenceValid(fence, false)) return
@@ -937,6 +953,7 @@ async function submitBlockModal() {
     }
     showBlockModal.value = false
     editingBlockId.value = null
+    editingInitialSourceLabel.value = ''
     blockDraft.value = { title: '', source: '', preview: '' }
     centerView.value = 'blocks'
   } catch (error) {
@@ -944,7 +961,9 @@ async function submitBlockModal() {
     const msg = error instanceof Error && error.message ? error.message : '保存知识块失败'
     uni.showToast({ title: msg, icon: 'none' })
   } finally {
-    submittingBlock.value = false
+    if (fence.generation === authStore.getLoginGeneration() && fence.userId === authStore.user?.id) {
+      submittingBlock.value = false
+    }
   }
 }
 
@@ -1091,6 +1110,15 @@ async function reloadAll() {
     loadSources(),
   ])
   if (!isFenceValid(fence, false)) return
+  subjectsHydrated.value = true
+  if (
+    authStore.isAuthenticated
+    && !syncStore.isResettingOffline
+    && !subjectStore.subjects.some(item => item.id === subjectId.value)
+  ) {
+    goBack()
+    return
+  }
 
   const panel = requestedPanel.value
   if (!userChangedTier2) {
@@ -1154,6 +1182,7 @@ onMounted(async () => {
   try {
     await subjectStore.loadSubjects()
     if (fence.generation !== authStore.getLoginGeneration()) return
+    subjectsHydrated.value = true
     if (!subjectId.value) {
       const fallbackId = subjectStore.activeSubjectId || subjectStore.subjects[0]?.id || ''
       if (!fallbackId) {
@@ -1162,6 +1191,13 @@ onMounted(async () => {
       }
       subjectId.value = fallbackId
       subjectStore.setActiveSubject(fallbackId)
+    } else if (
+      authStore.isAuthenticated
+      && !syncStore.isResettingOffline
+      && !subjectStore.subjects.some(item => item.id === subjectId.value)
+    ) {
+      goBack()
+      return
     }
     await reloadAll()
   } finally {
@@ -1181,10 +1217,15 @@ watch(
   () => {
     showBlockModal.value = false
     showUploadModal.value = false
+    showSaveAiBlockModal.value = false
+    aiPanelVisible.value = false
+    aiTyping.value = false
     editingBlockId.value = null
+    editingInitialSourceLabel.value = ''
     submittingBlock.value = false
     uploading.value = false
     viewingBlockId.value = ''
+    subjectsHydrated.value = false
     sources.value = []
     sourcesError.value = ''
     selectedSourceId.value = null
@@ -1195,6 +1236,21 @@ watch(
     clearPreview()
     if (authStore.isAuthenticated && subjectId.value) {
       void reloadAll()
+    }
+  },
+)
+
+watch(
+  () => subjectStore.subjects,
+  (list) => {
+    if (
+      subjectsHydrated.value
+      && authStore.isAuthenticated
+      && !syncStore.isResettingOffline
+      && subjectId.value
+      && !list.some(item => item.id === subjectId.value)
+    ) {
+      goBack()
     }
   },
 )
