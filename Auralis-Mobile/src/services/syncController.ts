@@ -117,7 +117,7 @@ export function toServerMutation(row: {
         name: payload?.name,
         description: payload?.description,
         iconKey: payload?.icon,
-        sortKey: payload?.sortKey || payload?.id,
+        sortKey: payload?.sortKey || payload?.sort_key || payload?.id,
       }
     : resourceType === 'SOURCE'
       ? {
@@ -185,6 +185,7 @@ export function createSyncController(deps: SyncControllerDeps) {
         ...payload,
         id: resourceId,
         icon: payload?.iconKey || payload?.icon || '',
+        sortKey: payload?.sortKey || payload?.sort_key || undefined,
         created_at: Date.parse(String(payload?.createdAt || '')) || Date.now(),
         version: payload?.version ?? version,
       })

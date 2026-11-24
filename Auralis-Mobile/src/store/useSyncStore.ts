@@ -55,6 +55,9 @@ export const useSyncStore = defineStore('sync', () => {
       ])
     },
     onLocalScopeReset: (previousScope) => {
+      if (previousScope) {
+        void localDb.clearScopeStorage(previousScope)
+      }
       const focusStore = useFocusStore()
       focusStore.dismissCompletedTaskPrompt()
       focusStore.reconcileNow(false)

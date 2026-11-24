@@ -160,6 +160,7 @@ export const useBlockStore = defineStore('block', () => {
       await recordMutation('block', blockId, 'create', newBlock)
       if (isFenceCurrent(fence)) {
         recentBlocks.value = [newBlock, ...recentBlocks.value.filter(b => b.id !== blockId)]
+        void import('./useSubjectStore').then(({ useSubjectStore }) => useSubjectStore().loadSubjects()).catch(() => {})
       }
       void syncPendingChanges()
     } finally {
@@ -177,6 +178,7 @@ export const useBlockStore = defineStore('block', () => {
       await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
       if (isFenceCurrent(fence)) {
         recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
+        void import('./useSubjectStore').then(({ useSubjectStore }) => useSubjectStore().loadSubjects()).catch(() => {})
       }
       void syncPendingChanges()
     } finally {

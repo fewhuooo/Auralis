@@ -109,7 +109,7 @@
         @upload="openUploadModal"
         @retry-preview="loadSourcePreview(true)"
         @refresh-subject-overview="loadSubjectOverview"
-        @refresh-file-overview="loadFileOverview"
+        @refresh-file-overview="refreshFileOverview"
         @ensure-file-overview="ensureFileOverview"
         @view-block="openBlockDetail"
         @create-block="openCreateBlockModal"
@@ -505,14 +505,27 @@ function openSubjectOverview() {
 }
 
 function ensureFileOverview(source: SourceView) {
-  if (
-    source.id
-    && source.ingestionStatus === 'READY'
-    && !fileOverviews.value[source.id]
-    && !fileOverviewLoading.value[source.id]
-  ) {
+  if (!source.id || source.ingestionStatus !== 'READY' || fileOverviewLoading.value[source.id]) {
+    return
+  }
+  const existing = fileOverviews.value[source.id]
+  const revisionMismatch = Boolean(source.ingestionRevision) && existing?.ingestionRevision !== source.ingestionRevision
+  if (!existing || revisionMismatch) {
     void loadFileOverview(source)
   }
+}
+
+async function refreshFileOverview(source: SourceView) {
+  if (!source.id) return
+  if (source.ingestionStatus !== 'READY') {
+    const fence = captureFence()
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+    const latest = sources.value.find(item => item.id === source.id)
+    await loadFileOverview(latest || source)
+    return
+  }
+  await loadFileOverview(source)
 }
 
 function reconcileSelectedSource(list: SourceView[]) {
@@ -545,7 +558,8 @@ async function loadSources() {
     const list = await sourceApi.listAllBySubject(fence.subjectId)
     if (token !== sourceReqToken || !isFenceValid(fence, false)) return
     sources.value = list
-    void localDb.replaceSubjectSources(fence.subjectId, list).catch(() => {})
+    await localDb.replaceSubjectSources(fence.subjectId, list).catch(() => {})
+    if (token !== sourceReqToken || !isFenceValid(fence, false)) return
     reconcileSelectedSource(list)
   } catch (error) {
     if (token !== sourceReqToken || !isFenceValid(fence, false)) return
@@ -652,7 +666,9 @@ async function loadFileOverview(source: SourceView) {
     try {
       const cached = await localDb.getSourceOverviewCache(srcId, source.ingestionRevision)
       if (token !== fileOverviewTokens[srcId] || !isFenceValid(fence, false)) return
-      if (cached && !fileOverviews.value[srcId]) {
+      const currentOverview = fileOverviews.value[srcId]
+      const revisionStale = Boolean(source.ingestionRevision) && currentOverview?.ingestionRevision !== source.ingestionRevision
+      if (cached && (!currentOverview || revisionStale)) {
         fileOverviews.value = { ...fileOverviews.value, [srcId]: cached }
       }
     } catch {
@@ -747,7 +763,9 @@ async function handleSubmitUpload(payload: { file: LocalUploadFile; title: strin
     if (!isFenceValid(fence, false)) return
 
     if (payload.subjectId === fence.subjectId) {
-      await Promise.all([loadSources(), subjectStore.loadSubjects()])
+      await loadSources()
+      if (!isFenceValid(fence, false)) return
+      await subjectStore.loadSubjects()
       if (!isFenceValid(fence, false)) return
       if (created.id) {
         selectedSourceId.value = created.id
@@ -795,7 +813,8 @@ function handleDeleteSource(source: SourceView) {
       try {
         await sourceApi.delete(source.id, source.version ?? 0)
         if (!isFenceValid(fence, false)) return
-        void localDb.deleteSourceFile(source.id).catch(() => {})
+        await localDb.deleteSourceFile(source.id).catch(() => {})
+        if (!isFenceValid(fence, false)) return
         // #ifdef H5
         if (source.assetId) {
           void deleteCachedDocument(activeScope, source.assetId)
@@ -806,7 +825,9 @@ function handleDeleteSource(source: SourceView) {
           clearPreview()
           if (centerView.value === 'preview') centerView.value = 'onboarding'
         }
-        await Promise.all([loadSources(), subjectStore.loadSubjects(), loadSubjectOverview()])
+        await loadSources()
+        if (!isFenceValid(fence, false)) return
+        await Promise.all([subjectStore.loadSubjects(), loadSubjectOverview()])
         if (!isFenceValid(fence, false)) return
         uni.showToast({ title: '已删除', icon: 'none' })
       } catch (error) {
@@ -882,6 +903,9 @@ async function submitBlockModal() {
   }
 
   const fence = captureFence()
+  const matchedSource = source === '自主整理'
+    ? undefined
+    : sources.value.find(item => (item.title || '') === source)
   submittingBlock.value = true
   try {
     if (editingBlockId.value) {
@@ -894,6 +918,7 @@ async function submitBlockModal() {
         preview,
         subject: subjectName.value,
         subjectId: fence.subjectId,
+        sourceFileId: matchedSource?.id,
       })
       if (!isFenceValid(fence, false)) return
       uni.showToast({ title: '知识块已更新', icon: 'none' })
@@ -904,7 +929,7 @@ async function submitBlockModal() {
         preview,
         subject: subjectName.value,
         subjectId: fence.subjectId,
-        sourceFileId: selectedSource.value?.id,
+        sourceFileId: matchedSource?.id,
         color: '#8B9A6E',
       })
       if (!isFenceValid(fence, false)) return
@@ -931,10 +956,16 @@ function handleDeleteBlock(block: KnowledgeBlock) {
     confirmColor: '#C93B3B',
     success: async (res) => {
       if (!res.confirm || !isFenceValid(fence, false)) return
-      await blockStore.removeBlock(block.id)
-      if (!isFenceValid(fence, false)) return
-      if (viewingBlockId.value === block.id) viewingBlockId.value = ''
-      uni.showToast({ title: '已删除知识块', icon: 'none' })
+      try {
+        await blockStore.removeBlock(block.id)
+        if (!isFenceValid(fence, false)) return
+        if (viewingBlockId.value === block.id) viewingBlockId.value = ''
+        uni.showToast({ title: '已删除知识块', icon: 'none' })
+      } catch (error) {
+        if (!isFenceValid(fence, false)) return
+        const msg = error instanceof Error && error.message ? error.message : '删除知识块失败'
+        uni.showToast({ title: msg, icon: 'none' })
+      }
     },
   })
 }

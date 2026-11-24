@@ -25,7 +25,7 @@
 
         <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
           <view
-            v-if="scheduledForDay.length === 0 && taskStore.pendingTasks.length === 0"
+            v-if="scheduledForDay.length === 0 && taskStore.homePendingTasks.length === 0"
             class="clear-day-canvas zen-card"
           >
             <view class="clear-day-halo" aria-hidden="true">
@@ -67,18 +67,18 @@
             <view class="task-section">
               <view class="section-header">
                 <text class="section-title">待办</text>
-                <text v-if="taskStore.pendingTasks.length > 0" class="section-count num-tabular">
-                  {{ taskStore.pendingTasks.length }}
+                <text v-if="taskStore.homePendingTasks.length > 0" class="section-count num-tabular">
+                  {{ taskStore.homePendingTasks.length }}
                 </text>
               </view>
 
-              <view v-if="taskStore.pendingTasks.length === 0" class="empty-slot zen-empty-surface">
+              <view v-if="taskStore.homePendingTasks.length === 0" class="empty-slot zen-empty-surface">
                 <text class="empty-text">暂无待办</text>
               </view>
 
               <view v-else class="card-stack">
                 <ZenTaskRow
-                  v-for="todo in taskStore.pendingTasks"
+                  v-for="todo in taskStore.homePendingTasks"
                   :key="todo.id"
                   :task="todo"
                   mode="pending"

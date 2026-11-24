@@ -681,11 +681,7 @@ async function loadDocument(): Promise<void> {
 
 function retry(): void {
   if (loading.value) return
-  if (props.cachedBuffer && !props.url) {
-    emit('retry-source')
-    return
-  }
-  void loadDocument()
+  emit('retry-source')
 }
 
 function handleResize(): void {
