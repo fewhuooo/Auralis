@@ -94,47 +94,82 @@
     </view>
 
     <template #modal>
-      <view v-if="showModal" class="zen-modal-mask" @click="closeModal">
-        <view class="zen-modal-body subject-modal" @click.stop>
+      <view v-if="showModal" class="zen-modal-mask subject-modal-mask" @click="closeModal">
+        <view
+          class="subject-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="isEditing ? '编辑学科空间' : '创建学科空间'"
+          @click.stop
+        >
           <view class="modal-header">
-            <text class="modal-title">{{ isEditing ? '编辑学科' : '新建学科' }}</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeModal">
-              <LineIcon name="close" size="16px" color="var(--text-muted)" />
+            <text class="modal-title">{{ isEditing ? '编辑学科空间' : '创建学科空间' }}</text>
+            <view
+              class="modal-close-btn"
+              :class="{ 'is-disabled': savingSubject }"
+              role="button"
+              aria-label="关闭"
+              @click="closeModal"
+            >
+              <LineIcon name="close" size="15px" color="var(--text-muted)" />
             </view>
           </view>
 
-          <view class="modal-form">
-            <input
-              class="ui-input"
-              v-model="formData.name"
-              maxlength="64"
-              placeholder="学科名称"
-              :disabled="savingSubject"
-            />
+          <view class="modal-body">
+            <view class="preview-row">
+              <view class="preview-icon">
+                <LineIcon :name="`subj-${formData.icon}`" size="26px" color="#FFFFFF" />
+              </view>
+              <view class="preview-info">
+                <text class="preview-name">{{ formData.name.trim() || '学科名称预览' }}</text>
+                <text class="preview-desc">{{ formData.description.trim() || '这是您的专属学科知识沉淀空间' }}</text>
+              </view>
+            </view>
 
-            <input
-              class="ui-input"
-              v-model="formData.description"
-              maxlength="200"
-              placeholder="简介（可选）"
-              :disabled="savingSubject"
-            />
+            <view class="modal-form-group">
+              <view class="modal-form-label">
+                <text>学科名称</text>
+                <text class="required">*</text>
+              </view>
+              <input
+                v-model="formData.name"
+                class="modal-form-input"
+                maxlength="20"
+                placeholder="例如: 算法与数据结构、应用物理学"
+                :disabled="savingSubject"
+              />
+            </view>
 
-            <view class="icon-grid">
-              <view
-                v-for="option in subjectIconOptions"
-                :key="option.key"
-                class="icon-option"
-                :class="{ selected: formData.icon === option.key }"
-                role="button"
-                :aria-label="option.label"
-                @click="!savingSubject && (formData.icon = option.key)"
-              >
-                <LineIcon
-                  :name="`subj-${option.key}`"
-                  size="18px"
-                  :color="formData.icon === option.key ? '#556B3D' : '#76756F'"
-                />
+            <view class="modal-form-group">
+              <text class="modal-form-label">学科简述</text>
+              <textarea
+                v-model="formData.description"
+                class="modal-form-textarea"
+                maxlength="100"
+                placeholder="简短描述这个学科的研究方向或课程定位..."
+                :disabled="savingSubject"
+              />
+            </view>
+
+            <view class="modal-form-group">
+              <text class="modal-form-label">选择空间图标</text>
+              <view class="icon-grid">
+                <view
+                  v-for="option in subjectIconOptions"
+                  :key="option.key"
+                  class="icon-option"
+                  :class="{ selected: formData.icon === option.key }"
+                  role="button"
+                  :title="option.label"
+                  :aria-label="`选择${option.label}图标`"
+                  @click="!savingSubject && (formData.icon = option.key)"
+                >
+                  <LineIcon
+                    :name="`subj-${option.key}`"
+                    size="20px"
+                    :color="formData.icon === option.key ? '#76855B' : 'var(--text-secondary)'"
+                  />
+                </view>
               </view>
             </view>
 
@@ -142,10 +177,18 @@
           </view>
 
           <view class="modal-footer">
-            <view class="ui-btn ui-btn-ghost" role="button" @click="closeModal">取消</view>
-            <view class="ui-btn ui-btn-primary" :class="{ 'is-disabled': savingSubject }" role="button" @click="handleSave">
-              {{ savingSubject ? '保存中…' : isEditing ? '保存' : '创建' }}
-            </view>
+            <button
+              type="button"
+              class="modal-btn modal-btn-secondary"
+              :disabled="savingSubject"
+              @click="closeModal"
+            >取消</button>
+            <button
+              type="button"
+              class="modal-btn modal-btn-primary"
+              :disabled="savingSubject || !formData.name.trim()"
+              @click="handleSave"
+            >{{ savingSubject ? '保存中…' : isEditing ? '保存修改' : '确认创建' }}</button>
           </view>
         </view>
       </view>
@@ -564,31 +607,183 @@ onMounted(async () => {
   color: var(--color-sage-ink);
 }
 
+.subject-modal-mask {
+  background-color: rgba(28, 28, 26, 0.42);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  padding: 24px;
+}
+
 .subject-modal {
-  max-width: 440px;
-  padding: 22px;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 24px 64px -12px rgba(0, 0, 0, 0.13),
+    0 8px 24px -6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  overflow: hidden;
+  box-sizing: border-box;
+  animation: uiModalIn 0.22s var(--ease-out) both;
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  padding: 24px 28px 12px;
+  flex-shrink: 0;
 }
 
 .modal-title {
-  font-size: 18px;
-  font-weight: var(--font-weight-bold);
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
-.modal-form {
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.18s ease, transform 0.2s var(--ease-out);
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+.modal-close-btn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.modal-body {
+  padding: 8px 28px 18px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
+  box-sizing: border-box;
 }
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 2px;
+  box-sizing: border-box;
+}
+
+.preview-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: var(--radius-md);
+  background: #7D9372;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.3);
+  flex-shrink: 0;
+}
+
+.preview-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.preview-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-desc {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-form-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.modal-form-label .required {
+  color: #D14343;
+  font-weight: 700;
+}
+
+.modal-form-input,
+.modal-form-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04), 0 0.5px 1.5px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
+}
+
+.modal-form-input {
+  height: 40px;
+}
+
+.modal-form-textarea {
+  height: 84px;
+  line-height: 1.5;
+}
+
+/* #ifdef H5 */
+.modal-form-input:focus,
+.modal-form-textarea:focus {
+  outline: none;
+  border-color: var(--color-zen-sage);
+  background: #FDFBF8;
+  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
+}
+/* #endif */
 
 .icon-grid {
   display: grid;
@@ -597,23 +792,30 @@ onMounted(async () => {
 }
 
 .icon-option {
-  height: 38px;
-  border-radius: 10px;
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: all 0.18s var(--ease-out);
+}
+
+.icon-option:hover {
+  background: #FFFFFF;
+  border-color: var(--color-zen-sage);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .icon-option.selected {
-  background-color: rgba(139, 154, 110, 0.16);
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  background: rgba(139, 154, 110, 0.16);
+  border-color: var(--color-zen-sage);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.35), 0 3px 8px rgba(0, 0, 0, 0.08);
+  transform: scale(1.04);
 }
 
 .modal-error {
@@ -623,8 +825,62 @@ onMounted(async () => {
 
 .modal-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
+  padding: 12px 28px 24px;
+  flex-shrink: 0;
+}
+
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 20px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.2s var(--ease-out);
+}
+
+.modal-btn::after {
+  border: none;
+}
+
+.modal-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-btn-secondary {
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  color: var(--text-primary);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.065);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.modal-btn-primary {
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.32), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 @media (max-width: 760px) {

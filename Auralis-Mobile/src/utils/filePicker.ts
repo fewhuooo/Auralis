@@ -1,6 +1,20 @@
 import { sourceApi, type SourceView } from '@/api/sourceApi'
-import { uploadAsset, type LocalUploadFile } from '@/services/assetUpload'
+import { uploadAsset, type LocalUploadFile, type UploadProgressCallback } from '@/services/assetUpload'
+import {
+  MAX_UPLOAD_FILE_SIZE_BYTES,
+  MAX_UPLOAD_FILE_SIZE_MB,
+  SUPPORTED_UPLOAD_EXTENSIONS,
+  inferUploadMimeType,
+  validateUploadFile,
+} from '@/utils/uploadValidation'
 import { uuidv7 } from '@/utils/uuid'
+
+export {
+  MAX_UPLOAD_FILE_SIZE_BYTES,
+  MAX_UPLOAD_FILE_SIZE_MB,
+  SUPPORTED_UPLOAD_EXTENSIONS,
+  validateUploadFile,
+}
 
 interface ChosenFileItem {
   path?: string
@@ -18,25 +32,6 @@ declare const wx: {
   }) => void
 } | undefined
 
-function inferMimeType(name: string, fallback?: string): string {
-  if (fallback && fallback.includes('/')) return fallback
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  const map: Record<string, string> = {
-    pdf: 'application/pdf',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    webp: 'image/webp',
-  }
-  return map[ext] || 'application/octet-stream'
-}
-
 function normalizeChosenFile(item: ChosenFileItem | undefined): LocalUploadFile | null {
   if (!item?.path) return null
   const name = item.name || item.path.split(/[\\/]/).pop() || `file-${Date.now()}`
@@ -44,9 +39,21 @@ function normalizeChosenFile(item: ChosenFileItem | undefined): LocalUploadFile 
     path: item.path,
     name,
     size: Number(item.size || 0),
-    mimeType: inferMimeType(name, item.type),
+    mimeType: inferUploadMimeType(name, item.type),
   }
 }
+
+// #ifdef H5
+export function normalizeBrowserFile(file: File): LocalUploadFile {
+  return {
+    path: '',
+    name: file.name,
+    size: Number(file.size || 0),
+    mimeType: inferUploadMimeType(file.name, file.type),
+    file,
+  }
+}
+// #endif
 
 export function pickLocalDocument(): Promise<LocalUploadFile | null> {
   // #ifdef MP-WEIXIN
@@ -109,13 +116,17 @@ export async function uploadSubjectFile(options: {
   subjectId: string
   file: LocalUploadFile
   title?: string
+  onProgress?: UploadProgressCallback
 }): Promise<SourceView> {
-  const assetId = await uploadAsset(options.file, uuidv7())
-  return sourceApi.create({
+  const assetId = await uploadAsset(options.file, uuidv7(), options.onProgress)
+  options.onProgress?.(85, '正在关联学科资料...')
+  const created = await sourceApi.create({
     baseVersion: 0,
     subjectId: options.subjectId,
     type: 'FILE',
     title: options.title?.trim() || options.file.name,
     assetId,
   })
+  options.onProgress?.(95, '正在更新本地缓存...')
+  return created
 }

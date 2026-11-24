@@ -3,19 +3,14 @@
     <view class="drawer-content">
       <view class="drawer-header">
         <text class="drawer-title">学习资料</text>
-        <view class="drawer-header-actions">
-          <view class="ui-icon-btn sm" role="button" aria-label="刷新资料" @click="emit('refresh-sources')">
-            <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
-          </view>
-          <view
-            class="drawer-add-btn"
-            :class="{ 'is-busy': uploading }"
-            role="button"
-            aria-label="上传学习资料"
-            @click="!uploading && emit('upload')"
-          >
-            <LineIcon name="plus" size="14px" color="#FFFFFF" />
-          </view>
+        <view
+          class="drawer-add-btn"
+          :class="{ 'is-busy': uploading }"
+          role="button"
+          aria-label="上传学习资料"
+          @click="!uploading && emit('upload')"
+        >
+          <LineIcon name="plus" size="14px" color="#FFFFFF" />
         </view>
       </view>
 
@@ -171,12 +166,6 @@ const subjectOverviewSubtitle = computed(() => {
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;
-}
-
-.drawer-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .drawer-add-btn {

@@ -73,7 +73,7 @@
         :subject-overview="subjectOverview"
         :subject-overview-loading="subjectOverviewLoading"
         :subject-overview-error="subjectOverviewError"
-        @upload="handleUploadFile"
+        @upload="openUploadModal"
         @refresh-sources="loadSources"
         @select-source="selectSource"
         @delete-source="handleDeleteSource"
@@ -106,7 +106,7 @@
         :file-overview-errors="fileOverviewErrors"
         :subject-blocks="subjectBlocks"
         @toggle-tier2="handleToggleTier2Collapse"
-        @upload="handleUploadFile"
+        @upload="openUploadModal"
         @retry-preview="loadSourcePreview(true)"
         @refresh-subject-overview="loadSubjectOverview"
         @refresh-file-overview="loadFileOverview"
@@ -164,6 +164,20 @@
         :initial-preview="saveAiBlockSeedContent"
         @close="showSaveAiBlockModal = false"
         @saved="showSaveAiBlockModal = false"
+      />
+
+      <!-- PC 同源资料上传弹窗 -->
+      <WorkspaceUploadModal
+        :visible="showUploadModal"
+        :subjects="uploadSubjectOptions"
+        :default-subject-id="subjectId"
+        :uploading="uploading"
+        :upload-progress="uploadProgress"
+        :upload-stage="uploadStage"
+        :error-message="uploadError"
+        @close="closeUploadModal"
+        @submit="handleSubmitUpload"
+        @clear-error="uploadError = ''"
       />
 
       <!-- 知识块详情阅读弹窗 -->
@@ -289,10 +303,12 @@ import WorkspaceCenterReader, {
   type WorkspaceCenterView,
 } from '@/components/tablet/workspace/WorkspaceCenterReader.vue'
 import WorkspaceAiPanel from '@/components/tablet/workspace/WorkspaceAiPanel.vue'
+import WorkspaceUploadModal from '@/components/tablet/workspace/WorkspaceUploadModal.vue'
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
 import { sourceApi, type SourceView } from '@/api/sourceApi'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDataScope } from '@/services/localDataScope'
 import { localDb } from '@/services/localDb'
 // #ifdef H5
@@ -302,7 +318,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
-import { pickLocalDocument, uploadSubjectFile } from '@/utils/filePicker'
+import { uploadSubjectFile, validateUploadFile } from '@/utils/filePicker'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { formatShortDateTime } from '@/utils/sourceFormat'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
@@ -323,6 +339,10 @@ const loadingSources = ref(false)
 const sourcesError = ref('')
 const selectedSourceId = ref<string | null>(null)
 const uploading = ref(false)
+const showUploadModal = ref(false)
+const uploadProgress = ref(0)
+const uploadStage = ref('')
+const uploadError = ref('')
 
 const previewUrl = ref('')
 const previewBuffer = shallowRef<ArrayBuffer | null>(null)
@@ -375,6 +395,7 @@ let dragMode: 'mouse' | 'touch' | null = null
 
 const activeSubject = computed(() => subjectStore.subjects.find(item => item.id === subjectId.value) || null)
 const subjectName = computed(() => activeSubject.value?.name || '学科工作台')
+const uploadSubjectOptions = computed(() => subjectStore.subjects.map(item => ({ id: item.id, name: item.name })))
 const safeSubjectIcon = computed(() => (
   activeSubject.value?.icon && isSubjectIconKey(activeSubject.value.icon) ? activeSubject.value.icon : 'book'
 ))
@@ -684,27 +705,78 @@ function selectSource(source: SourceView) {
   ensureFileOverview(source)
 }
 
-async function handleUploadFile() {
-  if (!subjectId.value || uploading.value) return
-  const fence = captureFence()
+function openUploadModal() {
+  if (!subjectId.value) return
+  uploadError.value = ''
+  uploadProgress.value = 0
+  uploadStage.value = ''
+  showUploadModal.value = true
+}
+
+function closeUploadModal() {
+  if (uploading.value) return
+  showUploadModal.value = false
+  uploadError.value = ''
+}
+
+async function handleSubmitUpload(payload: { file: LocalUploadFile; title: string; subjectId: string }) {
+  if (uploading.value || !payload.subjectId) return
   try {
-    const picked = await pickLocalDocument()
-    if (!picked || !isFenceValid(fence, false)) return
-    uploading.value = true
-    const created = await uploadSubjectFile({ subjectId: fence.subjectId, file: picked })
+    validateUploadFile(payload.file)
+  } catch (error) {
+    uploadError.value = error instanceof Error && error.message ? error.message : '不支持的文件格式'
+    return
+  }
+
+  const fence = captureFence()
+  uploading.value = true
+  uploadError.value = ''
+  uploadProgress.value = 0
+  uploadStage.value = '准备上传...'
+  try {
+    const created = await uploadSubjectFile({
+      subjectId: payload.subjectId,
+      file: payload.file,
+      title: payload.title,
+      onProgress: (percent, stage) => {
+        if (!isFenceValid(fence, false)) return
+        uploadProgress.value = percent
+        uploadStage.value = stage
+      },
+    })
     if (!isFenceValid(fence, false)) return
-    await Promise.all([loadSources(), subjectStore.loadSubjects()])
-    if (!isFenceValid(fence, false)) return
-    uni.showToast({ title: '已上传，等待解析', icon: 'none' })
-    if (created.id) {
-      selectedSourceId.value = created.id
-      centerView.value = 'preview'
-      void loadSourcePreview()
+
+    if (payload.subjectId === fence.subjectId) {
+      await Promise.all([loadSources(), subjectStore.loadSubjects()])
+      if (!isFenceValid(fence, false)) return
+      if (created.id) {
+        selectedSourceId.value = created.id
+        centerView.value = 'preview'
+        void loadSourcePreview()
+      }
+    } else {
+      const targetList = await sourceApi.listAllBySubject(payload.subjectId).catch(() => null)
+      if (!isFenceValid(fence, false)) return
+      if (targetList) {
+        await localDb.replaceSubjectSources(payload.subjectId, targetList).catch(() => {})
+      }
+      await subjectStore.loadSubjects()
+      if (!isFenceValid(fence, false)) return
     }
+
+    uploadProgress.value = 100
+    uploadStage.value = '导入完成'
+    showUploadModal.value = false
+    const targetSubjectName = subjectStore.subjects.find(item => item.id === payload.subjectId)?.name
+    const toastTitle = payload.subjectId === fence.subjectId || !targetSubjectName
+      ? '已上传，等待解析'
+      : `已上传至《${targetSubjectName}》`
+    uni.showToast({ title: toastTitle, icon: 'none' })
   } catch (error) {
     if (!isFenceValid(fence, false)) return
-    const msg = error instanceof Error && error.message ? error.message : '上传失败'
-    uni.showToast({ title: msg, icon: 'none' })
+    uploadProgress.value = 0
+    uploadStage.value = ''
+    uploadError.value = error instanceof Error && error.message ? error.message : '上传失败，请重试'
   } finally {
     uploading.value = false
   }
@@ -968,13 +1040,14 @@ function handleRequestSaveBlock(payload: { title: string; preview: string }) {
   showSaveAiBlockModal.value = true
 }
 
-useEscapeKey(() => showBlockModal.value && !showSaveAiBlockModal.value, closeBlockModal)
+useEscapeKey(() => showUploadModal.value && !uploading.value, closeUploadModal)
+useEscapeKey(() => showBlockModal.value && !showSaveAiBlockModal.value && !showUploadModal.value, closeBlockModal)
 useEscapeKey(
-  () => Boolean(viewingBlock.value) && !showBlockModal.value && !showSaveAiBlockModal.value,
+  () => Boolean(viewingBlock.value) && !showBlockModal.value && !showSaveAiBlockModal.value && !showUploadModal.value,
   closeBlockDetail,
 )
 useEscapeKey(
-  () => aiPanelVisible.value && !showBlockModal.value && !viewingBlock.value && !showSaveAiBlockModal.value,
+  () => aiPanelVisible.value && !showBlockModal.value && !viewingBlock.value && !showSaveAiBlockModal.value && !showUploadModal.value,
   () => { aiPanelVisible.value = false },
 )
 
