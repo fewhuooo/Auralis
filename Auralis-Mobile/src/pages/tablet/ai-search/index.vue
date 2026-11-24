@@ -783,7 +783,9 @@ function resetChatState() {
   activeStreamToken += 1
   activeViewToken += 1
   stopRunPolling()
+  const abortFn = abortLocalStream
   abortLocalStream = null
+  abortFn?.()
   currentConversationId.value = ''
   currentConversationTitle.value = '新对话'
   conversationScopeState.value = 'UNBOUND'

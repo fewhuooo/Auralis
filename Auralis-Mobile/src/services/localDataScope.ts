@@ -5,6 +5,7 @@ let resetSequence = 0
 export interface ScopeStorage {
   get(key: string): unknown
   set(key: string, value: string): void
+  remove?(key: string): void
 }
 
 function stableScopeId(userId: string, serverDeviceId: string): string {
@@ -39,10 +40,18 @@ export function createLocalDataScope(storage: ScopeStorage) {
       storage.set(`${SCOPE_STORAGE_KEY}:${baseScope}`, scope)
       return scope
     },
+    deactivate(): void {
+      if (storage.remove) {
+        storage.remove(SCOPE_STORAGE_KEY)
+      } else {
+        storage.set(SCOPE_STORAGE_KEY, '')
+      }
+    },
   }
 }
 
 export const localDataScope = createLocalDataScope({
   get: (key) => uni.getStorageSync(key),
   set: (key, value) => uni.setStorageSync(key, value),
+  remove: (key) => uni.removeStorageSync(key),
 })

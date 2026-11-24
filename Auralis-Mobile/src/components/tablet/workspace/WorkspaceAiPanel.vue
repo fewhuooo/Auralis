@@ -559,7 +559,7 @@ async function loadScopedHistory() {
   } catch {
     // Keep silent if offline
   } finally {
-    if (capturedScope === scopeKey.value) {
+    if (generation === authStore.getLoginGeneration() && capturedScope === scopeKey.value) {
       loadingSessions.value = false
     }
   }
@@ -591,10 +591,22 @@ function resetConversation() {
 
 watch(scopeKey, () => {
   resetConversation()
-  if (props.subjectId) {
+  if (props.subjectId && authStore.isAuthenticated) {
     void loadScopedHistory()
   }
 }, { immediate: true })
+
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId, authStore.sessionId],
+  () => {
+    resetConversation()
+    conversations.value = []
+    loadingSessions.value = false
+    if (authStore.isAuthenticated && props.subjectId) {
+      void loadScopedHistory()
+    }
+  },
+)
 
 function toggleHistory() {
   showHistory.value = !showHistory.value

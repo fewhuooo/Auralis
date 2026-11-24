@@ -552,7 +552,7 @@ async function loadPlanningStates() {
         localDb.hasLoadedReviewStates(targetSubjectId),
       ])
       if (!isCurrent()) return
-      if (!statesLoaded.value && (cached.length > 0 || loadedMarker)) {
+      if (cached.length > 0 || loadedMarker) {
         states.value = cached
         statesLoaded.value = true
       }

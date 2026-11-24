@@ -714,7 +714,11 @@ watch(
 )
 
 watch(
-  () => props.selectedSource?.id,
+  () => [
+    props.selectedSource?.id,
+    props.selectedSource?.ingestionStatus,
+    props.selectedSource?.ingestionRevision,
+  ],
   () => {
     if (props.centerView === 'preview' && fileReaderMode.value !== 'document' && props.selectedSource) {
       emit('ensure-file-overview', props.selectedSource)

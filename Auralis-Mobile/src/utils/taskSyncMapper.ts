@@ -103,6 +103,9 @@ export function toServerTaskCommand(payload: Record<string, any> | undefined, mu
   const dueAt = payload?.dueAt || undefined
   const isUpdate = mutationType === 'UPDATE' || mutationType === 'update'
 
+  const rawDuration = Number(payload?.duration)
+  const durationMinutes = Number.isFinite(rawDuration) && rawDuration >= 0 ? rawDuration : undefined
+
   return {
     subjectId: payload?.subjectId,
     title: payload?.name,
@@ -116,7 +119,7 @@ export function toServerTaskCommand(payload: Record<string, any> | undefined, mu
           : 'TODO',
     scheduledAt: scheduledAt ?? (isUpdate ? null : undefined),
     dueAt: dueAt ?? (isUpdate ? null : undefined),
-    durationMinutes: payload?.duration,
+    durationMinutes,
     sortKey: payload?.position !== undefined && payload?.position !== null ? String(payload.position) : undefined,
   }
 }

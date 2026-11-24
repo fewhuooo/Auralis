@@ -364,9 +364,27 @@ watch(
 )
 
 watch(
-  [days, () => authStore.user?.id, () => authStore.serverDeviceId, () => authStore.sessionId],
+  days,
   () => {
     void loadStats()
+  },
+)
+
+watch(
+  [
+    () => authStore.isAuthenticated,
+    () => authStore.user?.id,
+    () => authStore.serverDeviceId,
+    () => authStore.sessionId,
+  ],
+  () => {
+    statsReqId++
+    stats.value = null
+    loadError.value = ''
+    loading.value = false
+    if (authStore.isAuthenticated && props.subjectId) {
+      void loadStats()
+    }
   },
 )
 

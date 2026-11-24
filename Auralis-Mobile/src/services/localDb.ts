@@ -8,6 +8,7 @@ import { buildSyncedBlockRecord } from '@/utils/blockSyncMapper';
 import { formatLocalTimeHHmm } from '@/utils/dateKey';
 import { normalizeTaskPosition } from '@/utils/taskSyncMapper';
 import { localDataScope } from './localDataScope.ts';
+import { deleteCachedDocument } from './localDocumentCache.ts';
 
 function databaseIdentity() {
   const scope = localDataScope.current();
@@ -403,6 +404,10 @@ function selectH5Query(sql: string): any[] {
   return [];
 }
 
+const initializedScopes = new Set<string>();
+const initializingScopes = new Map<string, Promise<void>>();
+const openingDatabases = new Map<string, Promise<void>>();
+
 // Helper to wrap plus.sqlite in Promises
 const sqlite = {
   isOpen(): boolean {
@@ -411,69 +416,97 @@ const sqlite = {
   },
 
   open(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (isH5) {
-        return resolve();
-      }
-      if (this.isOpen()) {
-        return resolve();
-      }
+    if (isH5 || this.isOpen()) {
+      return Promise.resolve();
+    }
+    const identity = databaseIdentity();
+    const existing = openingDatabases.get(identity.name);
+    if (existing) {
+      return existing;
+    }
+    const pending = new Promise<void>((resolve, reject) => {
       plus.sqlite.openDatabase({
-        ...databaseIdentity(),
+        ...identity,
         success: () => resolve(),
-        fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e)))
+        fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e))),
+      });
+    });
+    openingDatabases.set(identity.name, pending);
+    const cleanup = () => {
+      if (openingDatabases.get(identity.name) === pending) {
+        openingDatabases.delete(identity.name);
+      }
+    };
+    pending.then(cleanup, cleanup);
+    return pending;
+  },
+
+  async executeRaw(sql: string): Promise<void> {
+    await this.open();
+    if (isH5) {
+      executeH5Query(sql);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      plus.sqlite.executeSql({
+        name: databaseIdentity().name,
+        sql,
+        success: () => resolve(),
+        fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`)),
       });
     });
   },
 
-  execute(sql: string): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.open();
-        if (isH5) {
-          try {
-            executeH5Query(sql);
-            return resolve();
-          } catch (e) {
-            return reject(e);
-          }
-        }
-        plus.sqlite.executeSql({
-          name: databaseIdentity().name,
-          sql: sql,
-          success: () => resolve(),
-          fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`))
-        });
-      } catch (err) {
-        reject(err);
-      }
+  async selectRaw(sql: string): Promise<any[]> {
+    await this.open();
+    if (isH5) {
+      return selectH5Query(sql);
+    }
+    return new Promise<any[]>((resolve, reject) => {
+      plus.sqlite.selectSql({
+        name: databaseIdentity().name,
+        sql,
+        success: (data: any) => resolve(data || []),
+        fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`)),
+      });
     });
   },
 
-  select(sql: string): Promise<any[]> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.open();
-        if (isH5) {
-          try {
-            const data = selectH5Query(sql);
-            return resolve(data);
-          } catch (e) {
-            return reject(e);
-          }
-        }
-        plus.sqlite.selectSql({
-          name: databaseIdentity().name,
-          sql: sql,
-          success: (data: any) => resolve(data || []),
-          fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`))
-        });
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
+  async execute(sql: string): Promise<void> {
+    await ensureInitialized();
+    return this.executeRaw(sql);
+  },
+
+  async select(sql: string): Promise<any[]> {
+    await ensureInitialized();
+    return this.selectRaw(sql);
+  },
 };
+
+async function ensureInitialized(): Promise<void> {
+  const scope = safeCurrentScope() || 'legacy-unassigned';
+  if (initializedScopes.has(scope)) {
+    return;
+  }
+  const pending = initializingScopes.get(scope);
+  if (pending) {
+    return pending;
+  }
+  const run = (async () => {
+    await sqlite.open();
+    await localDb.createTables();
+    await localDb.runMigrations();
+    initializedScopes.add(scope);
+  })();
+  initializingScopes.set(scope, run);
+  const cleanup = () => {
+    if (initializingScopes.get(scope) === run) {
+      initializingScopes.delete(scope);
+    }
+  };
+  run.then(cleanup, cleanup);
+  return run;
+}
 
 const inFlightMutationIds = new Set<string>();
 const cacheWriteQueues = new Map<string, Promise<void>>();
@@ -571,9 +604,13 @@ export const localDb = {
 
   async init() {
     try {
-      await sqlite.open();
-      await this.createTables();
-      await this.runMigrations();
+      const scope = safeCurrentScope() || 'legacy-unassigned';
+      const inFlight = initializingScopes.get(scope);
+      if (inFlight) {
+        await inFlight;
+      }
+      initializedScopes.delete(scope);
+      await ensureInitialized();
       console.log('[SQLite Mobile] Native database and tables initialized.');
     } catch (e) {
       console.error('[SQLite Mobile] Database initialization failed:', e);
@@ -582,13 +619,13 @@ export const localDb = {
   },
 
   async createTables() {
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS sync_metadata (
         key TEXT PRIMARY KEY,
         value TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS local_mutations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         client_id TEXT,
@@ -600,7 +637,7 @@ export const localDb = {
         sync_status TEXT DEFAULT 'pending'
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS knowledge_blocks (
         id TEXT PRIMARY KEY,
         subject TEXT,
@@ -621,7 +658,7 @@ export const localDb = {
         related_block_ids TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS task_blocks (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -640,17 +677,18 @@ export const localDb = {
         subject_id TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS subjects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
         icon TEXT,
+        sort_key TEXT,
         created_at INTEGER,
         version INTEGER DEFAULT 0
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS source_files (
         id TEXT PRIMARY KEY,
         subject_id TEXT,
@@ -665,7 +703,7 @@ export const localDb = {
         payload_json TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS ai_overview_cache (
         cache_key TEXT PRIMARY KEY,
         scope_type TEXT NOT NULL,
@@ -676,7 +714,7 @@ export const localDb = {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS review_states_cache (
         knowledge_block_id TEXT PRIMARY KEY,
         subject_id TEXT NOT NULL,
@@ -684,7 +722,7 @@ export const localDb = {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS subject_stats_cache (
         cache_key TEXT PRIMARY KEY,
         subject_id TEXT NOT NULL,
@@ -694,7 +732,7 @@ export const localDb = {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS tablet_notes (
         id TEXT PRIMARY KEY,
         mode TEXT NOT NULL,
@@ -738,74 +776,77 @@ export const localDb = {
     }
 
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN position TEXT DEFAULT '0'");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN position TEXT DEFAULT '0'");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN subject_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN subject_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN source_file_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN source_file_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN tags TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN tags TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN difficulty TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN difficulty TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN mastery INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN mastery INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN review_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN review_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN related_block_ids TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN related_block_ids TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN scheduled_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN scheduled_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN due_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN due_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE subjects ADD COLUMN sort_key TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE source_files ADD COLUMN payload_json TEXT");
+      await sqlite.executeRaw("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE subjects DROP COLUMN color");
+      await sqlite.executeRaw("ALTER TABLE source_files ADD COLUMN payload_json TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN load");
+      await sqlite.executeRaw("ALTER TABLE subjects DROP COLUMN color");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN loadText");
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN load");
+    } catch (e) {}
+    try {
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN loadText");
     } catch (e) {}
 
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN color");
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN color");
     } catch (e) {}
 
-    const taskMutations = await sqlite.select("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
+    const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
     for (const mutation of taskMutations) {
       if (!mutation.payload) continue;
       const result = cleanTaskMutationPayload(mutation.payload);
@@ -813,7 +854,7 @@ export const localDb = {
       if (result.status === 'changed') {
         const sanitized = result.payload.replace(/'/g, "''");
         const esc = (value: string) => value.replace(/'/g, "''");
-        await sqlite.execute(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+        await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
       }
     }
   },
@@ -1039,6 +1080,7 @@ export const localDb = {
     const subjectIdVal = task.subjectId || '';
     const scheduledAtSql = task.scheduledAt ? `'${esc(task.scheduledAt)}'` : 'NULL';
     const dueAtSql = task.dueAt ? `'${esc(task.dueAt)}'` : 'NULL';
+    const durationVal = Math.max(0, safeFiniteInt(task.duration, 0));
     const startTimeVal = task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || '');
     const startTimeSql = startTimeVal ? `'${esc(startTimeVal)}'` : 'NULL';
     if (exists && exists.length > 0) {
@@ -1047,7 +1089,7 @@ export const localDb = {
           name = '${esc(task.name)}',
           subject = '${esc(task.subject)}',
           desc = '${esc(task.desc || '')}',
-          duration = ${task.duration},
+          duration = ${durationVal},
           status = '${esc(task.status)}',
           startTime = ${startTimeSql},
           scheduled_at = ${scheduledAtSql},
@@ -1067,7 +1109,7 @@ export const localDb = {
           '${esc(task.name)}',
           '${esc(task.subject)}',
           '${esc(task.desc || '')}',
-          ${task.duration},
+          ${durationVal},
           '${esc(task.status)}',
           ${startTimeSql},
           ${scheduledAtSql},
@@ -1344,29 +1386,40 @@ export const localDb = {
 
   // Subject CRUD
   async getSubjects(): Promise<any[]> {
-    return sqlite.select('SELECT id, name, description, icon, created_at, version FROM subjects ORDER BY created_at DESC');
+    const rows = await sqlite.select('SELECT id, name, description, icon, sort_key, created_at, version FROM subjects ORDER BY created_at DESC');
+    return (rows || []).map((row: any) => ({
+      ...row,
+      ...(row?.sort_key ? { sortKey: row.sort_key } : {}),
+    }));
   },
 
   async saveSubject(subject: any): Promise<void> {
     const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const exists = await sqlite.select(`SELECT id FROM subjects WHERE id = '${esc(subject.id)}'`);
+    const exists = await sqlite.select(`SELECT id, sort_key FROM subjects WHERE id = '${esc(subject.id)}'`);
+    const existingSortKey = exists && exists.length > 0 && typeof exists[0].sort_key === 'string'
+      ? exists[0].sort_key
+      : '';
+    const rawSortKey = subject.sortKey ?? subject.sort_key;
+    const sortKeyVal = typeof rawSortKey === 'string' ? rawSortKey : existingSortKey;
     if (exists && exists.length > 0) {
       await sqlite.execute(`
         UPDATE subjects SET 
           name = '${esc(subject.name)}', 
           description = '${esc(subject.description || '')}', 
           icon = '${esc(subject.icon || '')}',
+          sort_key = '${esc(sortKeyVal)}',
           version = ${Number(subject.version || 0)}
         WHERE id = '${esc(subject.id)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO subjects (id, name, description, icon, created_at, version)
+        INSERT INTO subjects (id, name, description, icon, sort_key, created_at, version)
         VALUES (
           '${esc(subject.id)}', 
           '${esc(subject.name)}', 
           '${esc(subject.description || '')}', 
           '${esc(subject.icon || '')}', 
+          '${esc(sortKeyVal)}',
           ${subject.created_at || Date.now()},
           ${Number(subject.version || 0)}
         )
@@ -1376,10 +1429,15 @@ export const localDb = {
 
   async deleteSubject(id: string): Promise<void> {
     const escId = escSql(id);
-    const subjectSources = await sqlite.select(`SELECT id FROM source_files WHERE subject_id = '${escId}'`);
+    const activeScope = safeCurrentScope();
+    const subjectSources = await sqlite.select(`SELECT id, payload_json FROM source_files WHERE subject_id = '${escId}'`);
     for (const row of subjectSources) {
       if (row.id) {
         await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(String(row.id))}'`);
+      }
+      const parsed = parseJsonSafely<SourceView>(row.payload_json);
+      if (activeScope && parsed?.assetId) {
+        void deleteCachedDocument(activeScope, parsed.assetId);
       }
     }
     await sqlite.execute(`DELETE FROM source_files WHERE subject_id = '${escId}'`);
@@ -1400,22 +1458,31 @@ export const localDb = {
 
   async saveSourceFile(file: any): Promise<void> {
     const fileId = String(file.id || '');
-    const exists = await sqlite.select(`SELECT id, payload_json FROM source_files WHERE id = '${escSql(fileId)}'`);
-    const catalogJsonVal = typeof file.catalog_json === 'string' ? file.catalog_json : '';
-    const blockCountVal = safeFiniteInt(file.block_count, 0);
+    const exists = await sqlite.select(
+      `SELECT id, subject_id, catalog_json, block_count, payload_json FROM source_files WHERE id = '${escSql(fileId)}'`,
+    );
+    const existingRow = exists && exists.length > 0 ? exists[0] : null;
+    const subjectIdVal = typeof file.subject_id === 'string' && file.subject_id
+      ? file.subject_id
+      : (typeof existingRow?.subject_id === 'string' ? existingRow.subject_id : '');
+    const catalogJsonVal = typeof file.catalog_json === 'string'
+      ? file.catalog_json
+      : (typeof existingRow?.catalog_json === 'string' ? existingRow.catalog_json : '');
+    const blockCountVal = file.block_count !== undefined && file.block_count !== null
+      ? safeFiniteInt(file.block_count, 0)
+      : safeFiniteInt(existingRow?.block_count, 0);
     const fileSizeVal = Math.max(0, safeFiniteInt(file.file_size ?? file.assetSizeBytes, 0));
     const createdAtVal = safeFiniteInt(file.created_at, Date.now());
     const versionVal = safeFiniteInt(file.version, 0);
-    const existingPayload = exists && exists.length > 0 && typeof exists[0].payload_json === 'string'
-      ? exists[0].payload_json
-      : '';
+    const existingPayload = typeof existingRow?.payload_json === 'string' ? existingRow.payload_json : '';
     const payloadJsonVal = typeof file.payload_json === 'string' && file.payload_json.trim()
       ? file.payload_json
       : existingPayload;
 
-    if (exists && exists.length > 0) {
+    if (existingRow) {
       await sqlite.execute(`
         UPDATE source_files SET
+          subject_id = '${escSql(subjectIdVal)}',
           name = '${escSql(file.name)}',
           file_path = '${escSql(file.file_path)}',
           file_type = '${escSql(file.file_type)}',
@@ -1431,7 +1498,7 @@ export const localDb = {
         INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at, version, payload_json)
         VALUES (
           '${escSql(fileId)}',
-          '${escSql(file.subject_id)}',
+          '${escSql(subjectIdVal)}',
           '${escSql(file.name)}',
           '${escSql(file.file_path)}',
           '${escSql(file.file_type)}',
@@ -1448,8 +1515,14 @@ export const localDb = {
 
   async deleteSourceFile(id: string): Promise<void> {
     const escId = escSql(id);
+    const activeScope = safeCurrentScope();
+    const rows = await sqlite.select(`SELECT payload_json FROM source_files WHERE id = '${escId}'`) as Array<{ payload_json?: unknown }>;
+    const parsed = rows.length > 0 ? parseJsonSafely<SourceView>(rows[0]?.payload_json) : null;
     await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escId}'`);
     await sqlite.execute(`DELETE FROM source_files WHERE id = '${escId}'`);
+    if (activeScope && parsed?.assetId) {
+      void deleteCachedDocument(activeScope, parsed.assetId);
+    }
   },
 
   async getSourceViews(subjectId: string): Promise<SourceView[]> {
@@ -1485,17 +1558,22 @@ export const localDb = {
   async replaceSubjectSources(subjectId: string, items: SourceView[]): Promise<void> {
     if (!subjectId) return;
     await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+      const activeScope = safeCurrentScope();
       const activeItems = items.filter((item): item is SourceView & { id: string } => Boolean(item.id && !item.deletedAt));
       const nextIds = new Set(activeItems.map(item => item.id));
       const existingRows = await sqlite.select(
-        `SELECT id FROM source_files WHERE subject_id = '${escSql(subjectId)}'`,
-      ) as Array<{ id?: unknown }>;
+        `SELECT id, payload_json FROM source_files WHERE subject_id = '${escSql(subjectId)}'`,
+      ) as Array<{ id?: unknown; payload_json?: unknown }>;
 
       for (const row of existingRows) {
         const existingId = row.id ? String(row.id) : '';
         if (existingId && !nextIds.has(existingId)) {
+          const parsed = parseJsonSafely<SourceView>(row.payload_json);
           await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(existingId)}'`);
           await sqlite.execute(`DELETE FROM source_files WHERE id = '${escSql(existingId)}'`);
+          if (activeScope && parsed?.assetId) {
+            void deleteCachedDocument(activeScope, parsed.assetId);
+          }
         }
       }
 
@@ -1711,5 +1789,57 @@ export const localDb = {
         );
       }
     });
+  },
+
+  async clearScopeStorage(scope: string): Promise<void> {
+    if (!scope) return;
+    initializedScopes.delete(scope);
+    const focusKeys = ['focus_state', 'focus_daily', 'focus_outbox'];
+    for (const key of focusKeys) {
+      try {
+        uni.removeStorageSync(`auralis:local:${scope}:${key}`);
+      } catch {
+        // Ignore storage removal errors
+      }
+    }
+    if (isH5) {
+      const tableNames = [
+        'sync_metadata',
+        'local_mutations',
+        'knowledge_blocks',
+        'task_blocks',
+        'subjects',
+        'source_files',
+        'ai_overview_cache',
+        'review_states_cache',
+        'subject_stats_cache',
+        'tablet_notes',
+      ];
+      for (const name of tableNames) {
+        try {
+          uni.removeStorageSync(`auralis:local:${scope}:${name}`);
+        } catch {
+          // Ignore storage removal errors
+        }
+      }
+      return;
+    }
+    const dbIdentity = {
+      name: `auralis_${scope}`,
+      path: `_doc/auralis_${scope}.db`,
+    };
+    try {
+      if (plus.sqlite.isOpenDatabase(dbIdentity)) {
+        await new Promise<void>((resolve) => {
+          plus.sqlite.closeDatabase({
+            ...dbIdentity,
+            success: () => resolve(),
+            fail: () => resolve(),
+          });
+        });
+      }
+    } catch {
+      // Ignore native closeDatabase errors
+    }
   }
 };

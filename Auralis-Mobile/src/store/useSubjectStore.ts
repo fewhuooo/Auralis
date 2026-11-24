@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
@@ -34,9 +34,20 @@ export interface CatalogItem {
 }
 
 export const useSubjectStore = defineStore('subject', () => {
+  const auth = useAuthStore()
   const subjects = ref<Subject[]>([])
   const activeSubjectId = ref<string | null>(null)
   const activeSourceFiles = ref<SourceFile[]>([])
+
+  watch(
+    () => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId],
+    () => {
+      subjects.value = []
+      activeSubjectId.value = null
+      activeSourceFiles.value = []
+    },
+    { flush: 'sync' },
+  )
 
   const activeSubject = computed(() => {
     return subjects.value.find(s => s.id === activeSubjectId.value) || null
@@ -122,8 +133,18 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   const loadSourceFiles = async (subjectId: string) => {
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
     try {
       const files = await localDb.getSourceFiles(subjectId)
+      if (
+        generation !== auth.getLoginGeneration()
+        || userId !== auth.user?.id
+        || serverDeviceId !== auth.serverDeviceId
+      ) {
+        return
+      }
       activeSourceFiles.value = files
     } catch (e) {
       console.error('[SubjectStore Mobile] Failed to load files:', e)

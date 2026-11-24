@@ -197,7 +197,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import LineIcon from '@/components/LineIcon.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
@@ -303,21 +303,30 @@ async function handleSave() {
     uni.showToast({ title: '已创建', icon: 'none' })
     enterWorkspace(newId)
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     modalError.value = err instanceof Error ? err.message : '保存失败'
   } finally {
-    savingSubject.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      savingSubject.value = false
+    }
   }
 }
 
 function handleDeleteSubject(subj: Subject) {
+  const generation = authStore.getLoginGeneration()
   uni.showModal({
     title: '删除学科',
     content: `确定删除「${subj.name}」吗？`,
     confirmColor: '#C93B3B',
     success: async (res) => {
-      if (res.confirm) {
+      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
+      try {
         await subjectStore.deleteSubject(subj.id)
+        if (generation !== authStore.getLoginGeneration()) return
         uni.showToast({ title: '已删除', icon: 'none' })
+      } catch (err) {
+        if (generation !== authStore.getLoginGeneration()) return
+        uni.showToast({ title: err instanceof Error ? err.message : '删除失败', icon: 'none' })
       }
     },
   })
@@ -327,7 +336,22 @@ function enterWorkspace(id: string) {
   uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${id}` })
 }
 
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    showModal.value = false
+    savingSubject.value = false
+    editingId.value = null
+    searchQuery.value = ''
+    modalError.value = ''
+    if (!authStore.isAuthenticated) return
+    void blockStore.fetchBlocks()
+    void subjectStore.loadSubjects()
+  },
+)
+
 onMounted(async () => {
+  if (!authStore.isAuthenticated) return
   await blockStore.fetchBlocks()
   await subjectStore.loadSubjects()
 })

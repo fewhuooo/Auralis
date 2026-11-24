@@ -412,3 +412,112 @@ test('localDocumentCache selectEvictableCacheKeys evicts oldest LRU entries when
     ['scope::a1'],
   )
 })
+
+test('localDb auto-initializes on first read/write in a new scope and localDataScope.deactivate clears active scope', async (context) => {
+  const storage = setupLocalDbTestEnv(context)
+  const { localDataScope } = await import('../src/services/localDataScope.ts?local-auto-init')
+  const { localDb } = await import('../src/services/localDb.ts?local-auto-init')
+
+  const scope = localDataScope.activate('user-auto', 'dev-auto')
+  assert.notEqual(scope, 'legacy-unassigned')
+
+  // Write and read immediately without calling localDb.init() first.
+  await localDb.saveSubject({
+    id: 'sub-auto',
+    name: '自动初始化测试',
+    description: '冷启动门禁',
+    icon: 'book',
+    version: 1,
+  })
+  const subjects = await localDb.getSubjects()
+  assert.equal(subjects.length, 1)
+  assert.equal(subjects[0].id, 'sub-auto')
+
+  localDataScope.deactivate()
+  assert.equal(localDataScope.current(), 'legacy-unassigned')
+  assert.equal(storage.get('auralis:local-data-scope:v2'), undefined)
+  assert.deepEqual(await localDb.getSubjects(), [])
+})
+
+test('localDb preserves subjects.sortKey, updates source_files.subject_id, sanitizes task.duration, and clears prior scope storage', async (context) => {
+  const storage = setupLocalDbTestEnv(context)
+  const { localDataScope } = await import('../src/services/localDataScope.ts?local-batch2')
+  const { localDb } = await import('../src/services/localDb.ts?local-batch2')
+
+  const scope = localDataScope.activate('user-b2', 'dev-b2')
+  await localDb.init()
+
+  await localDb.saveSubject({
+    id: 'sub-sort',
+    name: '数据结构',
+    description: 'Tree & Graph',
+    icon: 'subj-code',
+    sortKey: '0|hzzzzz:',
+    version: 2,
+  })
+  const loadedSubjects = await localDb.getSubjects()
+  assert.equal(loadedSubjects[0].sortKey, '0|hzzzzz:')
+  assert.equal(loadedSubjects[0].sort_key, '0|hzzzzz:')
+
+  // Updating subject without passing sortKey must preserve existing sort_key.
+  await localDb.saveSubject({
+    id: 'sub-sort',
+    name: '数据结构与算法',
+    description: 'Tree & Graph',
+    icon: 'subj-code',
+    version: 3,
+  })
+  assert.equal((await localDb.getSubjects())[0].sortKey, '0|hzzzzz:')
+
+  // Moving a source between subjects updates subject_id on existing row.
+  await localDb.saveSourceFile({
+    id: 'src-move',
+    subject_id: 'sub-old',
+    name: 'Algo.pdf',
+    file_path: 'asset-move',
+    file_type: 'FILE',
+    file_size: 1024,
+    catalog_json: '["ch1"]',
+    block_count: 5,
+    version: 1,
+    payload_json: JSON.stringify({ id: 'src-move', subjectId: 'sub-old', title: 'Algo.pdf' }),
+  })
+  await localDb.saveSourceFile({
+    id: 'src-move',
+    subject_id: 'sub-new',
+    name: 'Algo.pdf',
+    file_path: 'asset-move',
+    file_type: 'FILE',
+    file_size: 1024,
+    version: 2,
+    payload_json: JSON.stringify({ id: 'src-move', subjectId: 'sub-new', title: 'Algo.pdf' }),
+  })
+  assert.deepEqual(await localDb.getSourceViews('sub-old'), [])
+  const movedViews = await localDb.getSourceViews('sub-new')
+  assert.equal(movedViews.length, 1)
+  assert.equal((await localDb.getSourceFiles('sub-new'))[0].block_count, 5)
+
+  // Non-finite duration must be sanitized rather than breaking SQL interpolation.
+  await localDb.saveTask({
+    id: 'task-nan',
+    name: 'Sanitized Duration',
+    subject: '数据结构',
+    subjectId: 'sub-sort',
+    desc: '',
+    duration: Number.NaN,
+    status: 'pending',
+    position: 'a',
+  })
+  const savedTasks = await localDb.getTasks()
+  assert.equal(savedTasks[0].duration, 0)
+
+  // Seed focus key under current scope then verify clearScopeStorage removes table & focus keys.
+  storage.set(`auralis:local:${scope}:focus_state`, JSON.stringify({ status: 'paused' }))
+  assert.ok(storage.has(`auralis:local:${scope}:subjects`))
+  assert.ok(storage.has(`auralis:local:${scope}:focus_state`))
+
+  await localDb.clearScopeStorage(scope)
+  assert.equal(storage.has(`auralis:local:${scope}:subjects`), false)
+  assert.equal(storage.has(`auralis:local:${scope}:task_blocks`), false)
+  assert.equal(storage.has(`auralis:local:${scope}:focus_state`), false)
+})

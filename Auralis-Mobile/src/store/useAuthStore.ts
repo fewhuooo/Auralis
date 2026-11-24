@@ -51,11 +51,27 @@ function normalizeAuthResult(result: AuthResult): PersistedAuthSession {
 }
 
 function currentLoginRoute(): string {
-  const pages = getCurrentPages()
-  const route = pages.length > 0 ? pages[pages.length - 1].route || '' : ''
-  return route.startsWith('pages/tablet/')
-    ? '/pages/tablet/login/index'
-    : '/pages/mobile/login/index'
+  try {
+    const pages = getCurrentPages()
+    const route = pages.length > 0 ? pages[pages.length - 1].route || '' : ''
+    if (route.startsWith('pages/tablet/')) return '/pages/tablet/login/index'
+    if (route.startsWith('pages/mobile/')) return '/pages/mobile/login/index'
+  } catch {
+    // Ignore route lookup error outside page context
+  }
+  // #ifndef MP-WEIXIN
+  try {
+    const sysInfo = uni.getSystemInfoSync()
+    const width = sysInfo.windowWidth || sysInfo.screenWidth
+    const height = sysInfo.windowHeight || sysInfo.screenHeight
+    if (width >= 768 && height >= 500) {
+      return '/pages/tablet/login/index'
+    }
+  } catch {
+    // Fallback to mobile login route when system info is unavailable
+  }
+  // #endif
+  return '/pages/mobile/login/index'
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -93,10 +109,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearSession(): void {
     loginGeneration = Symbol('login')
+    restoreFlight = null
     user.value = null
     tokens.value = null
     sessionId.value = ''
     serverDeviceId.value = ''
+    avatar.value = null
+    localDataScope.deactivate()
     uni.removeStorageSync(AUTH_STORAGE_KEY)
     for (const legacyKey of ['token', 'refreshToken', 'username']) uni.removeStorageSync(legacyKey)
   }
@@ -186,21 +205,38 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  let restoreFlight: { token: symbol; generation: symbol; promise: Promise<boolean> } | null = null
+
   async function restoreSession(): Promise<boolean> {
     if (!token.value) return false
-    try {
-      const currentUser = await useAuthApi.me()
-      if (!currentUser.id) throw new Error('Current user response is incomplete')
-      user.value = currentUser
-      if (tokens.value && sessionId.value) {
-        if (!serverDeviceId.value) throw new Error('Session server device identity is missing')
-        persistSession({ user: currentUser, tokens: tokens.value, sessionId: sessionId.value, serverDeviceId: serverDeviceId.value })
-      }
-      return true
-    } catch (error) {
-      if (error instanceof ApiProblemError && error.status === 401) return false
-      return isAuthenticated.value
+    const generation = loginGeneration
+    if (restoreFlight?.generation === generation) {
+      return restoreFlight.promise
     }
+    const flightToken = Symbol('restore')
+    const promise = (async () => {
+      try {
+        const currentUser = await useAuthApi.me()
+        if (generation !== loginGeneration) return false
+        if (!currentUser.id) throw new Error('Current user response is incomplete')
+        user.value = currentUser
+        if (tokens.value && sessionId.value) {
+          if (!serverDeviceId.value) throw new Error('Session server device identity is missing')
+          persistSession({ user: currentUser, tokens: tokens.value, sessionId: sessionId.value, serverDeviceId: serverDeviceId.value })
+        }
+        return true
+      } catch (error) {
+        if (generation !== loginGeneration) return false
+        if (error instanceof ApiProblemError && error.status === 401) return false
+        return isAuthenticated.value
+      } finally {
+        if (restoreFlight?.token === flightToken) {
+          restoreFlight = null
+        }
+      }
+    })()
+    restoreFlight = { token: flightToken, generation, promise }
+    return promise
   }
 
   async function logout(): Promise<void> {

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -24,9 +24,20 @@ export interface KnowledgeBlock {
 }
 
 export const useBlockStore = defineStore('block', () => {
+  const auth = useAuthStore()
   const recentBlocks = ref<KnowledgeBlock[]>([])
   const isSyncing = ref(false)
   const updatingBlockIds = ref<string[]>([])
+
+  watch(
+    () => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId],
+    () => {
+      recentBlocks.value = []
+      updatingBlockIds.value = []
+      isSyncing.value = false
+    },
+    { flush: 'sync' },
+  )
 
   function captureAuthFence() {
     const auth = useAuthStore()
@@ -149,6 +160,7 @@ export const useBlockStore = defineStore('block', () => {
       await recordMutation('block', blockId, 'create', newBlock)
       if (isFenceCurrent(fence)) {
         recentBlocks.value = [newBlock, ...recentBlocks.value.filter(b => b.id !== blockId)]
+        void import('./useSubjectStore').then(({ useSubjectStore }) => useSubjectStore().loadSubjects()).catch(() => {})
       }
       void syncPendingChanges()
     } finally {
@@ -166,6 +178,7 @@ export const useBlockStore = defineStore('block', () => {
       await recordMutation('block', id, 'delete', { id, sync_version: existing?.sync_version ?? 0 })
       if (isFenceCurrent(fence)) {
         recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
+        void import('./useSubjectStore').then(({ useSubjectStore }) => useSubjectStore().loadSubjects()).catch(() => {})
       }
       void syncPendingChanges()
     } finally {
