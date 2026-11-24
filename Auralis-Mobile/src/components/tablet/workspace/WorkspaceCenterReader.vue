@@ -231,8 +231,9 @@
       </view>
 
       <!-- 1. 文件预览 / 总结 / 大纲一体阅读 -->
-      <view v-if="centerView === 'preview' && selectedSource" class="preview-stage">
-        <template v-if="fileReaderMode === 'document'">
+      <view v-show="centerView === 'preview' && Boolean(selectedSource)" class="preview-stage">
+        <template v-if="selectedSource">
+          <template v-if="fileReaderMode === 'document'">
           <view v-if="selectedSource.ingestionStatus === 'FAILED'" class="processing-alert-banner">
             <view class="processing-alert-left">
               <text class="processing-alert-badge">解析失败</text>
@@ -390,11 +391,12 @@
           </view>
         </view>
         <!-- #endif -->
+        </template>
       </view>
 
       <!-- 2. 学科总览全幅阅读 -->
       <WorkspaceOverviewPane
-        v-else-if="centerView === 'subject-overview'"
+        v-if="centerView === 'subject-overview'"
         kind="subject"
         :mode="subjectOverviewMode"
         :title="subjectName || '当前学科'"
@@ -553,7 +555,7 @@
         </view>
       </view>
 
-      <view v-else class="workspace-onboarding">
+      <view v-else-if="!(centerView === 'preview' && selectedSource)" class="workspace-onboarding">
         <view class="onboarding-halo is-large">
           <LineIcon :name="`subj-${safeIcon}`" size="34px" color="var(--color-sage-ink)" />
         </view>

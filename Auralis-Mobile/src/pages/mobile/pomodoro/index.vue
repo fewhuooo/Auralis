@@ -375,6 +375,7 @@ async function completeBoundTask() {
 
 .status-bar-spacer {
   height: var(--status-bar-height, 0px);
+  height: max(var(--status-bar-height, 0px), env(safe-area-inset-top));
   flex-shrink: 0;
 }
 
@@ -415,7 +416,7 @@ async function completeBoundTask() {
 
 .bottom-card-dock {
   flex-shrink: 0;
-  padding: 6px 14px calc(80px + env(safe-area-inset-bottom));
+  padding: 6px 14px var(--tabbar-clearance);
   box-sizing: border-box;
 }
 

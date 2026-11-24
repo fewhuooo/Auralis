@@ -7,9 +7,12 @@
 
     <view v-else-if="loading && !metrics" class="bento-grid">
       <view
-        v-for="n in 4"
+        v-for="n in 5"
         :key="n"
-        :class="variant === 'pc' ? 'pc-stat-cell' : 'bento-tile zen-card'"
+        :class="[
+          variant === 'pc' ? 'pc-stat-cell' : 'bento-tile zen-card',
+          variant === 'pc' ? (n === 5 ? 'is-wide' : '') : (n === 1 ? 'is-featured' : ''),
+        ]"
       >
         <view class="ui-shimmer shimmer-val"></view>
         <view class="ui-shimmer shimmer-label"></view>
@@ -61,6 +64,8 @@ import { onScopeDispose, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { statsApi } from '@/api/statsApi'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useFocusStore } from '@/store/useFocusStore'
+import { useSyncStore } from '@/store/useSyncStore'
 import { detectLocalTimeZone, getCurrentWeekBounds } from '@/utils/dateKey'
 import { studyMetrics } from '@/utils/studyMetrics'
 
@@ -80,11 +85,43 @@ function metricIcon(idx: number): string {
 }
 
 const auth = useAuthStore()
+const focusStore = useFocusStore()
+const syncStore = useSyncStore()
 const metrics = ref<ReturnType<typeof studyMetrics> | null>(null)
 const loading = ref(false)
 const error = ref(false)
 let requestId = 0
 let pendingReload = false
+
+function metricsCacheKey(userId: string | undefined, deviceId: string | undefined): string {
+  return `auralis:metrics:cache:${userId || 'anon'}:${deviceId || 'dev'}`
+}
+
+function readCachedMetrics(userId: string | undefined, deviceId: string | undefined): ReturnType<typeof studyMetrics> | null {
+  if (!userId) return null
+  try {
+    const raw = uni.getStorageSync(metricsCacheKey(userId, deviceId))
+    if (!raw) return null
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed) || parsed.length !== 5) return null
+    return parsed as ReturnType<typeof studyMetrics>
+  } catch {
+    return null
+  }
+}
+
+function writeCachedMetrics(
+  userId: string | undefined,
+  deviceId: string | undefined,
+  value: ReturnType<typeof studyMetrics>,
+) {
+  if (!userId) return
+  try {
+    uni.setStorageSync(metricsCacheKey(userId, deviceId), JSON.stringify(value))
+  } catch {
+    // Ignore storage write failures cleanly
+  }
+}
 
 async function load() {
   const userId = auth.user?.id
@@ -109,7 +146,9 @@ async function load() {
       statsApi.weekly(bounds.from, bounds.to, timeZone),
     ])
     if (!isCurrent()) return
-    metrics.value = studyMetrics(overview, weekly)
+    const nextMetrics = studyMetrics(overview, weekly)
+    metrics.value = nextMetrics
+    writeCachedMetrics(userId, deviceId, nextMetrics)
     const weeklyFocusDays = (weekly.days || []).filter(day => (day.focusSeconds ?? 0) > 0).length
     emit('loaded', { weeklyFocusDays })
   } catch (cause) {
@@ -130,7 +169,7 @@ async function load() {
 watch(() => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId], () => {
   requestId++
   pendingReload = false
-  metrics.value = null
+  metrics.value = auth.isAuthenticated ? readCachedMetrics(auth.user?.id, auth.serverDeviceId) : null
   error.value = false
   loading.value = false
   emit('loaded', { weeklyFocusDays: 0 })
@@ -138,6 +177,22 @@ watch(() => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId], () => {
     void load()
   }
 }, { immediate: true })
+
+watch(() => syncStore.metricsRevision, (rev) => {
+  if (rev > 0 && auth.isAuthenticated) {
+    void load()
+  }
+})
+
+watch(
+  () => [focusStore.todayRounds, focusStore.pendingOutboxCount] as const,
+  ([nextRounds, nextPending], [prevRounds, prevPending]) => {
+    if (!auth.isAuthenticated) return
+    if (nextPending < prevPending || (nextRounds > prevRounds && nextPending === 0)) {
+      void load()
+    }
+  },
+)
 
 onScopeDispose(() => { requestId++ })
 

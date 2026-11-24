@@ -308,6 +308,7 @@ import WorkspaceUploadModal from '@/components/tablet/workspace/WorkspaceUploadM
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
 import { sourceApi, type SourceView } from '@/api/sourceApi'
+import { subscribeOverviewUpdated } from '@/api/sync'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDataScope } from '@/services/localDataScope'
@@ -1196,10 +1197,26 @@ onLoad((options) => {
   }
 })
 
+let stopOverviewRealtime: (() => void) | null = null
+
 onMounted(async () => {
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleWindowResize)
   }
+  stopOverviewRealtime = subscribeOverviewUpdated((event) => {
+    if (!authStore.isAuthenticated || !subjectId.value) return
+    if (event.resourceType === 'SUBJECT' && (!event.resourceId || event.resourceId === subjectId.value)) {
+      void loadSubjectOverview()
+      return
+    }
+    if (event.resourceType === 'SOURCE' && event.resourceId) {
+      const targetSourceId = event.resourceId
+      void loadSources().then(() => {
+        const matched = sources.value.find(item => item.id === targetSourceId)
+        if (matched) void loadFileOverview(matched)
+      })
+    }
+  })
   const fence = captureFence()
   try {
     await subjectStore.loadSubjects()
@@ -1229,6 +1246,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopDragging()
+  stopOverviewRealtime?.()
+  stopOverviewRealtime = null
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleWindowResize)
   }

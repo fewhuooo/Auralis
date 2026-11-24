@@ -26,6 +26,11 @@ export const useSyncStore = defineStore('sync', () => {
   const conflicts = ref<string[]>([])
   const pendingMutationCount = ref(0)
   const autoSyncEnabled = ref(true)
+  const metricsRevision = ref(0)
+
+  function bumpMetricsRevision() {
+    metricsRevision.value += 1
+  }
 
   const controller = createSyncController({
     getAuth: () => ({
@@ -53,6 +58,7 @@ export const useSyncStore = defineStore('sync', () => {
         useBlockStore().loadLocalBlocks(),
         useTaskStore().loadLocalTasks(),
       ])
+      bumpMetricsRevision()
     },
     onLocalScopeReset: (previousScope) => {
       if (previousScope) {
@@ -87,6 +93,7 @@ export const useSyncStore = defineStore('sync', () => {
       void import('./useFocusStore').then(({ useFocusStore }) => {
         void useFocusStore().flushPendingSessions()
       })
+      bumpMetricsRevision()
     },
     onStateChange: (next) => {
       isSyncing.value = next.isSyncing
@@ -117,6 +124,8 @@ export const useSyncStore = defineStore('sync', () => {
     conflicts,
     pendingMutationCount,
     autoSyncEnabled,
+    metricsRevision,
+    bumpMetricsRevision,
     refreshPendingCount: () => controller.refreshPendingCount(),
     triggerSync: (manual = false) => controller.triggerSync(manual),
     syncNow: () => controller.syncNow(),

@@ -25,7 +25,7 @@
 
         <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
           <view
-            v-if="scheduledForDay.length === 0 && taskStore.homePendingTasks.length === 0"
+            v-if="hydrated && scheduledForDay.length === 0 && taskStore.homePendingTasks.length === 0"
             class="clear-day-canvas zen-card"
           >
             <view class="clear-day-halo" aria-hidden="true">
@@ -38,7 +38,7 @@
             </view>
           </view>
 
-          <template v-else>
+          <template v-else-if="hydrated || scheduledForDay.length > 0 || taskStore.homePendingTasks.length > 0">
             <view class="task-section">
               <view class="section-header">
                 <text class="section-title">日程</text>
@@ -101,11 +101,11 @@
             </text>
           </view>
 
-          <view v-if="subjectStore.subjects.length === 0" class="subjects-empty">
+          <view v-if="hydrated && subjectStore.subjects.length === 0" class="subjects-empty">
             <text class="empty-text">暂无学科</text>
           </view>
 
-          <scroll-view v-else scroll-y :show-scrollbar="false" class="subjects-scroll">
+          <scroll-view v-else-if="subjectStore.subjects.length > 0" scroll-y :show-scrollbar="false" class="subjects-scroll">
             <view class="subject-list">
               <view
                 v-for="sub in subjectStore.subjects"
@@ -618,24 +618,36 @@ onShow(() => {
   void subjectStore.loadSubjects()
 })
 
+const hydrated = ref(false)
+
+async function hydrateDashboardData() {
+  const gen = authStore.getLoginGeneration()
+  try {
+    await Promise.all([subjectStore.loadSubjects(), taskStore.fetchTasks()])
+  } finally {
+    if (gen === authStore.getLoginGeneration()) {
+      hydrated.value = true
+    }
+  }
+}
+
 watch(
   () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
   () => {
+    hydrated.value = false
     showCreateModal.value = false
     savingTask.value = false
     taskForm.name = ''
     taskForm.dueDateKey = ''
     if (!authStore.isAuthenticated) return
-    void subjectStore.loadSubjects()
-    void taskStore.fetchTasks()
+    void hydrateDashboardData()
   },
 )
 
 onMounted(async () => {
   clockTimer = setInterval(syncClock, 30000)
   if (!authStore.isAuthenticated) return
-  await subjectStore.loadSubjects()
-  await taskStore.fetchTasks()
+  await hydrateDashboardData()
 })
 
 onUnmounted(() => {

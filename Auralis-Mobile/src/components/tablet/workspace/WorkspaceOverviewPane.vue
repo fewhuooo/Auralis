@@ -39,7 +39,11 @@
           {{
             hasSiblingMarkdown
               ? `当前资料已生成${siblingModeLabel}，可切换标签查看`
-              : '等待解析生成完成，或点击刷新再次检查。'
+              : (kind === 'file' && source?.ingestionStatus === 'FAILED')
+                ? '资料解析失败，无法生成结构总览'
+                : (kind === 'file' && source && source.ingestionStatus !== 'READY')
+                  ? '资料仍在解析索引中，完成后将自动更新'
+                  : '暂无生成结果，可点击刷新再次检查'
           }}
         </text>
         <view class="state-actions">
