@@ -265,13 +265,13 @@
                   <text class="ai-subtitle">AI 使用额度</text>
                 </view>
                 <view
-                  v-if="aiUsage && !loadingAiUsage && !aiUsageError"
+                  v-if="aiUsage && !loadingAiUsage"
                   class="action-btn secondary"
                   role="button"
                   aria-label="刷新额度"
                   @click="fetchAiUsage"
                 >
-                  <text>刷新</text>
+                  <text>{{ aiUsageError ? '刷新重试' : '刷新' }}</text>
                 </view>
               </view>
 

@@ -540,7 +540,7 @@
       />
 
       <!-- 6. 初始化过渡 / 默认学科欢迎引导 -->
-      <view v-else-if="initializing" class="reader-loading-stage" role="status">
+      <view v-else-if="initializing && !(centerView === 'preview' && selectedSource)" class="reader-loading-stage" role="status">
         <view class="reader-sheet-placeholder zen-card" aria-hidden="true">
           <view class="reader-sheet-kicker"></view>
           <view class="reader-sheet-title"></view>

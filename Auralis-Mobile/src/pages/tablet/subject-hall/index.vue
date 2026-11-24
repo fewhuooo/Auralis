@@ -33,12 +33,12 @@
           </view>
         </view>
 
-        <view v-else-if="filteredSubjects.length === 0" class="empty-hall zen-card">
+        <view v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
           <text class="empty-title">无匹配学科</text>
           <view class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</view>
         </view>
 
-        <view v-else class="grid">
+        <view v-else-if="hydrated" class="grid">
           <view
             v-for="subj in filteredSubjects"
             :key="subj.id"

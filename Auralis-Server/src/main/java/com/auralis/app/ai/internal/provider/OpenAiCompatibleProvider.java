@@ -114,7 +114,8 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         try {
             URI baseUri = URI.create(credential.baseUrl().trim());
             ResolvedProviderEndpoint endpoint = cancellation instanceof OverviewCancellation overviewCancellation
-                    ? endpointPolicy.resolve(providerType, baseUri, effectiveTimeoutMillis, overviewCancellation)
+                    ? endpointPolicy.resolve(providerType, baseUri,
+                            effectiveTimeoutMillis == null ? 10_000L : effectiveTimeoutMillis, overviewCancellation)
                     : endpointPolicy.resolve(providerType, baseUri);
             JsonNode body;
             if (cancellation != null) {
