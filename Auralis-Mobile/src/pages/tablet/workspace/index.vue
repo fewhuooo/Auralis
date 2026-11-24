@@ -1146,6 +1146,29 @@ onBeforeUnmount(() => {
 })
 
 watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    showBlockModal.value = false
+    showUploadModal.value = false
+    editingBlockId.value = null
+    submittingBlock.value = false
+    uploading.value = false
+    viewingBlockId.value = ''
+    sources.value = []
+    sourcesError.value = ''
+    selectedSourceId.value = null
+    subjectOverview.value = null
+    subjectOverviewError.value = ''
+    fileOverviews.value = {}
+    fileOverviewErrors.value = {}
+    clearPreview()
+    if (authStore.isAuthenticated && subjectId.value) {
+      void reloadAll()
+    }
+  },
+)
+
+watch(
   () => syncStore.lastSyncedAt,
   (next) => {
     if (!next || !subjectId.value || loadingSources.value) return

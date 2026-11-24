@@ -60,7 +60,7 @@ export interface AiUsageView {
   daily: AiQuotaInfo
 }
 
-let cachedConfig: AiConfig = {
+const EMPTY_AI_CONFIG: AiConfig = {
   provider: 'OPENAI_COMPATIBLE',
   baseUrl: '',
   model: '',
@@ -68,17 +68,38 @@ let cachedConfig: AiConfig = {
   hasApiKey: false,
 }
 
+let cachedConfig: AiConfig = { ...EMPTY_AI_CONFIG }
+let cachedConfigGeneration: symbol | null = null
+
+function syncCachedConfigScope(): void {
+  const generation = useAuthStore().getLoginGeneration()
+  if (cachedConfigGeneration !== generation) {
+    cachedConfig = { ...EMPTY_AI_CONFIG }
+    cachedConfigGeneration = generation
+  }
+}
+
 export async function getAiUsage(): Promise<AiUsageView> {
   const response = await mobileRequest.get<unknown>('/api/ai/usage')
   return validateAiUsage(response)
 }
 
-export const getAiConfig = () => ({ ...cachedConfig })
+export const getAiConfig = () => {
+  syncCachedConfigScope()
+  return { ...cachedConfig }
+}
 
 export async function refreshAiConfig(): Promise<AiConfig> {
+  syncCachedConfigScope()
+  const generation = useAuthStore().getLoginGeneration()
   const settings = await aiApi.getSettings()
+  if (generation !== useAuthStore().getLoginGeneration()) {
+    syncCachedConfigScope()
+    return { ...cachedConfig }
+  }
   const current = settings.find(item => item.provider === cachedConfig.provider) || settings[0]
   if (current) {
+    cachedConfigGeneration = generation
     cachedConfig = {
       provider: current.provider || 'OPENAI_COMPATIBLE',
       baseUrl: current.baseUrl || '',
@@ -91,6 +112,8 @@ export async function refreshAiConfig(): Promise<AiConfig> {
 }
 
 export async function setAiConfig(config: Partial<AiConfig>): Promise<AiSettingsView> {
+  syncCachedConfigScope()
+  const generation = useAuthStore().getLoginGeneration()
   const provider = config.provider || cachedConfig.provider
   const baseUrl = config.baseUrl !== undefined ? (config.baseUrl || undefined) : (cachedConfig.baseUrl || undefined)
   const chatModel = config.model !== undefined ? (config.model || undefined) : (cachedConfig.model || undefined)
@@ -100,12 +123,15 @@ export async function setAiConfig(config: Partial<AiConfig>): Promise<AiSettings
     chatModel,
     apiKey: config.apiKey || undefined,
   })
-  cachedConfig = {
-    provider: updated.provider || provider,
-    baseUrl: updated.baseUrl ?? config.baseUrl ?? '',
-    model: updated.chatModel ?? config.model ?? '',
-    apiKey: '',
-    hasApiKey: Boolean(updated.hasApiKey),
+  if (generation === useAuthStore().getLoginGeneration()) {
+    cachedConfigGeneration = generation
+    cachedConfig = {
+      provider: updated.provider || provider,
+      baseUrl: updated.baseUrl ?? config.baseUrl ?? '',
+      model: updated.chatModel ?? config.model ?? '',
+      apiKey: '',
+      hasApiKey: Boolean(updated.hasApiKey),
+    }
   }
   return updated
 }

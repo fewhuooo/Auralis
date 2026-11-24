@@ -412,3 +412,29 @@ test('localDocumentCache selectEvictableCacheKeys evicts oldest LRU entries when
     ['scope::a1'],
   )
 })
+
+test('localDb auto-initializes on first read/write in a new scope and localDataScope.deactivate clears active scope', async (context) => {
+  const storage = setupLocalDbTestEnv(context)
+  const { localDataScope } = await import('../src/services/localDataScope.ts?local-auto-init')
+  const { localDb } = await import('../src/services/localDb.ts?local-auto-init')
+
+  const scope = localDataScope.activate('user-auto', 'dev-auto')
+  assert.notEqual(scope, 'legacy-unassigned')
+
+  // Write and read immediately without calling localDb.init() first.
+  await localDb.saveSubject({
+    id: 'sub-auto',
+    name: '自动初始化测试',
+    description: '冷启动门禁',
+    icon: 'book',
+    version: 1,
+  })
+  const subjects = await localDb.getSubjects()
+  assert.equal(subjects.length, 1)
+  assert.equal(subjects[0].id, 'sub-auto')
+
+  localDataScope.deactivate()
+  assert.equal(localDataScope.current(), 'legacy-unassigned')
+  assert.equal(storage.get('auralis:local-data-scope:v2'), undefined)
+  assert.deepEqual(await localDb.getSubjects(), [])
+})

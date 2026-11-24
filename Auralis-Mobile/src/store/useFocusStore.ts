@@ -167,12 +167,23 @@ export const useFocusStore = defineStore('focus', () => {
     lastCompletedTask.value = null
   }
 
-  watch(() => [auth.sessionId, auth.user?.id, auth.serverDeviceId], () => {
-    stopTicker()
-    lastCompletedTask.value = null
-    reconcileNow(false)
-    void flushPendingSessions()
-  }, { immediate: true })
+  watch(
+    () => [auth.isAuthenticated, auth.sessionId, auth.user?.id, auth.serverDeviceId],
+    () => {
+      stopTicker()
+      lastCompletedTask.value = null
+      if (!auth.isAuthenticated) {
+        state.value = createDefaultFocusState()
+        todayRounds.value = 0
+        todayFocusSeconds.value = 0
+        pendingOutboxCount.value = 0
+        return
+      }
+      reconcileNow(false)
+      void flushPendingSessions()
+    },
+    { immediate: true, flush: 'sync' },
+  )
 
   return {
     state,

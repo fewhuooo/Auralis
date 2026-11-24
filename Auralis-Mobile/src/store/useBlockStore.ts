@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -24,9 +24,20 @@ export interface KnowledgeBlock {
 }
 
 export const useBlockStore = defineStore('block', () => {
+  const auth = useAuthStore()
   const recentBlocks = ref<KnowledgeBlock[]>([])
   const isSyncing = ref(false)
   const updatingBlockIds = ref<string[]>([])
+
+  watch(
+    () => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId],
+    () => {
+      recentBlocks.value = []
+      updatingBlockIds.value = []
+      isSyncing.value = false
+    },
+    { flush: 'sync' },
+  )
 
   function captureAuthFence() {
     const auth = useAuthStore()

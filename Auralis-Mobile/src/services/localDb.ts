@@ -403,6 +403,10 @@ function selectH5Query(sql: string): any[] {
   return [];
 }
 
+const initializedScopes = new Set<string>();
+const initializingScopes = new Map<string, Promise<void>>();
+const openingDatabases = new Map<string, Promise<void>>();
+
 // Helper to wrap plus.sqlite in Promises
 const sqlite = {
   isOpen(): boolean {
@@ -411,69 +415,97 @@ const sqlite = {
   },
 
   open(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (isH5) {
-        return resolve();
-      }
-      if (this.isOpen()) {
-        return resolve();
-      }
+    if (isH5 || this.isOpen()) {
+      return Promise.resolve();
+    }
+    const identity = databaseIdentity();
+    const existing = openingDatabases.get(identity.name);
+    if (existing) {
+      return existing;
+    }
+    const pending = new Promise<void>((resolve, reject) => {
       plus.sqlite.openDatabase({
-        ...databaseIdentity(),
+        ...identity,
         success: () => resolve(),
-        fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e)))
+        fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e))),
+      });
+    });
+    openingDatabases.set(identity.name, pending);
+    const cleanup = () => {
+      if (openingDatabases.get(identity.name) === pending) {
+        openingDatabases.delete(identity.name);
+      }
+    };
+    pending.then(cleanup, cleanup);
+    return pending;
+  },
+
+  async executeRaw(sql: string): Promise<void> {
+    await this.open();
+    if (isH5) {
+      executeH5Query(sql);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      plus.sqlite.executeSql({
+        name: databaseIdentity().name,
+        sql,
+        success: () => resolve(),
+        fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`)),
       });
     });
   },
 
-  execute(sql: string): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.open();
-        if (isH5) {
-          try {
-            executeH5Query(sql);
-            return resolve();
-          } catch (e) {
-            return reject(e);
-          }
-        }
-        plus.sqlite.executeSql({
-          name: databaseIdentity().name,
-          sql: sql,
-          success: () => resolve(),
-          fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`))
-        });
-      } catch (err) {
-        reject(err);
-      }
+  async selectRaw(sql: string): Promise<any[]> {
+    await this.open();
+    if (isH5) {
+      return selectH5Query(sql);
+    }
+    return new Promise<any[]>((resolve, reject) => {
+      plus.sqlite.selectSql({
+        name: databaseIdentity().name,
+        sql,
+        success: (data: any) => resolve(data || []),
+        fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`)),
+      });
     });
   },
 
-  select(sql: string): Promise<any[]> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.open();
-        if (isH5) {
-          try {
-            const data = selectH5Query(sql);
-            return resolve(data);
-          } catch (e) {
-            return reject(e);
-          }
-        }
-        plus.sqlite.selectSql({
-          name: databaseIdentity().name,
-          sql: sql,
-          success: (data: any) => resolve(data || []),
-          fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`))
-        });
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
+  async execute(sql: string): Promise<void> {
+    await ensureInitialized();
+    return this.executeRaw(sql);
+  },
+
+  async select(sql: string): Promise<any[]> {
+    await ensureInitialized();
+    return this.selectRaw(sql);
+  },
 };
+
+async function ensureInitialized(): Promise<void> {
+  const scope = safeCurrentScope() || 'legacy-unassigned';
+  if (initializedScopes.has(scope)) {
+    return;
+  }
+  const pending = initializingScopes.get(scope);
+  if (pending) {
+    return pending;
+  }
+  const run = (async () => {
+    await sqlite.open();
+    await localDb.createTables();
+    await localDb.runMigrations();
+    initializedScopes.add(scope);
+  })();
+  initializingScopes.set(scope, run);
+  const cleanup = () => {
+    if (initializingScopes.get(scope) === run) {
+      initializingScopes.delete(scope);
+    }
+  };
+  run.then(cleanup, cleanup);
+  return run;
+}
 
 const inFlightMutationIds = new Set<string>();
 const cacheWriteQueues = new Map<string, Promise<void>>();
@@ -571,9 +603,13 @@ export const localDb = {
 
   async init() {
     try {
-      await sqlite.open();
-      await this.createTables();
-      await this.runMigrations();
+      const scope = safeCurrentScope() || 'legacy-unassigned';
+      const inFlight = initializingScopes.get(scope);
+      if (inFlight) {
+        await inFlight;
+      }
+      initializedScopes.delete(scope);
+      await ensureInitialized();
       console.log('[SQLite Mobile] Native database and tables initialized.');
     } catch (e) {
       console.error('[SQLite Mobile] Database initialization failed:', e);
@@ -582,13 +618,13 @@ export const localDb = {
   },
 
   async createTables() {
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS sync_metadata (
         key TEXT PRIMARY KEY,
         value TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS local_mutations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         client_id TEXT,
@@ -600,7 +636,7 @@ export const localDb = {
         sync_status TEXT DEFAULT 'pending'
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS knowledge_blocks (
         id TEXT PRIMARY KEY,
         subject TEXT,
@@ -621,7 +657,7 @@ export const localDb = {
         related_block_ids TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS task_blocks (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -640,7 +676,7 @@ export const localDb = {
         subject_id TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS subjects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -650,7 +686,7 @@ export const localDb = {
         version INTEGER DEFAULT 0
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS source_files (
         id TEXT PRIMARY KEY,
         subject_id TEXT,
@@ -665,7 +701,7 @@ export const localDb = {
         payload_json TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS ai_overview_cache (
         cache_key TEXT PRIMARY KEY,
         scope_type TEXT NOT NULL,
@@ -676,7 +712,7 @@ export const localDb = {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS review_states_cache (
         knowledge_block_id TEXT PRIMARY KEY,
         subject_id TEXT NOT NULL,
@@ -684,7 +720,7 @@ export const localDb = {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS subject_stats_cache (
         cache_key TEXT PRIMARY KEY,
         subject_id TEXT NOT NULL,
@@ -694,7 +730,7 @@ export const localDb = {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS tablet_notes (
         id TEXT PRIMARY KEY,
         mode TEXT NOT NULL,
@@ -738,74 +774,74 @@ export const localDb = {
     }
 
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN position TEXT DEFAULT '0'");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN position TEXT DEFAULT '0'");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN subject_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN subject_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN source_file_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN source_file_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN tags TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN tags TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN difficulty TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN difficulty TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN mastery INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN mastery INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN review_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN review_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN related_block_ids TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN related_block_ids TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN scheduled_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN scheduled_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN due_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN due_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE source_files ADD COLUMN payload_json TEXT");
+      await sqlite.executeRaw("ALTER TABLE source_files ADD COLUMN payload_json TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE subjects DROP COLUMN color");
+      await sqlite.executeRaw("ALTER TABLE subjects DROP COLUMN color");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN load");
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN load");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN loadText");
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN loadText");
     } catch (e) {}
 
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN color");
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN color");
     } catch (e) {}
 
-    const taskMutations = await sqlite.select("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
+    const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
     for (const mutation of taskMutations) {
       if (!mutation.payload) continue;
       const result = cleanTaskMutationPayload(mutation.payload);
@@ -813,7 +849,7 @@ export const localDb = {
       if (result.status === 'changed') {
         const sanitized = result.payload.replace(/'/g, "''");
         const esc = (value: string) => value.replace(/'/g, "''");
-        await sqlite.execute(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+        await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
       }
     }
   },

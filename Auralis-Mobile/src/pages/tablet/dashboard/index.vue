@@ -339,7 +339,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
@@ -546,9 +546,12 @@ async function submitCreateTask() {
     showCreateModal.value = false
     uni.showToast({ title: scheduledAt ? '已加入日程' : '已加入待办', icon: 'none' })
   } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
     uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
   } finally {
-    savingTask.value = false
+    if (generation === authStore.getLoginGeneration()) {
+      savingTask.value = false
+    }
   }
 }
 
@@ -563,8 +566,22 @@ onShow(() => {
   void subjectStore.loadSubjects()
 })
 
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    showCreateModal.value = false
+    savingTask.value = false
+    taskForm.name = ''
+    taskForm.dueDateKey = ''
+    if (!authStore.isAuthenticated) return
+    void subjectStore.loadSubjects()
+    void taskStore.fetchTasks()
+  },
+)
+
 onMounted(async () => {
   clockTimer = setInterval(syncClock, 30000)
+  if (!authStore.isAuthenticated) return
   await subjectStore.loadSubjects()
   await taskStore.fetchTasks()
 })
