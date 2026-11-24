@@ -1,6 +1,6 @@
 # Auralis 当前状态
 
-更新时间：2026-11-19
+更新时间：2026-11-24
 
 文档状态：现行状态快照
 
@@ -22,7 +22,7 @@
 | Overview | Markdown v2：CLEAN → OUTLINE → SUMMARY；超容量自动分批；文件和学科直接入口支持三种模式，正式保存保留 CAS/来源修订校验 | 11-13 有定向回归、真实文件生成及学科桌面保存回读记录；持久后台作业按用户要求退役；复杂材料质量和完整桌面走查仍开放 |
 | Chat | 原生工具与公开 parts；会话读取范围绑定、Catalog/定向检索、来源总览读取、UNKNOWN 显式恢复、12 轮/20 次工具上限；2026-11-19 新增 `ChatToolPresentation` 在 `tool.*`/SSE 与 `toolTrace` 输出中文工具名与安全摘要 `label` 并收敛思考提示词，全端统一交叉时间轴与排版规范 | 11-19 Server 定向 8 个测试类（`ChatAgentProtocolPublicationTests` 等）Maven 测试通过；11-20 `auralis-backend` 容器已重建并 `healthy`；真实登录态下 Provider 流式重放、取消/断流真实链路仍待验收 |
 | Server 核心 | Identity、Subject、Source/Asset、Knowledge、Task、Review、Stats、Sync/Realtime 与 AI 服务已实现 | 11-16 最近全量 884/884、打包通过；随后 11-19 Chat 工具展示与提示词定向 8 个测试类通过；不等于部署或生产验收 |
-| Mobile / Tablet | Uni-app 端共享鉴权、同步、资料、Stats 与协议 1 Chat；2026-11-17～20 完成禅意样式与双端学习全生命周期迁移、并发及过期任务锁定收口，并统一对齐全端 AI 体验：手机 `mobile/ai-search`、平板 `tablet/ai-search` 与 `WorkspaceAiPanel` 共用暖沙麻 `.zen-chat-user-bubble`（`#ECE5D8` / `#262522`）、极简无框竖向步骤行、`MobileChatProcessArea`（受控抽屉平滑排空 `resolveMobileProcessDrawerOpen` 与 `#9C500C` 失败态高对比度）、`MobileChatPartList`（`animateOnMount` + `resolveMobileTextDrainAction` 单包平顺排空防重排）、平缓连续 `smoothStreamBuffer`（含空池冷却）、`aiClient.ts` `#ifdef H5` `fetch` 真流式 SSE、移动端对话页渐隐遮罩/右置回底按钮/无框底栏/卡片表格排版、`SaveKnowledgeBlockModal`、规范化 `string`/`string[]` `activity_submission`、严格交错过程时间轴与思考脱敏、大小写兼容 `toolTrace` 增量恢复与容错轮询、50px `@wheel` + 程序化滚动护栏及标准列表悬挂缩进 | 11-20 最终落盘 `vue-tsc --noEmit`、`check:r4-mobile`（82 文件）、`test:r4-mobile`（111/111）、`test:tablet`、`build:h5` 与 `build:mp-weixin` 全部退出码 0；`:5174` 在线（未登录首屏烟测通过）；真实 Provider/后端 AI 全流程、新学习/复习联调及微信开发者工具/真机（手机与平板）验收仍待实测 |
+| Mobile / Tablet | Uni-app 端共享鉴权、同步、资料、Stats 与协议 1 Chat；2026-11-17～20 完成禅意样式与双端学习全生命周期迁移、并发及过期任务锁定收口与全端 AI 过程流对齐；2026-11-23～24 完成平板工作区 `@file-viewer/core` + `localDocumentCache` 离线缓存、平板首页/专注/AI/设置对齐 PC、`source_files`/`ai_overview_cache`/`review_states_cache`/`subject_stats_cache` 本地先读后刷、两轮持久化与跨账号隔离审计修复（同步块编辑保真 `sourceFileId`、直切账号 WebSocket 重建、手机四页隔离与上传落盘、`useAiUsage` 非闪烁续期、AI 停止流令牌防覆盖、剪贴板统一降级与孤立死代码清理） | 11-24 `vue-tsc --noEmit`、`check:r4-mobile`（84 文件）、`test:r4-mobile`（126/126）、`test:tablet`、`check-tablet-sidebar-transition`、`build:h5` 与 `build:mp-weixin` 全部退出码 0；真实 Provider/后端 AI 全流程、真实 MinIO 跨域、新学习/复习联调及微信开发者工具/真机（手机与平板）验收仍待实测 |
 | 基础设施 | Compose 使用 PostgreSQL/pgvector、MinIO、backend/frontend；平台生成与 Embedding 配置分组 | 11-12/13 有本机部署健康和部分真实生成记录；生产凭据、异常专项、监控、备份恢复及发布演练未由这些记录关闭 |
 
 ## Mobile / Tablet：设计范围确认

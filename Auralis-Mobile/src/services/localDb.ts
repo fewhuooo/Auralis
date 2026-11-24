@@ -296,7 +296,8 @@ function matchRow(row: any, conditions: WhereCondition[]): boolean {
 
 function executeH5Query(sql: string) {
   const trimmed = sql.trim();
-  if (trimmed.toUpperCase().startsWith('CREATE TABLE')) {
+  const upperStart = trimmed.toUpperCase();
+  if (upperStart.startsWith('CREATE TABLE') || upperStart.startsWith('ALTER TABLE')) {
     return;
   }
   if (trimmed.toUpperCase().startsWith('INSERT INTO')) {
@@ -362,6 +363,9 @@ function executeH5Query(sql: string) {
     table = table.filter(row => !matchRow(row, where));
     h5Db.saveTable(tableName, table);
     return;
+  }
+  if (trimmed) {
+    console.warn('[H5 DB] Unhandled SQL statement:', trimmed);
   }
 }
 
@@ -846,15 +850,17 @@ export const localDb = {
       await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN color");
     } catch (e) {}
 
-    const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
-    for (const mutation of taskMutations) {
-      if (!mutation.payload) continue;
-      const result = cleanTaskMutationPayload(mutation.payload);
-      if (result.status === 'invalid') warnInvalidTaskPayload(true)
-      if (result.status === 'changed') {
-        const sanitized = result.payload.replace(/'/g, "''");
-        const esc = (value: string) => value.replace(/'/g, "''");
-        await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+    if (!isH5) {
+      const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
+      for (const mutation of taskMutations) {
+        if (!mutation.payload) continue;
+        const result = cleanTaskMutationPayload(mutation.payload);
+        if (result.status === 'invalid') warnInvalidTaskPayload(true)
+        if (result.status === 'changed') {
+          const sanitized = result.payload.replace(/'/g, "''");
+          const esc = (value: string) => value.replace(/'/g, "''");
+          await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+        }
       }
     }
   },

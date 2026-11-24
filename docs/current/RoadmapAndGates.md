@@ -1,6 +1,6 @@
 # Auralis 路线规划与发布前门禁
 
-更新时间：2026-11-16
+更新时间：2026-11-24
 
 文档状态：现行路线与门禁
 
@@ -93,7 +93,7 @@
 ### Mobile / Tablet
 
 - **目标**：让手机与平板在不跨端跳转、数据来源清楚、登录正确和触控可用的前提下完成主流程验收。具体页面与边界见[Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)。
-- **已知前提**：手机 12 个页面（含启动分流）、Tablet 9 个页面已注册；`#ifndef MP-WEIXIN` 将 Tablet 页面排除在微信产物外；设备标识统一使用请求 `clientDeviceKey` 与服务端返回的 `serverDeviceId`，不保留旧 `deviceId` 兼容字段；Realtime ticket 不带请求体且须携带有效 Bearer access token。
+- **已知前提**：手机端 8 个页面（含启动分流）、Tablet 8 个页面已注册；`#ifndef MP-WEIXIN` 将 Tablet 页面排除在微信产物外；设备标识统一使用请求 `clientDeviceKey` 与服务端返回的 `serverDeviceId`，不保留旧 `deviceId` 兼容字段；Realtime ticket 不带请求体且须携带有效 Bearer access token。
 - **有序收口任务**：
   1. 验证 launch 分流、手机/Tablet 内部导航和 401 登录回退。
   2. 验证 `VITE_API_BASE_URL`、`VITE_WS_BASE_URL` 在模拟器/真机上的连通性；微信环境强制 HTTPS/WSS。
@@ -103,7 +103,7 @@
   6. 验收 TabletLayout 导航、AI modal、Dashboard 多栏和 workspace 总结栏。
   7. 运行并维护侧栏切换脚本（`node scripts\check-tablet-sidebar-transition.mjs`）和 `test:tablet`，按实际行为缺口补齐验证。
   8. 在微信开发者工具、手机和横屏平板完成真实交互记录。
-- **验证与完成定义**：`Auralis-Mobile` 执行 `npm.cmd run build:h5`、`npm.cmd run build:mp-weixin`、`npm.cmd run type-check`、`npm.cmd run test:tablet` 及 `node scripts\check-tablet-sidebar-transition.mjs`；手机与 Tablet 只在本端导航，微信产物不含 Tablet 页面，H5、微信与平板真机均有独立证据。
+- **验证与完成定义**：`Auralis-Mobile` 执行 `npm.cmd run type-check`、`npm.cmd run check:r4-mobile`、`npm.cmd run test:r4-mobile`、`npm.cmd run test:tablet`、`node scripts\check-tablet-sidebar-transition.mjs`、`npm.cmd run build:h5` 与 `npm.cmd run build:mp-weixin`；手机与 Tablet 只在本端导航，微信产物不含 Tablet 页面，H5、微信与平板真机均有独立证据。
 
 ### AI 与 RAG
 
