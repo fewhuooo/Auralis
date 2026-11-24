@@ -70,6 +70,10 @@ withDefaults(defineProps<{
   variant: 'bento',
 })
 
+const emit = defineEmits<{
+  (e: 'loaded', payload: { weeklyFocusDays: number }): void
+}>()
+
 const pcIcons = ['file-text', 'checklist', 'clock', 'fire', 'sparkles'] as const
 function metricIcon(idx: number): string {
   return pcIcons[idx] || 'layers'
@@ -106,6 +110,8 @@ async function load() {
     ])
     if (!isCurrent()) return
     metrics.value = studyMetrics(overview, weekly)
+    const weeklyFocusDays = (weekly.days || []).filter(day => (day.focusSeconds ?? 0) > 0).length
+    emit('loaded', { weeklyFocusDays })
   } catch (cause) {
     if (!isCurrent()) return
     console.error('[StudyMetrics] 统计数据加载失败', cause)
@@ -127,6 +133,7 @@ watch(() => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId], () => {
   metrics.value = null
   error.value = false
   loading.value = false
+  emit('loaded', { weeklyFocusDays: 0 })
   if (auth.isAuthenticated) {
     void load()
   }
