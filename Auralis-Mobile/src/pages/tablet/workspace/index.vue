@@ -139,7 +139,7 @@
         v-if="aiPanelMounted"
         v-show="aiPanelVisible"
         class="ai-floating-shell"
-        :class="{ 'is-expanded': aiExpanded, 'is-dragging': isDraggingFloating }"
+        :class="{ 'is-dragging': isDraggingFloating }"
         :style="floatingShellStyle"
       >
         <WorkspaceAiPanel
@@ -147,9 +147,7 @@
           :subject-name="subjectName"
           :selected-source="selectedSource"
           :floating="true"
-          :expanded="aiExpanded"
           @close="aiPanelVisible = false"
-          @toggle-expand="toggleAiExpanded"
           @header-pointerdown="startMouseDrag"
           @header-touchstart="startTouchDrag"
           @typing-change="aiTyping = $event"
@@ -274,7 +272,6 @@ const subjectsHydrated = ref(false)
 
 const aiPanelMounted = ref(false)
 const aiPanelVisible = ref(false)
-const aiExpanded = ref(false)
 const aiTyping = ref(false)
 const dragX = ref(0)
 const dragY = ref(0)
@@ -336,7 +333,7 @@ const activeBlock = computed(() => (
 ))
 
 const floatingShellStyle = computed(() => {
-  if (aiExpanded.value || (dragX.value === 0 && dragY.value === 0)) return undefined
+  if (dragX.value === 0 && dragY.value === 0) return undefined
   return { transform: `translate3d(${dragX.value}px, ${dragY.value}px, 0)` }
 })
 
@@ -918,18 +915,12 @@ function openAiFloating() {
   aiPanelVisible.value = true
 }
 
-function toggleAiExpanded() {
-  aiExpanded.value = !aiExpanded.value
-  dragX.value = 0
-  dragY.value = 0
-}
-
 function computeDragBounds() {
   if (typeof window === 'undefined') return
   const vw = window.innerWidth || 1024
   const vh = window.innerHeight || 768
-  const panelWidth = Math.min(400, vw - 32)
-  const panelHeight = Math.max(420, Math.min(Math.round(vh * 0.74), 660))
+  const panelWidth = Math.min(376, vw - 32)
+  const panelHeight = Math.max(400, Math.min(Math.round(vh * 0.72), 620))
   const margin = 12
   dragMinX = -(vw - 22 - panelWidth - margin)
   dragMaxX = 22 - margin
@@ -972,7 +963,7 @@ function stopDragging() {
 }
 
 function startMouseDrag(rawEvent: unknown) {
-  if (aiExpanded.value || typeof window === 'undefined') return
+  if (typeof window === 'undefined') return
   const ev = rawEvent as { clientX?: number; clientY?: number }
   if (typeof ev?.clientX !== 'number' || typeof ev?.clientY !== 'number') return
   computeDragBounds()
@@ -987,7 +978,7 @@ function startMouseDrag(rawEvent: unknown) {
 }
 
 function startTouchDrag(rawEvent: unknown) {
-  if (aiExpanded.value || typeof window === 'undefined') return
+  if (typeof window === 'undefined') return
   const ev = rawEvent as { touches?: Array<{ clientX?: number; clientY?: number }> }
   const touch = ev?.touches?.[0]
   if (!touch || typeof touch.clientX !== 'number' || typeof touch.clientY !== 'number') return
@@ -1354,25 +1345,18 @@ watch(
   position: fixed;
   right: 22px;
   bottom: 22px;
-  width: 400px;
+  width: 376px;
   max-width: calc(100vw - 32px);
-  height: min(74vh, 660px);
-  min-height: 420px;
+  height: min(72vh, 620px);
+  min-height: 400px;
   z-index: 1080;
-  border-radius: 20px;
-  box-shadow: 0 22px 54px rgba(28, 28, 26, 0.18), 0 6px 18px rgba(45, 55, 40, 0.10);
+  border-radius: 18px;
+  box-shadow: 0 18px 46px rgba(28, 28, 26, 0.14), 0 4px 14px rgba(45, 55, 40, 0.06);
   transition: width 0.22s var(--ease-out), height 0.22s var(--ease-out), right 0.22s var(--ease-out), bottom 0.22s var(--ease-out);
 }
 
 .ai-floating-shell.is-dragging {
   transition: none;
-}
-
-.ai-floating-shell.is-expanded {
-  right: 18px;
-  bottom: 18px;
-  width: min(520px, calc(100vw - 96px));
-  height: calc(100vh - 36px);
 }
 
 @media (max-width: 720px) {
