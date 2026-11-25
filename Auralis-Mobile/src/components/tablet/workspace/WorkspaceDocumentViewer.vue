@@ -146,10 +146,10 @@ const rotationStageStyle = computed(() => {
   return { transform: `rotate(${currentRotation.value}deg)` }
 })
 
-function resolveHtmlElement(raw: HTMLElement | { $el?: unknown } | null): HTMLDivElement | null {
+function resolveHtmlElement(raw: HTMLElement | { $el?: unknown } | null): HTMLElement | null {
   if (typeof HTMLElement === 'undefined' || !raw) return null
-  if (raw instanceof HTMLDivElement) return raw
-  if (typeof raw === 'object' && '$el' in raw && raw.$el instanceof HTMLDivElement) {
+  if (raw instanceof HTMLElement) return raw
+  if (typeof raw === 'object' && '$el' in raw && raw.$el instanceof HTMLElement) {
     return raw.$el
   }
   return null
@@ -271,7 +271,8 @@ async function loadDocument(): Promise<void> {
   const cacheScope = localDataScope.current()
   await nextTick()
   if (token !== loadToken) return
-  const surfaceEl = resolveHtmlElement(surfaceRef.value)
+  const rawSurfaceEl = resolveHtmlElement(surfaceRef.value)
+  const surfaceEl = rawSurfaceEl instanceof HTMLDivElement ? rawSurfaceEl : null
   if (!surfaceEl) {
     loading.value = false
     return

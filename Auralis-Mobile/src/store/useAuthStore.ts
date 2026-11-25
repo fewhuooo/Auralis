@@ -51,6 +51,12 @@ function normalizeAuthResult(result: AuthResult): PersistedAuthSession {
 }
 
 function currentLoginRoute(): string {
+  // #ifdef APP-TABLET
+  return '/pages/tablet/login/index'
+  // #endif
+  // #ifdef APP-PHONE || MP-WEIXIN
+  return '/pages/mobile/login/index'
+  // #endif
   try {
     const pages = getCurrentPages()
     const route = pages.length > 0 ? pages[pages.length - 1].route || '' : ''

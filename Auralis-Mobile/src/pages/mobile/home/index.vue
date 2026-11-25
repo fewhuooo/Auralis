@@ -107,6 +107,9 @@
           </view>
         </view>
       </view>
+      <!-- #ifdef APP-PLUS -->
+      <NativeFileUploadBridge />
+      <!-- #endif -->
     </view>
 
     <template #overlay>
@@ -291,9 +294,6 @@
                       {{ formatBytes(uploadForm.file.size) }}
                     </text>
                   </view>
-                  <!-- #ifdef APP-PLUS -->
-                  <NativeFileUploadBridge />
-                  <!-- #endif -->
                 </view>
 
                 <view class="modal-field-group">
@@ -726,7 +726,14 @@ async function chooseFileToUpload() {
       // #endif
       return
     }
-    validateUploadFile(file)
+    try {
+      validateUploadFile(file)
+    } catch (validationErr) {
+      // #ifdef APP-PLUS
+      if (file.bridgeFileId) releaseNativeBridgeFile(file.bridgeFileId)
+      // #endif
+      throw validationErr
+    }
     // #ifdef APP-PLUS
     if (uploadForm.file?.bridgeFileId && uploadForm.file.bridgeFileId !== file.bridgeFileId) {
       releaseNativeBridgeFile(uploadForm.file.bridgeFileId)
@@ -837,6 +844,11 @@ function resetHomeCaptureState() {
   blockForm.title = ''
   blockForm.content = ''
   uploadForm.subjectId = ''
+  // #ifdef APP-PLUS
+  if (uploadForm.file?.bridgeFileId) {
+    releaseNativeBridgeFile(uploadForm.file.bridgeFileId)
+  }
+  // #endif
   uploadForm.file = null
   uploadForm.title = ''
 }

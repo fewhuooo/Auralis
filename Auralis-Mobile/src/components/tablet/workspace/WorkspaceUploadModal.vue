@@ -251,6 +251,11 @@ function applyChosenFile(candidate: LocalUploadFile) {
   try {
     validateUploadFile(candidate)
   } catch (error) {
+    // #ifdef APP-PLUS
+    if (candidate.bridgeFileId) {
+      releaseNativeBridgeFile(candidate.bridgeFileId)
+    }
+    // #endif
     localError.value = error instanceof Error && error.message ? error.message : '不支持的文件格式'
     return
   }

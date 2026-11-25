@@ -83,6 +83,20 @@ export function createNativeDocumentCache(
   },
 ) {
   const now = () => (adapter.now ? adapter.now() : Date.now())
+  const scopeQueues = new Map<string, Promise<unknown>>()
+
+  function serializeScope<T>(scope: string, task: () => Promise<T>): Promise<T> {
+    const previous = scopeQueues.get(scope) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(task)
+    const settled = next.then(() => {}, () => {})
+    scopeQueues.set(scope, settled)
+    void settled.then(() => {
+      if (scopeQueues.get(scope) === settled) {
+        scopeQueues.delete(scope)
+      }
+    })
+    return next
+  }
 
   function readIndex(scope: string): NativeCachedDocumentEntry[] {
     return parseEntries(adapter.getStorage(indexKeyForScope(scope)), scope)
@@ -99,27 +113,29 @@ export function createNativeDocumentCache(
 
   async function getCachedDocument(scope: string, assetId: string): Promise<NativeCachedDocumentEntry | null> {
     if (!scope || !assetId) return null
-    const entries = readIndex(scope)
-    const key = buildCacheKey(scope, assetId)
-    const index = entries.findIndex(item => item.cacheKey === key)
-    if (index < 0) return null
+    return serializeScope(scope, async () => {
+      const entries = readIndex(scope)
+      const key = buildCacheKey(scope, assetId)
+      const index = entries.findIndex(item => item.cacheKey === key)
+      if (index < 0) return null
 
-    const entry = entries[index]
-    const info = await adapter.getSavedFileInfo(entry.savedFilePath).catch(() => null)
-    if (!info) {
-      entries.splice(index, 1)
+      const entry = entries[index]
+      const info = await adapter.getSavedFileInfo(entry.savedFilePath).catch(() => null)
+      if (!info) {
+        entries.splice(index, 1)
+        writeIndex(scope, entries)
+        return null
+      }
+
+      const updated: NativeCachedDocumentEntry = {
+        ...entry,
+        sizeBytes: info.size > 0 ? info.size : entry.sizeBytes,
+        lastAccessedAt: now(),
+      }
+      entries[index] = updated
       writeIndex(scope, entries)
-      return null
-    }
-
-    const updated: NativeCachedDocumentEntry = {
-      ...entry,
-      sizeBytes: info.size > 0 ? info.size : entry.sizeBytes,
-      lastAccessedAt: now(),
-    }
-    entries[index] = updated
-    writeIndex(scope, entries)
-    return { ...updated }
+      return { ...updated }
+    })
   }
 
   async function putCachedDocument(
@@ -133,94 +149,99 @@ export function createNativeDocumentCache(
     },
   ): Promise<NativeCachedDocumentEntry | null> {
     if (!scope || !input.assetId || !input.tempFilePath) return null
-
-    let byteLength = typeof input.sizeBytes === 'number' && Number.isFinite(input.sizeBytes) ? input.sizeBytes : 0
-    if (byteLength <= 0) {
-      const info = await adapter.getSavedFileInfo(input.tempFilePath).catch(() => null)
-      byteLength = info?.size ?? 0
-    }
-    if (byteLength <= 0 || byteLength > limits.maxSingleBytes) {
-      return null
-    }
-
-    const savedFilePath = await adapter.saveFile(input.tempFilePath).catch(() => '')
-    if (!savedFilePath) return null
-
-    const entries = readIndex(scope)
-    const key = buildCacheKey(scope, input.assetId)
-    const previousSame = entries.find(item => item.cacheKey === key)
-    const evictKeys = new Set(selectEvictableCacheKeys(
-      entries.map(item => ({
-        cacheKey: item.cacheKey,
-        sizeBytes: item.sizeBytes,
-        lastAccessedAt: item.lastAccessedAt,
-      })),
-      byteLength,
-      key,
-      limits.maxScopeBytes,
-      limits.maxScopeCount,
-    ))
-
-    const pathsToDelete: string[] = []
-    const retained: NativeCachedDocumentEntry[] = []
-    for (const item of entries) {
-      if (item.cacheKey === key) continue
-      if (evictKeys.has(item.cacheKey)) {
-        pathsToDelete.push(item.savedFilePath)
-        continue
+    return serializeScope(scope, async () => {
+      let byteLength = typeof input.sizeBytes === 'number' && Number.isFinite(input.sizeBytes) ? input.sizeBytes : 0
+      if (byteLength <= 0) {
+        const info = await adapter.getSavedFileInfo(input.tempFilePath).catch(() => null)
+        byteLength = info?.size ?? 0
       }
-      retained.push(item)
-    }
-    if (previousSame && previousSame.savedFilePath !== savedFilePath) {
-      pathsToDelete.push(previousSame.savedFilePath)
-    }
+      if (byteLength <= 0 || byteLength > limits.maxSingleBytes) {
+        return null
+      }
 
-    const record: NativeCachedDocumentEntry = {
-      cacheKey: key,
-      scope,
-      assetId: input.assetId,
-      mimeType: input.mimeType || 'application/octet-stream',
-      originalName: input.originalName || '',
-      sizeBytes: byteLength,
-      lastAccessedAt: now(),
-      savedFilePath,
-    }
-    retained.push(record)
-    writeIndex(scope, retained)
+      const savedFilePath = await adapter.saveFile(input.tempFilePath).catch(() => '')
+      if (!savedFilePath) return null
 
-    await Promise.all(
-      pathsToDelete.map(filePath => adapter.removeSavedFile(filePath).catch(() => {})),
-    )
+      const entries = readIndex(scope)
+      const key = buildCacheKey(scope, input.assetId)
+      const previousSame = entries.find(item => item.cacheKey === key)
+      const evictKeys = new Set(selectEvictableCacheKeys(
+        entries.map(item => ({
+          cacheKey: item.cacheKey,
+          sizeBytes: item.sizeBytes,
+          lastAccessedAt: item.lastAccessedAt,
+        })),
+        byteLength,
+        key,
+        limits.maxScopeBytes,
+        limits.maxScopeCount,
+      ))
 
-    return { ...record }
+      const pathsToDelete: string[] = []
+      const retained: NativeCachedDocumentEntry[] = []
+      for (const item of entries) {
+        if (item.cacheKey === key) continue
+        if (evictKeys.has(item.cacheKey)) {
+          pathsToDelete.push(item.savedFilePath)
+          continue
+        }
+        retained.push(item)
+      }
+      if (previousSame && previousSame.savedFilePath !== savedFilePath) {
+        pathsToDelete.push(previousSame.savedFilePath)
+      }
+
+      const record: NativeCachedDocumentEntry = {
+        cacheKey: key,
+        scope,
+        assetId: input.assetId,
+        mimeType: input.mimeType || 'application/octet-stream',
+        originalName: input.originalName || '',
+        sizeBytes: byteLength,
+        lastAccessedAt: now(),
+        savedFilePath,
+      }
+      retained.push(record)
+      writeIndex(scope, retained)
+
+      await Promise.all(
+        pathsToDelete.map(filePath => adapter.removeSavedFile(filePath).catch(() => {})),
+      )
+
+      return { ...record }
+    })
   }
 
   async function deleteCachedDocument(scope: string, assetId: string): Promise<void> {
     if (!scope || !assetId) return
-    const entries = readIndex(scope)
-    const key = buildCacheKey(scope, assetId)
-    const remaining: NativeCachedDocumentEntry[] = []
-    const pathsToDelete: string[] = []
-    for (const item of entries) {
-      if (item.cacheKey === key) {
-        pathsToDelete.push(item.savedFilePath)
-      } else {
-        remaining.push(item)
+    return serializeScope(scope, async () => {
+      const entries = readIndex(scope)
+      const key = buildCacheKey(scope, assetId)
+      const remaining: NativeCachedDocumentEntry[] = []
+      const pathsToDelete: string[] = []
+      for (const item of entries) {
+        if (item.cacheKey === key) {
+          pathsToDelete.push(item.savedFilePath)
+        } else {
+          remaining.push(item)
+        }
       }
-    }
-    writeIndex(scope, remaining)
-    await Promise.all(
-      pathsToDelete.map(filePath => adapter.removeSavedFile(filePath).catch(() => {})),
-    )
+      writeIndex(scope, remaining)
+      await Promise.all(
+        pathsToDelete.map(filePath => adapter.removeSavedFile(filePath).catch(() => {})),
+      )
+    })
   }
 
   async function clearScopeDocumentCache(scope: string): Promise<void> {
     if (!scope) return
-    const entries = readIndex(scope)
-    adapter.removeStorage(indexKeyForScope(scope))
-    await Promise.all(
-      entries.map(item => adapter.removeSavedFile(item.savedFilePath).catch(() => {})),
-    )
+    return serializeScope(scope, async () => {
+      const entries = readIndex(scope)
+      adapter.removeStorage(indexKeyForScope(scope))
+      await Promise.all(
+        entries.map(item => adapter.removeSavedFile(item.savedFilePath).catch(() => {})),
+      )
+    })
   }
 
   return {

@@ -108,3 +108,52 @@ test('createNativeDocumentCache enforces 50MB single limit, 160MB/20-file LRU ev
   assert.equal(await cache.getCachedDocument('u2:d1', 't22'), null)
   assert.ok(await cache.getCachedDocument('u1:d1', 'a4'))
 })
+
+test('createNativeDocumentCache serializes concurrent put and delete operations per scope', async () => {
+  const storage = new Map()
+  const savedFiles = new Map()
+  let releaseSlowSave = null
+  const slowSaveGate = new Promise((resolve) => { releaseSlowSave = resolve })
+
+  const cache = createNativeDocumentCache({
+    getStorage: key => storage.get(key) ?? null,
+    setStorage: (key, value) => storage.set(key, value),
+    removeStorage: key => storage.delete(key),
+    async saveFile(tempFilePath) {
+      if (tempFilePath === '_tmp/slow.pdf') {
+        await slowSaveGate
+      }
+      const savedPath = `_doc/${tempFilePath.replace('_tmp/', '')}`
+      savedFiles.set(savedPath, 2048)
+      return savedPath
+    },
+    async removeSavedFile(savedFilePath) {
+      savedFiles.delete(savedFilePath)
+    },
+    async getSavedFileInfo(savedFilePath) {
+      return savedFiles.has(savedFilePath) ? { size: savedFiles.get(savedFilePath) } : null
+    },
+  })
+
+  const firstPut = cache.putCachedDocument('u1:d1', {
+    assetId: 'slow-asset',
+    mimeType: 'application/pdf',
+    originalName: 'slow.pdf',
+    tempFilePath: '_tmp/slow.pdf',
+    sizeBytes: 2048,
+  })
+  const queuedDelete = cache.deleteCachedDocument('u1:d1', 'slow-asset')
+  const secondPut = cache.putCachedDocument('u1:d1', {
+    assetId: 'fast-asset',
+    mimeType: 'application/pdf',
+    originalName: 'fast.pdf',
+    tempFilePath: '_tmp/fast.pdf',
+    sizeBytes: 2048,
+  })
+
+  releaseSlowSave()
+  await Promise.all([firstPut, queuedDelete, secondPut])
+
+  assert.equal(await cache.getCachedDocument('u1:d1', 'slow-asset'), null)
+  assert.ok(await cache.getCachedDocument('u1:d1', 'fast-asset'))
+})
