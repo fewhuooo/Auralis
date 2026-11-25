@@ -608,33 +608,23 @@
           @touchmove.passive="handleTouchMove"
         >
           <div class="ai-welcome" v-if="chatMessages.length === 0">
-            <div class="ai-brand-wrap" aria-hidden="true">
-              <div class="ai-spark-ring" style="display: none;"></div>
-              <svg class="ai-spark-svg" width="56" height="56" viewBox="0 0 28 28" fill="none">
-                <rect width="28" height="28" rx="8" fill="url(#workspace-ai-welcome-brand-grad)" />
-                <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
-                <defs>
-                  <linearGradient id="workspace-ai-welcome-brand-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#8B9A6E" />
-                    <stop offset="1" stop-color="#AAB88E" />
-                  </linearGradient>
-                </defs>
-              </svg>
-            </div>
-            <h3 class="welcome-title">{{ t(messages.chatWelcome) }}</h3>
-            <p class="welcome-desc">{{ t(messages.chatIntro, { name: aiGreetingName }) }}</p>
-
-            <div class="preset-questions">
-              <button
-                v-for="item in presetQuestions"
-                :key="item.prompt"
-                type="button"
-                class="preset-pill"
-                @click="sendPreset(item.prompt)"
-              >
-                {{ t(item.label) }}
-              </button>
+            <div class="ai-welcome-inner">
+              <div class="welcome-hero">
+                <h3 class="welcome-title">{{ t(messages.chatWelcome) }}</h3>
+                <p class="welcome-subtitle">{{ aiSourceSummaryTitle }}</p>
+              </div>
+              <div class="starter-cards">
+                <button
+                  v-for="item in presetQuestions"
+                  :key="item.prompt"
+                  type="button"
+                  class="starter-card"
+                  @click="sendPreset(item.prompt)"
+                >
+                  <span class="starter-card-title">{{ t(item.label) }}</span>
+                  <span class="starter-card-hint">{{ t(item.hint) }}</span>
+                </button>
+              </div>
             </div>
           </div>
         
@@ -2343,13 +2333,14 @@ const handleDeleteBlockCard = (id: string, version: number) => {
 }
 interface PresetQuestionItem {
   label: Message
+  hint: Message
   prompt: string
 }
 
 const presetQuestions: PresetQuestionItem[] = [
-  { label: messages.presetKeyPoints, prompt: '总结当前文件的核心要点与关键脉络' },
-  { label: messages.presetConcepts, prompt: '查找并梳理本章的核心概念与权威解释' },
-  { label: messages.presetQuiz, prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
+  { label: messages.presetKeyPoints, hint: messages.presetKeyPointsHint, prompt: '总结当前文件的核心要点与关键脉络' },
+  { label: messages.presetConcepts, hint: messages.presetConceptsHint, prompt: '查找并梳理本章的核心概念与权威解释' },
+  { label: messages.presetQuiz, hint: messages.presetQuizHint, prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
 ]
 
 const sendPreset = (q: string) => {
@@ -2871,8 +2862,6 @@ const aiSourceSummaryTitle = computed(() => {
     .join(locale.value === 'en' ? ', ' : '、')
   return t(messages.currentReferenceList, { count, names })
 })
-
-const aiGreetingName = computed(() => authStore.username || t(messages.greetingName))
 
 const isChatComposing = ref(false)
 let lastChatCompositionEndTime = 0
@@ -6261,16 +6250,17 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .ai-clear svg { stroke: currentColor; }
 .ai-clear:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.4); color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 4px 12px rgba(139, 154, 110, 0.2); transform: rotate(-30deg); }
 
-.ai-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px 24px 28px; animation: ai-fade-in 0.4s ease-out; width: 100%; max-width: 320px; margin: 0 auto; box-sizing: border-box; }
-.ai-spark-wrap, .ai-brand-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 16px; filter: drop-shadow(0 8px 20px rgba(139, 154, 110, 0.24)); transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-.ai-brand-wrap:hover { transform: translateY(-2px) scale(1.03); }
-.ai-spark-svg, .ai-brand-svg { width: 56px; height: 56px; display: block; border-radius: 16px; }
-.welcome-title { font-size: calc(22.5px + var(--ui-font-size-adjustment)); font-weight: 650; color: var(--text-primary); margin: 0 0 8px; letter-spacing: -0.3px; line-height: 1.3; }
-.welcome-desc { font-size: calc(12.5px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); margin: 0 0 26px; line-height: 1.55; max-width: 260px; }
-.preset-questions { display: flex; flex-direction: column; align-items: center; gap: 9px; width: 100%; max-width: 260px; box-sizing: border-box; }
-.preset-pill { width: 100%; padding: 9px 20px; border-radius: 999px; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; font-weight: 550; letter-spacing: 0.8px; text-align: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02); user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
-.preset-pill:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); font-weight: 600; transform: translateY(-1.5px); box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.22), 0 2px 4px rgba(0, 0, 0, 0.03); }
-.preset-pill:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); }
+.ai-welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: stretch; padding: 20px 20px 24px; animation: ai-fade-in 0.4s ease-out; width: 100%; box-sizing: border-box; }
+.ai-welcome-inner { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 18px; }
+.welcome-hero { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 6px; }
+.welcome-title { font-size: calc(22px + var(--ui-font-size-adjustment)); font-weight: 700; color: var(--text-primary); margin: 0; letter-spacing: -0.025em; line-height: 1.25; }
+.welcome-subtitle { font-size: calc(12.5px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); margin: 0; line-height: 1.45; word-break: break-word; }
+.starter-cards { display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box; }
+.starter-card { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 4px; width: 100%; padding: 13px 15px; border-radius: 15px; background: #FFFFFF; border: 1px solid #EAE6DD; box-shadow: 0 1px 2px rgba(72, 62, 46, 0.03); cursor: pointer; transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.16s ease, box-shadow 0.16s ease; box-sizing: border-box; }
+.starter-card:hover { border-color: #D7D0C2; box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06); transform: translateY(-1px); }
+.starter-card:active { transform: scale(0.988); }
+.starter-card-title { font-size: calc(14px + var(--ui-font-size-adjustment)); font-weight: 700; color: var(--text-primary); line-height: 1.38; letter-spacing: -0.015em; }
+.starter-card-hint { font-size: calc(12px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); line-height: 1.45; }
 
 .assistant-spark-avatar { width: 34px; height: 34px; border: 0.5px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .assistant-spark-avatar svg { width: 20px; height: 20px; }
@@ -6296,9 +6286,8 @@ html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html
 html.dark .chat-msg-row.user .chat-bubble { background: var(--color-bg-secondary, #232220) !important; color: var(--text-primary, #e6e4df) !important; border-color: rgba(255,255,255,0.08) !important; }
 html.dark .chat-msg-row.assistant .chat-bubble { background: transparent !important; border: none !important; }
 html.dark .ai-reply :deep(pre) { background: #232220; border-color: rgba(255, 255, 255, 0.08); color: #e6e4df; }
-html.dark .preset-pill { background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.07); color: var(--text-secondary); box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.35); }
-html.dark .preset-pill:hover { background: rgba(125, 147, 114, 0.12); border-color: rgba(125, 147, 114, 0.4); color: #A3B899; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
-html.dark .ai-brand-wrap { filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45)); }
+html.dark .starter-card { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32); }
+html.dark .starter-card:hover { background: rgba(125, 147, 114, 0.12); border-color: rgba(125, 147, 114, 0.4); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38); }
 html.dark .welcome-title { color: #FFFFFF; }
 
 html.dark .outline-overview-chapter strong { border-color: rgba(255,255,255,0.04); }

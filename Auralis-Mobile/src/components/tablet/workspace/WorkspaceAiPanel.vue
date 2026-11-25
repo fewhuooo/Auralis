@@ -39,25 +39,29 @@
       </view>
     </view>
 
-    <view v-if="messages.length === 0" class="chat-welcome">
-      <view class="ai-brand-wrap" aria-hidden="true">
-        <LineIcon name="auralis-mark" size="26px" color="#FFFFFF" />
-      </view>
-      <text class="welcome-title">今天想探索点什么？</text>
-      <text class="welcome-desc">结合当前参考资料，随时为你梳理重点、解释概念或生成练习。</text>
-      <view v-if="preSendError" class="pre-send-error" role="alert">
-        <LineIcon name="alert" size="13px" color="var(--color-danger)" />
-        <text class="pre-send-error-text">{{ preSendError }}</text>
-      </view>
-      <view class="preset-questions">
-        <view
-          v-for="item in presetQuestions"
-          :key="item.label"
-          class="preset-pill"
-          role="button"
-          @click="submitStarterPrompt(item.prompt)"
-        >
-          <text class="preset-pill-text">{{ item.label }}</text>
+    <view v-if="messages.length === 0" class="welcome-stage">
+      <view class="welcome-inner">
+        <view class="welcome-hero">
+          <text class="welcome-title">想先攻克哪部分？</text>
+          <text class="welcome-subtitle">{{ welcomeSubtitle }}</text>
+        </view>
+        <view class="starter-section">
+          <view v-if="preSendError" class="pre-send-error" role="alert">
+            <LineIcon name="alert" size="13px" color="var(--color-danger)" />
+            <text class="pre-send-error-text">{{ preSendError }}</text>
+          </view>
+          <view class="starter-cards">
+            <view
+              v-for="item in presetQuestions"
+              :key="item.label"
+              class="starter-card"
+              role="button"
+              @click="submitStarterPrompt(item.prompt)"
+            >
+              <text class="starter-card-title">{{ item.label }}</text>
+              <text class="starter-card-hint">{{ item.hint }}</text>
+            </view>
+          </view>
         </view>
       </view>
     </view>
@@ -323,17 +327,27 @@ const scopeKey = computed(() => {
   return `${ctx.subjectId}:${ctx.retrievalMode}:${ctx.currentSourceId || ''}`
 })
 
+const welcomeSubtitle = computed(() => {
+  if (isSourceScoped.value) {
+    return `当前参考：${props.selectedSource?.title || '当前资料'}`
+  }
+  return `当前参考：${props.subjectName ? `${props.subjectName} · ` : ''}全学科资料`
+})
+
 const presetQuestions = computed(() => [
   {
     label: '提炼当前核心要点',
+    hint: '快速梳理重点脉络与核心结论',
     prompt: isSourceScoped.value ? '总结当前文件的核心要点与关键脉络' : '总结当前学科的核心要点与关键脉络',
   },
   {
     label: '梳理本章关键概念',
+    hint: '拆解核心定义、异同与易错边界',
     prompt: '查找并梳理本章的核心概念与权威解释',
   },
   {
-    label: '生成三道自测考题',
+    label: '生成 3 道自测练习题',
+    hint: '随堂检验掌握度并附解析',
     prompt: '针对当前内容生成 3 道自测题以巩固记忆',
   },
 ])
@@ -1192,48 +1206,54 @@ onBeforeUnmount(() => {
   transform: scale(0.92);
 }
 
-.chat-welcome {
+.welcome-stage {
   flex: 1;
   min-height: 0;
-  width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
-  padding: 16px 16px 24px;
+  padding: 16px 18px 20px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  text-align: center;
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
-.ai-brand-wrap {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #8B9A6E 0%, #AAB88E 100%);
-  box-shadow: 0 8px 20px rgba(139, 154, 110, 0.24);
+.welcome-inner {
+  width: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+}
+
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 6px;
 }
 
 .welcome-title {
-  font-size: 19px;
-  font-weight: 650;
+  font-size: 21px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  letter-spacing: -0.3px;
-  line-height: 1.3;
-  margin-bottom: 6px;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
 }
 
-.welcome-desc {
-  max-width: 244px;
+.welcome-subtitle {
   font-size: 12.5px;
-  line-height: 1.55;
   color: var(--text-muted);
-  margin-bottom: 22px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.starter-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .pre-send-error {
@@ -1242,7 +1262,6 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  margin-bottom: 12px;
   border-radius: 10px;
   background-color: var(--color-danger-bg);
   border: 1px solid rgba(201, 59, 59, 0.22);
@@ -1255,48 +1274,51 @@ onBeforeUnmount(() => {
   color: var(--color-danger);
 }
 
-.preset-questions {
-  width: 100%;
-  max-width: 240px;
+.starter-cards {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
+  gap: 10px;
 }
 
-.preset-pill {
-  width: 100%;
-  padding: 9px 18px;
-  border-radius: 999px;
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 0.5px solid var(--border-subtle);
-  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
-  text-align: center;
+.starter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 13px 15px;
+  border-radius: 15px;
+  background-color: #FFFFFF;
+  border: 1px solid #EAE6DD;
+  box-shadow: 0 1px 2px rgba(72, 62, 46, 0.03);
   cursor: pointer;
+  transition: transform 0.14s var(--ease-out), border-color 0.16s ease, box-shadow 0.16s ease;
   box-sizing: border-box;
-  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s var(--ease-out), box-shadow 0.16s ease;
 }
 
-.preset-pill:hover {
-  background: rgba(139, 154, 110, 0.14);
-  border-color: rgba(139, 154, 110, 0.45);
+/* #ifdef H5 */
+.starter-card:hover {
+  border-color: #D7D0C2;
+  box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.2), 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+/* #endif */
+
+.starter-card:active {
+  transform: scale(0.988);
 }
 
-.preset-pill-text {
-  font-size: 12.5px;
-  font-weight: 550;
+.starter-card-title {
+  font-size: 14px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.38;
+  letter-spacing: -0.015em;
 }
 
-.preset-pill:hover .preset-pill-text {
-  color: var(--color-sage-ink);
-  font-weight: 600;
+.starter-card-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .chat-scroll {

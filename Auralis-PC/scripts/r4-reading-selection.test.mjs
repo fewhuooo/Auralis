@@ -208,7 +208,7 @@ test('whole-subject indicators include only READY sources from the current subje
   const selected = evaluate('const isAiSourceSelected =', 'const toggleAiSource =', 'isAiSourceSelected')
   assert.equal(selected('ready'), true)
   for (const id of ['pending', 'failed', 'foreign', 'missing']) assert.equal(selected(id), false, id)
-  const title = evaluate('const aiSourceSummaryTitle =', 'const aiGreetingName =', 'aiSourceSummaryTitle.value')
+  const title = evaluate('const aiSourceSummaryTitle =', 'const isChatComposing =', 'aiSourceSummaryTitle.value')
   assert.equal(title, '当前参考：全学科资料 (共 1 份)')
 })
 
