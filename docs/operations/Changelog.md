@@ -1,5 +1,15 @@
 # Auralis 变更记录
 
+### 2026-11-25 平板端本地持久化、端到端 UX 与 PC 工作区对齐收口
+
+- **平板本地持久化与端到端链路修复**：完成平板工作区 `@file-viewer/core` 原地文档预览与 H5 IndexedDB 二进制缓存（`localDocumentCache`），`source_files`、`ai_overview_cache`、`review_states_cache` 与 `subject_stats_cache` 均按作用域先读后刷并支持跨账号切换清理与离线创建/编辑保真；修复后端 AI `test-connection` 0ms 超时、SiliconFlow Provider 与跨 BYOK 槽位按更新序解析、CORS 通配符匹配，以及前端排期防覆盖、Focus Outbox 404 延后重试、WebSocket `OVERVIEW_UPDATED` 实时刷新、错误提示中文化、登录路由守卫、AI 409 版本刷新与冷启动防闪烁。
+- **平板工作区逐页联调与 PC 1:1 对齐**：
+  - 学科总览通过 `/api/overview-results/subjects/statuses` 批量预检后再按需拉取，消除未生成总览时的 404 刷屏；
+  - 新增 `WorkspaceKnowledgeBlockModal`，与 PC 端 1:1 对齐 5 色标记与 `编写 | 实时预览` Markdown/LaTeX 编辑体验；
+  - 工作区右下角 AI 入口简化为无文字圆形 Auralis 标识按钮，浮窗顶栏与会话风格精简对齐 PC，并将**平板端与 PC 端工作区 AI 空态欢迎区**统一为左对齐标题、当前参考范围副标题与 3 张双行引导卡（同步更新 PC 三语提示文案）；
+  - 平板学科复习面板（`WorkspaceReviewPane`）在规划总览与轮次复习卡片、掌握分布配色、白底微卡片胶囊按钮及毛玻璃防剧透画布上 1:1 对齐 PC `SubjectReviewPane`。
+- **验证与联调边界**：`Auralis-Mobile`（`vue-tsc --noEmit`、`check:r4-mobile` 85 文件、`test:r4-mobile` 129/129、`test:tablet`）与 `Auralis-PC`（`vue-tsc -b`、`check:r4-pc` 125 文件、`test:r4-pc` 901/901）全部通过；用户在本地 H5 + Docker 后端完成平板主流程逐页试测，详细边界见 [当前状态](../current/Status.md)。
+
 ### 2026-11-16 文档目录精简、归档整理与 Agent 规则重整
 
 - 重整根目录 `AGENTS.md` 与 `docs/agent/BeforeCoding.md` 并实现零重复分工：`AGENTS.md` 按工程生命周期重排为 7 节硬性红线（强化 Git 分支隔离与可回退分步原子提交、根因先行与完整影响闭包核查、跨异步世代与锁序底线、最终落盘代码重跑验证铁律及禁用源码静态匹配冒充行为测试）；`BeforeCoding.md` 收敛为纯结构化必读/验证/回写矩阵、Git 提交 6 项检查表与标准交接模板。

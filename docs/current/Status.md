@@ -1,6 +1,6 @@
 # Auralis 当前状态
 
-更新时间：2026-11-24
+更新时间：2026-11-25
 
 文档状态：现行状态快照
 
@@ -18,11 +18,11 @@
 
 | 模块 | 当前实现摘要 | 验证与验收边界 |
 | --- | --- | --- |
-| PC | Vue/Tauri 客户端；本地资源与 outbox、同步、资料处理、复习、排期及协议 1 Chat 已有实现；2026-11-19～20 收口 `TASK` 冲突收敛与 AI 过程流修复：极简无框竖向步骤行（去除工具胶囊，完成 `#6E8552` 对勾/失败 `#9C500C`/运行 `#556B3D`）、严格按平滑字数预算交错披露思考与工具、平缓连续 `smoothStreamBuffer` 调速曲线与空池见底冷却复位、`useChatStore` HMR (`acceptHMRUpdate`) 与 `reconcileProcessMetadata` 断线过程态对账，以及 `ChatProcessArea`/`ChatContentRenderer`/`SubjectWorkspace`（`resolveStreamTextDrainAction` / `canFinishStreamSettling` / `restartSettleTimer(450)`）防瞬跳防重排协同升级 | 11-20 `type-check`、`check:r4-pc`（125 文件）、`test:r4-pc`（901/901）、`r4-chat-recovery-handoff.test.mjs`（13/13）与 `vite build` 全部退出码 0；Compose `auralis-backend` (`:8080`) / `auralis-db` (`:5432`) / `auralis-minio` (`:9000`) 均已构建并 `healthy`，`auralis-frontend` (`:80`) 与 `:5173` 在线（未登录首屏烟测通过）；Tauri、真实已登录 Provider 流式及双设备并发仍待实测验收 |
+| PC | Vue/Tauri 客户端；本地资源与 outbox、同步、资料处理、复习、排期及协议 1 Chat 已有实现；2026-11-19～20 收口 `TASK` 冲突收敛与 AI 过程流修复：极简无框竖向步骤行（去除工具胶囊，完成 `#6E8552` 对勾/失败 `#9C500C`/运行 `#556B3D`）、严格按平滑字数预算交错披露思考与工具、平缓连续 `smoothStreamBuffer` 调速曲线与空池见底冷却复位、`useChatStore` HMR (`acceptHMRUpdate`) 与 `reconcileProcessMetadata` 断线过程态对账，以及 `ChatProcessArea`/`ChatContentRenderer`/`SubjectWorkspace`（`resolveStreamTextDrainAction` / `canFinishStreamSettling` / `restartSettleTimer(450)`）防瞬跳防重排协同升级；2026-11-25 将学科工作区 AI 空态欢迎区与移动端/平板端统一对齐为左对齐标题、当前参考范围副标题与 3 张双行引导卡（移除居中徽标与胶囊按钮，同步更新三语文案） | 11-25 `type-check`、`check:r4-pc`（125 文件）、`test:r4-pc`（901/901）全部退出码 0（11-20 已通过 `r4-chat-recovery-handoff.test.mjs` 13/13 与 `vite build`）；Compose `auralis-backend` (`:8080`) / `auralis-db` (`:5432`) / `auralis-minio` (`:9000`) 均已构建并 `healthy`，`auralis-frontend` (`:80`) 在线；Tauri、真实已登录 Provider 流式及双设备并发仍待实测验收 |
 | Overview | Markdown v2：CLEAN → OUTLINE → SUMMARY；超容量自动分批；文件和学科直接入口支持三种模式，正式保存保留 CAS/来源修订校验 | 11-13 有定向回归、真实文件生成及学科桌面保存回读记录；持久后台作业按用户要求退役；复杂材料质量和完整桌面走查仍开放 |
 | Chat | 原生工具与公开 parts；会话读取范围绑定、Catalog/定向检索、来源总览读取、UNKNOWN 显式恢复、12 轮/20 次工具上限；2026-11-19 新增 `ChatToolPresentation` 在 `tool.*`/SSE 与 `toolTrace` 输出中文工具名与安全摘要 `label` 并收敛思考提示词，全端统一交叉时间轴与排版规范 | 11-19 Server 定向 8 个测试类（`ChatAgentProtocolPublicationTests` 等）Maven 测试通过；11-20 `auralis-backend` 容器已重建并 `healthy`；真实登录态下 Provider 流式重放、取消/断流真实链路仍待验收 |
 | Server 核心 | Identity、Subject、Source/Asset、Knowledge、Task、Review、Stats、Sync/Realtime 与 AI 服务已实现 | 11-16 最近全量 884/884、打包通过；随后 11-19 Chat 工具展示与提示词定向 8 个测试类通过；不等于部署或生产验收 |
-| Mobile / Tablet | Uni-app 端共享鉴权、同步、资料、Stats 与协议 1 Chat；2026-11-17～20 完成禅意样式与双端学习全生命周期迁移、并发及过期任务锁定收口与全端 AI 过程流对齐；2026-11-23～24 完成平板工作区 `@file-viewer/core` + `localDocumentCache` 离线缓存、平板首页/专注/AI/设置对齐 PC、`source_files`/`ai_overview_cache`/`review_states_cache`/`subject_stats_cache` 本地先读后刷、两轮持久化与跨账号隔离审计修复（同步块编辑保真 `sourceFileId`、直切账号 WebSocket 重建、手机四页隔离与上传落盘、`useAiUsage` 非闪烁续期、AI 停止流令牌防覆盖、剪贴板统一降级与孤立死代码清理） | 11-24 `vue-tsc --noEmit`、`check:r4-mobile`（84 文件）、`test:r4-mobile`（126/126）、`test:tablet`、`check-tablet-sidebar-transition`、`build:h5` 与 `build:mp-weixin` 全部退出码 0；真实 Provider/后端 AI 全流程、真实 MinIO 跨域、新学习/复习联调及微信开发者工具/真机（手机与平板）验收仍待实测 |
+| Mobile / Tablet | Uni-app 端共享鉴权、同步、资料、Stats 与协议 1 Chat；2026-11-17～20 完成禅意样式与双端学习全生命周期迁移、并发及过期任务锁定收口与全端 AI 过程流对齐；2026-11-23～24 完成平板工作区 `@file-viewer/core` + `localDocumentCache` 离线缓存、平板首页/专注/AI/设置对齐 PC、`source_files`/`ai_overview_cache`/`review_states_cache`/`subject_stats_cache` 本地先读后刷、两轮持久化与跨账号隔离审计修复（同步块编辑保真 `sourceFileId`、直切账号 WebSocket 重建、手机四页隔离与上传落盘、`useAiUsage` 非闪烁续期、AI 停止流令牌防覆盖、剪贴板统一降级与孤立死代码清理）；2026-11-25 结合本地 Docker 后端完成平板 H5 逐页联调收口：学科总览先查 `statuses` 批量状态消除 404、`WorkspaceKnowledgeBlockModal` 1:1 对齐 PC（5 色标记与 Markdown/LaTeX 实时预览）、AI 浮窗改用无文字圆形 Auralis 标识按钮并精简对齐 PC 及左对齐双行引导卡、`WorkspaceReviewPane` 规划页与轮次复习卡片 1:1 对齐 PC | 11-25 `vue-tsc --noEmit`、`check:r4-mobile`（85 文件）、`test:r4-mobile`（129/129）、`test:tablet` 全部退出码 0（11-24 已通过 `build:h5` 与 `build:mp-weixin`）；用户已在本地 H5 + Docker 后端完成平板主流程逐页试测；微信开发者工具、真机（手机与平板）、真实 MinIO 跨域直传与多设备并发冲突验收仍开放 |
 | 基础设施 | Compose 使用 PostgreSQL/pgvector、MinIO、backend/frontend；平台生成与 Embedding 配置分组 | 11-12/13 有本机部署健康和部分真实生成记录；生产凭据、异常专项、监控、备份恢复及发布演练未由这些记录关闭 |
 
 ## Mobile / Tablet：设计范围确认
