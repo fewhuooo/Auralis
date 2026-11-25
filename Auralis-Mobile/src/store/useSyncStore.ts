@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { useSyncApi } from '@/api/useSyncApi'
 import { localDb } from '@/services/localDb'
 import { localDataScope } from '@/services/localDataScope'
-// #ifdef H5
+// #ifdef H5 || APP-TABLET
 import { clearScopeDocumentCache } from '@/services/localDocumentCache'
 // #endif
 import { createSyncController } from '@/services/syncController'
@@ -67,7 +67,7 @@ export const useSyncStore = defineStore('sync', () => {
       const focusStore = useFocusStore()
       focusStore.dismissCompletedTaskPrompt()
       focusStore.reconcileNow(false)
-      // #ifdef H5
+      // #ifdef H5 || APP-TABLET
       if (previousScope) {
         void clearScopeDocumentCache(previousScope)
       }

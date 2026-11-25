@@ -1,3 +1,25 @@
+import {
+  MAX_SCOPE_DOCUMENT_CACHE_BYTES,
+  MAX_SCOPE_DOCUMENT_CACHE_COUNT,
+  MAX_SINGLE_DOCUMENT_CACHE_BYTES,
+  selectEvictableCacheKeys,
+  type CacheEvictionCandidate,
+} from './documentCacheEviction.ts'
+// #ifdef APP-TABLET
+import {
+  clearNativeScopeDocumentCache,
+  deleteNativeCachedDocument,
+} from './nativeDocumentCache.ts'
+// #endif
+
+export {
+  MAX_SCOPE_DOCUMENT_CACHE_BYTES,
+  MAX_SCOPE_DOCUMENT_CACHE_COUNT,
+  MAX_SINGLE_DOCUMENT_CACHE_BYTES,
+  selectEvictableCacheKeys,
+  type CacheEvictionCandidate,
+}
+
 export interface CachedDocumentEntry {
   cacheKey: string
   scope: string
@@ -9,19 +31,9 @@ export interface CachedDocumentEntry {
   buffer: ArrayBuffer
 }
 
-export interface CacheEvictionCandidate {
-  cacheKey: string
-  sizeBytes: number
-  lastAccessedAt: number
-}
-
 const DB_NAME = 'auralis_doc_cache_v1'
 const STORE_NAME = 'documents'
 const DB_VERSION = 1
-
-export const MAX_SINGLE_DOCUMENT_CACHE_BYTES = 50 * 1024 * 1024
-export const MAX_SCOPE_DOCUMENT_CACHE_BYTES = 160 * 1024 * 1024
-export const MAX_SCOPE_DOCUMENT_CACHE_COUNT = 20
 
 function buildCacheKey(scope: string, assetId: string): string {
   return `${scope}::${assetId}`
@@ -29,34 +41,6 @@ function buildCacheKey(scope: string, assetId: string): string {
 
 function hasIndexedDb(): boolean {
   return typeof indexedDB !== 'undefined'
-}
-
-/**
- * Computes which cached entries in the current scope must be evicted (oldest
- * `lastAccessedAt` first) before storing a new document of `incomingBytes`.
- */
-export function selectEvictableCacheKeys(
-  entries: ReadonlyArray<CacheEvictionCandidate>,
-  incomingBytes: number,
-  incomingKey: string,
-  maxBytes = MAX_SCOPE_DOCUMENT_CACHE_BYTES,
-  maxCount = MAX_SCOPE_DOCUMENT_CACHE_COUNT,
-): string[] {
-  const others = entries
-    .filter(item => item.cacheKey !== incomingKey)
-    .sort((left, right) => left.lastAccessedAt - right.lastAccessedAt)
-
-  let totalBytes = others.reduce((sum, item) => sum + Math.max(0, item.sizeBytes), 0) + Math.max(0, incomingBytes)
-  let totalCount = others.length + 1
-
-  const evict: string[] = []
-  for (const candidate of others) {
-    if (totalBytes <= maxBytes && totalCount <= maxCount) break
-    evict.push(candidate.cacheKey)
-    totalBytes -= Math.max(0, candidate.sizeBytes)
-    totalCount -= 1
-  }
-  return evict
 }
 
 function openCacheDatabase(): Promise<IDBDatabase | null> {
@@ -194,6 +178,9 @@ export async function putCachedDocument(
 
 export async function deleteCachedDocument(scope: string, assetId: string): Promise<void> {
   if (!scope || !assetId) return
+  // #ifdef APP-TABLET
+  await deleteNativeCachedDocument(scope, assetId)
+  // #endif
   const database = await openCacheDatabase()
   if (!database) return
 
@@ -215,6 +202,9 @@ export async function deleteCachedDocument(scope: string, assetId: string): Prom
 
 export async function clearScopeDocumentCache(scope: string): Promise<void> {
   if (!scope) return
+  // #ifdef APP-TABLET
+  await clearNativeScopeDocumentCache(scope)
+  // #endif
   const database = await openCacheDatabase()
   if (!database) return
 

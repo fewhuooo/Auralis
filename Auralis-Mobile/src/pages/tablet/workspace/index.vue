@@ -93,6 +93,7 @@
         :sources-count="sources.length"
         :preview-url="previewUrl"
         :preview-buffer="previewBuffer"
+        :preview-file-path="previewFilePath"
         :preview-asset-id="previewAssetId"
         :preview-mime-type="previewMimeType"
         :preview-original-name="previewOriginalName"
@@ -217,8 +218,14 @@ import { useEscapeKey } from '@/composables/useEscapeKey'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDataScope } from '@/services/localDataScope'
 import { localDb } from '@/services/localDb'
-// #ifdef H5
+// #ifdef H5 || APP-TABLET
 import { deleteCachedDocument, getCachedDocument } from '@/services/localDocumentCache'
+// #endif
+// #ifdef APP-TABLET
+import {
+  deleteNativeCachedDocument,
+  getNativeCachedDocument,
+} from '@/services/nativeDocumentCache'
 // #endif
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
@@ -251,6 +258,7 @@ const uploadError = ref('')
 
 const previewUrl = ref('')
 const previewBuffer = shallowRef<ArrayBuffer | null>(null)
+const previewFilePath = ref('')
 const previewMimeType = ref('')
 const previewOriginalName = ref('')
 const previewLoading = ref(false)
@@ -372,6 +380,7 @@ function clearPreview() {
   previewReqToken++
   previewUrl.value = ''
   previewBuffer.value = null
+  previewFilePath.value = ''
   previewMimeType.value = ''
   previewOriginalName.value = ''
   previewLoading.value = false
@@ -391,7 +400,7 @@ function handleFilesRailClick() {
   }
   centerView.value = selectedSource.value ? 'preview' : 'onboarding'
   tier2Open.value = true
-  if (selectedSource.value && !previewUrl.value && !previewBuffer.value && !previewLoading.value && !previewError.value) {
+  if (selectedSource.value && !previewUrl.value && !previewBuffer.value && !previewFilePath.value && !previewLoading.value && !previewError.value) {
     void loadSourcePreview()
   }
 }
@@ -406,7 +415,7 @@ function openFilesDrawer() {
   userChangedCenterView = true
   centerView.value = selectedSource.value ? 'preview' : 'onboarding'
   tier2Open.value = true
-  if (selectedSource.value && !previewUrl.value && !previewBuffer.value && !previewLoading.value && !previewError.value) {
+  if (selectedSource.value && !previewUrl.value && !previewBuffer.value && !previewFilePath.value && !previewLoading.value && !previewError.value) {
     void loadSourcePreview()
   }
 }
@@ -506,6 +515,7 @@ async function loadSourcePreview(bypassCache = false) {
   previewError.value = ''
   previewUrl.value = ''
   previewBuffer.value = null
+  previewFilePath.value = ''
   try {
     // #ifdef H5
     if (bypassCache) {
@@ -516,6 +526,22 @@ async function loadSourcePreview(bypassCache = false) {
       if (token !== previewReqToken || !isFenceValid(fence)) return
       if (cached) {
         previewBuffer.value = cached.buffer
+        previewMimeType.value = cached.mimeType || ''
+        previewOriginalName.value = cached.originalName || source.title || ''
+        return
+      }
+    }
+    // #endif
+
+    // #ifdef APP-TABLET
+    if (bypassCache) {
+      await deleteNativeCachedDocument(activeScope, source.assetId)
+      if (token !== previewReqToken || !isFenceValid(fence)) return
+    } else {
+      const cached = await getNativeCachedDocument(activeScope, source.assetId)
+      if (token !== previewReqToken || !isFenceValid(fence)) return
+      if (cached) {
+        previewFilePath.value = cached.savedFilePath
         previewMimeType.value = cached.mimeType || ''
         previewOriginalName.value = cached.originalName || source.title || ''
         return
@@ -770,7 +796,7 @@ function handleDeleteSource(source: SourceView) {
         if (!isFenceValid(fence, false)) return
         await localDb.deleteSourceFile(source.id).catch(() => {})
         if (!isFenceValid(fence, false)) return
-        // #ifdef H5
+        // #ifdef H5 || APP-TABLET
         if (source.assetId) {
           void deleteCachedDocument(activeScope, source.assetId)
         }

@@ -106,7 +106,7 @@
           </view>
 
           <template v-if="fileReaderMode === 'document' && (hasPreviewSource || (previewLoading && showCorePreviewControls))">
-            <!-- #ifdef H5 -->
+            <!-- #ifdef H5 || APP-TABLET -->
             <view v-if="showCorePreviewControls" class="preview-controls-bar" aria-label="文档预览控制">
               <view class="preview-control-group">
                 <button
@@ -324,6 +324,26 @@
           />
           <!-- #endif -->
 
+          <!-- #ifdef APP-TABLET -->
+          <WorkspaceDocumentViewerApp
+            v-else-if="hasPreviewSource && isCoreFileViewerKind(activePreviewKind)"
+            ref="docViewerRef"
+            :url="previewUrl"
+            :asset-id="previewAssetId || selectedSource.assetId || ''"
+            :cached-file-path="previewFilePath || ''"
+            :file-name="previewCoreFileName"
+            :mime-type="previewMimeType"
+            :preview-kind="activePreviewKind"
+            :source-key="`${selectedSource.id}:${previewAssetId || ''}:${previewUrl || previewFilePath || 'cached'}`"
+            @ready-change="viewerReady = $event"
+            @zoom-change="zoomState = $event"
+            @rotation-change="previewRotation = $event"
+            @page-change="handleViewerPageChange"
+            @open-external="openActiveDocument"
+            @retry-source="emit('retry-preview')"
+          />
+          <!-- #endif -->
+
           <view v-else-if="previewUrl" class="empty-state">
             <view class="doc-meta-card zen-card">
               <view class="doc-icon-circle">
@@ -363,7 +383,7 @@
           @open-document="setFileReaderMode('document')"
         />
 
-        <!-- #ifdef H5 -->
+        <!-- #ifdef H5 || APP-TABLET -->
         <view
           v-if="fileReaderMode === 'document' && isCoreDocPreview && viewerReady && previewPageCount > 1"
           class="floating-page-pill"
@@ -581,7 +601,10 @@ import WorkspaceStatsPane from '@/components/tablet/workspace/WorkspaceStatsPane
 // #ifdef H5
 import WorkspaceDocumentViewer from '@/components/tablet/workspace/WorkspaceDocumentViewer.vue'
 // #endif
-import type { DocViewerZoomPayload } from '@/components/tablet/workspace/WorkspaceDocumentViewer.vue'
+// #ifdef APP-TABLET
+import WorkspaceDocumentViewerApp from '@/components/tablet/workspace/WorkspaceDocumentViewerApp.vue'
+// #endif
+import type { DocViewerZoomPayload } from '@/services/documentViewerEngine'
 import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
@@ -617,6 +640,7 @@ const props = defineProps<{
   sourcesCount: number
   previewUrl: string
   previewBuffer?: ArrayBuffer | null
+  previewFilePath?: string
   previewAssetId?: string
   previewMimeType: string
   previewOriginalName: string
@@ -763,11 +787,11 @@ const activePreviewKind = computed(() => (
   resolveTabletPreviewKind(previewMediaName.value, props.previewMimeType)
 ))
 
-const hasPreviewSource = computed(() => Boolean(props.previewUrl || props.previewBuffer))
+const hasPreviewSource = computed(() => Boolean(props.previewUrl || props.previewBuffer || props.previewFilePath))
 
 const isCoreDocPreview = computed(() => {
   let enabled = false
-  // #ifdef H5
+  // #ifdef H5 || APP-TABLET
   enabled = (
     hasPreviewSource.value
     && !isImageMedia(props.previewMimeType, previewMediaName.value)
@@ -779,7 +803,7 @@ const isCoreDocPreview = computed(() => {
 
 const showCorePreviewControls = computed(() => {
   let enabled = false
-  // #ifdef H5
+  // #ifdef H5 || APP-TABLET
   enabled = (
     Boolean(props.selectedSource?.assetId)
     && !isImageMedia(props.previewMimeType, previewMediaName.value)
@@ -799,7 +823,7 @@ function handleViewerPageChange(page: number, pageCount: number) {
 }
 
 watch(
-  () => [props.selectedSource?.id, props.previewUrl, props.previewBuffer],
+  () => [props.selectedSource?.id, props.previewUrl, props.previewBuffer, props.previewFilePath],
   () => {
     viewerReady.value = false
     zoomState.value = { ...DEFAULT_VIEWER_ZOOM }
@@ -869,6 +893,15 @@ function openActiveDocument() {
     openDocument(props.previewUrl)
     return
   }
+  // #ifdef APP-TABLET
+  if (props.previewFilePath) {
+    uni.openDocument({
+      filePath: props.previewFilePath,
+      showMenu: true,
+    })
+    return
+  }
+  // #endif
   // #ifdef H5
   if (props.previewBuffer && typeof window !== 'undefined' && typeof URL !== 'undefined') {
     const blob = new Blob([props.previewBuffer.slice(0)], {

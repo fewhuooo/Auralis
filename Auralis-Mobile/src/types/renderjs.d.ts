@@ -7,5 +7,9 @@ declare module '@vue/runtime-core' {
       readonly onUploadCmd: unknown
       readonly onReleaseCmd: unknown
     }
+    readonly appDocViewer: {
+      readonly onRenderCmd: unknown
+      readonly onViewerCmd: unknown
+    }
   }
 }

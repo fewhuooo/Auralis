@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, URL } from "node:url";
+import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import uni from "@dcloudio/vite-plugin-uni";
 
@@ -84,6 +84,32 @@ function createAppInlineDynamicImportsPlugin(): Plugin | null {
   };
 }
 
+function createTabletViewerRuntimePlugin(): Plugin | null {
+  if (
+    process.env.UNI_CUSTOM_SCRIPT !== "app-tablet"
+    || process.env.UNI_COMPILER !== "vue"
+  ) {
+    return null;
+  }
+  let builtOnce = false;
+  return {
+    name: "auralis-tablet-viewer-runtime",
+    async writeBundle() {
+      if (builtOnce) return;
+      const outputDir = process.env.UNI_OUTPUT_DIR;
+      if (!outputDir) return;
+      builtOnce = true;
+      const scriptPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "scripts/build-tablet-viewer-runtime.mjs",
+      );
+      const scriptUrl = pathToFileURL(scriptPath).href;
+      const { buildTabletViewerRuntime } = await import(/* @vite-ignore */ scriptUrl);
+      await buildTabletViewerRuntime(outputDir);
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => {
   const h5Plugins: Plugin[] = [];
@@ -111,6 +137,10 @@ export default defineConfig(async () => {
   const inlineDynamicImportsPlugin = createAppInlineDynamicImportsPlugin();
   if (inlineDynamicImportsPlugin) {
     appPlugins.push(inlineDynamicImportsPlugin);
+  }
+  const tabletViewerPlugin = createTabletViewerRuntimePlugin();
+  if (tabletViewerPlugin) {
+    appPlugins.push(tabletViewerPlugin);
   }
 
   return {

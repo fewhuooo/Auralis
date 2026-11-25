@@ -51,26 +51,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 // #ifdef H5
 import { localDataScope } from '@/services/localDataScope'
 import { deleteCachedDocument, putCachedDocument } from '@/services/localDocumentCache'
+import {
+  createDocumentViewerSession,
+  DEFAULT_DOC_VIEWER_ZOOM,
+  type DocViewerZoomPayload,
+  type DocumentViewerSession,
+} from '@/services/documentViewerEngine'
 // #endif
-import type {
-  FileRenderContext,
-  FileRenderHandler,
-  FileViewerEvent,
-  FileViewerInstance,
-  FileViewerRenderedInstance,
-  FileViewerRendererPlugin,
-  FileViewerZoomState,
-} from '@file-viewer/core'
 
-export interface DocViewerZoomPayload {
-  scale: number
-  label: string
-  canZoomIn: boolean
-  canZoomOut: boolean
-  canReset: boolean
-}
-
-const PDF_READY_TIMEOUT_MS = 60_000
+export type { DocViewerZoomPayload }
 
 const DEFAULT_ZOOM: DocViewerZoomPayload = {
   scale: 1,
@@ -114,14 +103,12 @@ const rotationHandledByViewer = ref(true)
 const shellBounds = ref<{ width: number; height: number }>({ width: 0, height: 0 })
 
 let loadToken = 0
-let viewerToken = 0
-let fittedScale: number | null = null
 let cachedRuntimeAssetBase: string | null = null
 let fetchAbort: AbortController | null = null
 let waitAbort: AbortController | null = null
-let viewer: FileViewerInstance | null = null
-let awaitPdfReady: ((signal: AbortSignal) => void | Promise<void>) | undefined
-const pendingActions: Array<(instance: FileViewerInstance) => Promise<unknown> | unknown> = []
+// #ifdef H5
+let session: DocumentViewerSession | null = null
+// #endif
 
 const statusLabel = computed(() => {
   if (phase.value === 'downloading') {
@@ -159,107 +146,13 @@ const rotationStageStyle = computed(() => {
   return { transform: `rotate(${currentRotation.value}deg)` }
 })
 
-function resolveHtmlElement(raw: HTMLElement | { $el?: unknown } | null): HTMLElement | null {
+function resolveHtmlElement(raw: HTMLElement | { $el?: unknown } | null): HTMLDivElement | null {
   if (typeof HTMLElement === 'undefined' || !raw) return null
-  if (raw instanceof HTMLElement) return raw
-  if (typeof raw === 'object' && '$el' in raw && raw.$el instanceof HTMLElement) {
+  if (raw instanceof HTMLDivElement) return raw
+  if (typeof raw === 'object' && '$el' in raw && raw.$el instanceof HTMLDivElement) {
     return raw.$el
   }
   return null
-}
-
-function toZoomPayload(state: FileViewerZoomState | null | undefined): DocViewerZoomPayload {
-  if (!state) return { ...DEFAULT_ZOOM }
-  const canReset = fittedScale !== null
-    ? Math.abs(state.scale - fittedScale) > 0.015
-    : state.canReset
-  return {
-    scale: state.scale,
-    label: state.label,
-    canZoomIn: state.canZoomIn,
-    canZoomOut: state.canZoomOut,
-    canReset,
-  }
-}
-
-function waitForSettledPaint(signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException('Aborted', 'AbortError'))
-  }
-  return new Promise((resolve, reject) => {
-    let frameOne: number | ReturnType<typeof setTimeout> | null = null
-    let frameTwo: number | ReturnType<typeof setTimeout> | null = null
-    const useRaf = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
-
-    const cancelPending = () => {
-      if (frameOne !== null) {
-        if (useRaf) window.cancelAnimationFrame(Number(frameOne))
-        else clearTimeout(frameOne)
-        frameOne = null
-      }
-      if (frameTwo !== null) {
-        if (useRaf) window.cancelAnimationFrame(Number(frameTwo))
-        else clearTimeout(frameTwo)
-        frameTwo = null
-      }
-    }
-
-    const onAbort = () => {
-      cancelPending()
-      reject(new DOMException('Aborted', 'AbortError'))
-    }
-
-    signal.addEventListener('abort', onAbort, { once: true })
-    const schedule = (cb: () => void): number | ReturnType<typeof setTimeout> => (
-      useRaf ? window.requestAnimationFrame(() => cb()) : setTimeout(cb, 16)
-    )
-    frameOne = schedule(() => {
-      frameOne = null
-      if (signal.aborted) return
-      frameTwo = schedule(() => {
-        frameTwo = null
-        signal.removeEventListener('abort', onAbort)
-        if (signal.aborted) {
-          reject(new DOMException('Aborted', 'AbortError'))
-          return
-        }
-        resolve()
-      })
-    })
-  })
-}
-
-type DivRenderHandler = FileRenderHandler<FileViewerRenderedInstance, HTMLDivElement>
-type PdfHandlerInterceptor = (
-  handler: DivRenderHandler,
-  buffer: ArrayBuffer,
-  target: HTMLDivElement,
-  type: string | undefined,
-  context: FileRenderContext | undefined,
-) => ReturnType<DivRenderHandler>
-
-function adaptDivRendererPlugin(
-  plugin: FileViewerRendererPlugin<DivRenderHandler>,
-  onPdfHandler?: PdfHandlerInterceptor,
-): FileViewerRendererPlugin {
-  return {
-    id: plugin.id,
-    label: plugin.label,
-    definitions: plugin.definitions,
-    assets: plugin.assets,
-    handlers: (plugin.handlers ?? []).map(entry => ({
-      rendererId: entry.rendererId,
-      handler(buffer, target, type, context) {
-        if (!(target instanceof HTMLDivElement)) {
-          throw new Error('Document preview requires an HTMLDivElement render surface')
-        }
-        if (entry.rendererId === 'pdf' && onPdfHandler) {
-          return onPdfHandler(entry.handler, buffer, target, type, context)
-        }
-        return entry.handler(buffer, target, type, context)
-      },
-    })),
-  }
 }
 
 function resolveRuntimeAssetBaseOnce(
@@ -321,11 +214,6 @@ async function downloadBlobWithProgress(
   }
 }
 
-function isPptxPresentation(fileName: string, mimeType: string): boolean {
-  if (/\.pptx$/i.test(fileName.trim())) return true
-  return mimeType.toLowerCase().includes('presentationml')
-}
-
 function isAbortException(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
@@ -338,112 +226,14 @@ function formatLoadError(error: unknown): string {
   return '文档解析渲染失败，可尝试重试或打开原文件'
 }
 
-function handleViewerEvent(event: FileViewerEvent, token: number): void {
-  if (token !== loadToken) return
-  if (event.type === 'fit-change') {
-    if (event.payload.applied && typeof event.payload.scale === 'number' && Number.isFinite(event.payload.scale)) {
-      fittedScale = event.payload.scale
-    }
-    const latestZoom = viewer?.getZoomState()
-    if (latestZoom) {
-      emit('zoom-change', toZoomPayload(latestZoom))
-    }
-    return
-  }
-  if (event.type === 'zoom-change') {
-    emit('zoom-change', toZoomPayload(event.payload))
-    return
-  }
-  if (event.type !== 'view-state-change') return
-  const nextState = event.payload.state
-  if (typeof nextState.page === 'number' && Number.isFinite(nextState.page)) {
-    currentPage.value = nextState.page
-  }
-  if (typeof nextState.pageCount === 'number' && Number.isFinite(nextState.pageCount)) {
-    totalPages.value = Math.max(1, nextState.pageCount)
-  }
-  if (typeof nextState.rotation === 'number' && Number.isFinite(nextState.rotation)) {
-    rotationHandledByViewer.value = true
-    currentRotation.value = nextState.rotation
-    emit('rotation-change', nextState.rotation)
-  }
-  if (nextState.zoom) {
-    emit('zoom-change', toZoomPayload(nextState.zoom))
-  }
-  emit('page-change', currentPage.value, totalPages.value)
-}
-
-async function waitForPdfReadiness(signal: AbortSignal): Promise<void> {
-  if (props.previewKind !== 'pdf' || !awaitPdfReady) return
-  let timer: ReturnType<typeof setTimeout> | null = null
-  const timeoutAbort = new AbortController()
-  const onParentAbort = () => timeoutAbort.abort(signal.reason)
-  signal.addEventListener('abort', onParentAbort, { once: true })
-  try {
-    const deadlinePromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        timeoutAbort.abort()
-        reject(new Error('PDF 页面解码超时，请重试或在新窗口打开'))
-      }, PDF_READY_TIMEOUT_MS)
-    })
-    await Promise.race([
-      Promise.resolve(awaitPdfReady(timeoutAbort.signal)),
-      deadlinePromise,
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
-    signal.removeEventListener('abort', onParentAbort)
-  }
-}
-
-async function flushPendingActions(expectedToken: number, instance: FileViewerInstance): Promise<void> {
-  if (expectedToken !== loadToken || viewer !== instance || pendingActions.length === 0) return
-  const actions = pendingActions.splice(0)
-  for (const action of actions) {
-    if (expectedToken !== loadToken || viewer !== instance) return
-    await action(instance)
-  }
-}
-
-function runViewerAction(
-  action: (instance: FileViewerInstance) => Promise<unknown> | unknown,
-): Promise<unknown> {
-  if (!viewer || !isReady.value || viewerToken !== loadToken) {
-    pendingActions.push(action)
-    return Promise.resolve(null)
-  }
-  return Promise.resolve(action(viewer))
-}
-
-async function rotate(delta: number): Promise<void> {
-  await runViewerAction(async (instance) => {
-    const actionToken = loadToken
-    const nextRotation = (currentRotation.value + delta + 360) % 360
-    const applied = await instance.applyViewState(
-      { rotation: nextRotation },
-      { action: delta < 0 ? 'rotate-left' : 'rotate-right', source: 'api' },
-    )
-    if (actionToken !== loadToken || viewer !== instance) return
-    const resolved = applied?.rotation ?? instance.getViewState()?.rotation
-    if (typeof resolved === 'number' && Number.isFinite(resolved)) {
-      rotationHandledByViewer.value = true
-      currentRotation.value = resolved
-    } else {
-      rotationHandledByViewer.value = false
-      measureShellBounds()
-      currentRotation.value = nextRotation
-    }
-    emit('rotation-change', currentRotation.value)
-  })
-}
-
 async function destroyActiveViewer(reason: 'replace' | 'reset' | 'component-unmount'): Promise<void> {
-  const active = viewer
-  viewer = null
-  viewerToken = 0
+  // #ifdef H5
+  const active = session
+  session = null
   if (active) {
     await active.destroy(reason).catch(() => {})
   }
+  // #endif
 }
 
 function abortActiveWork(): void {
@@ -451,13 +241,10 @@ function abortActiveWork(): void {
   fetchAbort = null
   waitAbort?.abort()
   waitAbort = null
-  awaitPdfReady = undefined
-  pendingActions.splice(0)
 }
 
 async function loadDocument(): Promise<void> {
   const token = ++loadToken
-  fittedScale = null
   abortActiveWork()
   const hasSource = Boolean(props.url || props.cachedBuffer)
   loading.value = hasSource
@@ -491,7 +278,7 @@ async function loadDocument(): Promise<void> {
   }
 
   try {
-    await viewer?.unload?.('replace').catch(() => {})
+    await destroyActiveViewer('replace')
     if (token !== loadToken) return
 
     const [
@@ -513,7 +300,6 @@ async function loadDocument(): Promise<void> {
       resolveFileViewerRuntimeAssetBaseUrl,
       getDefaultFileViewerAssetBaseUrl,
     )
-    setDefaultFileViewerAssetBaseUrl(runtimeAssetBase)
 
     let buffer: ArrayBuffer
     let cacheCopy: ArrayBuffer | null = null
@@ -521,7 +307,6 @@ async function loadDocument(): Promise<void> {
     if (props.cachedBuffer) {
       phase.value = 'rendering'
       downloadProgress.value = null
-      // Clone before passing to pdf.js or renderer in case it transfers/detaches the ArrayBuffer.
       buffer = props.cachedBuffer.slice(0)
     } else {
       const dlController = new AbortController()
@@ -541,97 +326,53 @@ async function loadDocument(): Promise<void> {
       downloadProgress.value = null
       buffer = await downloaded.blob.arrayBuffer()
       if (token !== loadToken) return
-      // Snapshot before instance.load may transfer/detach buffer; persist only after decode succeeds.
       cacheCopy = props.assetId ? buffer.slice(0) : null
     }
 
     const waitController = new AbortController()
     waitAbort = waitController
-    const wrappedPdfPlugin = adaptDivRendererPlugin(
-      pdfRenderer,
-      (handler, buffer, target, type, context) => {
-        const currentWaitSignal = waitController.signal
-        return handler(buffer, target, type, {
-          ...context,
-          registerThumbnailAdapter(adapter) {
-            context?.registerThumbnailAdapter?.(adapter)
-            const beforeCapture = adapter?.beforeCapture
-            if (!beforeCapture || currentWaitSignal.aborted || context?.signal?.aborted) return
-            awaitPdfReady = signal => beforeCapture({
-              width: 1,
-              height: 1,
-              format: 'png',
-              quality: 1,
-              fit: 'contain',
-              background: 'transparent',
-              signal,
-            })
-          },
-        })
-      },
-    )
 
-    await destroyActiveViewer('replace')
-    if (token !== loadToken) return
-
-    const isPptx = isPptxPresentation(props.fileName, props.mimeType)
-    const instance = createViewer(surfaceEl, {
-      options: {
-        styleIsolation: 'none',
-        theme: 'light',
-        toolbar: false,
-        fit: isPptx
-          ? undefined
-          : {
-              mode: 'width',
-              resize: 'until-interaction',
-              padding: 28,
-              maxScale: 1,
-            },
-        pdf: {
-          toolbar: false,
-          navigation: false,
-        },
-        docx: {
-          externalLinkPolicy: 'block',
-          darkMode: false,
-        },
-        presentation: {
-          pptModuleUrl: new URL('vendor/ppt/index.mjs', runtimeAssetBase).href,
-          pptWorkerUrl: new URL('vendor/ppt/worker.mjs', runtimeAssetBase).href,
-          pptWasmUrl: new URL('vendor/ppt/ppt-native.wasm', runtimeAssetBase).href,
-          pptFontUrl: new URL('vendor/ppt/ppt-font-cjk.otf', runtimeAssetBase).href,
-        },
-        rendererMode: 'replace',
-        autoRenderers: false,
-        renderers: [
-          wrappedPdfPlugin,
-          adaptDivRendererPlugin(wordRenderer),
-          adaptDivRendererPlugin(presentationRenderer),
-        ],
+    const nextSession = createDocumentViewerSession({
+      container: surfaceEl,
+      buffer,
+      fileName: props.fileName,
+      mimeType: contentType,
+      previewKind: props.previewKind,
+      runtimeAssetBase,
+      signal: waitController.signal,
+      deps: {
+        createViewer,
+        setDefaultFileViewerAssetBaseUrl,
+        pdfRenderer,
+        wordRenderer,
+        presentationRenderer,
       },
-      onEvent: (event) => handleViewerEvent(event, token),
+      onZoomChange(zoom) {
+        if (token === loadToken) emit('zoom-change', zoom)
+      },
+      onRotationChange(rotation) {
+        if (token !== loadToken) return
+        rotationHandledByViewer.value = true
+        currentRotation.value = rotation
+        emit('rotation-change', rotation)
+      },
+      onPageChange(page, pageCount) {
+        if (token !== loadToken) return
+        currentPage.value = page
+        totalPages.value = pageCount
+        emit('page-change', page, pageCount)
+      },
+      onRotateFallback(nextRotation) {
+        if (token !== loadToken) return
+        rotationHandledByViewer.value = false
+        measureShellBounds()
+        currentRotation.value = nextRotation
+        emit('rotation-change', nextRotation)
+      },
     })
-    viewer = instance
-    viewerToken = token
+    session = nextSession
 
-    if (token !== loadToken || waitController.signal.aborted) return
-    const file = new File([buffer], props.fileName, { type: contentType })
-    await instance.load(
-      {
-        buffer,
-        file,
-        filename: props.fileName,
-        size: buffer.byteLength,
-      },
-      { signal: waitController.signal },
-    )
-    if (token !== loadToken || waitController.signal.aborted) return
-
-    await waitForPdfReadiness(waitController.signal)
-    if (token !== loadToken || waitController.signal.aborted) return
-
-    await waitForSettledPaint(waitController.signal)
+    const result = await nextSession.load()
     if (token !== loadToken || waitController.signal.aborted) return
 
     if (cacheCopy && props.assetId && localDataScope.current() === cacheScope) {
@@ -643,21 +384,13 @@ async function loadDocument(): Promise<void> {
       })
     }
 
-    const finalZoom = instance.getZoomState()
-    if (finalZoom && Number.isFinite(finalZoom.scale) && finalZoom.scale > 0) {
-      fittedScale = finalZoom.scale
-      emit('zoom-change', toZoomPayload(finalZoom))
-    }
-    const finalView = instance.getViewState()
-    if (finalView) {
-      if (typeof finalView.page === 'number') currentPage.value = finalView.page
-      if (typeof finalView.pageCount === 'number') totalPages.value = Math.max(1, finalView.pageCount)
-      emit('page-change', currentPage.value, totalPages.value)
-    }
+    currentPage.value = result.page
+    totalPages.value = result.pageCount
+    emit('zoom-change', result.zoom || { ...DEFAULT_DOC_VIEWER_ZOOM })
+    emit('page-change', currentPage.value, totalPages.value)
     isReady.value = true
     loading.value = false
     emit('ready-change', true)
-    await flushPendingActions(token, instance)
   } catch (error) {
     if (token !== loadToken || isAbortException(error)) return
     const message = formatLoadError(error)
@@ -714,35 +447,21 @@ onBeforeUnmount(() => {
   void destroyActiveViewer('component-unmount')
 })
 
+function invokeSession(fn: (active: DocumentViewerSession) => Promise<unknown>): Promise<unknown> {
+  // #ifdef H5
+  if (session) return fn(session)
+  // #endif
+  return Promise.resolve(null)
+}
+
 defineExpose({
-  zoomIn: () => runViewerAction(instance => instance.zoomIn()),
-  zoomOut: () => runViewerAction(instance => instance.zoomOut()),
-  resetZoom: () => runViewerAction(async (instance) => {
-    const actionToken = loadToken
-    if (isPptxPresentation(props.fileName, props.mimeType)) {
-      await instance.resetZoom()
-    } else {
-      await instance.fitToView()
-    }
-    if (actionToken !== loadToken || viewer !== instance) return
-    const next = instance.getZoomState()
-    if (next && Number.isFinite(next.scale) && next.scale > 0) {
-      fittedScale = next.scale
-      emit('zoom-change', toZoomPayload(next))
-    }
-  }),
-  rotateLeft: () => rotate(-90),
-  rotateRight: () => rotate(90),
-  prevPage: () => runViewerAction(instance => (
-    currentPage.value > 1
-      ? instance.applyViewState({ page: currentPage.value - 1, pageCount: totalPages.value })
-      : undefined
-  )),
-  nextPage: () => runViewerAction(instance => (
-    currentPage.value < totalPages.value
-      ? instance.applyViewState({ page: currentPage.value + 1, pageCount: totalPages.value })
-      : undefined
-  )),
+  zoomIn: () => invokeSession(active => active.zoomIn()),
+  zoomOut: () => invokeSession(active => active.zoomOut()),
+  resetZoom: () => invokeSession(active => active.resetZoom()),
+  rotateLeft: () => invokeSession(active => active.rotate(-90)),
+  rotateRight: () => invokeSession(active => active.rotate(90)),
+  prevPage: () => invokeSession(active => active.prevPage()),
+  nextPage: () => invokeSession(active => active.nextPage()),
   retry,
 })
 </script>
@@ -798,84 +517,101 @@ defineExpose({
 }
 
 .doc-viewer-surface::-webkit-scrollbar,
-.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar),
-.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar),
-.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar) {
+.doc-viewer-surface :deep(.docx-fit-viewer)::-webkit-scrollbar,
+.doc-viewer-surface :deep(.msdoc-zoom-viewer)::-webkit-scrollbar,
+.doc-viewer-surface :deep(.pdf-wrapper)::-webkit-scrollbar {
+  width: 7px !important;
+  height: 7px !important;
   display: block !important;
-  width: 6px !important;
-  height: 6px !important;
 }
 
 .doc-viewer-surface::-webkit-scrollbar-track,
-.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar-track),
-.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar-track),
-.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar-track) {
+.doc-viewer-surface :deep(.docx-fit-viewer)::-webkit-scrollbar-track,
+.doc-viewer-surface :deep(.msdoc-zoom-viewer)::-webkit-scrollbar-track,
+.doc-viewer-surface :deep(.pdf-wrapper)::-webkit-scrollbar-track {
   background: transparent !important;
 }
 
 .doc-viewer-surface::-webkit-scrollbar-thumb,
-.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar-thumb),
-.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar-thumb),
-.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar-thumb) {
+.doc-viewer-surface :deep(.docx-fit-viewer)::-webkit-scrollbar-thumb,
+.doc-viewer-surface :deep(.msdoc-zoom-viewer)::-webkit-scrollbar-thumb,
+.doc-viewer-surface :deep(.pdf-wrapper)::-webkit-scrollbar-thumb {
   background: rgba(107, 119, 98, 0.26) !important;
   border-radius: 999px !important;
 }
 
 .doc-viewer-surface::-webkit-scrollbar-thumb:hover,
-.doc-viewer-surface :deep(.docx-fit-viewer::-webkit-scrollbar-thumb:hover),
-.doc-viewer-surface :deep(.msdoc-zoom-viewer::-webkit-scrollbar-thumb:hover),
-.doc-viewer-surface :deep(.pdf-wrapper::-webkit-scrollbar-thumb:hover) {
-  background: rgba(107, 119, 98, 0.42) !important;
+.doc-viewer-surface :deep(.docx-fit-viewer)::-webkit-scrollbar-thumb:hover,
+.doc-viewer-surface :deep(.msdoc-zoom-viewer)::-webkit-scrollbar-thumb:hover,
+.doc-viewer-surface :deep(.pdf-wrapper)::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 119, 98, 0.44) !important;
 }
 
-.doc-viewer-surface :deep(.image-toolbar),
-.doc-viewer-surface :deep(.pdf-state:not(.pdf-state--error)),
-.doc-viewer-surface :deep(.pptx-loading),
-.doc-viewer-surface :deep(.ppt-binary-loading) {
+.doc-viewer-surface :deep(.pdf-toolbar),
+.doc-viewer-surface :deep(.docx-toolbar),
+.doc-viewer-surface :deep(.viewer-toolbar),
+.doc-viewer-surface :deep(.fv-toolbar),
+.doc-viewer-surface :deep([class*="toolbar"]),
+.doc-viewer-surface :deep(.pdf-page-nav),
+.doc-viewer-surface :deep(.pdf-sidebar),
+.doc-viewer-surface :deep(.pdf-thumbnails),
+.doc-viewer-surface :deep([class*="thumbnail"]),
+.doc-viewer-surface :deep(.pdf-viewer-shell > aside),
+.doc-viewer-surface :deep(.pdf-shell-sidebar) {
   display: none !important;
 }
 
-.doc-viewer-surface :deep(.render-surface),
-.doc-viewer-surface :deep(.file-viewer-surface),
-.doc-viewer-surface :deep(.file-viewer-paper),
-.doc-viewer-surface :deep(.ff-file-viewer-render-surface),
-.doc-viewer-surface :deep(.docx-wrapper) {
-  background: transparent !important;
+.doc-viewer-surface :deep(.pdf-stage),
+.doc-viewer-surface :deep(.pdf-viewport),
+.doc-viewer-surface :deep(.pdf-pages),
+.doc-viewer-surface :deep(.docx-wrapper),
+.doc-viewer-surface :deep(.docx-fit-viewer),
+.doc-viewer-surface :deep(.msdoc-zoom-viewer),
+.doc-viewer-surface :deep(.doc-stage),
+.doc-viewer-surface :deep(.viewer-stage) {
+  background: var(--color-bg-primary, #F7F2EB) !important;
 }
 
-.doc-viewer-surface :deep(.pdfViewer) {
-  margin: 0 auto;
-  padding: 20px 14px 88px !important;
+.doc-viewer-surface :deep(.pdf-wrapper) {
+  background: var(--color-bg-primary, #F7F2EB) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 20px 24px 72px !important;
 }
 
-.doc-viewer-surface :deep(.pdfViewer .page) {
-  border-radius: 6px;
-  box-shadow: 0 6px 22px rgba(45, 55, 40, 0.08), 0 1px 4px rgba(45, 55, 40, 0.04);
+.doc-viewer-surface :deep(.pdf-page) {
+  background: #FFFFFF !important;
+  box-shadow: 0 2px 12px rgba(45, 55, 40, 0.08), 0 1px 2px rgba(45, 55, 40, 0.04) !important;
+  border-radius: 4px !important;
 }
 
-.doc-viewer-surface :deep(.pptx-viewer-shell),
-.doc-viewer-surface :deep(.ppt-binary-shell) {
-  padding: 20px 18px 88px !important;
+.doc-viewer-surface :deep(.docx-fit-viewer) {
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 20px 24px 64px !important;
 }
 
-.doc-viewer-surface :deep(.docx-wrapper) {
-  width: max-content !important;
-  min-width: 100% !important;
-  padding: 20px 14px 88px !important;
-  box-sizing: border-box;
+.doc-viewer-surface :deep(.docx-fit-viewer .docx-wrapper) {
+  padding: 0 !important;
 }
 
-.doc-viewer-surface :deep(.docx-page-frame),
-.doc-viewer-surface :deep(.docx-flow-frame) {
-  margin-left: auto !important;
-  margin-right: auto !important;
+.doc-viewer-surface :deep(.docx-fit-viewer section.docx) {
+  box-shadow: 0 2px 12px rgba(45, 55, 40, 0.08), 0 1px 2px rgba(45, 55, 40, 0.04) !important;
+  border-radius: 4px !important;
+  margin-bottom: 18px !important;
 }
 
-.doc-viewer-surface :deep(.docx-page-frame > section.docx),
-.doc-viewer-surface :deep(.docx-flow-frame > section.docx) {
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(45, 55, 40, 0.08), 0 1px 4px rgba(45, 55, 40, 0.04) !important;
-  border: 1px solid rgba(45, 55, 40, 0.06);
+.doc-viewer-surface :deep(.pptx-viewer-root),
+.doc-viewer-surface :deep(.ppt-viewer-root),
+.doc-viewer-surface :deep(.presentation-viewer),
+.doc-viewer-surface :deep(.pptx-stage) {
+  width: 100% !important;
+  background: var(--color-bg-primary, #F7F2EB) !important;
+}
+
+.doc-viewer-surface :deep(.pptx-slide-list),
+.doc-viewer-surface :deep(.ppt-slide-list) {
+  padding: 16px 24px 64px !important;
 }
 
 .doc-viewer-overlay {
@@ -887,12 +623,11 @@ defineExpose({
   justify-content: center;
   padding: 24px;
   background: var(--color-bg-primary, #F7F2EB);
-  box-sizing: border-box;
 }
 
 .doc-overlay-fade-enter-active,
 .doc-overlay-fade-leave-active {
-  transition: opacity 180ms ease;
+  transition: opacity 200ms ease;
 }
 
 .doc-overlay-fade-enter-from,
