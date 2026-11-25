@@ -84,6 +84,16 @@ export function toServerBlockBaseVersion(payload: Record<string, unknown>): numb
   return resolveBlockSyncVersion(payload, 0)
 }
 
+export const DEFAULT_BLOCK_THEME_COLOR = 'rgba(181,196,177,0.4)'
+
+export const BLOCK_THEME_COLORS = [
+  { name: '绿', value: 'rgba(181,196,177,0.4)' },
+  { name: '沙', value: 'rgba(217,197,178,0.4)' },
+  { name: '粉', value: 'rgba(212,163,163,0.4)' },
+  { name: '蓝', value: 'rgba(179,192,207,0.4)' },
+  { name: '黄', value: 'rgba(230,223,216,0.5)' },
+] as const
+
 /** Resolves display source label from the linked source title first, falling back to stored text. */
 export function resolveBlockSourceLabel(
   block: { source?: string; sourceFileId?: string },
@@ -99,26 +109,27 @@ export function resolveBlockSourceLabel(
   return '自主整理'
 }
 
-/** Preserves existing sourceFileId across edits unless the user intentionally changes or clears the source label. */
-export function resolveEditedBlockSourceLink(params: {
-  draftSource: string
-  initialSourceLabel: string
-  existingSource?: string
-  existingSourceFileId?: string
-  sources: ReadonlyArray<{ id?: string; title?: string }>
-}): { source: string; sourceFileId?: string } {
-  const trimmed = params.draftSource.trim() || '自主整理'
-  if (trimmed !== '自主整理') {
-    const matched = params.sources.find(item => (item.title || '').trim() === trimmed)
-    if (matched?.id) {
-      return { source: trimmed, sourceFileId: matched.id }
-    }
+/** Normalizes legacy or blank block colors to PC's default green theme dot. */
+export function normalizeBlockThemeColor(color?: string | null): string {
+  const trimmed = color?.trim() || ''
+  if (!trimmed || trimmed.toUpperCase() === '#8B9A6E') {
+    return DEFAULT_BLOCK_THEME_COLOR
   }
-  if (params.existingSourceFileId && trimmed === params.initialSourceLabel) {
+  return trimmed
+}
+
+/** Matches PC workspace block creation: bind the active selected source when present, otherwise '手动创建'. */
+export function resolveWorkspaceCreatedBlockSource(
+  selectedSource?: { id?: string; title?: string } | null,
+): { source: string; sourceFileId?: string } {
+  if (selectedSource?.id) {
     return {
-      source: trimmed === '自主整理' ? (params.existingSource || '') : trimmed,
-      sourceFileId: params.existingSourceFileId,
+      source: selectedSource.title?.trim() || '手动创建',
+      sourceFileId: selectedSource.id,
     }
   }
-  return { source: trimmed, sourceFileId: undefined }
+  return {
+    source: '手动创建',
+    sourceFileId: undefined,
+  }
 }
