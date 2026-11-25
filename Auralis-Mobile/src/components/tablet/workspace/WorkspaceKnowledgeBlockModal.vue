@@ -130,7 +130,7 @@
               v-model="draftContent"
               :disabled="saving"
               class="modal-form-textarea kb-form-textarea"
-              :maxlength="8000"
+              :maxlength="-1"
               placeholder="在此编写详细知识点内容，支持 Markdown 语法与 LaTeX 数学公式（如 $E=mc^2$ 或 $$公式$$）..."
             />
           </view>
@@ -142,6 +142,7 @@
           <button
             type="button"
             class="modal-btn modal-btn-secondary"
+            :class="{ 'is-disabled': saving }"
             :disabled="saving"
             @click="handleCancelEdit"
           >
@@ -150,6 +151,7 @@
           <button
             type="button"
             class="modal-btn modal-btn-primary"
+            :class="{ 'is-disabled': saving || !draftTitle.trim() || !draftContent.trim() }"
             :disabled="saving || !draftTitle.trim() || !draftContent.trim()"
             @click="handleSave"
           >
@@ -162,6 +164,7 @@
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
+              :class="{ 'is-disabled': !rawContent.trim() }"
               :disabled="!rawContent.trim()"
               @click="handleCopy"
             >
@@ -175,6 +178,7 @@
             <button
               type="button"
               class="modal-btn modal-btn-ghost-danger"
+              :class="{ 'is-disabled': !block || saving }"
               :disabled="!block || saving"
               @click="handleDelete"
             >
@@ -187,6 +191,7 @@
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
+              :class="{ 'is-disabled': !block || saving }"
               :disabled="!block || saving"
               @click="handleStartEdit"
             >
@@ -196,6 +201,7 @@
             <button
               type="button"
               class="modal-btn modal-btn-primary"
+              :class="{ 'is-disabled': saving }"
               :disabled="saving"
               @click="handleClose"
             >
@@ -399,7 +405,7 @@ function handleDelete() {
 
 .kb-modal-card {
   width: 100%;
-  max-width: 640px;
+  max-width: 680px;
   max-height: calc(100vh - 48px);
   background: var(--color-bg-primary, #F7F2EB);
   border: 1px solid var(--border-subtle);
@@ -420,7 +426,7 @@ function handleDelete() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 22px 26px 12px;
+  padding: 24px 28px 12px;
   flex-shrink: 0;
 }
 
@@ -485,7 +491,7 @@ function handleDelete() {
   flex: 1;
   min-height: 0;
   max-height: 66vh;
-  padding: 4px 26px 12px;
+  padding: 0;
   box-sizing: border-box;
 }
 
@@ -493,6 +499,8 @@ function handleDelete() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 8px 28px 18px;
+  box-sizing: border-box;
 }
 
 .kb-meta-card {
@@ -575,6 +583,8 @@ function handleDelete() {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 8px 28px 18px;
+  box-sizing: border-box;
 }
 
 .modal-form-group {
@@ -613,7 +623,9 @@ function handleDelete() {
 
 /* #ifdef H5 */
 .modal-form-input:focus,
-.kb-form-textarea:focus {
+.modal-form-input:focus-within,
+.kb-form-textarea:focus,
+.kb-form-textarea:focus-within {
   outline: none;
   border-color: var(--color-zen-sage);
   background: #FDFBF8;
@@ -625,12 +637,14 @@ function handleDelete() {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 4px 0;
+  padding: 6px 2px;
 }
 
 .color-dot {
   width: 26px;
   height: 26px;
+  box-sizing: border-box;
+  flex-shrink: 0;
   border-radius: 50%;
   cursor: pointer;
   border: 2.5px solid var(--color-bg-primary, #F7F2EB);
@@ -639,12 +653,12 @@ function handleDelete() {
 }
 
 .color-dot:hover {
-  transform: scale(1.14);
+  transform: scale(1.18);
 }
 
 .color-dot.is-selected {
   box-shadow: 0 0 0 2px var(--color-bg-primary, #F7F2EB), 0 0 0 4.5px var(--color-zen-sage, #8B9A6E);
-  transform: scale(1.12);
+  transform: scale(1.15);
 }
 
 .editor-label-row {
@@ -715,7 +729,7 @@ function handleDelete() {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  padding: 12px 26px 22px;
+  padding: 12px 28px 24px;
   flex-shrink: 0;
 }
 
@@ -757,10 +771,13 @@ function handleDelete() {
   border: none;
 }
 
-.modal-btn:disabled {
+.modal-btn:disabled,
+.modal-btn[disabled],
+.modal-btn.is-disabled {
   opacity: 0.4;
   cursor: not-allowed;
   box-shadow: none;
+  pointer-events: none;
 }
 
 .modal-btn-secondary {
@@ -770,7 +787,13 @@ function handleDelete() {
   box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
 }
 
-.modal-btn-secondary:hover:not(:disabled) {
+.modal-btn-secondary[disabled],
+.modal-btn-secondary.is-disabled {
+  background: rgba(0, 0, 0, 0.035);
+  color: var(--text-primary);
+}
+
+.modal-btn-secondary:hover:not(:disabled):not([disabled]):not(.is-disabled) {
   background: rgba(0, 0, 0, 0.065);
   border-color: rgba(0, 0, 0, 0.16);
 }
@@ -781,7 +804,13 @@ function handleDelete() {
   border: 1px solid rgba(192, 86, 70, 0.25);
 }
 
-.modal-btn-ghost-danger:hover:not(:disabled) {
+.modal-btn-ghost-danger[disabled],
+.modal-btn-ghost-danger.is-disabled {
+  background: transparent;
+  color: #C05646;
+}
+
+.modal-btn-ghost-danger:hover:not(:disabled):not([disabled]):not(.is-disabled) {
   background: rgba(192, 86, 70, 0.08);
   border-color: rgba(192, 86, 70, 0.4);
 }
@@ -792,7 +821,13 @@ function handleDelete() {
   box-shadow: 0 4px 14px rgba(118, 135, 88, 0.32), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.modal-btn-primary:hover:not(:disabled) {
+.modal-btn-primary[disabled],
+.modal-btn-primary.is-disabled {
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+}
+
+.modal-btn-primary:hover:not(:disabled):not([disabled]):not(.is-disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
