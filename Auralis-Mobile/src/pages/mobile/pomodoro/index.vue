@@ -1,492 +1,749 @@
 <template>
   <AppPageLayout>
     <view class="pomodoro-page">
-      <!-- 通用极简禅意顶栏 -->
-      <AppHeader title="专注" />
+      <view class="status-bar-spacer"></view>
 
-      <!-- Main Content -->
-      <view class="main-content">
-        <!-- Time Row -->
-        <view class="time-row">
-          <text class="real-date">{{ currentDateFormatted }}</text>
-          <text class="real-time">{{ currentTimeFormatted }}</text>
+      <view class="time-row">
+        <view class="datetime-pill num-tabular">
+          <view class="datetime-dot"></view>
+          <text>{{ clockText.dateText }} {{ clockText.timeText }}</text>
         </view>
+      </view>
 
-        <!-- Responsive Workspace Grid -->
-        <view class="workspace-grid">
-          <!-- Left/Center Area: Timer & Status -->
-          <view class="timer-section">
-            <!-- Task Selector Wrap (Relative Anchor for Popover Menu) -->
-            <view class="task-selector-wrap" style="position: relative; z-index: 100;">
-              <view class="task-selector" @click="showTaskSelect = !showTaskSelect">
-                <text class="t-name" v-if="currentTask">{{ currentTask.name }}</text>
-                <text class="t-name placeholder" v-else>点击选择任务</text>
-                <text class="selector-arrow" :style="{ transform: showTaskSelect ? 'rotate(180deg)' : 'rotate(0deg)' }">▾</text>
+      <scroll-view scroll-y :show-scrollbar="false" class="timer-scroll">
+        <view class="timer-scroll-inner">
+          <view class="timer-hero">
+            <PomodoroRing
+              size="min(284px, 72vw, 36vh)"
+              :total-seconds="focusStore.totalSeconds"
+              :remaining-seconds="focusStore.remainingSeconds"
+              :is-running="focusStore.isRunning"
+              :color="focusStore.ringColor"
+              :is-break="focusStore.isBreakPhase"
+              :show-bottom-pill="true"
+              :aria-label="focusStore.isRunning ? '点击暂停专注' : '点击开始专注'"
+              @center-click="focusStore.toggle()"
+            />
+
+            <view class="phase-status">
+              <view
+                class="phase-pill"
+                :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
+              >
+                <view class="phase-beacon"></view>
+                <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
+              </view>
+            </view>
+
+            <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
+              <view
+                v-for="idx in 4"
+                :key="idx"
+                class="dot"
+                :class="{
+                  'is-filled': focusStore.cycleCount >= idx,
+                  'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
+                }"
+              ></view>
+            </view>
+
+            <view class="controls">
+              <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
+                <text>重置</text>
               </view>
 
-              <!-- Anchored Popover Menu -->
-              <TaskSelectSheet v-model:visible="showTaskSelect" @select="onTaskSelect" />
-            </view>
+              <view
+                class="main-btn"
+                :class="{ 'is-break': focusStore.isBreakPhase }"
+                role="button"
+                :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
+                @click="focusStore.toggle()"
+              >
+                <view v-if="focusStore.isRunning" class="pause-icon"></view>
+                <view v-else class="play-icon"></view>
+              </view>
 
-            <!-- Timer Ring -->
-            <view class="timer-container">
-              <PomodoroRing
-                :total-seconds="totalSeconds"
-                :remaining-seconds="remainingSeconds"
-                :is-running="isRunning"
-                :color="ringColor"
-                @center-click="showTaskSelect = true"
-              />
-            </view>
-
-            <!-- Phase Status & Progress Dots -->
-            <view class="phase-info">
-              <text class="phase-text" :style="{ color: ringColor }">{{ isBreakPhase ? '休息时间' : '专注中' }}</text>
-              <view class="progress-dots">
-                <view 
-                  v-for="i in 4" 
-                  :key="i"
-                  class="dot"
-                  :style="currentPomodoro >= i ? { backgroundColor: ringColor } : { backgroundColor: ringColor + '30' }"
-                ></view>
+              <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
+                <text>跳过</text>
               </view>
             </view>
           </view>
+        </view>
+      </scroll-view>
 
-          <!-- Right/Bottom Area: Controls & Stats -->
-          <view class="action-section">
-            <!-- Controls -->
-            <view class="controls">
-              <view class="ctrl-btn secondary" @click="resetTimer">重置</view>
-              <view class="main-btn" @click="toggleTimer">
-                <view class="pause-icon" v-if="isRunning"></view>
-                <view class="play-icon" v-else></view>
-              </view>
-              <view class="ctrl-btn secondary" @click="skipPhase">跳过</view>
+      <view class="bottom-card-dock">
+        <view
+          class="panel-card zen-card focus-panel-card"
+          :class="{ 'is-locked': focusStore.isTaskLocked }"
+          role="button"
+          aria-label="选择专注任务"
+          @click="openTaskPicker"
+        >
+          <view class="card-header">
+            <text class="card-title">当前专注</text>
+            <view class="card-header-meta">
+              <text
+                v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
+                class="header-time-badge num-tabular"
+              >
+                {{ displayedTask.timeStr }}
+              </text>
+              <LineIcon
+                :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
+                size="14px"
+                color="var(--text-muted, #7A7A75)"
+              />
             </view>
+          </view>
 
-            <!-- Bottom Stats Card -->
-            <view class="bottom-stats">
-              <view class="stat-col">
-                <text class="stat-val">{{ completedToday }}</text>
-                <view class="stat-label-row">
-                  <text class="stat-label">今日番茄</text>
-                  <text class="stat-emoji">🍅</text>
-                </view>
+          <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
+            <text class="banner-title">{{ displayedTask.name }}</text>
+            <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
+          </view>
+
+          <view v-if="focusStore.lastCompletedTask" class="complete-prompt" @click.stop>
+            <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
+            <view class="complete-prompt-actions">
+              <view
+                class="ui-btn ui-btn-secondary sm prompt-btn"
+                role="button"
+                @click="focusStore.dismissCompletedTaskPrompt()"
+              >
+                <text>暂不</text>
               </view>
-              <view class="stat-col">
-                <text class="stat-val">{{ completedToday * FOCUS_MINS }}<text class="stat-unit">m</text></text>
-                <text class="stat-label" style="margin-top: 8rpx;">专注时长</text>
+              <view
+                class="ui-btn ui-btn-primary sm prompt-btn"
+                :class="{ 'is-disabled': completingTask }"
+                role="button"
+                @click="completeBoundTask"
+              >
+                <text>{{ completingTask ? '保存中…' : '标记完成' }}</text>
               </view>
             </view>
           </view>
         </view>
       </view>
     </view>
+
+    <template #overlay>
+      <TaskSelectSheet
+        v-model:visible="showTaskSheet"
+        :selected-task-id="focusStore.selectedTaskId"
+        @select="onTaskSelected"
+      />
+    </template>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { storeToRefs } from 'pinia'
-import AppHeader from '@/components/AppHeader.vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onHide, onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
+import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
 import TaskSelectSheet from '@/components/TaskSelectSheet.vue'
+import {
+  formatFocusClockDateTime,
+  resolveDefaultFocusTask,
+  resolveDisplayedFocusTask,
+} from '@/services/focusController'
+import { useAuthStore } from '@/store/useAuthStore'
+import { useFocusStore } from '@/store/useFocusStore'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
 
+const authStore = useAuthStore()
+const focusStore = useFocusStore()
 const taskStore = useTaskStore()
-const { pendingTasks } = storeToRefs(taskStore)
 
-onMounted(() => {
-  taskStore.fetchTasks()
-})
+const showTaskSheet = ref(false)
+const completingTask = ref(false)
+const nowMs = ref(Date.now())
+const tasksLoaded = ref(false)
 
-const currentTask = ref<Task | null>(null)
-const showTaskSelect = ref(false)
-
-const now = ref(new Date())
+let userManuallySelected = false
 let clockTimer: ReturnType<typeof setInterval> | null = null
+let lastClockMinute = Math.floor(nowMs.value / 60_000)
+let syncTaskFlight: { generation: symbol; promise: Promise<void> } | null = null
 
-const currentTimeFormatted = computed(() => {
-  const h = String(now.value.getHours()).padStart(2, '0')
-  const m = String(now.value.getMinutes()).padStart(2, '0')
-  return `${h}:${m}`
-})
+const clockText = computed(() => formatFocusClockDateTime(nowMs.value))
 
-const currentDateFormatted = computed(() => {
-  const d = now.value
-  const month = d.getMonth() + 1
-  const date = d.getDate()
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  const weekday = weekdays[d.getDay()]
-  return `${month}月${date}日 ${weekday}`
-})
+const displayedTask = computed(() =>
+  resolveDisplayedFocusTask({
+    selectedTaskId: focusStore.selectedTaskId,
+    selectedTaskTitle: focusStore.selectedTaskTitle,
+    selectedTaskSubject: focusStore.selectedTaskSubject,
+    tasks: taskStore.allTasks,
+    nowMs: nowMs.value,
+  }),
+)
 
-const onTaskSelect = (task: Task) => {
-  currentTask.value = task
-}
-
-const FOCUS_MINS = 25
-const BREAK_MINS = 5
-const LONG_BREAK_MINS = 15
-
-const isRunning = ref(false)
-const isBreakPhase = ref(false)
-const currentPomodoro = ref(0) // 1 to 4
-
-const totalSeconds = computed(() => {
-  if (isBreakPhase.value) {
-    return (currentPomodoro.value === 4 ? LONG_BREAK_MINS : BREAK_MINS) * 60
-  }
-  return FOCUS_MINS * 60
-})
-
-const remainingSeconds = ref(totalSeconds.value)
-let timer: ReturnType<typeof setInterval> | null = null
-
-const ringColor = computed(() => {
-  return isBreakPhase.value ? 'var(--color-pomodoro-break)' : 'var(--color-pomodoro)'
-})
-
-const completedToday = computed(() => taskStore.todayPomodoros)
-
-const toggleTimer = () => {
-  if (isRunning.value) {
-    pauseTimer()
-  } else {
-    startTimer()
+function ensureStandardFocusMinutes() {
+  if (!focusStore.isTaskLocked && focusStore.focusMinutes !== 25) {
+    focusStore.setFocusMinutes(25)
   }
 }
 
-const startTimer = () => {
-  if (remainingSeconds.value <= 0) resetTimer()
-  isRunning.value = true
-  timer = setInterval(() => {
-    remainingSeconds.value--
-    if (remainingSeconds.value <= 0) {
-      handlePhaseComplete()
+function applyDefaultTaskIfNeeded() {
+  if (focusStore.isTaskLocked) return
+
+  if (focusStore.selectedTaskId) {
+    if (!tasksLoaded.value) return
+    const existing = taskStore.allTasks.find(
+      item => item.id === focusStore.selectedTaskId && !item.is_deleted && item.status !== 'completed' && item.status !== 'cancelled',
+    )
+    if (existing) return
+    focusStore.selectTask(null)
+    userManuallySelected = false
+  }
+
+  if (userManuallySelected) return
+  const candidate = resolveDefaultFocusTask(taskStore.allTasks, nowMs.value)
+  if (candidate) {
+    focusStore.selectTask(candidate)
+  }
+}
+
+function startClock() {
+  stopClock()
+  nowMs.value = Date.now()
+  lastClockMinute = Math.floor(nowMs.value / 60_000)
+  clockTimer = setInterval(() => {
+    const current = Date.now()
+    nowMs.value = current
+    const minute = Math.floor(current / 60_000)
+    if (minute !== lastClockMinute) {
+      lastClockMinute = minute
+      applyDefaultTaskIfNeeded()
     }
   }, 1000)
 }
 
-const pauseTimer = () => {
-  isRunning.value = false
-  if (timer) clearInterval(timer)
+function stopClock() {
+  if (!clockTimer) return
+  clearInterval(clockTimer)
+  clockTimer = null
 }
 
-const resetTimer = () => {
-  pauseTimer()
-  remainingSeconds.value = totalSeconds.value
-}
+async function syncFocusState() {
+  startClock()
+  focusStore.reconcileNow(false)
+  ensureStandardFocusMinutes()
+  void focusStore.flushPendingSessions()
 
-const skipPhase = () => {
-  handlePhaseComplete()
-}
-
-const handlePhaseComplete = () => {
-  pauseTimer()
-  uni.vibrateLong()
-  
-  if (!isBreakPhase.value) {
-    // Focus -> Break
-    currentPomodoro.value++
-    isBreakPhase.value = true
-    taskStore.incrementPomodoro()
-  } else {
-    // Break -> Focus
-    if (currentPomodoro.value >= 4) {
-      currentPomodoro.value = 0 // Reset after long break
-    }
-    isBreakPhase.value = false
+  const generation = authStore.getLoginGeneration()
+  if (syncTaskFlight && syncTaskFlight.generation === generation) {
+    return syncTaskFlight.promise
   }
-  
-  remainingSeconds.value = totalSeconds.value
-  
-  uni.showToast({
-    title: isBreakPhase.value ? '专注完成！休息一下' : '休息结束，开始专注',
-    icon: 'none'
-  })
+
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  const flight = {
+    generation,
+    promise: Promise.resolve(),
+  }
+  syncTaskFlight = flight
+  flight.promise = (async () => {
+    try {
+      await taskStore.fetchTasks()
+    } finally {
+      if (syncTaskFlight === flight) {
+        syncTaskFlight = null
+      }
+      if (
+        generation === authStore.getLoginGeneration()
+        && userId === authStore.user?.id
+        && serverDeviceId === authStore.serverDeviceId
+      ) {
+        tasksLoaded.value = true
+        applyDefaultTaskIfNeeded()
+      }
+    }
+  })()
+  return flight.promise
 }
 
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-  if (clockTimer) clearInterval(clockTimer)
-})
+watch(
+  () => [focusStore.isTaskLocked, focusStore.focusMinutes],
+  ([locked]) => {
+    if (locked) {
+      showTaskSheet.value = false
+    }
+    ensureStandardFocusMinutes()
+  },
+  { immediate: true },
+)
 
-// Setup clock
-clockTimer = setInterval(() => {
-  now.value = new Date()
-}, 1000)
+watch(
+  () => [authStore.isAuthenticated, authStore.sessionId, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    userManuallySelected = false
+    syncTaskFlight = null
+    tasksLoaded.value = false
+    showTaskSheet.value = false
+    completingTask.value = false
+    if (authStore.isAuthenticated) {
+      void syncFocusState()
+    }
+  },
+)
+
+watch(
+  () => taskStore.allTasks,
+  () => {
+    applyDefaultTaskIfNeeded()
+  },
+)
+
+onMounted(() => {
+  void syncFocusState()
+})
+onShow(() => {
+  void syncFocusState()
+})
+onHide(stopClock)
+onUnmounted(stopClock)
+
+function openTaskPicker() {
+  if (focusStore.isTaskLocked) {
+    uni.showToast({ title: '本轮专注结束后可重新选择任务', icon: 'none' })
+    return
+  }
+  showTaskSheet.value = true
+}
+
+function onTaskSelected(task: Task | null) {
+  userManuallySelected = true
+  focusStore.selectTask(task)
+}
+
+async function completeBoundTask() {
+  if (completingTask.value) return
+  const target = focusStore.lastCompletedTask
+  if (!target?.id) return
+  const existing = taskStore.allTasks.find(item => item.id === target.id && !item.is_deleted)
+  if (!existing || existing.status === 'completed' || existing.status === 'cancelled') {
+    focusStore.dismissCompletedTaskPrompt()
+    return
+  }
+  const generation = authStore.getLoginGeneration()
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  completingTask.value = true
+  try {
+    await taskStore.toggleTaskComplete(target.id)
+    if (
+      generation !== authStore.getLoginGeneration()
+      || userId !== authStore.user?.id
+      || serverDeviceId !== authStore.serverDeviceId
+    ) {
+      return
+    }
+    uni.showToast({ title: '已标记完成', icon: 'none' })
+    focusStore.dismissCompletedTaskPrompt()
+  } catch (err) {
+    if (
+      generation !== authStore.getLoginGeneration()
+      || userId !== authStore.user?.id
+      || serverDeviceId !== authStore.serverDeviceId
+    ) {
+      return
+    }
+    uni.showToast({
+      title: err instanceof Error ? err.message : '标记完成失败，请重试',
+      icon: 'none',
+    })
+  } finally {
+    if (
+      generation === authStore.getLoginGeneration()
+      && userId === authStore.user?.id
+      && serverDeviceId === authStore.serverDeviceId
+    ) {
+      completingTask.value = false
+    }
+  }
+}
 </script>
 
 <style scoped>
 .pomodoro-page {
-  width: 100vw;
-  height: 100vh;
-  position: relative;
-  background: var(--color-bg-primary);
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  background-color: transparent;
 }
 
-.main-content {
-  position: relative;
-  z-index: 10;
-  width: 100%;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 20rpx 48rpx calc(env(safe-area-inset-bottom) + 160rpx);
-  box-sizing: border-box;
-  justify-content: space-between;
-  overflow: hidden;
+.status-bar-spacer {
+  height: var(--status-bar-height, 0px);
+  height: max(var(--status-bar-height, 0px), env(safe-area-inset-top));
+  flex-shrink: 0;
 }
 
 .time-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: flex-start;
+  padding: clamp(18px, 2.6vh, 30px) 14px 4px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.timer-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+/* #ifdef H5 */
+.timer-scroll :deep(.uni-scroll-view-content) {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* #endif */
+
+.timer-scroll-inner {
   width: 100%;
+  flex: 1;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  box-sizing: border-box;
+}
+
+.bottom-card-dock {
+  flex-shrink: 0;
+  padding: 6px 14px var(--tabbar-clearance);
+  box-sizing: border-box;
+}
+
+.datetime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background-color: var(--glass-bg, rgba(252, 251, 249, 0.70));
+  backdrop-filter: var(--glass-blur-soft, blur(18px));
+  -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.82));
+  box-shadow: var(--glass-shadow-subtle, 0 2px 10px rgba(45, 55, 40, 0.03));
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-muted, #7A7A75);
+  letter-spacing: 0.2px;
+}
+
+.datetime-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #8B9A6E;
+  opacity: 0.85;
   flex-shrink: 0;
 }
-.real-date {
-  font-size: 28rpx;
-  color: var(--color-zen-stone);
-  font-weight: 500;
-}
-.real-time {
-  font-size: clamp(64rpx, 10vw, 90rpx);
-  font-weight: 600;
-  font-family: 'Inter', system-ui, sans-serif;
-  color: var(--color-zen-graphite);
-  line-height: 1;
-  letter-spacing: -2rpx;
-}
 
-/* 响应式工作区布局 (Responsive Workspace Grid) */
-.workspace-grid {
-  flex: 1;
+.timer-hero {
   width: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-around;
   align-items: center;
-  gap: clamp(16rpx, 2.5vh, 40rpx);
-  margin-top: clamp(12rpx, 2vh, 32rpx);
+  padding: 4px 0 6px;
 }
 
-.timer-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(16rpx, 2.5vh, 36rpx);
-  width: 100%;
-}
-
-.task-selector {
+.phase-status {
+  margin-top: 16px;
   text-align: center;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 12rpx 28rpx;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 999rpx;
-  backdrop-filter: blur(10px);
-  transition: all 0.2s;
-}
-.task-selector:active {
-  transform: scale(0.96);
-  background: rgba(255, 255, 255, 0.7);
-}
-.t-name {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite);
-}
-.t-name.placeholder {
-  color: var(--color-zen-stone);
-}
-.selector-arrow {
-  font-size: 24rpx;
-  color: var(--color-zen-stone);
-  margin-left: 10rpx;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  display: inline-block;
 }
 
-.timer-container {
-  display: flex;
-  justify-content: center;
+.phase-pill {
+  display: inline-flex;
   align-items: center;
+  gap: 8px;
+  padding: 6px 18px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
+  letter-spacing: 0.5px;
+  background-color: rgba(139, 154, 110, 0.12);
+  color: var(--color-sage-ink, #556B3D);
+  border: 1px solid rgba(139, 154, 110, 0.28);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.08);
+  transition: all 0.3s var(--ease-out);
 }
 
-.phase-info {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16rpx;
+.phase-beacon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #8B9A6E;
 }
-.phase-text {
-  font-size: clamp(28rpx, 4vw, 32rpx);
-  font-weight: 600;
-  letter-spacing: 2rpx;
+
+.phase-pill.is-active .phase-beacon {
+  animation: beacon-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(139, 154, 110, 0.8);
+}
+
+.phase-pill.is-break {
+  background-color: rgba(200, 155, 109, 0.15);
+  color: #9C7240;
+  border-color: rgba(200, 155, 109, 0.32);
+  box-shadow: 0 2px 8px rgba(200, 155, 109, 0.1);
+}
+
+.phase-pill.is-break .phase-beacon {
+  background-color: #C89B6D;
+}
+
+.phase-pill.is-break.is-active .phase-beacon {
+  box-shadow: 0 0 6px rgba(200, 155, 109, 0.8);
+}
+
+@keyframes beacon-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
 }
 
 .progress-dots {
   display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 20rpx;
-}
-.dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-  transition: background-color 0.3s;
+  gap: 11px;
+  margin-top: 14px;
+  padding: 2px 8px;
 }
 
-.action-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  gap: clamp(24rpx, 3.5vh, 60rpx);
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: rgba(139, 154, 110, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: all 0.32s var(--ease-out);
+}
+
+.dot.is-filled {
+  background-color: #8B9A6E;
+  box-shadow: 0 0 10px rgba(139, 154, 110, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
+  transform: scale(1.16);
+}
+
+.dot.is-break-filled {
+  background-color: #C89B6D;
+  box-shadow: 0 0 10px rgba(200, 155, 109, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .controls {
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: clamp(48rpx, 10vw, 80rpx);
-  width: 100%;
+  justify-content: center;
+  gap: 28px;
+  margin-top: 22px;
 }
+
 .ctrl-btn {
-  font-size: clamp(28rpx, 4vw, 32rpx);
-  color: var(--color-zen-stone);
-  font-weight: 600;
-  padding: 20rpx;
+  padding: 9px 22px;
+  border-radius: 9999px;
+  background-color: var(--glass-bg, rgba(252, 251, 249, 0.70));
+  backdrop-filter: var(--glass-blur-soft, blur(18px));
+  -webkit-backdrop-filter: var(--glass-blur-soft, blur(18px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.82));
+  box-shadow: var(--glass-shadow-subtle, 0 2px 10px rgba(45, 55, 40, 0.03));
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-secondary, #2C2C28);
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-out), border-color 0.2s ease, color 0.2s ease;
 }
+
 .ctrl-btn:active {
-  opacity: 0.7;
+  transform: scale(0.95);
 }
 
 .main-btn {
-  width: clamp(136rpx, 18vw, 160rpx);
-  height: clamp(136rpx, 18vw, 160rpx);
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: var(--color-zen-graphite);
+  background: var(--accent-gradient, linear-gradient(135deg, #8E9F70 0%, #768758 100%));
+  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 16rpx 40rpx rgba(28, 28, 26, 0.15);
-  border: 1px solid var(--color-zen-hairline);
-  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  transition: transform 0.22s var(--ease-out), box-shadow 0.22s ease;
 }
+
 .main-btn:active {
   transform: scale(0.95);
-  box-shadow: 0 8rpx 20rpx rgba(28, 28, 26, 0.1);
 }
+
+.main-btn.is-break {
+  background: linear-gradient(135deg, #D6AF83 0%, #C89B6D 100%);
+  box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
 .play-icon {
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 24rpx 0 24rpx 36rpx;
-  border-color: transparent transparent transparent #fff;
-  margin-left: 12rpx;
+  border-width: 12px 0 12px 19px;
+  border-color: transparent transparent transparent #FFFFFF;
+  margin-left: 4px;
 }
+
 .pause-icon {
-  width: 24rpx;
-  height: 36rpx;
-  border-left: 8rpx solid #fff;
-  border-right: 8rpx solid #fff;
+  width: 16px;
+  height: 20px;
+  border-left: 5px solid #FFFFFF;
+  border-right: 5px solid #FFFFFF;
+  border-radius: 1px;
   box-sizing: border-box;
 }
 
-.bottom-stats {
-  display: flex;
-  justify-content: space-around;
-  width: 100%;
-  max-width: 600rpx;
-  padding: 24rpx 40rpx;
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 32rpx;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-}
-.stat-col {
+.panel-card {
+  padding: 14px 16px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  box-sizing: border-box;
 }
-.stat-val {
-  font-size: clamp(48rpx, 8vw, 64rpx);
-  font-weight: 600;
-  color: var(--color-zen-graphite);
-  font-family: 'Inter', system-ui, sans-serif;
-  line-height: 1;
+
+.focus-panel-card {
+  cursor: pointer;
+  transition: transform 0.18s var(--ease-out), border-color 0.2s ease;
 }
-.stat-unit {
-  font-size: 28rpx;
-  color: var(--color-zen-graphite);
-  margin-left: 4rpx;
-  font-weight: 500;
+
+.focus-panel-card:active {
+  transform: scale(0.985);
 }
-.stat-label-row {
+
+.focus-panel-card.is-locked {
+  cursor: default;
+}
+
+.focus-panel-card.is-locked:active {
+  transform: none;
+}
+
+.card-header {
   display: flex;
   align-items: center;
-  margin-top: 12rpx;
-  gap: 8rpx;
-}
-.stat-label {
-  font-size: 22rpx;
-  color: var(--color-zen-stone);
-  font-weight: 600;
-}
-.stat-emoji {
-  font-size: 22rpx;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-/* ==========================================================================
-   响应式断点 - 宽屏/平板/折叠屏/PC模式 (min-width: 768px)
-   ========================================================================== */
-@media (min-width: 768px) {
-  .main-content {
-    padding: 36rpx 80rpx calc(env(safe-area-inset-bottom) + 140rpx);
-  }
-  
-  .workspace-grid {
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 64rpx;
-    align-items: center;
-    height: 100%;
-    margin-top: 24rpx;
-  }
+.card-title {
+  font-size: 13.5px;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.2px;
+}
 
-  .timer-section {
-    height: 100%;
-    justify-content: center;
-    gap: 36rpx;
-  }
+.card-header-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 
-  .action-section {
-    background: rgba(255, 255, 255, 0.65);
-    border: 1px solid rgba(255, 255, 255, 0.85);
-    border-radius: 48rpx;
-    padding: 64rpx 48rpx;
-    box-shadow: 0 24rpx 64rpx rgba(0, 0, 0, 0.04);
-    backdrop-filter: blur(20px);
-    justify-content: center;
-    gap: 64rpx;
-  }
+.header-time-badge {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background-color: rgba(139, 154, 110, 0.12);
+  color: #637748;
+  white-space: nowrap;
+}
 
-  .bottom-stats {
-    background: transparent;
-    border: none;
-    padding: 0;
-    max-width: none;
-  }
+.active-focus-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  border-radius: 13px;
+  background-color: rgba(139, 154, 110, 0.07);
+  border: 0.5px solid rgba(139, 154, 110, 0.2);
+  border-left: 3.5px solid #8B9A6E;
+  transition: all 0.25s ease;
+}
+
+.active-focus-banner.is-free {
+  background-color: rgba(110, 136, 152, 0.07);
+  border-color: rgba(110, 136, 152, 0.2);
+  border-left-color: #6E8898;
+}
+
+.banner-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-primary, #1C1C1A);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner-status-tag {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+  padding: 2px 9px;
+  border-radius: 9999px;
+  background-color: rgba(139, 154, 110, 0.16);
+  color: #556B3D;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.active-focus-banner.is-free .banner-status-tag {
+  background-color: rgba(110, 136, 152, 0.16);
+  color: #486270;
+}
+
+.complete-prompt {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, rgba(45, 55, 40, 0.06));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.complete-prompt-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, #1C1C1A);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.complete-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.prompt-btn {
+  height: 30px;
+  padding: 0 12px;
 }
 </style>

@@ -49,8 +49,9 @@ data/
 __pycache__/
 build/
 
-# PC/Tauri generated assets and build outputs
+# PC/Tauri/Mobile generated assets and build outputs
 Auralis-PC/public/file-viewer/
+Auralis-Mobile/public/file-viewer/
 Auralis-PC/src-tauri/target-*/
 Auralis-PC/src-tauri/binaries/*
 !Auralis-PC/src-tauri/binaries/README.md

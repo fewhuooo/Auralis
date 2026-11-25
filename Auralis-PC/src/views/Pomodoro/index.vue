@@ -118,14 +118,14 @@ function formatScheduledTime(scheduledAt?: string): string {
   if (!scheduledAt) return ''
   const date = new Date(scheduledAt)
   if (isNaN(date.getTime())) return ''
-  const now = new Date()
-  const isToday = date.toDateString() === now.toDateString()
-  const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-  if (isToday) {
-    return t({ 'zh-CN': '今日 {time}', en: 'Today at {time}', ja: '今日 {time}' }, { time: timeStr })
-  }
-  const dayName = new Intl.DateTimeFormat(locale.value, { weekday: 'short' }).format(date)
-  return `${dayName} ${timeStr}`
+  return new Intl.DateTimeFormat(locale.value, {
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
 }
 
 // 仅获取在时间轴上的任务（有 scheduledAt，未完成且未取消）
@@ -139,9 +139,9 @@ const timelineTasks = computed(() => {
     })
     .map((task) => ({
       id: task.id,
-      name: task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }),
+      name: task.title || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }),
       scheduledAt: task.scheduledAt,
-      durationMinutes: task.durationMinutes ?? task.duration ?? 30,
+      durationMinutes: task.durationMinutes,
       timeStr: formatScheduledTime(task.scheduledAt),
       isFreeStudy: false,
     }))
@@ -166,7 +166,7 @@ const displayedTask = computed(() => {
   const task = taskStore.allTasks.find((item) => item.id === session.taskId)
   return {
     id: session.taskId,
-    name: task ? task.title || task.name || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }) : t({ 'zh-CN': '关联任务暂不可见', en: 'Linked task unavailable', ja: '関連タスクを表示できません' }),
+    name: task ? task.title || t({ 'zh-CN': '未命名任务', en: 'Untitled task', ja: '無題のタスク' }) : t({ 'zh-CN': '关联任务暂不可见', en: 'Linked task unavailable', ja: '関連タスクを表示できません' }),
     timeStr: formatScheduledTime(task?.scheduledAt),
     isFreeStudy: false,
   }

@@ -376,12 +376,12 @@ test('a Subject install queued after deletion cleanup cannot restore its cache',
   assert.equal(typeof repository.beginScopeDeletion, 'function')
   const installQueued = deferred(), releaseInstall = deferred()
   const originalInstall = repository.installRemoteOverview.bind(repository)
-  repository.installRemoteOverview = async (record, state, discardLegacySeed, token) => {
+  repository.installRemoteOverview = async (record, state, discardLocalCacheSeed, token) => {
     if (record.scopeType === 'SUBJECT') {
       installQueued.resolve()
       await releaseInstall.promise
     }
-    return originalInstall(record, state, discardLegacySeed, token)
+    return originalInstall(record, state, discardLocalCacheSeed, token)
   }
   const api = fakeApi({
     getFile: async (sourceId, revision) => fileView(sourceId, revision),

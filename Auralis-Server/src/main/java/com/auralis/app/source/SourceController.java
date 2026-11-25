@@ -1,6 +1,7 @@
 package com.auralis.app.source;
 
 import com.auralis.app.shared.security.AuthenticatedUser;
+import com.auralis.app.subject.SubjectService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -28,9 +29,11 @@ import static org.springframework.http.HttpStatus.NO_CONTENT;
 public class SourceController {
 
     private final SourceService sourceService;
+    private final SubjectService subjectService;
 
-    public SourceController(SourceService sourceService) {
+    public SourceController(SourceService sourceService, SubjectService subjectService) {
         this.sourceService = sourceService;
+        this.subjectService = subjectService;
     }
 
     @PostMapping
@@ -49,9 +52,13 @@ public class SourceController {
     @GetMapping
     public SourceDtos.ListResponse list(
             @AuthenticationPrincipal AuthenticatedUser principal,
+            @RequestParam(required = false) UUID subjectId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "100") @Min(1) @Max(200) int limit) {
-        var page = sourceService.list(principal.userId(), cursor, limit);
+        if (subjectId != null) {
+            subjectService.get(principal.userId(), subjectId);
+        }
+        var page = sourceService.list(principal.userId(), subjectId, cursor, limit);
         return new SourceDtos.ListResponse(
                 page.items().stream().map(SourceDtos.Response::from).toList(),
                 page.nextCursor(), page.hasMore());

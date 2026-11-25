@@ -1,24 +1,36 @@
 <template>
   <view class="launch-page">
-    <text class="launch-title">Auralis</text>
+    <view class="launch-aura"></view>
+    <view class="launch-mark">
+      <BrandLogo size="50px" />
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import BrandLogo from '@/components/BrandLogo.vue'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useDeviceStore } from '@/store/useDeviceStore'
 
-onMounted(() => {
+onMounted(async () => {
   const deviceStore = useDeviceStore()
+  const authStore = useAuthStore()
   deviceStore.detect()
 
-  let target = '/pages/mobile/home/index'
+  let authed = Boolean(authStore.token)
+  if (authed) {
+    authed = await authStore.restoreSession()
+  }
 
+  let isTablet = false
   // #ifndef MP-WEIXIN
-  target = deviceStore.isTablet
-    ? '/pages/tablet/dashboard/index'
-    : '/pages/mobile/home/index'
+  isTablet = deviceStore.isTablet
   // #endif
+
+  const target = authed
+    ? (isTablet ? '/pages/tablet/dashboard/index' : '/pages/mobile/home/index')
+    : (isTablet ? '/pages/tablet/login/index' : '/pages/mobile/login/index')
 
   uni.reLaunch({ url: target })
 })
@@ -26,16 +38,38 @@ onMounted(() => {
 
 <style scoped>
 .launch-page {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-zen-ivory, #F9F9F7);
+  background-color: var(--color-bg-primary);
+  overflow: hidden;
 }
 
-.launch-title {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: var(--text-primary, #2c2a26);
+.launch-aura {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139, 154, 110, 0.22) 0%, transparent 70%);
+  pointer-events: none;
 }
+
+.launch-mark {
+  position: relative;
+  z-index: 1;
+  animation: launchBreathe 1.8s var(--ease-out) infinite alternate;
+}
+
+@keyframes launchBreathe {
+  0% { opacity: 0.72; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1.03); }
+}
+
+/* #ifdef H5 */
+.launch-page {
+  min-height: 100dvh;
+}
+/* #endif */
 </style>

@@ -41,11 +41,6 @@ public class ConversationService {
         if (command.baseVersion() != 0) {
             throw new DomainException("VALIDATION_FAILED", "Create baseVersion must be 0");
         }
-        ConversationPurpose purpose = command.purpose() == null
-                ? ConversationPurpose.GENERAL : command.purpose();
-        if (purpose != ConversationPurpose.GENERAL || command.sourceId() != null) {
-            throw new DomainException("VALIDATION_FAILED", "Chat conversations use GENERAL purpose; pass reading scope per request");
-        }
         String title = command.title() == null || command.title().isBlank() ? null : command.title().trim();
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
         if (clientRequestId != null) {
@@ -55,10 +50,8 @@ public class ConversationService {
                 return toView(existing.get(), List.of());
             }
         }
-        ConversationEntity entity = new ConversationEntity(UUID.randomUUID(), userId, title, clientRequestId,
-                purpose, command.sourceId());
+        ConversationEntity entity = new ConversationEntity(UUID.randomUUID(), userId, title, clientRequestId);
         entity.enableChatProtocolOne();
-        entity.markChatScopeUnbound();
         return toView(conversationRepository.saveAndFlush(entity), List.of());
     }
 
@@ -119,7 +112,7 @@ public class ConversationService {
     private ConversationView toView(ConversationEntity entity, List<MessageView> messages) {
         return new ConversationView(entity.getId(), entity.getTitle(), messages,
                 entity.getCreatedAt(), entity.getUpdatedAt(), entity.getDeletedAt(), entity.getVersion(),
-                entity.getPurpose(), entity.getSourceId(), entity.getChatProtocolVersion(),
+                entity.getChatProtocolVersion(),
                 Short.valueOf((short) 1).equals(entity.getChatProtocolVersion()), activeRun(entity),
                 entity.getChatScopeState(), chatScope(entity));
     }

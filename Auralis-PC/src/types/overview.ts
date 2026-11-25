@@ -124,7 +124,6 @@ export interface OverviewResultCommand {
   outlineGeneratedAt: string | null
   summaryGeneratedAt: string | null
   result: OverviewResponse
-  inputDescriptor?: OverviewInputDescriptor
 }
 
 /** Current canonical result returned by the independent server Overview API. */
@@ -152,13 +151,8 @@ export interface OverviewResultView {
   summaryInputDescriptor?: OverviewInputDescriptor
 }
 
-export interface OverviewConflictMetadata {
-  version: number
-  schemaVersion: number
-}
-
 export type OverviewOutboxState = 'PREPARED' | 'PENDING' | 'INFLIGHT' | 'CONFLICT' | 'ERROR' | 'STALE'
-export type OverviewIntentOrigin = 'LOCAL_WRITE' | 'LEGACY_SEED'
+export type OverviewIntentOrigin = 'LOCAL_WRITE' | 'LOCAL_CACHE_SEED'
 
 /** A prepared intent may be materialized only after its server baseline is known. */
 export interface OverviewOutboxRecord {

@@ -1,7 +1,7 @@
 import { readonly, ref } from 'vue'
 
-export const [autoSyncEnabled, setAutoSyncEnabled] = desktopPreference('sc_setting_auto_sync', true)
-export const [autoOverviewEnabled, setAutoOverviewEnabled] = desktopPreference('sc_setting_auto_overview', true)
+export const [autoSyncEnabled, setAutoSyncEnabled] = desktopPreference('auralis.settings.autoSync', true)
+export const [autoOverviewEnabled, setAutoOverviewEnabled] = desktopPreference('auralis.settings.autoOverview', true)
 
 function desktopPreference(key: string, defaultValue: boolean) {
   const value = ref(readPreference(key, defaultValue))

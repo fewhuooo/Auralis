@@ -14,6 +14,10 @@ import java.util.UUID;
 
 public final class AuthDtos {
 
+    private static final String PASSWORD_PATTERN = "(?s)(?=.*\\p{Lu})(?=.*\\p{Ll})(?=.*[\\p{P}\\p{S}]).*";
+    private static final String PASSWORD_PATTERN_MESSAGE = "Password must contain uppercase and lowercase letters and a symbol";
+    private static final String PASSWORD_SCHEMA_DESCRIPTION = "At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes";
+
     private AuthDtos() {
     }
 
@@ -21,7 +25,7 @@ public final class AuthDtos {
             @NotBlank @Size(max = 64) @Pattern(regexp = "[^@]+") String username,
             @NotBlank @Email @Size(max = 254) String email,
             @NotBlank @Pattern(regexp = "[0-9]{6}") String emailCode,
-            @NotBlank @Size(min = 12, max = 72) @Schema(description = "At most 72 UTF-8 bytes") String password,
+            @NotBlank @Size(min = 8, max = 72) @Pattern(regexp = PASSWORD_PATTERN, message = PASSWORD_PATTERN_MESSAGE) @Schema(description = PASSWORD_SCHEMA_DESCRIPTION) String password,
             @NotBlank @Size(max = 128) String clientDeviceKey,
             @NotBlank @Size(max = 120) String deviceName,
             @NotNull DevicePlatform platform
@@ -49,7 +53,7 @@ public final class AuthDtos {
     public record PasswordResetRequest(
             @NotBlank @Email @Size(max = 254) String email,
             @NotBlank @Pattern(regexp = "[0-9]{6}") String emailCode,
-            @NotBlank @Size(min = 12, max = 72) @Schema(description = "At most 72 UTF-8 bytes") String newPassword) {
+            @NotBlank @Size(min = 8, max = 72) @Pattern(regexp = PASSWORD_PATTERN, message = PASSWORD_PATTERN_MESSAGE) @Schema(description = PASSWORD_SCHEMA_DESCRIPTION) String newPassword) {
     }
 
     public record RefreshRequest(@NotBlank String refreshToken) {
@@ -63,7 +67,7 @@ public final class AuthDtos {
     public record PasswordChangeRequest(
             @NotNull @PositiveOrZero Long baseVersion,
             @NotBlank String currentPassword,
-            @NotBlank @Size(min = 12, max = 72) @Schema(description = "At most 72 UTF-8 bytes") String newPassword) {
+            @NotBlank @Size(min = 8, max = 72) @Pattern(regexp = PASSWORD_PATTERN, message = PASSWORD_PATTERN_MESSAGE) @Schema(description = PASSWORD_SCHEMA_DESCRIPTION) String newPassword) {
     }
 
     public record AccountDeletionRequest(@NotBlank String password) {

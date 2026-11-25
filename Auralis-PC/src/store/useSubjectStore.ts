@@ -18,11 +18,6 @@ import { beginOverviewScopeDeletion, cancelOverviewScopeDeletion, completeOvervi
 export type Subject = SubjectModel
 export type SourceFile = SourceFileModel
 
-export interface CatalogItem {
-  title: string
-  sections: string[]
-}
-
 function asSubjectDto(value: unknown): SubjectView | null {
   if (!value || typeof value !== 'object') return null
   const candidate = value as SubjectView
@@ -37,27 +32,6 @@ function scheduleSync(): void {
   useSyncStore().requestBackgroundSync('write')
 }
 
-function parseCatalogText(text: string): CatalogItem[] {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  const result: CatalogItem[] = []
-  let current: CatalogItem | null = null
-  for (const line of lines) {
-    const isChapter = /^(第\s*\S+\s*章|chapter\s+\d+|[一二三四五六七八九十]+、)/i.test(line)
-    const isSection = /^(\d+(?:\.\d+)+|[（(]?\d+[）)])\s*/.test(line)
-    if (isChapter || !current) {
-      current = { title: line, sections: [] }
-      result.push(current)
-    } else if (isSection) {
-      current.sections.push(line)
-    } else if (current.sections.length === 0) {
-      current.title = `${current.title} ${line}`
-    } else {
-      current.sections.push(line)
-    }
-  }
-  return result
-}
-
 export const useSubjectStore = defineStore('subject', () => {
   const subjects = ref<Subject[]>([])
   const activeSubjectId = ref<string | null>(null)
@@ -69,8 +43,6 @@ export const useSubjectStore = defineStore('subject', () => {
 
   function replaceSubjects(models: Subject[]): void {
     const sorted = [...models].sort((a, b) => {
-      if (a.defaultSubject && !b.defaultSubject) return -1
-      if (!a.defaultSubject && b.defaultSubject) return 1
       if (a.sortKey && b.sortKey) {
         if (a.sortKey < b.sortKey) return -1
         if (a.sortKey > b.sortKey) return 1
@@ -167,10 +139,15 @@ export const useSubjectStore = defineStore('subject', () => {
     }
   })
 
-  function setActiveSubject(id: string | null): void {
+  function setActiveSubject(id: string | null, options?: { skipSourceLoad?: boolean }): void {
     activeSubjectId.value = id
-    if (id) void sourceStore.loadSourceFiles(id)
-    else sourceStore.clearActiveSourceFiles()
+    if (!id) {
+      sourceStore.clearActiveSourceFiles()
+      return
+    }
+    if (!options?.skipSourceLoad) {
+      void sourceStore.loadSourceFiles(id)
+    }
   }
 
   async function addSubject(name: string, description: string, icon: string): Promise<string> {
@@ -276,21 +253,10 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   const loadSourceFiles = (subjectId: string) => sourceStore.loadSourceFiles(subjectId)
-  const addSourceFile = (subjectId: string, name: string, filePath: string, fileType: string, fileSize: number, catalogJson?: string) =>
-    sourceStore.addSourceFile(subjectId, name, filePath, fileType, fileSize, catalogJson)
   async function deleteSourceFile(id: string): Promise<void> {
     await sourceStore.deleteSourceFile(id)
     void loadSubjects().catch((error) => console.warn('[SubjectStore] background subject refresh failed', error))
   }
-  const saveSourceFileCatalog = (file: SourceFile) => sourceStore.saveSourceFileCatalog(file)
-
-  async function analyzeCatalogViaAi(sourceFileId: string, catalogText: string): Promise<void> {
-    const file = sourceStore.activeSourceFiles.find((item) => item.id === sourceFileId)
-    if (!file) return
-    const parsed: CatalogItem[] = parseCatalogText(catalogText)
-    await saveSourceFileCatalog({ ...file, catalogJson: JSON.stringify(parsed) })
-  }
-
   return {
     subjects,
     activeSubjectId,
@@ -304,10 +270,7 @@ export const useSubjectStore = defineStore('subject', () => {
     updateSubject,
     deleteSubject,
     loadSourceFiles,
-    addSourceFile,
     deleteSourceFile,
-    saveSourceFileCatalog,
-    analyzeCatalogViaAi,
   }
 })
 

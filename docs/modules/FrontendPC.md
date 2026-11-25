@@ -1,6 +1,6 @@
 # PC 前端模块
 
-更新时间：2026-11-15
+更新时间：2026-11-19
 
 文档状态：现行模块说明
 
@@ -10,9 +10,9 @@
 
 ## 模块定位与阅读入口
 
-`Auralis-PC` 是桌面与 Web 共用的 Vue 客户端，浏览器构建由 Vite 提供，桌面能力由 Tauri 2 提供。本文维护当前实现结构与行为；验证结果和未关闭问题分别维护在[当前状态](../current/Status.md)与[问题登记](../current/IssuesAndReview.md)，视觉细节见[前端设计](../design/Frontend.md)。
+`Auralis-PC` 是桌面与 Web 共用的 Vue 客户端，浏览器构建由 Vite 提供，桌面能力由 Tauri 2 提供。本文维护当前实现结构与行为；验证结果和未关闭问题分别维护在[当前状态](../current/Status.md)与[问题登记](../current/IssuesAndReview.md)，视觉细节见[前端设计](../project/FrontendDesign.md)。
 
-逐轮实施、测试数字和当时部署状态保存在[整理前原文](../archive/maintenance-2026-11-13/FrontendPC.md)，仅供追溯，不代表当前运行版本。新增变更应更新对应章节，不再在文件顶部追加任务流水。
+逐轮实施、测试数字和当时部署状态保存在[整理前原文](../archive/snapshots/maintenance-2026-11-13/FrontendPC.md)，仅供追溯，不代表当前运行版本。新增变更应更新对应章节，不再在文件顶部追加任务流水。
 
 ## 技术栈与目录
 
@@ -36,7 +36,9 @@
 | `src-tauri/` | Rust、本地文件、OCR、权限和桌面配置 |
 | `scripts/` | 协议、行为与静态检查 |
 
-UI 使用语义字体、颜色和字重令牌；图标解析集中在 `src/utils/subjectIcon.ts`，使用 Tabler 图标并保留已有 Emoji 的显示。TypeScript/Vue 源码旁的同名编译输出不是另一份源码，现行配置继承 `noEmit: true`。
+UI 使用语义字体、颜色和字重令牌；图标解析集中在 `src/utils/subjectIcon.ts`，使用语义键对应的 Tabler 图标，缺省为书本图标。TypeScript/Vue 源码旁的同名编译输出不是另一份源码，现行配置继承 `noEmit: true`。
+
+桌面语言、自动同步、自动概览分别使用 `auralis.settings.language`、`auralis.settings.autoSync`、`auralis.settings.autoOverview`；新键缺省值为简体中文、开启、开启，不读取或迁移旧键。主题通知统一为 `auralis:theme-change`。本地完整 Overview 缓存形成上传意图时使用 `LOCAL_CACHE_SEED`，正常缓存上传与冲突规则保持。认证状态统一由 `useAuthStore` 管理，请求层复用认证边界工具函数。
 
 ## 正式路由与页面职责
 
@@ -53,15 +55,19 @@ UI 使用语义字体、颜色和字重令牌；图标解析集中在 `src/utils
 
 除 `/login` 外均要求认证。`router.beforeEach` 使用 `resolveAuthRedirect`；未登录进入 `/login`，已有完整会话访问登录页时，优先回到安全的返回地址，否则回首页。`App.vue` 的认证壳、侧栏和搜索只在认证页面挂载。Server API 仍独立校验 access token。
 
-登录可用用户名或已验证邮箱，注册与找回密码均使用邮箱验证码。桌面登录页有透明拖动区，窗口按钮在悬停或键盘聚焦时显示。
+登录可用用户名或已验证邮箱，注册与找回密码均使用邮箱验证码。注册、重置与改密共用新密码校验：至少 8 位，包含大写字母、小写字母和标点或符号，最多 72 个 UTF-8 字节。旧密码登录不受新复杂度校验影响。桌面登录页有透明拖动区，窗口按钮在悬停或键盘聚焦时显示。
 
 ## 会话、请求与数据隔离
 
 - `useAuthStore` 管理用户、token pair、本地登录世代和服务端 session。普通 token 轮换保留本地登录身份；退出后重新登录同一账号仍使旧操作失效。
 - 普通/AI Axios、同步请求与 Chat SSE 在派发、刷新和回包前复核登录世代。旧操作以 `SYNC_SCOPE_CHANGED` 结束，不能向新会话发布结果。
+- 知识块创建在本地原子提交前记录登录世代；若提交期间切换会话，写入仍归属原账号仓储，但不更新当前知识投影或调度新会话同步。
 - 同一登录世代共享一次在途 refresh，每个业务请求最多重放一次。明确续期失效时进入 `reauthentication-required`，停止受保护工作并导航登录，保留原受保护入口。暂时性续期故障保留本机会话。登录、注册、邮箱发码、密码重置、显式 refresh 和 health 使用公开入口。
+- Element Plus 确认与密码输入弹窗依赖入口全局加载的 `el-overlay.css`，确保遮罩固定于视窗；个人中心危险操作及文件删除继续要求确认。
 - 登出使用发起时的凭据，确认、清理、通知和导航绑定同一世代。BYOK 密钥不从浏览器存储读取或作为自定义请求头发送。
-- `main.ts` / `DesktopDatabaseStartup.vue` 在桌面 SQLite 初始化成功后才加载路由与应用；失败显示错误和重试。初始化失败时同步、解析和资产整理不启动。
+- `main.ts` / `DesktopDatabaseStartup.vue` / `StartupSplashScreen.vue` 在应用渲染前提前同步持久化暗色主题，并在桌面 SQLite 初始化成功且 `router.isReady()` 解析初始路由后才卸载启动页并挂载 `App.vue`；失败时显示「无法打开本地数据库」与「重试」，初始化失败时不启动同步、解析和资产整理。
+- 已登录冷启动在主窗口就绪前通过 `StartupSplashScreen.vue` 与 `startupBootstrap.ts` 并行完成本地投影加载（学科、知识块、任务与专注态）、各受保护路由分片预加载（`routePreload.ts`）与受控初始同步预热（遵守 `autoSyncEnabled` 与在线状态，受最长等待上限与登录世代围栏约束，并在退场后启动文档处理后台运行时）；`router/index.ts` 与 `vite.config.ts` 预构建 Element Plus 样式子路径、热身核心页面并在动态模块拉取失效时执行限同源路径与冷却上限的单次自愈重载。
+- Rust Tauri 命令 `local_asset_store`（导入、解析、字节读取、PUT 上传、删除、磁盘对账）、`crypto` 密钥检查/生成与 `document_upload_put` 均通过异步 `spawn_blocking` 在后台线程池执行，避免阻塞桌面 WebView 主界面线程。
 
 ## Store 与 API 边界
 
@@ -76,24 +82,24 @@ UI 使用语义字体、颜色和字重令牌；图标解析集中在 `src/utils
 | `useSyncStore` | cursor、push/pull/snapshot 和后台调度 |
 | `useReviewStore` | 学科本地复习生命周期、队列、核对与补传 |
 | `useStatsStore` | 服务端个人统计与本地学科统计展示 |
-| `useChatStore` | 会话、run/attempt、流式投影与显式恢复 |
+| `useChatStore` | 会话、run/attempt、流式投影、`reconcileProcessMetadata` 断线过程态/标签对账、`acceptHMRUpdate` 与显式恢复 |
 | `usePomodoroStore` | 用户/设备隔离的计时状态与专注事件 |
 | `useSettingsStore` | 主题和偏好 |
 | `useDocumentProcessingStore` | 文档任务、OCR 进度与手动恢复 |
 
 API 包装集中在 `src/api/`：`request.ts` 管理普通请求；`aiClient.ts` 与 `src/types/chatProtocol.ts` 管理 Chat；`useReviewApi.ts` 使用生命周期接口；`useOverviewResultsApi.ts` 读写独立总览结果；`useFocusSessionApi.ts` 上传稳定 `clientSessionId` 的最终专注事件。完整字段和端点见 [API](../contracts/API.md)与 [Chat Runtime API](../contracts/chat-runtime-api.md)。
 
-`api/generated/schema.ts` / `client.ts` 来自冻结 OpenAPI，禁止手改。仓库根目录的 `scripts/generate-openapi-sdk.ps1` 生成两端 SDK，`scripts/check-openapi.ps1` 核对产物。共享类型更新不能作为调用端完成接入的证据。
+`api/generated/schema.ts` 来自冻结 OpenAPI，禁止手改。仓库根目录的 `scripts/generate-openapi-sdk.ps1` 生成两端类型，`scripts/check-openapi.ps1` 核对产物。共享类型更新不能作为调用端完成接入的证据。
 
 ## 本地仓储与同步
 
-- `localSchema.ts` 当前版本为 **14**。SQLite 保留既有旧表、列和数据；正常运行只访问现行 schema。Web 使用自身本地存储；完整字段和迁移边界见[数据库契约](../contracts/Database.md)。
+- `localSchema.ts` 当前版本为 **14**，启动直接创建现行完整 schema；不再执行旧表搬迁、旧字段清洗或旧版本升级。既有当前版本数据库正常打开，清理代码不删除已有表和数据。Web 使用自身本地存储；完整字段和迁移边界见[数据库契约](../contracts/Database.md)。
 - Subject、Source、KnowledgeBlock、Task 常规写入通过 `commitMutation()` 原子持久化资源投影和 immutable outbox，提交成功后才更新 Pinia 并请求后台同步。列表先 hydration 本地投影，不在 loading 中等待网络。
-- 普通命令首次领取后固定 ID、版本与载荷；丢包或重启原样重放。队首在本地事务结算，重复回执不会重复写投影；同资源有未解决本地写入时，push/pull/snapshot 不覆盖该投影。
+- 普通命令首次领取后固定 ID、版本与载荷；丢包或重启原样重放。队首在本地事务结算，重复回执不会重复写投影；同资源有未解决本地写入时，push/pull/snapshot 不覆盖该投影。普通 `TASK` CRUD 在遇到 `CONFLICT`（带有效云端快照）、`MUTATION_REJECTED`（含同版本冲突或有效快照）、`RESOURCE_NOT_FOUND`/`RESOURCE_DELETED` 或 `CREATE` 失败时直接按服务端权威状态或墓碑归档收敛，存在队列后继时先归档失效前驱而不覆盖后继；缺失有效内联快照的 `TASK` 拒绝（如 `VALIDATION_FAILED`）推迟到 `getSnapshot()` 成功并经 `resolveRejectedTaskMutation` 对齐后才结算，且 `useTaskStore` 通过版本/排期指纹令牌抑制同一拒收过期任务的无限重试循环（任务属性或版本变更后自动解除）。
 - `syncScheduler` 合并后台请求；共享 cursor cycle 串行处理同步。用户“立即同步”和 FILE 处理前确认 Source 已同步属于显式等待边界。
-- `localDatabaseRuntime` 缓存初始化和 scope 仓储，`localSqlQueue` 串行 SQL 插件访问；Rust `replace_local_resource_snapshot` 在单连接事务替换快照，SQLite 使用 WAL 和 busy timeout。
+- `localDatabaseRuntime` 缓存初始化和 scope 仓储，`localSqlQueue` 串行 SQL 插件访问；`LocalRepository.replaceSnapshotPreservingPending` 在同一事务替换快照并保留待同步修改，桌面端 SQLite 单连接池启用 `PRAGMA journal_mode = WAL`、`PRAGMA synchronous = NORMAL`、`PRAGMA temp_store = MEMORY` 与 `busy_timeout = 5000`。
 - Subject 删除由 durable DELETE marker 与 `subjectDeletionCoordinator` 协调：先隐藏子投影及清理其 outbox，后续重放 Overview、任务、草稿和资产清理；pending/rejected 保留可恢复资料，最后引用释放才删除共享资产。
-- Profile 的离线重置通过 Sync Store 的当前账号仓储。旧未分配账号的备份保留，不能静默迁入当前用户。
+- Profile 的离线重置通过 Sync Store 的当前账号仓储。不再扫描或备份旧未分配账号的数据。
 
 ## 搜索、学科与资料编辑
 
@@ -125,7 +131,7 @@ API 包装集中在 `src/api/`：`request.ts` 管理普通请求；`aiClient.ts`
 ## Overview Markdown 与同步
 
 - 现行内容为 `schemaVersion=2` 的 `outlineMarkdown` / `summaryMarkdown`。分项生成允许另一项 null，正式完整结果两项必须非空；持久化拒绝空白 Markdown。
-- 大纲直接编辑 Markdown，与总结共用渲染。旧章/节、provenance 与候选输入路径不参与新生成，不自动转换旧内容；SQLite v14 新列与旧行并存，旧格式缓存拒读、旧 outbox 停用。
+- 大纲直接编辑 Markdown，与总结共用渲染。旧章/节、provenance 与候选输入路径不参与新生成，不自动转换旧内容；新建 SQLite 缓存只定义 Markdown v2 列，不提供 v1 缓存或 outbox 的转换、重试与覆盖流程。
 - `outlineVersion/summaryVersion` 各自必须是非负整数，不从总版本推导。404 表示缺失；409 可仅含真实版本元数据，保留草稿供显式重试，不能把元数据展示为空白内容或无限用 baseVersion=0 重试。
 - 生成前立即置位状态，运行期间保留上次缓存、禁止重复触发，并提供停止操作。取消和回包受登录、来源修订、页面生命周期及编辑代次约束，迟到生成不覆盖未保存编辑。
 - 总览独立 GET/PUT 与核心 Sync 分离，服务为 `overviewRepository`、`overviewGenerationService` 和 `overviewResultsSyncService`。学科批量状态按最多 100 个 ID 查询；未变版本跳过 GET，缺失/不可用不产生循环请求或删除本地草稿，当前 v2 完整本地结果可进入补传。
@@ -135,28 +141,33 @@ API 包装集中在 `src/api/`：`request.ts` 管理普通请求；`aiClient.ts`
 
 ## Chat 会话与流式内容
 
+- Chat 消息正文选区提供「添加到对话」与「保存为知识块」。前者追加到输入区引用并由用户手动发送；后者预填当前学科的知识块编辑器，确认保存后创建。Chat 选文标记为「对话选文」，不自动关联当前打开文件；文件预览选文仍关联其有效文件。
+- FAILED 助手回复隐藏该次残留正文、过程与引用，仅显示错误和重试；已完成轮次和已提交题卡保留，UNKNOWN 与中断回复沿用各自的恢复展示。持久消息及账本不随界面隐藏而删除。
 - 会话绑定资料读取范围；首轮确定范围，后续省略 `readingContext` 继承绑定，显式不同范围交由服务端报告冲突。`selectionText` 在命令顶层，不改变会话范围。
-- `aiStreamReducer` 按 run/attempt/sequence 接收事件，正文、过程和结构化块按到达顺序构成 `ChatContentPart[]`。块 started/item/completed/error 原位更新，失败项保留已有效内容，重试替换对应失败块。
+- `aiStreamReducer` 按 run/attempt/sequence 接收事件，正文、过程和结构化块按到达顺序构成 `ChatContentPart[]` 与交叉时序 `processTimeline`（思考片段与工具胶囊按到达顺序交错挂载）；`projectToolTrace` 对历史/运行快照中的 `toolTrace` 小写与大写状态（`started`/`error`/`completed`）做统一归一化并保留安全 `label`。块 started/item/completed/error 原位更新，失败项保留已有效内容，重试替换对应失败块。
 - 活动题卡从 READY 提交后发布的 `block.completed` 读取规范结构，提交复用稳定 `submissionId`，点评失败可重试回复。重试清理当前轮未完成助手气泡，保留其他已完成轮次。
-- 有 run ID 时，SSE 提前结束或断开都查询原 run。状态仍在执行或暂时查不到时保留停止入口，并在现有上限内继续查询。首帧前结束时保留原命令，供用户显式重试。UNKNOWN 恢复按服务端消息 ID 关联原 run 和 attempt，核对会话和操作世代后再更新消息。规范题卡按协议 1 的现行字段显示，旧会话的题卡与回复仅供查看。非规范历史题卡不可作答。
+- 有 run ID 时，SSE 提前结束或断开都查询原 run。状态仍在执行或暂时查不到时保留停止入口，并在现有上限内继续查询。首帧前结束时保留原命令，供用户显式重试。UNKNOWN 恢复按服务端消息 ID 关联原 run 和 attempt，核对会话和操作世代后再更新消息。题卡按协议 1 的现行字段显示；提交与重试受当前会话绑定及活动状态约束。
 - Store 的加载/创建、流回调、轮询和取消提交均核对操作世代与登录身份。新会话失败恢复仍在当前学科/账号的原活动 run 查询并保留输入。
 - 首帧前断线无 run ID 时，重发原独立命令快照，保留 request ID、范围省略、引用和活动答案；已有 run ID 使用 attempt 重试。既无 run ID 又无快照时明确拒绝重发，不重建新载荷。
 - 断流后只查询原 run；RUNNING 保持占槽，UNKNOWN 停止轮询并提供显式恢复。查询最多 220 次、间隔 1.5 秒；到限保留未确认状态，不伪造终态或自动调用 Provider。
 - 终态历史回读按服务端消息 ID 复原关联。UNKNOWN 恢复只调用服务端恢复入口；409 后重新读取状态，不自动循环恢复或重试。
-- `smoothStreamBuffer`、Chat renderer 与 Markdown 工具负责流式显示；展示缓冲不改变服务端持久化和计费状态。
+- `ChatProcessArea.vue`、`chatProcessFormat.ts`、`smoothStreamBuffer.ts`、`ChatContentRenderer.vue`、`chatSmartScroll.ts` 与 `markdown.ts` 负责过程时间轴与流式显示：`ChatProcessArea.vue` 采用极简无框竖向步骤行（去除旧工具胶囊边框，固定左侧图标槽位：运行中脉动圆点与 `--color-sage-ink`/`#556B3D` 文本、完成态 `#6E8552` 对勾且无“已完成”尾缀、失败态浅色 `#9C500C` 满足 WCAG AA 与 `· 未完成`，搭配 `#8C887F` `13px` 低对比思考排版）、`sanitizeReasoningText` 过滤内部工具名/规则泄漏（代码块完整保留）、`buildVisibleProcessTimelineGroups` 按平滑已披露字符预算严格交错披露思考与工具（不提前泄露工具、不底部扎堆），`ChatProcessArea.vue` 先触发 `complete` 再发射 `drainChange(false)` 且后端收尾不再被遗留工具态死锁；`smoothStreamBuffer.ts` 导出 `computeSmoothStreamTargetSpeed` 实现平缓连续单调蓄水加速（默认/正文 `minSpeed: 14 / baseSpeed: 28 / maxSpeed: 105 / finishSpeed: 58 / damping: 3.8`、思考区 `18 / 38 / 125 / 76 / 4.2`），并在初始化、空池见底停顿、`flush()` 与 `reset()` 时重置瞬时速率 `currentSpeed = minSpeed` 消除停顿后再猛冲一段、带 `destroy()` 重入保护并在达到 `fullText.length` 后调用 `finish()` 时取消挂起 rAF；`ChatContentRenderer.vue` 与 `SubjectWorkspace/index.vue` 协同 `resolveStreamTextDrainAction` / `canFinishStreamSettling` / `restartSettleTimer(450)` 防止单包快答瞬弹及 settling 期内重复重排，`wrapTrailingToken` 保护完整 HTML 实体不被拆入 `.token-fade`，正文渲染列表采用标准悬挂缩进（`padding-left: 1.55em; list-style-position: outside;`）与 `11px` 条目间距；`chatSmartScroll.ts` 按 50px 阈值判定吸附并在滚轮/触控上滑时锁定、在程序化滚动帧内免误锁及高卡片跳变时保持未锁态持续跟随。展示缓冲不改变服务端持久化和计费状态。
 
 <a id="2026-10-12-timeline-离线排期命令"></a>
 
 ## 任务、时间线与专注
 
-- Dashboard 只展示线性日程和待办；槽位拖放统一由 Timeline 承担。Task 无数据颜色字段，外观来自主题令牌。
+- Dashboard 只展示线性日程和待办；槽位拖放统一由 Timeline 承担。Task 读写统一使用 title/description/durationMinutes，startTime 仅为 scheduledAt 的时分展示投影；无数据颜色字段，外观来自主题令牌。
+- Dashboard 周日期条在星期缩写下方只显示日序号数字，避免本地化日期格式附加“日”等单位。
 - Timeline 的空槽插入、卡片主体放置、标题换位、周列跨天和拖回待办都交给 Task Store。预览与提交共用排期计算，以任务 ID、原排期的实际时刻与落点完整日期核对操作。等价时间戳写法允许当前拖放继续，实际改期时提示重试。取消拖动立即清除高亮。
 - 排期通过现行本地命令队列持久化，本地提交后立即更新页面，后台按顺序同步。周视图拖到同一天保留原位，跨天默认发送 `SCHEDULE_INSERTION` 的 `STRICT` 放置。取消排期结算前拖回周视图，放置命令排在取消之后。已有普通创建或更新的任务，在排期队列结算后沿用单任务更新链，避免抢先占用尚未腾出的时段。时长、重叠、截止时间与固定任务约束继续在领域规则校验。
 - 连续换位的前一笔回执在计算后、写入前推进版本时，本地事务复核排期、任务状态、时长和截止时间。计算基线一致时使用当前版本，只修改两个开始时刻并保留最新任务资料。实际排期基线变化时提示重试。服务端拒绝后，本地恢复结束即发布任务刷新和错误提示，随后独立执行增量下拉。
 - 日视图行间留白计入上一行的落点。卡片主体的计算落点与源任务当前位置相同，显示「已在目标时段」。日视图和周视图的排期区域禁用文字选取，任务编辑表单仍可选取和复制文字。
 - 创建任务保存期间防止重复提交，保存失败保留草稿。删除结果使用现有消息反馈。
+- 时间线日视图和周视图卡片的 × 为「移回待办」，复用取消排期队列并保留任务内容；本地写入期间禁用重复点击，失败显示排期错误。
 - 已完成排期任务保留原槽位并固定，禁止移动、替换或取消；恢复为未完成后才允许调整。仅接受 `TODO/IN_PROGRESS/DONE/CANCELLED` 领域状态。
 - 取消排期返回匹配源任务的 `REJECTED/RESOURCE_NOT_FOUND` 且无 current 时，使用快照恢复受影响任务、结算队首并撤回未发送后继；快照缺失则按原 mutation ID 重试。
+- 专注任务列表和当前任务说明显示具体月、日与时间；跨年补全年份，按界面语言格式化。
 - 专注计时生命周期独立于 TimerCore 挂载，支持排期任务和自由学习。活动状态与最终 focus event 按账号/设备原子保存，上传使用稳定 clientSessionId，ACK 后保留本地今日统计。
 
 ## 复习、统计与个人中心
@@ -186,7 +197,7 @@ API 包装集中在 `src/api/`：`request.ts` 管理普通请求；`aiClient.ts`
 - **自动生成概览**默认开启。文件处理完成并符合条件时，可自动生成大纲和总结。关闭后跳过尚未派发的自动生成，已派发的生成继续保存结果。文件与学科的手动生成入口继续可用。重新开启按现有文件就绪事件和扫描规则触发。
 - 两项选择保存在本机。
 
-RAG 关闭项已移除，旧 `sc_setting_rag` 不参与聊天行为。
+RAG 不提供关闭设置，聊天按当前检索范围执行。
 
 ## 开发、验证与限制
 
@@ -203,7 +214,7 @@ npm.cmd run build
 npm.cmd run tauri -- build --no-bundle
 ```
 
-按任务范围选择命令，不默认全部执行。另有 `check:subject-icons`、`check:subject-workspace` 和未全部纳入聚合脚本的定向测试；测试入口以 `package.json` 与对应脚本为准。CLI 缺失排障见 [Runbook](../operations/Runbook.md)。
+按任务范围选择命令，不默认全部执行。未全部纳入聚合脚本的定向测试以 `package.json` 与对应脚本为准。CLI 缺失排障见 [Runbook](../operations/Runbook.md)。
 
 - 类型检查与 Web 构建不能证明 Tauri、安装包或业务流程；`--no-bundle` 不证明 MSI 安装/升级/卸载。
 - 登录切换、真实 Server/Provider、双设备同步、OCR/keyring、文件上传与断网恢复仍须按当前问题清单取得实际环境证据。
@@ -215,7 +226,7 @@ npm.cmd run tauri -- build --no-bundle
 在 `Auralis-Server` 启动回环地址上的内存测试后端。测试后端每次重启时清空其测试数据。周列跨天需要支持 `STRICT` 放置的后端。
 
 ```powershell
-.\mvnw.cmd -B -ntp spring-boot:test-run '-Dspring-boot.run.profiles=test' '-Dspring-boot.run.arguments=--server.port=18080 --server.address=127.0.0.1 --auralis.api.public-base-url=http://127.0.0.1:18080'
+.\mvnw.cmd -B -ntp spring-boot:test-run '-Dspring-boot.run.profiles=test' '-Dspring-boot.run.arguments=--server.port=18080 --server.address=127.0.0.1'
 ```
 
 在另一个 PowerShell 中进入 `Auralis-PC`，使用独立应用 ID 保存试测的本地缓存。
@@ -232,4 +243,4 @@ npm.cmd run tauri -- dev --config $timelineTrialConfig
 
 ## 修改后的回写
 
-页面、路由、Store、服务或 Tauri 边界变化更新本文对应章节；视觉和交互更新 Frontend；API/数据变化更新契约；验证和风险更新 current；发布相关变化更新 Changelog。历史任务详情进入追溯记录，避免重新堆入模块说明。
+页面、路由、Store、服务或 Tauri 边界变化更新本文对应章节；视觉和交互更新 `docs/project/FrontendDesign.md`；API/数据变化更新契约；验证和风险更新 `current/`；发布相关变化更新 `docs/operations/Changelog.md`。历史任务详情进入追溯记录，避免重新堆入模块说明。

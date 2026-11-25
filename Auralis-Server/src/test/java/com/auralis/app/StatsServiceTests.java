@@ -49,7 +49,7 @@ class StatsServiceTests {
         assertThat(overview.activeKnowledgeBlocks()).isZero();
         assertThat(overview.activeTasks()).isZero();
 
-        var weekly = statsService.weekly(userId, LocalDate.parse("2026-08-10"), LocalDate.parse("2026-08-16"));
+        var weekly = statsService.weekly(userId, LocalDate.parse("2026-08-10"), LocalDate.parse("2026-08-16"), null);
         assertThat(weekly.days()).hasSize(7);
         assertThat(weekly.days().getFirst().date()).isEqualTo(LocalDate.parse("2026-08-10"));
     }
@@ -72,7 +72,7 @@ class StatsServiceTests {
 
         LocalDate completionDate = completedAt.atZone(java.time.ZoneOffset.UTC).toLocalDate();
         LocalDate from = completionDate.minusDays(3);
-        var weekly = statsService.weekly(owner.user().id(), from, from.plusDays(6));
+        var weekly = statsService.weekly(owner.user().id(), from, from.plusDays(6), null);
 
         assertThat(weekly.days().get(3).completedTaskCount()).isEqualTo(1);
     }

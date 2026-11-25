@@ -91,43 +91,6 @@ test('document jobs isolate user/device and enforce source revision uniqueness',
   }
 })
 
-test('v3 numeric revisions are preserved as text in the v5 migration', async () => {
-  const sqlite = new TemporarySqlite()
-  try {
-    await sqlite.execute(`CREATE TABLE document_processing_jobs (
-      job_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_id TEXT NOT NULL, source_id TEXT NOT NULL,
-      ingestion_revision INTEGER NOT NULL CHECK (ingestion_revision > 0), phase TEXT NOT NULL, attempt INTEGER NOT NULL,
-      checkpoint_page INTEGER NOT NULL, checkpoint_ordinal INTEGER NOT NULL, checkpoint_json TEXT,
-      payload_cache_id TEXT, error_code TEXT, error_detail TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    )`)
-    await sqlite.execute(`INSERT INTO document_processing_jobs
-      (job_id,user_id,device_id,source_id,ingestion_revision,phase,attempt,checkpoint_page,checkpoint_ordinal,created_at,updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    ['legacy-job', 'user-a', 'device-1', 'source-1', 4, 'PACKAGING', 0, 0, 0, '2026-08-24', '2026-08-24'])
-    await createVersionedLocalSchema(sqlite)
-    const column = sqlite.database.prepare('PRAGMA table_info(document_processing_jobs)').all().find((row) => row.name === 'ingestion_revision')
-    assert.equal(column.type, 'TEXT')
-    const row = sqlite.database.prepare('SELECT ingestion_revision FROM document_processing_jobs WHERE job_id = ?').get('legacy-job')
-    assert.equal(row.ingestion_revision, '4')
-    assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_document_processing_jobs_v3'").get())
-  } finally {
-    sqlite.close()
-  }
-})
-
-test('browser v3 jobs are copied into the v5 namespace with text revisions', async () => {
-  const storage = createMemoryStorage()
-  storage.setItem('auralis:v3:document-jobs:user-a:device-1', JSON.stringify([{
-    jobId: 'legacy-job', userId: 'user-a', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 4,
-    phase: 'PACKAGING', attempt: 0, checkpoint: { pageNumber: 0, blockOrdinal: 0 }, payloadCacheId: 'cache-1',
-    errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
-  }]))
-  const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { storage })
-  const jobs = await repository.list()
-  assert.equal(jobs[0].ingestionRevision, '4')
-  assert.ok(storage.getItem('auralis:v5:document-jobs:user-a:device-1'))
-})
-
 test('cache receipt metadata survives a SQL repository round trip', async () => {
   const sqlite = new TemporarySqlite()
   try {

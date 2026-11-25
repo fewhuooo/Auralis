@@ -84,7 +84,6 @@ class OverviewAccountDeletionM5PostgresIntegrationTests {
         registry.add("auralis.ai.ingestion-worker-enabled", () -> "false");
         registry.add("auralis.identity.account-deletion-delay-millis", () -> "3600000");
         registry.add("auralis.identity.account-deletion-initial-delay-millis", () -> "3600000");
-        registry.add("auralis.ai.overview-jobs-poll-ms", () -> "3600000");
     }
 
     private static String taskOwnedPostgresUrl() {

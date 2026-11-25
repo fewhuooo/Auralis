@@ -18,12 +18,7 @@ import {
   type LocalResourceRow,
   type LocalSqlDatabase,
 } from '@/services/localSchema'
-import {
-  backupLegacyUnassignedData,
-  getLegacyUnassignedBackup,
-  type LegacyUnassignedBackup,
-  type LocalStorageLike,
-} from '@/services/legacyLocalData'
+import type { LocalStorageLike } from '@/types/localStorage'
 import { DOCUMENT_JOB_PHASES, type CreateDocumentProcessingJobInput, type DocumentJobPhase, type DocumentJobTransitionOptions, type DocumentProcessingJob } from '@/types/documentProcessing'
 import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import { parseDueTimestamp } from '@/services/taskViewRules'
@@ -226,6 +221,7 @@ function projectCrudSettlement(
   mutation: LocalMutation,
   unresolved: LocalMutation[],
   current: LocalEntity<unknown> | null,
+  nowIso: string,
 ): { resource: LocalEntity<unknown> | null; successor?: LocalMutation; archiveRejection?: boolean } {
   const statuses = unresolved.map((item) => item.status)
   const syncStatus: LocalSyncStatus = statuses.includes('pending') || statuses.includes('inflight')
@@ -244,6 +240,45 @@ function projectCrudSettlement(
         return { resource: { ...current, value: remote, version, deletedAt: remote.deletedAt ?? null, syncStatus: 'synced' },
           archiveRejection: true }
       }
+    }
+  }
+  if (mutation.resourceType === 'TASK' && !isScheduleCommand(mutation)
+    && (input.status === 'conflict' || input.status === 'error')) {
+    if ((input.status === 'conflict' && input.error === 'RESOURCE_VERSION_CONFLICT')
+      || (input.status === 'error' && input.error === 'MUTATION_REJECTED')) {
+      const remote = asTaskConflictSnapshot(value, mutation.resourceId)
+      if (remote && version !== undefined && remote.version === version && version >= (current?.version ?? 0)) {
+        if (unresolved.length > 0) return { resource, archiveRejection: true }
+        return {
+          resource: {
+            id: mutation.resourceId,
+            resourceType: 'TASK',
+            userId: mutation.userId,
+            version,
+            deletedAt: remote.deletedAt ?? null,
+            syncStatus: 'synced',
+            value: remote,
+          },
+          archiveRejection: true,
+        }
+      }
+    }
+    if (input.status === 'error' && (input.error === 'RESOURCE_NOT_FOUND' || input.error === 'RESOURCE_DELETED')) {
+      if (unresolved.length > 0) return { resource, archiveRejection: true }
+      return {
+        resource: current ? { ...current, deletedAt: current.deletedAt ?? nowIso, syncStatus: 'synced' } : null,
+        archiveRejection: true,
+      }
+    }
+    if (mutation.mutationType === 'CREATE' && input.status === 'error') {
+      if (unresolved.length > 0) return { resource, archiveRejection: true }
+      return {
+        resource: current ? { ...current, deletedAt: current.deletedAt ?? nowIso, syncStatus: 'synced' } : null,
+        archiveRejection: true,
+      }
+    }
+    if (unresolved.length > 0) {
+      return { resource, archiveRejection: true }
     }
   }
   if (input.status !== 'applied' || version === undefined || !value || typeof value !== 'object'
@@ -270,6 +305,23 @@ export function asKnowledgeBlockConflictSnapshot(
   return block?.id === blockId && typeof block.subjectId === 'string' && typeof block.title === 'string'
     && typeof block.content === 'string' && typeof block.version === 'number' && Number.isSafeInteger(block.version)
     && block.version >= 0 ? { ...block, id: block.id, version: block.version } : null
+}
+
+export function asTaskConflictSnapshot(
+  value: unknown,
+  taskId: string,
+): { id: string; title: string; version: number; deletedAt: string | null; [key: string]: unknown } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const task = value as Record<string, unknown>
+  if (task.id !== taskId || typeof task.title !== 'string') return null
+  if (typeof task.version !== 'number' || !Number.isSafeInteger(task.version) || task.version < 0) return null
+  return {
+    ...task,
+    id: taskId,
+    title: task.title,
+    version: task.version,
+    deletedAt: typeof task.deletedAt === 'string' ? task.deletedAt : null,
+  }
 }
 
 function projectKnowledgeBlockConflictResolution(
@@ -1598,7 +1650,7 @@ export class LocalRepository {
           [this.userId, input.resourceType, input.resourceId],
         )
         const { resource, successor, archiveRejection } = projectCrudSettlement(input, mutation,
-          unresolved.filter((item) => item !== mutation), resources[0] ? resourceFromRow(resources[0]) : null)
+          unresolved.filter((item) => item !== mutation), resources[0] ? resourceFromRow(resources[0]) : null, this.now())
         await database.execute(
           `UPDATE local_mutations SET status = $1, error = $2, in_flight_at = NULL,
              remote_payload = $3, remote_version = $4
@@ -1637,7 +1689,7 @@ export class LocalRepository {
       const resourceIndex = state.resources.findIndex((item) => item.userId === this.userId
         && item.resourceType === input.resourceType && item.id === input.resourceId)
       const { resource, archiveRejection } = projectCrudSettlement(input, mutation,
-        unresolved.filter((item) => item !== mutation), state.resources[resourceIndex] ?? null)
+        unresolved.filter((item) => item !== mutation), state.resources[resourceIndex] ?? null, this.now())
       mutation.status = archiveRejection ? 'rejected' : input.status
       if (input.error) mutation.error = input.error
       else delete mutation.error
@@ -1798,6 +1850,150 @@ export class LocalRepository {
       mutation.remoteValue = restoredValue
       mutation.remoteVersion = input.remoteVersion
       state.sync = { ...state.sync, resetRequired: true }
+      this.writeBrowserState(state)
+      return true
+    })
+  }
+
+  async resolveRejectedTaskMutation(input: {
+    clientMutationId: string
+    error?: string
+    snapshotTask?: LocalSnapshotItem | null
+  }): Promise<boolean> {
+    if (!input.clientMutationId.trim()) throw new Error('MUTATION_ID_REQUIRED')
+    if (this.sql) {
+      return this.runSqlTransaction(async (database) => {
+        const rows = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
+           FROM local_mutations WHERE user_id = $1 AND client_mutation_id = $2`,
+          [this.userId, input.clientMutationId],
+        )
+        const mutation = rows[0] ? mutationFromRow(rows[0]) : null
+        if (!mutation || mutation.resourceType !== 'TASK' || isScheduleCommand(mutation)
+          || mutation.mutationType === 'CREATE'
+          || (mutation.status !== 'inflight' && mutation.status !== 'conflict' && mutation.status !== 'error')) return false
+        const otherUnresolvedRows = await database.select<{ status: string }>(
+          `SELECT status FROM local_mutations WHERE user_id = $1 AND resource_type = 'TASK'
+             AND resource_id = $2 AND client_mutation_id <> $3 AND status IN ('pending', 'inflight', 'conflict', 'error')`,
+          [this.userId, mutation.resourceId, input.clientMutationId],
+        )
+        const nextError = input.error ?? mutation.error ?? null
+        if (otherUnresolvedRows.length > 0) {
+          const otherStatuses = otherUnresolvedRows.map((row) => row.status)
+          const nextSyncStatus: LocalSyncStatus = otherStatuses.includes('pending') || otherStatuses.includes('inflight')
+            ? 'pending'
+            : otherStatuses.includes('conflict')
+              ? 'conflict'
+              : 'error'
+          await database.execute(
+            `UPDATE local_resource_records SET sync_status = $1
+             WHERE user_id = $2 AND resource_type = 'TASK' AND resource_id = $3`,
+            [nextSyncStatus, this.userId, mutation.resourceId],
+          )
+          await database.execute(
+            `UPDATE local_mutations SET status = 'rejected', error = $1, in_flight_at = NULL,
+               remote_payload = $2, remote_version = $3
+             WHERE user_id = $4 AND client_mutation_id = $5`,
+            [nextError, input.snapshotTask ? JSON.stringify(input.snapshotTask.value) : null,
+              input.snapshotTask ? input.snapshotTask.version : null, this.userId, input.clientMutationId],
+          )
+          return true
+        }
+        const currentRows = await database.select<LocalResourceRow>(
+          `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
+           FROM local_resource_records WHERE user_id = $1 AND resource_type = 'TASK' AND resource_id = $2`,
+          [this.userId, mutation.resourceId],
+        )
+        const current = currentRows[0] ? resourceFromRow(currentRows[0]) : null
+        if (input.snapshotTask) {
+          if (input.snapshotTask.resourceType !== 'TASK' || input.snapshotTask.resourceId !== mutation.resourceId) return false
+          if (current && current.version > input.snapshotTask.version) return false
+          await database.execute(
+            `INSERT INTO local_resource_records
+               (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+             VALUES ($1, 'TASK', $2, $3, $4, 'synced', $5)
+             ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET
+               version = excluded.version, deleted_at = excluded.deleted_at,
+               sync_status = 'synced', payload = excluded.payload`,
+            [this.userId, mutation.resourceId, input.snapshotTask.version,
+              input.snapshotTask.deletedAt, JSON.stringify(input.snapshotTask.value)],
+          )
+        } else if (current) {
+          await database.execute(
+            `UPDATE local_resource_records SET deleted_at = $1, sync_status = 'synced'
+             WHERE user_id = $2 AND resource_type = 'TASK' AND resource_id = $3`,
+            [current.deletedAt ?? this.now(), this.userId, mutation.resourceId],
+          )
+        }
+        await database.execute(
+          `UPDATE local_mutations SET status = 'rejected', error = $1, in_flight_at = NULL,
+             remote_payload = $2, remote_version = $3
+           WHERE user_id = $4 AND client_mutation_id = $5`,
+          [nextError, input.snapshotTask ? JSON.stringify(input.snapshotTask.value) : null,
+            input.snapshotTask ? input.snapshotTask.version : null, this.userId, input.clientMutationId],
+        )
+        return true
+      })
+    }
+    return this.withBrowserStateLock(() => {
+      const state = this.readBrowserState()
+      const mutation = state.mutations.find((item) => item.userId === this.userId && item.clientMutationId === input.clientMutationId)
+      if (!mutation || mutation.resourceType !== 'TASK' || isScheduleCommand(mutation)
+        || mutation.mutationType === 'CREATE'
+        || (mutation.status !== 'inflight' && mutation.status !== 'conflict' && mutation.status !== 'error')) return false
+      const otherUnresolved = state.mutations.filter((item) => item.userId === this.userId && item.resourceType === 'TASK'
+        && item.resourceId === mutation.resourceId && item !== mutation && isUnresolved(item))
+      const resource = state.resources.find((item) => item.userId === this.userId && item.resourceType === 'TASK' && item.id === mutation.resourceId)
+      const nextError = input.error ?? mutation.error
+      if (otherUnresolved.length > 0) {
+        const otherStatuses = otherUnresolved.map((item) => item.status)
+        if (resource) {
+          resource.syncStatus = otherStatuses.includes('pending') || otherStatuses.includes('inflight')
+            ? 'pending'
+            : otherStatuses.includes('conflict')
+              ? 'conflict'
+              : 'error'
+        }
+        if (input.snapshotTask) {
+          mutation.remoteValue = clone(input.snapshotTask.value)
+          mutation.remoteVersion = input.snapshotTask.version
+        }
+        if (nextError) mutation.error = nextError
+        else delete mutation.error
+        mutation.status = 'rejected'
+        this.writeBrowserState(state)
+        return true
+      }
+      if (input.snapshotTask) {
+        if (input.snapshotTask.resourceType !== 'TASK' || input.snapshotTask.resourceId !== mutation.resourceId) return false
+        if (resource && resource.version > input.snapshotTask.version) return false
+        const snapshotValue = clone(input.snapshotTask.value)
+        if (resource) {
+          resource.value = snapshotValue
+          resource.version = input.snapshotTask.version
+          resource.deletedAt = input.snapshotTask.deletedAt
+          resource.syncStatus = 'synced'
+        } else {
+          state.resources.push({
+            id: mutation.resourceId,
+            resourceType: 'TASK',
+            userId: this.userId,
+            version: input.snapshotTask.version,
+            deletedAt: input.snapshotTask.deletedAt,
+            syncStatus: 'synced',
+            value: snapshotValue,
+          })
+        }
+        mutation.remoteValue = snapshotValue
+        mutation.remoteVersion = input.snapshotTask.version
+      } else if (resource) {
+        resource.deletedAt = resource.deletedAt ?? this.now()
+        resource.syncStatus = 'synced'
+      }
+      if (nextError) mutation.error = nextError
+      else delete mutation.error
+      mutation.status = 'rejected'
       this.writeBrowserState(state)
       return true
     })
@@ -1965,13 +2161,6 @@ export class LocalRepository {
     })
   }
 
-  async backupLegacyData(): Promise<LegacyUnassignedBackup | null> {
-    return backupLegacyUnassignedData(this.storage, this.now)
-  }
-
-  getLegacyBackup(): LegacyUnassignedBackup | null {
-    return getLegacyUnassignedBackup(this.storage)
-  }
 }
 
 const DOCUMENT_JOB_TRANSITIONS: Record<DocumentJobPhase, readonly DocumentJobPhase[]> = {
@@ -2005,8 +2194,8 @@ function documentJobStorage(): LocalStorageLike {
   return createMemoryStorage()
 }
 
-function documentJobKey(userId: string, serverDeviceId: string, version = 5): string {
-  return `auralis:v${version}:document-jobs:${encodePart(userId)}:${encodePart(serverDeviceId)}`
+function documentJobKey(userId: string, serverDeviceId: string): string {
+  return `auralis:v5:document-jobs:${encodePart(userId)}:${encodePart(serverDeviceId)}`
 }
 
 export class DocumentProcessingJobRepository {
@@ -2039,16 +2228,7 @@ export class DocumentProcessingJobRepository {
 
   private readBrowserJobs(): DocumentProcessingJob[] {
     const currentKey = documentJobKey(this.userId, this.serverDeviceId)
-    let raw = this.storage.getItem(currentKey)
-    let migrated = false
-    if (!raw) {
-      raw = this.storage.getItem(documentJobKey(this.userId, this.serverDeviceId, 4))
-      migrated = Boolean(raw)
-    }
-    if (!raw) {
-      raw = this.storage.getItem(documentJobKey(this.userId, this.serverDeviceId, 3))
-      migrated = Boolean(raw)
-    }
+    const raw = this.storage.getItem(currentKey)
     if (!raw) return []
     try {
       const jobs = JSON.parse(raw) as unknown
@@ -2059,7 +2239,6 @@ export class DocumentProcessingJobRepository {
         checkpoint: normalizeDocumentJobCheckpoint((job as Record<string, unknown>).checkpoint),
         payloadReceipt: sanitizeDocumentCacheReceipt((job as Record<string, unknown>).payloadReceipt) ?? null,
       })) as DocumentProcessingJob[]
-      if (migrated) this.storage.setItem(currentKey, JSON.stringify(normalized))
       return normalized
     } catch {
       return []

@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -112,7 +111,7 @@ public class MinioAssetStorage implements AssetStoragePort {
             return Optional.of(new ObjectMetadata(
                     response.size(),
                     response.contentType(),
-                    sha256(response.userMetadata())));
+                    response.userMetadata().get("sha256")));
         } catch (io.minio.errors.ErrorResponseException exception) {
             if (exception.errorResponse() != null && "NoSuchKey".equals(exception.errorResponse().code())) {
                 return Optional.empty();
@@ -187,15 +186,6 @@ public class MinioAssetStorage implements AssetStoragePort {
 
     private int expirySeconds() {
         return Math.toIntExact(storage.presignTtlSeconds());
-    }
-
-    private String sha256(Map<String, String> userMetadata) {
-        if (userMetadata == null) {
-            return null;
-        }
-        Map<String, String> normalized = new HashMap<>();
-        userMetadata.forEach((key, value) -> normalized.put(key.toLowerCase(Locale.ROOT), value));
-        return normalized.getOrDefault("sha256", normalized.get("x-amz-meta-sha256"));
     }
 
     private DomainException storageUnavailable() {

@@ -46,7 +46,7 @@ public record AiTaskContext(UUID userId, AiFeature feature, String taskKey, UUID
     private static AiOperationKind defaultKind(AiFeature feature) {
         if (feature == null) return null;
         return switch (feature) {
-            case CHAT -> AiOperationKind.CHAT_TURN;
+            case CHAT -> AiOperationKind.CHAT_AGENT_TURN;
             case SOURCE_OVERVIEW -> AiOperationKind.SOURCE_OVERVIEW;
             case SUBJECT_OVERVIEW -> AiOperationKind.SUBJECT_OVERVIEW;
             case INGESTION -> AiOperationKind.INGESTION_EMBEDDING;

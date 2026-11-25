@@ -45,11 +45,9 @@
           >
             <span class="chip-icon">
               <component
-                v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
                 :is="getSubjectIconComponent(subj.icon)"
                 style="width: 1em; height: 1em;"
               />
-              <span v-else>{{ getLegacySubjectIcon(subj.icon) || '📘' }}</span>
             </span>
             <span class="chip-name">{{ subj.name }}</span>
           </div>
@@ -160,7 +158,7 @@ import 'element-plus/theme-chalk/el-date-picker-panel.css'
 import ModalShell from '@/components/modal/ModalShell.vue'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { localDateEndOfDay } from '@/services/taskViewRules'
-import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import { getSubjectIconComponent } from '@/utils/subjectIcon'
 
 export interface TaskSubjectItem {
   id: string

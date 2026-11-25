@@ -13,7 +13,6 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ChatConversationScopeState;
 
 @Entity
@@ -28,13 +27,6 @@ public class ConversationEntity {
 
     @Column(length = 240)
     private String title;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
-    private ConversationPurpose purpose = ConversationPurpose.GENERAL;
-
-    @Column(name = "source_id")
-    private UUID sourceId;
 
     @Column(name = "client_request_id", length = 128)
     private String clientRequestId;
@@ -66,7 +58,7 @@ public class ConversationEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "chat_scope_state", nullable = false, length = 16)
-    private ChatConversationScopeState chatScopeState = ChatConversationScopeState.LEGACY;
+    private ChatConversationScopeState chatScopeState = ChatConversationScopeState.UNBOUND;
 
     @Column(name = "chat_scope_json", columnDefinition = "text")
     private String chatScopeJson;
@@ -79,22 +71,10 @@ public class ConversationEntity {
     }
 
     public ConversationEntity(UUID id, UUID userId, String title, String clientRequestId) {
-        this(id, userId, title, clientRequestId, ConversationPurpose.GENERAL, null);
-    }
-
-    public ConversationEntity(
-            UUID id,
-            UUID userId,
-            String title,
-            String clientRequestId,
-            ConversationPurpose purpose,
-            UUID sourceId) {
         this.id = id;
         this.userId = userId;
         this.title = title;
         this.clientRequestId = clientRequestId;
-        this.purpose = purpose == null ? ConversationPurpose.GENERAL : purpose;
-        this.sourceId = sourceId;
     }
 
     public void enableChatProtocolOne() {
@@ -119,8 +99,6 @@ public class ConversationEntity {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }
-    public ConversationPurpose getPurpose() { return purpose; }
-    public UUID getSourceId() { return sourceId; }
     public String getClientRequestId() { return clientRequestId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
@@ -131,13 +109,6 @@ public class ConversationEntity {
     public long getChatFence() { return chatFence; }
     public ChatConversationScopeState getChatScopeState() { return chatScopeState; }
     public String getChatScopeJson() { return chatScopeJson; }
-
-    public void markChatScopeUnbound() {
-        if (chatScopeState != ChatConversationScopeState.LEGACY) {
-            throw new IllegalStateException("Only new Chat conversations can start unbound");
-        }
-        chatScopeState = ChatConversationScopeState.UNBOUND;
-    }
 
     public void bindChatScope(String scopeJson) {
         if (chatScopeState != ChatConversationScopeState.UNBOUND) {

@@ -36,10 +36,6 @@ export type ScheduleInsertionResult = 'saved' | 'queued'
 type TaskWritePreconditions = Pick<LocalCommitInput,
   'expectedLocalVersion' | 'rejectIfNonPendingMutation' | 'requireActiveResource' | 'ordinaryScheduleBaseline'>
 
-/**
- * The old-looking fields in this interface are presentation aliases only.
- * Cloud requests are built from TaskModel and never serialize these aliases.
- */
 export interface Task {
   id: string
   subjectId: string
@@ -54,15 +50,10 @@ export interface Task {
   createdAt?: string
   updatedAt?: string
   deletedAt: string | null
-  name: string
   subject: string
-  desc: string
-  duration: number
   startTime?: string
   position?: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete' | 'conflict'
-  sync_version?: number
-  is_deleted?: boolean
 }
 
 export interface TaskInput {
@@ -76,11 +67,7 @@ export interface TaskInput {
   durationMinutes?: number
   sortKey?: string
   version?: number
-  name?: string
   subject?: string
-  desc?: string
-  duration?: number
-  startTime?: string
   position?: string
 }
 
@@ -90,49 +77,12 @@ export interface TimeSlot {
   isCurrent: boolean
 }
 
-function statusFromLegacy(value: TaskInput['status'], hasSchedule: boolean): TaskStatus {
+function toTaskStatus(value: TaskInput['status']): TaskStatus {
   if (value === 'TODO' || value === 'IN_PROGRESS' || value === 'DONE' || value === 'CANCELLED') return value
   if (value === 'completed') return 'DONE'
   if (value === 'learning') return 'IN_PROGRESS'
   if (value === 'cancelled') return 'CANCELLED'
-  if (value === 'scheduled' || hasSchedule) return 'TODO'
   return 'TODO'
-}
-
-function dateForDay(dayOrDateKey: string, time: string): Date {
-  const [hours, minutes] = time.split(':').map(Number)
-  const h = Number.isFinite(hours) ? hours : 9
-  const m = Number.isFinite(minutes) ? minutes : 0
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dayOrDateKey.trim())) {
-    const [y, mon, d] = dayOrDateKey.trim().split('-').map(Number)
-    return new Date(y, mon - 1, d, h, m, 0, 0)
-  }
-
-  const day = (DAY_CODES as readonly string[]).includes(dayOrDateKey) ? (dayOrDateKey as DayCode) : getTodayDayCode()
-  const now = new Date()
-  const currentDay = now.getDay()
-  const targetDay = DAY_CODES.indexOf(day)
-  const delta = targetDay < 0 ? 0 : targetDay - currentDay
-  const date = new Date(now)
-  date.setDate(now.getDate() + delta)
-  date.setHours(h, m, 0, 0)
-  return date
-}
-
-function normalizeScheduledAtForApi(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
-  if (!value?.trim()) return undefined
-  const trimmed = value.trim()
-  const timestamp = Date.parse(trimmed)
-  if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString()
-  const parts = trimmed.split(/\s+/)
-  const day = (DAY_CODES as readonly string[]).includes(parts[0]) ? parts[0] as DayCode : fallbackDay
-  const time = parts.length > 1 ? parts[1] : parts[0]
-  return dateForDay(day, time).toISOString()
-}
-
-function scheduledAtFromLegacy(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
-  return normalizeScheduledAtForApi(value, fallbackDay)
 }
 
 function dayCodeForScheduledAt(value?: string): DayCode | undefined {
@@ -173,23 +123,21 @@ function normalizeDueAtForUserInput(value?: string | null): string | undefined {
   return new Date(timestamp).toISOString()
 }
 
-function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
-  const scheduledAt = input.startTime !== undefined
-    ? scheduledAtFromLegacy(input.startTime, fallbackDay)
-    : input.scheduledAt
-  const status = statusFromLegacy(input.status, Boolean(scheduledAt))
-  const rawDueAt = input.dueAt ?? (input as any).due
+function toTaskModel(input: TaskInput): TaskModel {
+  const scheduledAt = input.scheduledAt
+  const status = toTaskStatus(input.status)
+  const rawDueAt = input.dueAt
   return {
     id: input.id || uuidv7(),
     subjectId: input.subjectId,
-    title: input.title || input.name || '未命名任务',
-    description: input.description ?? input.desc ?? '',
+    title: input.title || '未命名任务',
+    description: input.description ?? '',
     status,
     scheduledAt,
     // Preserve persisted values exactly. Date-only conversion belongs to
     // explicit user-input paths, never to reading or rescheduling old tasks.
     dueAt: rawDueAt || undefined,
-    durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
+    durationMinutes: input.durationMinutes ?? 30,    sortKey: input.sortKey ?? input.position,
     version: input.version ?? 0,
     deletedAt: null,
   }
@@ -199,14 +147,9 @@ function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 
   const task: Partial<Task> = {
     ...model,
     status: taskStatusToPresentation(model.status, model.scheduledAt),
-    name: model.title,
-    desc: model.description,
-    duration: model.durationMinutes,
     startTime: timeForScheduledAt(model.scheduledAt),
     position: model.sortKey,
     sync_status: syncStatus,
-    sync_version: model.version,
-    is_deleted: Boolean(model.deletedAt),
   }
   Object.defineProperty(task, 'subject', {
     get() {
@@ -229,7 +172,8 @@ function taskDto(model: TaskModel): TaskView {
     status: model.status,
     scheduledAt: model.scheduledAt,
     dueAt: model.dueAt,
-    durationMinutes: model.durationMinutes,    sortKey: model.sortKey,
+    durationMinutes: model.durationMinutes,
+    sortKey: model.sortKey,
     version: model.version,
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
@@ -244,9 +188,10 @@ function createPayload(model: TaskModel): TaskCreateRequest {
     title: model.title,
     description: model.description || undefined,
     status: model.status,
-    scheduledAt: normalizeScheduledAtForApi(model.scheduledAt),
+    scheduledAt: model.scheduledAt,
     dueAt: model.dueAt,
-    durationMinutes: model.durationMinutes,    sortKey: model.sortKey,
+    durationMinutes: model.durationMinutes,
+    sortKey: model.sortKey,
   }
 }
 
@@ -325,9 +270,43 @@ export const useTaskStore = defineStore('task', () => {
     if (conflict) throw new Error(`与任务“${conflict.title}”的排期时间重叠`)
   }
 
+  const suppressedOverdueFingerprints = new Map<string, string>()
+  const pendingRejectedOverdueTokens = new Map<string, number>()
+  let suppressedOverdueScopeKey = ''
+
+  function currentOverdueScopeKey(): string {
+    const auth = useAuthStore()
+    return `${auth.user?.id ?? ''}:${auth.serverDeviceId ?? ''}`
+  }
+
+  function syncOverdueSuppressionScope(): string {
+    const scopeKey = currentOverdueScopeKey()
+    if (suppressedOverdueScopeKey !== scopeKey) {
+      suppressedOverdueFingerprints.clear()
+      pendingRejectedOverdueTokens.clear()
+      suppressedOverdueScopeKey = scopeKey
+    }
+    return scopeKey
+  }
+
+  function overdueFingerprint(task: Pick<Task, 'version' | 'scheduledAt' | 'dueAt' | 'durationMinutes' | 'title'>): string {
+    return JSON.stringify([task.version ?? 0, task.scheduledAt ?? null, task.dueAt ?? null, task.durationMinutes ?? 30, task.title])
+  }
+
+  function isOverdueSuppressed(task: Task): boolean {
+    const expected = suppressedOverdueFingerprints.get(task.id)
+    if (!expected) return false
+    if (expected === overdueFingerprint(task)) return true
+    suppressedOverdueFingerprints.delete(task.id)
+    return false
+  }
+
   async function recoverOverdueTasks(): Promise<void> {
     if (!isLoading.value && useAuthStore().isAuthenticated) {
-      const endedTaskIds = allTasks.value.filter((task) => isOverdueTask(task)).map((task) => task.id)
+      syncOverdueSuppressionScope()
+      const endedTaskIds = allTasks.value
+        .filter((task) => isOverdueTask(task) && !pendingRejectedOverdueTokens.has(task.id) && !isOverdueSuppressed(task))
+        .map((task) => task.id)
       for (const taskId of endedTaskIds) {
         try {
           await withScheduleMutation(async () => {
@@ -484,6 +463,26 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   subscribeProjectionChange((change) => {
+    if (change.rejectedTaskIds && change.rejectedTaskIds.size > 0) {
+      const eventScopeKey = syncOverdueSuppressionScope()
+      const ids = [...change.rejectedTaskIds]
+      for (const id of ids) {
+        pendingRejectedOverdueTokens.set(id, (pendingRejectedOverdueTokens.get(id) ?? 0) + 1)
+      }
+      void loadLocalTasks().then(() => {
+        if (syncOverdueSuppressionScope() === eventScopeKey) {
+          for (const id of ids) {
+            const rejectedTask = allTasks.value.find((task) => task.id === id)
+            if (rejectedTask) suppressedOverdueFingerprints.set(id, overdueFingerprint(rejectedTask))
+            const count = pendingRejectedOverdueTokens.get(id) ?? 0
+            if (count <= 1) pendingRejectedOverdueTokens.delete(id)
+            else pendingRejectedOverdueTokens.set(id, count - 1)
+          }
+        }
+        return recoverOverdueTasks()
+      })
+      return
+    }
     if (change.resourceTypes.has('TASK')) {
       void loadLocalTasks().then(() => recoverOverdueTasks())
     }
@@ -546,11 +545,11 @@ export const useTaskStore = defineStore('task', () => {
 
   async function addTask(input: TaskInput): Promise<string> {
     return withScheduleMutation(async () => {
-      const rawDueAt = input.dueAt ?? (input as any).due
+      const rawDueAt = input.dueAt
       const model = toTaskModel({
         ...input,
         dueAt: normalizeDueAtForUserInput(rawDueAt),
-      }, (selectedDay.value as DayCode) || getTodayDayCode())
+      })
       if (!model.subjectId) throw new Error('Task requires a subjectId')
       const payload = createPayload(model)
       await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
@@ -602,7 +601,7 @@ export const useTaskStore = defineStore('task', () => {
       subjectId: task.subjectId,
       title: task.title,
       description: task.description,
-      status: statusFromLegacy(task.status, Boolean(task.scheduledAt)),
+      status: toTaskStatus(task.status),
       scheduledAt: task.scheduledAt ?? undefined,
       dueAt: task.dueAt,
       durationMinutes: task.durationMinutes,
@@ -703,7 +702,7 @@ export const useTaskStore = defineStore('task', () => {
       if (newStatus !== 'completed' && isScheduledCompletionLocked(current)) {
         throw new Error('已结束的排期任务不能取消完成状态')
       }
-      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt, startTime: undefined })
+      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
       model.version = current.version
       await updateTaskModel(model)
     })
@@ -724,7 +723,6 @@ export const useTaskStore = defineStore('task', () => {
         durationMinutes: changes.durationMinutes ?? current.durationMinutes,
         scheduledAt: current.scheduledAt,
         status: current.status,
-        startTime: undefined,
       })
       model.version = current.version
       await updateTaskModel(model)

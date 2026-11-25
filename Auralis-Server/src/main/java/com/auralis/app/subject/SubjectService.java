@@ -51,7 +51,7 @@ public class SubjectService {
         }
         SubjectView result = view(resourceInsert.insert("subjects", new SubjectEntity(
                 subjectId, userId, name, command.description(), command.iconKey(),
-                defaultSortKey(command.sortKey()), false)));
+                defaultSortKey(command.sortKey()))));
         publishChange(userId, result, "CREATE");
         return result;
     }
@@ -206,7 +206,7 @@ public class SubjectService {
     private SubjectView view(SubjectEntity entity) {
         return new SubjectView(
                 entity.getId(), entity.getName(), entity.getDescription(), entity.getIconKey(),
-                entity.getSortKey(), entity.isDefaultSubject(), entity.getVersion(), entity.getCreatedAt(),
+                entity.getSortKey(), entity.getVersion(), entity.getCreatedAt(),
                 entity.getUpdatedAt(), entity.getDeletedAt());
     }
 

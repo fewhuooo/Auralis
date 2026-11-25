@@ -33,6 +33,8 @@ export const localDb = {
       await initializeLocalDatabasePool();
       const loaded = serializeLocalSqlDatabase(rawDatabase, localSqlQueue);
       await loaded.execute('PRAGMA journal_mode = WAL');
+      await loaded.execute('PRAGMA synchronous = NORMAL');
+      await loaded.execute('PRAGMA temp_store = MEMORY');
       await loaded.execute('PRAGMA busy_timeout = 5000');
       await createVersionedLocalSchema(loaded);
       console.log('[SQLite PC] Database initialized and tables verified.');
@@ -46,12 +48,10 @@ export const localDb = {
 export async function getLocalRepository(userId: string, serverDeviceId: string): Promise<LocalRepository> {
   const database = await localDb.init();
   if (database === 'localstorage') {
-    const repository = localDatabaseRuntime.getOrCreate(
+    return localDatabaseRuntime.getOrCreate(
       `repository:${userId}:${serverDeviceId}`,
       () => createLocalRepository(userId, serverDeviceId)
     );
-    await repository.backupLegacyData();
-    return repository;
   }
   return localDatabaseRuntime.getOrCreate(
     `repository:${userId}:${serverDeviceId}`,

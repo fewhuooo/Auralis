@@ -1,6 +1,6 @@
 # Auralis 系统架构
 
-更新时间：2026-11-15
+更新时间：2026-11-16
 
 文档状态：现行系统架构
 
@@ -8,7 +8,7 @@
 
 权威范围：系统边界、组件关系、关键数据流、信任边界与架构约束。
 
-本文按当前实现维护稳定架构。接口和数据字段分别以 [API](../contracts/API.md)、[数据库与端侧数据契约](../contracts/Database.md) 为准，验证进度与待修问题见 [当前状态](../current/Status.md) 和 [问题登记](../current/IssuesAndReview.md)。逐轮实现记录及旧方案保存在[整理前快照](../archive/maintenance-2026-11-15/final-pass/project/Architecture.md)，不作为当前运行路径。
+本文按当前实现维护稳定架构。接口和数据字段分别以 [API](../contracts/API.md)、[数据库与端侧数据契约](../contracts/Database.md) 为准，验证进度与待修问题见 [当前状态](../current/Status.md) 和 [问题登记](../current/IssuesAndReview.md)。逐轮实现记录及旧方案保存在[整理前快照](../archive/snapshots/maintenance-2026-11-15/final-pass/project/Architecture.md)，不作为当前运行路径。
 
 ## 总体结构
 
@@ -86,10 +86,10 @@ Focus 以稳定 session ID 独立幂等上传，不生成 ReviewEvent。Stats �
 
 1. PC 为原始文件计算 SHA-256，通过 Asset upload intent 上传并 complete，创建关联 FILE Source。
 2. PC 的离屏解析宿主提取内容，Rust 任务与 OCR Sidecar 处理所需页面；ParsedDocument 在本地加密暂存并上传至私有对象存储。
-3. Server complete 核对 owner、Source revision、Asset SHA、gzip / JSON 大小及结构，接受合法解析结果。
+3. Server complete 在事务外读取及验证对象，在短事务内复核活动账号、owner、Source revision 与接收状态，再原子接受解析结果、更新资料状态并创建索引任务。
 4. 摄入 worker 在 lease、attempt 与 revision 围栏内分块、Embedding，完成后原子切换有效 generation；检索只读成功激活的代。
 
-FILE 的文本提取与 OCR 在客户端，TEXT / URL 沿服务端路径。私有 ParsedDocument 不进入普通 Sync。恢复优先复用当前修订已接受的解析文档，否则轮换 revision 返回 AWAITING_CLIENT；旧 claim 不能提交迟到结果。网络暂停由用户明确继续，不能把本地上传完成等同于服务端 INDEXING / READY。
+FILE 的文本提取与 OCR 由 PC Tauri 执行，Mobile/Tablet 不部署该解析模块；TEXT / URL 沿服务端路径。私有 ParsedDocument 不进入普通 Sync。恢复优先复用当前修订已接受的解析文档，否则轮换 revision 返回 AWAITING_CLIENT；旧 claim 不能提交迟到结果。网络暂停由用户明确继续，不能把本地上传完成等同于服务端 INDEXING / READY。
 
 本机原始文件、解析暂存和服务端 Asset 各有独立生命周期；服务端确认后的解析正文清理不等于删除原始文件。打包资源、Keyring、真实文件类型与 OCR 质量需单独验收，详见 [PC 模块](../modules/FrontendPC.md)。
 
@@ -111,7 +111,7 @@ Chat 使用持久 conversation / run / attempt 与协议 1。每次 attempt 捕�
 
 公开成果使用 schemaVersion 2 的 `outlineMarkdown` / `summaryMarkdown`。生成与正式保存分离：完整成功内容由独立结果服务以输入描述、来源修订、指纹、真实 baseVersion 和 clientWriteId 回执保存；PC 缓存与待写意图同事务持久化。Overview 不进入核心 Sync，更新事件只提示重拉。PC SQLite schema 14 保存 Markdown 字段。
 
-历史 schema 1 内容保留但不作为当前 Markdown 读取、不自动转换；替换按旧行真实版本提交完整 ALL。旧私有 INDEX / ROUTE / WRITER、preview / publication 不属于当前生成或公开接口。持久后台 jobs 的创建、查询、候选、控制、lease 和清理仍存在；SUBJECT job 的输入组装问题尚未关闭，不能据此宣称后台路径全部可用。详细契约见 [API](../contracts/API.md)，替换范围见 [Markdown 方案](../plans/2026-11-12-overview-markdown-replacement.md)。
+历史 schema 1 内容保留但不作为当前 Markdown 读取、不自动转换；替换按旧行真实版本提交完整 ALL。旧私有 INDEX / ROUTE / WRITER、preview / publication 和持久后台 Overview jobs 不属于当前生成或公开接口。Overview 通过文件、学科直接生成接口执行；PC 自动生成文件概览也使用该路径。历史作业表和元数据保留，不恢复执行或自动转换；历史私有载荷仍受保留期和来源撤销清理约束；直接生成所需的调用账本与安全重试校验继续保留。详细契约见 [API](../contracts/API.md)。
 
 ### Realtime
 
@@ -129,10 +129,10 @@ Chat 使用持久 conversation / run / attempt 与协议 1。每次 attempt 捕�
 | ParsedDocument / RAG | 私有对象、元数据、成功 generation 的 chunks / 向量；不开放客户端直连 |
 | Overview | Server 正式结果与写回执；PC owner / device / scope / revision 隔离缓存及待写队列 |
 | Review / Focus | 独立服务端业务记录；PC 对应本地投影及补传队列 |
-| Tablet 手写笔记 | 端侧笔记存储，当前不进入 Server 同步 |
+| Tablet 手写笔记 | 本地独立数据域；已确认自由画布仅本机自动保存与手动导出，不进入 Server 同步；完整画布能力待实施 |
 
 运行配置分别由 application 配置、Compose 和环境变量承担；生产数据库、JWT、MinIO、邮件与 AI 凭据不能沿用开发默认值。PostgreSQL 与 MinIO 使用命名卷，仓库根目录中的普通目录不代表容器实际数据卷。配置与备份操作见 [基础设施](../modules/Infrastructure.md)。
 
 ## 当前验证边界
 
-本文描述源码职责，不将代码存在、测试通过、部署完成和业务验收混为一项。当前需持续关注跨账号迟到写入、SUBJECT Overview job 输入、Mobile Review 契约接入，以及真实 Tauri / 安装包、跨设备离线同步、OCR / Keyring、真实 Provider 和生产备份恢复。具体优先级、证据与关闭条件只在 [当前状态](../current/Status.md) 和 [问题登记](../current/IssuesAndReview.md) 维护，不在此复制某次 Docker 状态或旧测试计数。
+本文描述源码职责，不将代码存在、测试通过、部署完成和业务验收混为一项。当前需持续关注 Mobile Review 契约接入，以及真实 Tauri / 安装包、跨设备离线同步、OCR / Keyring、真实 Provider 和生产备份恢复。账号隔离等修复的验证与现场边界、具体优先级和关闭条件只在 [当前状态](../current/Status.md) 和 [问题登记](../current/IssuesAndReview.md) 维护，不在此复制某次 Docker 状态或旧测试计数。

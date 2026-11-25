@@ -9,7 +9,7 @@ const rustSource = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'document
 const libSource = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'lib.rs'), 'utf8')
 
 test('document cache API exposes only bounded package commands', () => {
-  for (const name of ['documentPackageBegin', 'documentPackageAppend', 'documentPackageFinish', 'documentCacheDelete', 'documentCachePayloadInfo']) {
+  for (const name of ['documentPackageBegin', 'documentPackageAppend', 'documentPackageFinish', 'documentCacheDelete']) {
     assert.match(apiSource, new RegExp(`export const ${name}`))
   }
   assert.match(apiSource, /text\.length > 100_000/)

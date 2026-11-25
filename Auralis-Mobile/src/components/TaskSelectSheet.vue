@@ -1,197 +1,289 @@
 <template>
-  <view v-if="visible" class="popover-wrapper">
-    <!-- Transparent backdrop overlay covering the whole viewport to close on outside click -->
-    <view class="popover-backdrop" @click.stop="close" @touchmove.stop.prevent></view>
-
-    <!-- Dropdown Popover Card -->
-    <transition name="popover-anim" appear>
-      <view class="popover-menu" @click.stop>
-        <!-- Triangle Arrow pointing up to the button -->
-        <view class="popover-arrow"></view>
-
-        <view class="popover-header">
-          <text class="pop-title">选择专注任务 ✦</text>
+  <view v-if="visible" class="zen-sheet-mask task-sheet-mask" @click="close">
+    <view class="zen-sheet-body sheet-panel" @click.stop>
+      <view class="sheet-header">
+        <text class="sheet-title">选择专注任务</text>
+        <view class="sheet-close-btn" role="button" aria-label="关闭" @click="close">
+          <LineIcon name="close" size="16px" color="var(--text-muted, #7A7A75)" />
         </view>
-        
-        <!-- Scrollable Task List -->
-        <scroll-view scroll-y :show-scrollbar="false" class="popover-scroll">
-          <view v-if="displayTasks.length === 0" class="empty-state">
-            <text class="empty-icon">☕</text>
-            <text class="empty-text">当前无待办任务</text>
-          </view>
-          
-          <view 
-            v-else
-            v-for="task in displayTasks" 
-            :key="task.id"
-            class="task-item"
-            @click="selectTask(task)"
-          >
-            <view class="t-color-bar" :style="{ background: 'var(--color-primary)' }"></view>
-            <view class="t-info">
-              <text class="t-name">{{ task.name }}</text>
-              <text class="t-subject">{{ task.subject }} · {{ task.duration }} 分钟</text>
-            </view>
-            <view class="check-icon">✦</view>
-          </view>
-        </scroll-view>
       </view>
-    </transition>
+
+      <scroll-view scroll-y :show-scrollbar="false" class="sheet-scroll">
+        <view
+          class="task-option"
+          :class="{ 'is-selected': !selectedTaskId }"
+          role="button"
+          @click="choose(null)"
+        >
+          <view class="option-icon is-free">
+            <LineIcon name="sparkles" size="16px" color="#536B79" />
+          </view>
+          <view class="option-body">
+            <text class="option-title">自由学习</text>
+          </view>
+          <text class="option-badge is-free-badge">随时开启专注</text>
+          <LineIcon v-if="!selectedTaskId" name="check" size="16px" color="#637748" />
+        </view>
+
+        <view v-if="scheduledTasks.length > 0" class="group-section">
+          <text class="group-label">已排期日程</text>
+          <view
+            v-for="task in scheduledTasks"
+            :key="task.id"
+            class="task-option"
+            :class="{ 'is-selected': selectedTaskId === task.id }"
+            role="button"
+            @click="choose(task)"
+          >
+            <view class="option-icon">
+              <LineIcon name="calendar" size="15px" color="#637748" />
+            </view>
+            <view class="option-body">
+              <text class="option-title">{{ task.name }}</text>
+              <text v-if="task.subject" class="option-meta num-tabular">{{ task.subject }} · {{ task.duration || 30 }}m</text>
+            </view>
+            <text class="option-badge num-tabular">{{ formatFocusScheduledTime(task.scheduledAt) }}</text>
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="#637748" />
+          </view>
+        </view>
+
+        <view v-if="pendingTasks.length > 0" class="group-section">
+          <text class="group-label">待办清单</text>
+          <view
+            v-for="task in pendingTasks"
+            :key="task.id"
+            class="task-option"
+            :class="{ 'is-selected': selectedTaskId === task.id }"
+            role="button"
+            @click="choose(task)"
+          >
+            <view class="option-icon">
+              <LineIcon name="layers" size="15px" color="var(--text-muted, #7A7A75)" />
+            </view>
+            <view class="option-body">
+              <text class="option-title">{{ task.name }}</text>
+              <text v-if="task.subject" class="option-meta">{{ task.subject }}</text>
+            </view>
+            <text class="option-badge num-tabular">{{ task.duration || 30 }}m</text>
+            <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="#637748" />
+          </view>
+        </view>
+      </scroll-view>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import LineIcon from '@/components/LineIcon.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
+import { formatFocusScheduledTime } from '@/services/focusController'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
 
 const props = defineProps<{
   visible: boolean
+  selectedTaskId?: string
 }>()
 
-const emit = defineEmits(['update:visible', 'select'])
+const emit = defineEmits<{
+  (event: 'update:visible', value: boolean): void
+  (event: 'select', task: Task | null): void
+}>()
+
+useEscapeKey(() => props.visible, close)
 
 const taskStore = useTaskStore()
 
-const displayTasks = computed(() => {
-  return taskStore.pendingTasks || []
-})
+const scheduledTasks = computed(() =>
+  taskStore.allTasks
+    .filter(task => !task.is_deleted && task.scheduledAt && Number.isFinite(Date.parse(task.scheduledAt)) && task.status !== 'completed' && task.status !== 'cancelled')
+    .sort((a, b) => (Date.parse(a.scheduledAt || '') || 0) - (Date.parse(b.scheduledAt || '') || 0)),
+)
 
-const close = () => {
+const pendingTasks = computed(() => taskStore.pendingTasks)
+
+function close() {
   emit('update:visible', false)
 }
 
-const selectTask = (task: Task) => {
+function choose(task: Task | null) {
   emit('select', task)
   close()
 }
 </script>
 
 <style scoped>
-.popover-wrapper {
-  position: absolute;
-  top: calc(100% + 18rpx);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  width: 560rpx;
-  max-width: 90vw;
+.zen-sheet-mask.task-sheet-mask {
+  background-color: rgba(28, 28, 26, 0.42);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
 }
 
-/* 透明背景层，点击任何外部区域自动收起菜单 */
-.popover-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  z-index: 999;
-}
-
-/* 下落气泡菜单面板 */
-.popover-menu {
-  position: relative;
-  z-index: 1000;
-  width: 100%;
-  background: var(--color-bg-elevated, rgba(255, 255, 255, 0.96));
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  border-radius: 36rpx;
-  box-shadow: 0 24rpx 64rpx rgba(0, 0, 0, 0.14), 0 4rpx 16rpx rgba(0, 0, 0, 0.04);
-  padding: 16rpx 0 20rpx;
-  overflow: visible;
-}
-
-/* 指向上方“点击选择任务”按钮的尖角指示器 */
-.popover-arrow {
-  position: absolute;
-  top: -16rpx;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 16rpx solid transparent;
-  border-right: 16rpx solid transparent;
-  border-bottom: 16rpx solid var(--color-bg-elevated, #ffffff);
-  filter: drop-shadow(0 -4rpx 6rpx rgba(0, 0, 0, 0.05));
-}
-
-.popover-anim-enter-active {
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.popover-anim-leave-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.popover-anim-enter-from, .popover-anim-leave-to {
-  opacity: 0;
-  transform: translateY(-24rpx) scale(0.96);
-}
-
-.popover-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20rpx 36rpx 16rpx;
-}
-.pop-title {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 2rpx;
-  opacity: 0.85;
-}
-
-.popover-scroll {
-  max-height: 480rpx;
-  padding: 8rpx 0 12rpx;
-}
-
-.empty-state {
+.zen-sheet-body.sheet-panel {
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 220rpx;
-  opacity: 0.6;
+  background-color: var(--color-bg-primary, #F7F2EB);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: 1px solid rgba(139, 154, 110, 0.25);
+  box-shadow: 0 -12px 36px rgba(28, 28, 26, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
-.empty-icon { font-size: 56rpx; margin-bottom: 16rpx; }
-.empty-text { font-size: 26rpx; color: var(--text-muted); }
 
-.task-item {
+.sheet-header {
   display: flex;
   align-items: center;
-  padding: 24rpx 36rpx;
-  margin: 4rpx 12rpx;
-  border-radius: 24rpx;
-  transition: background 0.2s;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-shrink: 0;
 }
-.task-item:active {
-  background: rgba(0, 0, 0, 0.06);
+
+.sheet-title {
+  font-size: var(--font-size-lg, 17px);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--text-primary, #1C1C1A);
 }
-.t-color-bar {
-  width: 8rpx;
-  height: 52rpx;
-  border-radius: 4rpx;
-  margin-right: 20rpx;
+
+.sheet-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background-color: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid rgba(45, 55, 40, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background-color 0.2s var(--ease-out), border-color 0.2s ease, transform 0.16s var(--ease-out);
 }
-.t-info {
+
+.sheet-close-btn:hover {
+  background-color: rgba(139, 154, 110, 0.12);
+  border-color: rgba(139, 154, 110, 0.28);
+}
+
+.sheet-close-btn:active {
+  transform: scale(0.92);
+}
+
+.sheet-scroll {
   flex: 1;
+  height: 0;
+  min-height: 0;
+  max-height: 52vh;
+}
+
+.group-section {
+  margin-top: 14px;
+}
+
+.group-label {
+  display: block;
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-muted, #7A7A75);
+  margin-bottom: 8px;
+}
+
+.task-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background-color: var(--color-bg-tertiary, #FAF7F2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(139, 154, 110, 0.18);
+  box-shadow: 0 1px 3px rgba(28, 28, 26, 0.03);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.task-option:hover {
+  background-color: rgba(139, 154, 110, 0.10);
+  border-color: rgba(139, 154, 110, 0.30);
+}
+
+.task-option.is-selected {
+  background-color: rgba(139, 154, 110, 0.16);
+  border-color: rgba(139, 154, 110, 0.38);
+  box-shadow: none;
+}
+
+.option-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background-color: rgba(139, 154, 110, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.option-icon.is-free {
+  background-color: rgba(110, 136, 152, 0.12);
+}
+
+.task-option.is-selected .option-icon {
+  background-color: var(--color-bg-tertiary, #FAF7F2);
+}
+
+.option-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 2px;
 }
-.t-name {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--text-primary);
+
+.option-title {
+  font-size: var(--font-size-sm, 13px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, #1C1C1A);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.t-subject {
-  font-size: 22rpx;
-  color: var(--text-muted);
+
+.task-option.is-selected .option-title {
+  color: #637748;
+  font-weight: var(--font-weight-bold, 700);
 }
-.check-icon {
-  font-size: 26rpx;
-  color: var(--color-zen-stone, #a8a8a5);
-  opacity: 0.6;
+
+.option-meta {
+  font-size: var(--text-2xs, 11px);
+  color: var(--text-muted, #7A7A75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+.option-badge {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background-color: rgba(139, 154, 110, 0.12);
+  color: #637748;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.option-badge.is-free-badge {
+  background-color: rgba(110, 136, 152, 0.12);
+  color: #536B79;
+}
+
+/* #ifdef H5 */
+@media (min-width: 540px) {
+  .zen-sheet-body.sheet-panel {
+    border: 1px solid rgba(139, 154, 110, 0.25);
+    box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.13), 0 8px 24px -6px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+}
+/* #endif */
 </style>

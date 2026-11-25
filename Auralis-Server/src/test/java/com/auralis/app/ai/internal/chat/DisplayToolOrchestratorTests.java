@@ -10,7 +10,6 @@ import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderToolCallDelta;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.ChatSseEnvelope;
-import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
 import com.auralis.app.ai.MessageView;
@@ -90,7 +89,7 @@ class DisplayToolOrchestratorTests {
     void providerFailureAndDisconnectedErrorEventsStillReachTerminalPersistence(boolean persistenceFails) throws Exception {
         Fixture fixture = new Fixture();
         ConversationEntity conversation = new ConversationEntity(fixture.conversationId, fixture.userId,
-                "Chat", null, ConversationPurpose.GENERAL, null);
+                "Chat", null);
         conversation.reserveChatRun(fixture.runId);
         java.util.stream.IntStream.range(1, 7).forEach(ignored -> conversation.advancePendingChatRunFence(fixture.runId));
         ConversationRepository conversationRows = mock(ConversationRepository.class);
@@ -373,7 +372,7 @@ class DisplayToolOrchestratorTests {
 
     private ConversationView historyView(Fixture fixture, List<MessageView> messages) {
         return new ConversationView(fixture.conversationId, "Chat", messages, Instant.now(), Instant.now(), null,
-                0L, ConversationPurpose.GENERAL, null, (short) 1, true, null,
+                0L, (short) 1, true, null,
                 com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null);
     }
 
@@ -854,8 +853,7 @@ class DisplayToolOrchestratorTests {
                             new AiChatRequestMapper(mapper), ChatAgentProperties.defaults(), 4096, 10_000,
                             true, invocation.getArgument(2)));
             when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
-                    List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, ConversationPurpose.GENERAL,
-                    null, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
+                    List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));
             when(messages.findById(userMessageId)).thenReturn(Optional.of(userMessage));
             when(persistence.conversationRunHistory(userId, conversationId)).thenReturn(List.of());
             AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);

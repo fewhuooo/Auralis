@@ -14,8 +14,6 @@ public interface ConversationRepository extends JpaRepository<ConversationEntity
     @Query("""
             select conversation from ConversationEntity conversation
             where conversation.userId = :userId and conversation.deletedAt is null
-              and (conversation.purpose = com.auralis.app.ai.ConversationPurpose.GENERAL
-                   or conversation.purpose is null)
             order by conversation.updatedAt desc, conversation.id asc
             """)
     List<ConversationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);

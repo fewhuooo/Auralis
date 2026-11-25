@@ -9,17 +9,21 @@ export function useAiUsage() {
   const loadingAiUsage = ref(false)
   const aiUsageError = ref<string>('')
   let currentUsageRequestGeneration = 0
-  const currentAccountIdentity = () => `${authStore.user?.id || ''}:${authStore.token || ''}`
+  let lastOwnerIdentity = ''
+  const currentAccountIdentity = () => {
+    if (!authStore.isAuthenticated || !authStore.token || !authStore.user?.id) return ''
+    return `${authStore.user.id}:${authStore.serverDeviceId || 'dev'}`
+  }
 
   const fetchAiUsage = async () => {
-    if (!authStore.token) {
+    const requestIdentity = currentAccountIdentity()
+    if (!requestIdentity) {
       aiUsage.value = null
       aiUsageError.value = ''
       loadingAiUsage.value = false
       return
     }
     const gen = nextRequestGeneration()
-    const requestIdentity = currentAccountIdentity()
     currentUsageRequestGeneration = gen
     loadingAiUsage.value = true
     aiUsageError.value = ''
@@ -27,10 +31,9 @@ export function useAiUsage() {
       const res = await getAiUsage()
       if (!isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentAccountIdentity())) return
       aiUsage.value = res
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentAccountIdentity())) return
-      aiUsage.value = null
-      aiUsageError.value = err.message || '获取额度失败'
+      aiUsageError.value = err instanceof Error && err.message ? err.message : '获取额度失败'
     } finally {
       if (isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentAccountIdentity())) {
         loadingAiUsage.value = false
@@ -38,19 +41,35 @@ export function useAiUsage() {
     }
   }
 
-  watch([() => authStore.token, () => authStore.user?.id], () => {
-    currentUsageRequestGeneration = nextRequestGeneration()
-    aiUsage.value = null
-    aiUsageError.value = ''
-    loadingAiUsage.value = false
-    if (authStore.token) {
-      fetchAiUsage()
-    }
-  }, { flush: 'sync' })
+  watch(
+    [() => authStore.isAuthenticated, () => authStore.user?.id, () => authStore.serverDeviceId, () => Boolean(authStore.token)],
+    () => {
+      const nextIdentity = currentAccountIdentity()
+      if (!nextIdentity) {
+        currentUsageRequestGeneration = nextRequestGeneration()
+        lastOwnerIdentity = ''
+        aiUsage.value = null
+        aiUsageError.value = ''
+        loadingAiUsage.value = false
+        return
+      }
+      if (nextIdentity !== lastOwnerIdentity) {
+        currentUsageRequestGeneration = nextRequestGeneration()
+        lastOwnerIdentity = nextIdentity
+        aiUsage.value = null
+        aiUsageError.value = ''
+        loadingAiUsage.value = false
+        void fetchAiUsage()
+      }
+    },
+    { flush: 'sync', immediate: true },
+  )
 
   onMounted(() => {
-    if (authStore.token) {
-      fetchAiUsage()
+    const identity = currentAccountIdentity()
+    if (identity && identity !== lastOwnerIdentity) {
+      lastOwnerIdentity = identity
+      void fetchAiUsage()
     }
   })
 

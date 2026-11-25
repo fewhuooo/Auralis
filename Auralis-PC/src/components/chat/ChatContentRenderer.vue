@@ -5,19 +5,23 @@ import ChatContentBlock from '@/components/chat/ChatContentBlock.vue'
 import { createChatContentProjectionState, getChatActivityDraft, projectChatContentParts, updateChatActivityDraft } from '@/services/chatContentProjection'
 import { createSmoothStreamBuffer, type SmoothStreamController } from '@/services/smoothStreamBuffer'
 import { useChatStore } from '@/store/useChatStore'
+import { resolveStreamTextDrainAction } from '@/utils/chatProcessFormat'
 import { renderMarkdown } from '@/utils/markdown'
 import type { ChatActivityAnswer, ChatActivityDraft, ChatContentPart, ChatContentProjectionState } from '@/types/chatContent'
 
 const props = withDefaults(defineProps<{
   parts: readonly ChatContentPart[]
   streaming?: boolean
+  settling?: boolean
   busy?: boolean
   readOnly?: boolean
-}>(), { streaming: false, busy: false, readOnly: false })
+}>(), { streaming: false, settling: false, busy: false, readOnly: false })
 
 const emit = defineEmits<{
   draftChange: [componentId: string, draft: ChatActivityDraft]
   submit: [questionId: string, answer: ChatActivityAnswer]
+  drainChange: [draining: boolean]
+  textProgress: []
 }>()
 
 const chatStore = useChatStore()
@@ -27,19 +31,33 @@ const projection = reactive<ChatContentProjectionState>(createChatContentProject
 const smoothedActiveText = ref('')
 const isTextStreamingActive = ref(false)
 const currentStreamingTextId = ref<string | null>(null)
+let lastCompletedTextId: string | null = null
 let smoothBuffer: SmoothStreamController | null = null
+
+function updateDrainingState(active: boolean): void {
+  if (isTextStreamingActive.value !== active) {
+    isTextStreamingActive.value = active
+    emit('drainChange', active)
+  }
+}
 
 smoothBuffer = createSmoothStreamBuffer(
   (text) => {
     smoothedActiveText.value = text
+    emit('textProgress')
   },
   {
-    minSpeed: 18, // 蓄水池偏低时的保底拉伸速度（约 55ms/字），以时间换空间跨越网络空窗
-    baseSpeed: 28, // 黄金阅读巡航速度（约 35ms/字），极度连贯自然的打字节奏
-    maxSpeed: 70, // 最大消峰追赶上限，杜绝文字瞬闪
-    finishSpeed: 48, // 结束收尾平稳过渡
+    minSpeed: 14, // 蓄水池偏低时的保底拉伸速度，以时间换空间跨越网络空窗
+    baseSpeed: 28, // 温润从容的自然阅读巡航速度
+    maxSpeed: 105, // 限制峰值冲刺上限，防止高并发大段文本突然刷屏
+    finishSpeed: 58, // 流结束收尾平滑排空速度
+    speedDampingFactor: 3.8,
     onComplete: () => {
-      isTextStreamingActive.value = false
+      if (currentStreamingTextId.value) {
+        lastCompletedTextId = currentStreamingTextId.value
+      }
+      currentStreamingTextId.value = null
+      updateDrainingState(false)
     },
   },
 )
@@ -47,52 +65,74 @@ smoothBuffer = createSmoothStreamBuffer(
 onBeforeUnmount(() => {
   smoothBuffer?.destroy()
   smoothBuffer = null
+  updateDrainingState(false)
 })
 
-watch(() => props.parts, (parts) => {
-  projection.parts = projectChatContentParts(parts)
-  const lastIndex = projection.parts.length - 1
-  const lastPart = projection.parts[lastIndex]
+watch(
+  [() => props.parts, () => props.streaming, () => props.settling] as const,
+  ([parts, isStreaming, isSettling]) => {
+    projection.parts = projectChatContentParts(parts)
+    const lastIndex = projection.parts.length - 1
+    const lastPart = projection.parts[lastIndex]
+    const action = resolveStreamTextDrainAction({
+      streaming: isStreaming,
+      settling: isSettling,
+      partId: lastPart?.id ?? null,
+      partKind: !lastPart ? 'none' : lastPart.kind === 'text' ? 'text' : 'non_text',
+      partText: lastPart?.kind === 'text' ? lastPart.text : '',
+      activeTextId: currentStreamingTextId.value,
+      isActive: isTextStreamingActive.value,
+      lastCompletedTextId,
+    })
 
-  if (props.streaming && lastPart && lastPart.kind === 'text') {
-    // 文本 -> 块 -> 文本交错防御：切换到新文本段前先 flush 前序缓冲，并为新文本段重设蓄洪池
-    if (currentStreamingTextId.value !== lastPart.id) {
-      if (isTextStreamingActive.value) {
-        smoothBuffer?.flush()
+    if (action === 'stream_push' && lastPart?.kind === 'text') {
+      // 文本 -> 块 -> 文本交错防御：切换到新文本段前清零展示态与缓冲，避免闪旧文及多余完成回调
+      if (currentStreamingTextId.value !== lastPart.id) {
+        smoothedActiveText.value = ''
+        smoothBuffer?.reset()
+        currentStreamingTextId.value = lastPart.id
       }
-      currentStreamingTextId.value = lastPart.id
-      smoothBuffer?.reset()
+      lastCompletedTextId = null
+      updateDrainingState(true)
+      smoothBuffer?.push(lastPart.text)
+      return
     }
-    isTextStreamingActive.value = true
-    smoothBuffer?.push(lastPart.text)
-  } else if (!props.streaming && lastPart && lastPart.kind === 'text') {
-    currentStreamingTextId.value = null
-    if (isTextStreamingActive.value) {
+
+    if (action === 'finish_drain' && lastPart?.kind === 'text') {
+      if (currentStreamingTextId.value !== lastPart.id) {
+        smoothedActiveText.value = ''
+        smoothBuffer?.reset()
+        currentStreamingTextId.value = lastPart.id
+      }
+      updateDrainingState(true)
       smoothBuffer?.finish(lastPart.text)
-    } else {
+      return
+    }
+
+    if (action === 'sync_immediate' && lastPart?.kind === 'text') {
+      currentStreamingTextId.value = null
       smoothBuffer?.reset()
       smoothedActiveText.value = lastPart.text
+      updateDrainingState(false)
+      return
     }
-  } else {
+
     // 末尾非文本（例如推入结构化块或无内容）：先 flush 前序文本确保全部内容平稳落定
     currentStreamingTextId.value = null
-    if (isTextStreamingActive.value) {
+    if (action === 'flush_and_clear') {
       smoothBuffer?.flush()
     } else {
       smoothBuffer?.reset()
     }
-    isTextStreamingActive.value = false
     smoothedActiveText.value = ''
-  }
-}, { immediate: true, deep: true })
+    updateDrainingState(false)
+  },
+  { immediate: true, deep: true },
+)
 
-watch(() => props.streaming, (isStreaming) => {
-  const lastIndex = projection.parts.length - 1
-  const lastPart = projection.parts[lastIndex]
-  if (!isStreaming && lastPart && lastPart.kind === 'text') {
-    smoothBuffer?.finish(lastPart.text)
-  }
-})
+function isPartActivelyStreaming(index: number): boolean {
+  return index === projection.parts.length - 1 && (props.streaming || isTextStreamingActive.value)
+}
 
 function getRenderedText(part: Extract<ChatContentPart, { kind: 'text' }>, index: number): string {
   // 只要平滑蓄洪池仍在舒缓吐字，且是当前活跃追踪的末尾文本块，就展示平滑推进中的文本，避免收尾瞬间突跳
@@ -129,9 +169,9 @@ function onSubmit(questionId: string, answer: ChatActivityAnswer): void {
       <div
         v-if="part.kind === 'text'"
         class="chat-content-renderer__text"
-        :class="{ 'is-streaming-active': streaming && index === projection.parts.length - 1 }"
-        v-memo="[part.id, getRenderedText(part, index), streaming && index === projection.parts.length - 1]"
-        v-html="renderMarkdown(getRenderedText(part, index), streaming && index === projection.parts.length - 1)"
+        :class="{ 'is-streaming-active': isPartActivelyStreaming(index) }"
+        v-memo="[part.id, getRenderedText(part, index), isPartActivelyStreaming(index)]"
+        v-html="renderMarkdown(getRenderedText(part, index), isPartActivelyStreaming(index))"
       />
       <ChatContentBlock
         v-else-if="part.component === 'steps' || part.component === 'compare' || part.component === 'roadmap' || part.component === 'chart'"
@@ -192,6 +232,47 @@ function onSubmit(questionId: string, answer: ChatActivityAnswer): void {
 }
 
 .chat-content-renderer__text :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-content-renderer__text :deep(h2) {
+  font-size: 1.14em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 18px 0 8px;
+  color: var(--text-primary);
+}
+
+.chat-content-renderer__text :deep(h3) {
+  font-size: 1.04em;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 14px 0 6px;
+  color: var(--text-primary);
+}
+
+.chat-content-renderer__text :deep(ul),
+.chat-content-renderer__text :deep(ol) {
+  padding-left: 1.55em;
+  margin: 10px 0 12px;
+  list-style-position: outside;
+}
+
+.chat-content-renderer__text :deep(li) {
+  margin-bottom: 11px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.chat-content-renderer__text :deep(li:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-content-renderer__text :deep(li > p) {
+  margin: 0 0 6px;
+}
+
+.chat-content-renderer__text :deep(li > p:last-child) {
   margin-bottom: 0;
 }
 
@@ -335,6 +416,80 @@ html.dark .chat-content-renderer__text :deep(tbody tr:hover) {
   overflow-y: hidden;
 }
 
+/* 8px 橄榄绿半透明柔和跟随圆点 */
+.chat-content-renderer__text :deep(.stream-cursor-dot) {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 5px;
+  border-radius: 50%;
+  vertical-align: -0.5px;
+  background-color: rgba(110, 127, 80, 0.78);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.16);
+  animation: stream-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stream-dot-pulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.95;
+  }
+}
+
+/* 跨行表格与块级公式（$$...$$ / \[...\]）闭合前等高稳定草稿容器 */
+.chat-content-renderer__text :deep(.streaming-block-draft) {
+  min-height: 76px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: #F4EFE6;
+  border: 1px solid #EAE6DD;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-content-renderer__text :deep(.streaming-block-draft__label) {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-sage-dark, #5C6B44);
+  letter-spacing: 0.01em;
+}
+
+.chat-content-renderer__text :deep(.streaming-block-draft__raw) {
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-family-mono, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted, #6F6E69);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+html.dark .chat-content-renderer__text :deep(.streaming-block-draft) {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .chat-content-renderer__text :deep(.streaming-block-draft__label) {
+  color: #A3B899;
+}
+
+html.dark .chat-content-renderer__text :deep(.streaming-block-draft__raw) {
+  color: rgba(235, 232, 224, 0.72);
+}
+
 /* LaTeX 流式未闭合时的柔和降级胶囊 */
 .chat-content-renderer__text :deep(.katex-streaming-pill),
 .chat-content-renderer__text :deep(.katex-streaming-inline-pill) {
@@ -368,6 +523,7 @@ html.dark .chat-content-renderer__text :deep(tbody tr:hover) {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-content-renderer__text.is-streaming-active,
+  .chat-content-renderer__text :deep(.stream-cursor-dot),
   .chat-content-renderer__text :deep(.katex-streaming-pill) {
     animation: none;
   }

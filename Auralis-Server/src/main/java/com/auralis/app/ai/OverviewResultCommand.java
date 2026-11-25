@@ -1,8 +1,6 @@
 package com.auralis.app.ai;
 
 import com.auralis.app.ai.OverviewDtos.OverviewResponse;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -20,17 +18,7 @@ public record OverviewResultCommand(
         String inputFingerprint,
         Instant outlineGeneratedAt,
         Instant summaryGeneratedAt,
-        @NotNull @Valid OverviewResponse result,
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        @Schema(nullable = true, types = {"object", "null"}) @Valid OverviewInputDescriptor inputDescriptor) {
-
-    public OverviewResultCommand(Long baseVersion, UUID clientWriteId, OverviewMode mode,
-                                 UUID ingestionRevision, List<OverviewSourceManifestEntry> sourceManifest,
-                                 String inputFingerprint, Instant outlineGeneratedAt, Instant summaryGeneratedAt,
-                                 OverviewResponse result) {
-        this(baseVersion, clientWriteId, mode, ingestionRevision, sourceManifest, inputFingerprint,
-                outlineGeneratedAt, summaryGeneratedAt, result, null);
-    }
+        @NotNull @Valid OverviewResponse result) {
 
     public OverviewResultCommand {
         sourceManifest = sourceManifest == null ? null : List.copyOf(sourceManifest);

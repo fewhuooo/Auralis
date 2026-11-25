@@ -5,8 +5,199 @@ import { projectChatContentPart } from './chatContentProjection.ts'
 export interface ChatToolActivity {
   id: string
   name: string
+  label?: string
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
 }
+
+export function normalizeToolTraceStatus(raw: unknown): ChatToolActivity['status'] {
+  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (normalized === 'failed' || normalized === 'error') return 'FAILED'
+  if (normalized === 'running' || normalized === 'started') return 'RUNNING'
+  return 'COMPLETED'
+}
+
+export function projectToolTrace(rawTools: unknown): ChatToolActivity[] {
+  if (!Array.isArray(rawTools)) return []
+  const tools: ChatToolActivity[] = []
+  for (let i = 0; i < rawTools.length; i += 1) {
+    const entry = rawTools[i]
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const rawId = typeof item.id === 'string' && item.id
+      ? item.id
+      : (typeof item.toolCallId === 'string' && item.toolCallId ? item.toolCallId : '')
+    const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '工具'
+    if (!rawId && typeof item.name !== 'string') continue
+    const id = rawId || `trace-${i}`
+    const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
+    const status = normalizeToolTraceStatus(item.status)
+    tools.push(rawLabel ? { id, name, label: rawLabel, status } : { id, name, status })
+  }
+  return tools
+}
+
+export function buildFallbackProcessTimeline(
+  reasoningText?: string,
+  tools?: readonly ChatToolActivity[],
+): ChatProcessTimelineItem[] {
+  const items: ChatProcessTimelineItem[] = []
+  if (reasoningText) {
+    items.push({ id: 'reasoning:0', kind: 'reasoning', text: reasoningText })
+  }
+  if (tools && tools.length > 0) {
+    for (const tool of tools) {
+      items.push({ id: `tool:${tool.id || items.length}`, kind: 'tool', tool })
+    }
+  }
+  return items
+}
+
+export interface ReconcileProcessMetadataInput {
+  mappedReasoning?: string
+  existingReasoning?: string
+  mappedTools?: readonly ChatToolActivity[]
+  statusTools?: readonly ChatToolActivity[]
+  existingTools?: readonly ChatToolActivity[]
+  existingTimeline?: readonly ChatProcessTimelineItem[]
+  isTerminal?: boolean
+  terminalFailed?: boolean
+}
+
+export interface ReconcileProcessMetadataResult {
+  reasoningText?: string
+  tools?: ChatToolActivity[]
+  processTimeline?: ChatProcessTimelineItem[]
+}
+
+function settleToolStatus(
+  tool: ChatToolActivity,
+  isTerminal: boolean,
+  terminalFailed: boolean,
+): ChatToolActivity {
+  if (!isTerminal || tool.status !== 'RUNNING') return tool
+  return {
+    ...tool,
+    status: terminalFailed ? 'FAILED' : 'COMPLETED',
+  }
+}
+
+function pickPreferredToolLabel(
+  prev: ChatToolActivity,
+  incoming: ChatToolActivity,
+): string | undefined {
+  const incomingLabel = incoming.label?.trim()
+  const prevLabel = prev.label?.trim()
+  if (prevLabel && prevLabel !== prev.name && (!incomingLabel || incomingLabel === incoming.name)) {
+    return prev.label
+  }
+  return incomingLabel ? incoming.label : prev.label
+}
+
+function mergeProcessToolLists(
+  lists: ReadonlyArray<readonly ChatToolActivity[] | undefined>,
+): ChatToolActivity[] {
+  const merged = new Map<string, ChatToolActivity>()
+  for (const list of lists) {
+    if (!list) continue
+    for (const tool of list) {
+      const prev = merged.get(tool.id)
+      if (!prev) {
+        merged.set(tool.id, tool)
+        continue
+      }
+      const nextStatus = tool.status !== 'RUNNING' || prev.status === 'RUNNING'
+        ? tool.status
+        : prev.status
+      merged.set(tool.id, {
+        ...prev,
+        ...tool,
+        name: tool.name || prev.name,
+        label: pickPreferredToolLabel(prev, tool),
+        status: nextStatus,
+      })
+    }
+  }
+  return Array.from(merged.values())
+}
+
+/** 断线恢复或切会话对账时，合并已有过程时间线、补全工具标签与终态，并保留断点续接的思考尾段。 */
+export function reconcileProcessMetadata(
+  input: ReconcileProcessMetadataInput,
+): ReconcileProcessMetadataResult {
+  const isTerminal = Boolean(input.isTerminal)
+  const terminalFailed = Boolean(input.terminalFailed)
+  const mappedReasoning = input.mappedReasoning ?? ''
+  const existingReasoning = input.existingReasoning ?? ''
+  const bestReasoning = mappedReasoning.length >= existingReasoning.length
+    ? mappedReasoning
+    : existingReasoning
+  const reasoningText = bestReasoning || undefined
+
+  const mergedTools = mergeProcessToolLists([
+    input.existingTools,
+    input.mappedTools,
+    input.statusTools,
+  ])
+  const settledTools = mergedTools.map((tool) =>
+    settleToolStatus(tool, isTerminal, terminalFailed),
+  )
+  const toolsById = new Map(settledTools.map((tool) => [tool.id, tool]))
+
+  let processTimeline: ChatProcessTimelineItem[] | undefined
+  if (input.existingTimeline && input.existingTimeline.length > 0) {
+    const seenToolIds = new Set<string>()
+    const nextTimeline: ChatProcessTimelineItem[] = input.existingTimeline.map((item) => {
+      if (item.kind !== 'tool') return item
+      seenToolIds.add(item.tool.id)
+      const matched = toolsById.get(item.tool.id)
+      return {
+        id: item.id,
+        kind: 'tool',
+        tool: matched ?? settleToolStatus(item.tool, isTerminal, terminalFailed),
+      }
+    })
+    for (const tool of settledTools) {
+      if (!seenToolIds.has(tool.id)) {
+        nextTimeline.push({ id: `tool:${tool.id}`, kind: 'tool', tool })
+      }
+    }
+    const existingTimelineReasoning = nextTimeline
+      .filter((item): item is Extract<ChatProcessTimelineItem, { kind: 'reasoning' }> => item.kind === 'reasoning')
+      .map((item) => item.text)
+      .join('')
+    if (reasoningText && reasoningText.length > existingTimelineReasoning.length) {
+      if (!existingTimelineReasoning) {
+        nextTimeline.push({ id: `reasoning:${nextTimeline.length}`, kind: 'reasoning', text: reasoningText })
+      } else if (reasoningText.startsWith(existingTimelineReasoning)) {
+        const suffix = reasoningText.slice(existingTimelineReasoning.length)
+        if (suffix) {
+          nextTimeline.push({ id: `reasoning:${nextTimeline.length}`, kind: 'reasoning', text: suffix })
+        }
+      }
+    }
+    processTimeline = nextTimeline
+  } else if (reasoningText || settledTools.length > 0) {
+    processTimeline = buildFallbackProcessTimeline(reasoningText, settledTools)
+  }
+
+  return {
+    reasoningText,
+    tools: settledTools.length > 0 ? settledTools : undefined,
+    processTimeline,
+  }
+}
+
+export type ChatProcessTimelineItem =
+  | {
+      id: string
+      kind: 'reasoning'
+      text: string
+    }
+  | {
+      id: string
+      kind: 'tool'
+      tool: ChatToolActivity
+    }
 
 export interface ChatStreamState {
   conversationId?: string
@@ -20,6 +211,7 @@ export interface ChatStreamState {
   reasoningText?: string
   parts: readonly ChatContentPart[]
   tools: readonly ChatToolActivity[]
+  processTimeline: readonly ChatProcessTimelineItem[]
   executionActive: boolean
   terminal?: 'COMPLETED' | 'FAILED' | 'CANCELLED'
   safeErrorCode?: string
@@ -33,6 +225,7 @@ export function createChatStreamState(initial?: Partial<ChatStreamState>): ChatS
     reasoningText: '',
     parts: [],
     tools: [],
+    processTimeline: [],
     executionActive: true,
     ...initial,
   }
@@ -206,9 +399,17 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     case 'reasoning.delta': {
       const text = typeof event.payload.text === 'string' ? event.payload.text : ''
       if (text) {
+        const timeline = [...next.processTimeline]
+        const lastEntry = timeline[timeline.length - 1]
+        if (lastEntry && lastEntry.kind === 'reasoning') {
+          timeline[timeline.length - 1] = { ...lastEntry, text: lastEntry.text + text }
+        } else {
+          timeline.push({ id: `reasoning:${timeline.length}`, kind: 'reasoning', text })
+        }
         next = {
           ...next,
           reasoningText: (next.reasoningText || '') + text,
+          processTimeline: timeline,
         }
       }
       break
@@ -287,9 +488,28 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     case 'tool.started': {
       const id = String(event.payload.toolCallId || '')
       if (id) {
+        const name = String(event.payload.name || '工具')
+        const rawLabel = typeof event.payload.label === 'string' ? event.payload.label.trim() : ''
+        const tool: ChatToolActivity = rawLabel
+          ? { id, name, label: rawLabel, status: 'RUNNING' }
+          : { id, name, status: 'RUNNING' }
+        const existingIndex = next.tools.findIndex((item) => item.id === id)
+        const tools =
+          existingIndex >= 0
+            ? next.tools.map((item, idx) => (idx === existingIndex ? tool : item))
+            : [...next.tools, tool]
+        const timelineId = `tool:${id}`
+        const timelineIndex = next.processTimeline.findIndex((item) => item.id === timelineId)
+        const processTimeline =
+          timelineIndex >= 0
+            ? next.processTimeline.map((item, idx) =>
+                idx === timelineIndex ? { id: timelineId, kind: 'tool' as const, tool } : item
+              )
+            : [...next.processTimeline, { id: timelineId, kind: 'tool' as const, tool }]
         next = {
           ...next,
-          tools: [...next.tools, { id, name: String(event.payload.name || '工具'), status: 'RUNNING' }],
+          tools,
+          processTimeline,
         }
       }
       break
@@ -298,10 +518,20 @@ export function reduceChatStreamEvent(state: ChatStreamState, event: ChatStreamE
     case 'tool.completed':
     case 'tool.error': {
       const id = String(event.payload.toolCallId || '')
+      const status = event.event === 'tool.error' ? 'FAILED' : 'COMPLETED'
+      const rawName = typeof event.payload.name === 'string' ? event.payload.name.trim() : ''
+      const rawLabel = typeof event.payload.label === 'string' ? event.payload.label.trim() : ''
+      const updateTool = (tool: ChatToolActivity): ChatToolActivity => ({
+        ...tool,
+        ...(rawName ? { name: rawName } : {}),
+        ...(rawLabel ? { label: rawLabel } : {}),
+        status,
+      })
       next = {
         ...next,
-        tools: next.tools.map((tool) =>
-          tool.id === id ? { ...tool, status: event.event === 'tool.error' ? 'FAILED' : 'COMPLETED' } : tool
+        tools: next.tools.map((tool) => (tool.id === id ? updateTool(tool) : tool)),
+        processTimeline: next.processTimeline.map((item) =>
+          item.kind === 'tool' && item.tool.id === id ? { ...item, tool: updateTool(item.tool) } : item
         ),
       }
       break

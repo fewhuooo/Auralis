@@ -1,9 +1,19 @@
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import { localDb } from '@/services/localDb'
-import { localDataScope } from '@/services/localDataScope'
-import { uuidv7 } from '@/utils/uuid'
+import { formatLocalTimeHHmm } from '@/utils/dateKey'
 import { Lexorank } from '@/utils/lexorank'
+import {
+  compareTaskPosition,
+  getPendingTodos,
+  getScheduledTasksForLocalDate,
+  getVisiblePendingTodos,
+  isOverdueTask,
+  isScheduledCompletionLocked,
+  normalizeTaskPosition,
+} from '@/utils/taskSyncMapper'
+import { uuidv7 } from '@/utils/uuid'
+import { useAuthStore } from './useAuthStore'
 
 export interface Task {
   id?: string
@@ -11,8 +21,10 @@ export interface Task {
   subject: string
   desc?: string
   duration: number
-  status: 'pending' | 'scheduled' | 'completed'
+  status: 'pending' | 'scheduled' | 'completed' | 'cancelled'
   startTime?: string
+  scheduledAt?: string
+  dueAt?: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete'
   position?: string
   sync_version?: number
@@ -20,87 +32,188 @@ export interface Task {
   subjectId?: string
 }
 
-export interface TimeSlot {
-  time: string
-  task: Task | null
-}
-
 export const useTaskStore = defineStore('task', () => {
-  const pendingTasks = ref<Task[]>([])
+  const authStore = useAuthStore()
+  const allTasks = ref<Task[]>([])
   const isSyncing = ref(false)
+  const updatingTaskIds = ref<string[]>([])
+  const retainedCompletedTodoIds = ref<Set<string>>(new Set())
+  let retainedScope: { generation: symbol; userId?: string; serverDeviceId?: string } | null = null
 
-  const timeSlots = ref<TimeSlot[]>([
-    { time: '08:00', task: null },
-    { time: '09:00', task: null },
-    { time: '10:00', task: null },
-    { time: '11:00', task: null },
-    { time: '12:00', task: null },
-    { time: '13:00', task: null },
-    { time: '14:00', task: null },
-    { time: '15:00', task: null },
-    { time: '16:00', task: null },
-    { time: '17:00', task: null },
-    { time: '18:00', task: null },
-    { time: '19:00', task: null },
-    { time: '20:00', task: null },
-    { time: '21:00', task: null },
-    { time: '22:00', task: null },
-  ])
-
-  const checkOnline = async (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      uni.getNetworkType({
-        success: (res) => {
-          resolve(res.networkType !== 'none')
-        },
-        fail: () => {
-          resolve(true)
-        }
-      })
-    })
+  function currentRetentionScope() {
+    return {
+      generation: authStore.getLoginGeneration(),
+      userId: authStore.user?.id,
+      serverDeviceId: authStore.serverDeviceId,
+    }
   }
 
-  const loadLocalTasks = async () => {
+  function isSameScope(
+    left: { generation: symbol; userId?: string; serverDeviceId?: string } | null,
+    right: { generation: symbol; userId?: string; serverDeviceId?: string },
+  ) {
+    return Boolean(left && left.generation === right.generation && left.userId === right.userId && left.serverDeviceId === right.serverDeviceId)
+  }
+
+  function syncRetentionScope() {
+    const current = currentRetentionScope()
+    if (!isSameScope(retainedScope, current)) {
+      retainedCompletedTodoIds.value = new Set()
+      retainedScope = current
+    }
+  }
+
+  function setTodoRetained(id: string, retain: boolean) {
+    syncRetentionScope()
+    const next = new Set(retainedCompletedTodoIds.value)
+    if (retain) next.add(id)
+    else next.delete(id)
+    retainedCompletedTodoIds.value = next
+  }
+
+  const pendingTasks = computed(() => getPendingTodos(allTasks.value))
+  const homePendingTasks = computed(() => {
+    const activeRetained = isSameScope(retainedScope, currentRetentionScope())
+      ? retainedCompletedTodoIds.value
+      : new Set<string>()
+    return getVisiblePendingTodos(allTasks.value, activeRetained)
+  })
+  const completedCount = computed(() => allTasks.value.filter(t => !t.is_deleted && t.status === 'completed').length)
+  const pendingCount = computed(() => pendingTasks.value.length)
+
+  function getScheduledTasksForDate(dateKey: string): Task[] {
+    return getScheduledTasksForLocalDate(allTasks.value, dateKey)
+  }
+
+  const checkOnline = async (): Promise<boolean> => new Promise((resolve) => {
+    uni.getNetworkType({
+      success: res => resolve(res.networkType !== 'none'),
+      fail: () => resolve(true),
+    })
+  })
+
+  async function loadLocalTasks() {
+    const scope = currentRetentionScope()
+    syncRetentionScope()
     try {
       const tasks = await localDb.getTasks()
-      pendingTasks.value = tasks.filter((t: Task) => t.status === 'pending')
-
-      // Clear slots
-      timeSlots.value.forEach(slot => { slot.task = null })
-
-      const scheduledTasks = tasks.filter((t: Task) => t.status !== 'pending')
-      scheduledTasks.forEach((t: Task) => {
-        const slot = timeSlots.value.find(s => s.time === t.startTime)
-        if (slot) {
-          slot.task = t
-        }
-      })
+      if (!isSameScope(scope, currentRetentionScope())) return
+      allTasks.value = tasks
     } catch (e) {
       console.error('[Mobile Store] Failed to load local tasks:', e)
     }
   }
 
-  const fetchTasks = async () => {
-    // 1. Read from local SQLite
-    await loadLocalTasks()
+  const suppressedOverdueFingerprints = new Map<string, string>()
 
-    // 2. Try bidirectional sync
-    try {
-      const { useSyncStore } = await import('./useSyncStore')
-      await useSyncStore().triggerSync()
-      await loadLocalTasks()
-    } catch (e) {
-      console.warn('[Mobile Store] Server unreachable, using local database cache:', e)
+  function overdueFingerprint(task: Pick<Task, 'sync_version' | 'scheduledAt' | 'dueAt' | 'duration' | 'name'>): string {
+    return JSON.stringify([task.sync_version ?? 0, task.scheduledAt ?? null, task.dueAt ?? null, task.duration ?? 30, task.name])
+  }
+
+  function isOverdueSuppressed(task: Task): boolean {
+    if (!task.id) return false
+    const expected = suppressedOverdueFingerprints.get(task.id)
+    if (!expected) return false
+    if (expected === overdueFingerprint(task)) return true
+    suppressedOverdueFingerprints.delete(task.id)
+    return false
+  }
+
+  function suppressOverdueRecovery(taskIds: string[]) {
+    for (const id of taskIds) {
+      const task = allTasks.value.find(item => item.id === id)
+      if (task) suppressedOverdueFingerprints.set(id, overdueFingerprint(task))
     }
   }
 
-  const recordMutation = async (entityType: 'block' | 'task', entityId: string, action: 'create' | 'update' | 'delete', payload: any) => {
+  watch(
+    () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+    () => {
+      allTasks.value = []
+      retainedCompletedTodoIds.value = new Set()
+      retainedScope = null
+      suppressedOverdueFingerprints.clear()
+    },
+    { flush: 'sync' },
+  )
+
+  let recoveringOverdue = false
+
+  async function resolveClientId(): Promise<string> {
     const { getClientId } = await import('./useSyncStore')
-    const clientId = getClientId()
-    await localDb.addLocalMutation(clientId, entityType, entityId, action, payload)
+    return getClientId()
   }
 
-  const syncPendingChanges = async () => {
+  async function recoverOverdueTasks(): Promise<number> {
+    if (recoveringOverdue) return 0
+    const scope = currentRetentionScope()
+    const auth = useAuthStore()
+    if (auth.isAuthenticated === false || !scope.userId || !scope.serverDeviceId) return 0
+
+    recoveringOverdue = true
+    let recoveredCount = 0
+    try {
+      const { useSyncStore } = await import('./useSyncStore')
+      const syncStore = useSyncStore()
+      if (!isSameScope(scope, currentRetentionScope()) || syncStore.isSyncing || syncStore.isResettingOffline) {
+        return 0
+      }
+
+      const localTasks = await localDb.getTasks()
+      if (!isSameScope(scope, currentRetentionScope()) || syncStore.isSyncing || syncStore.isResettingOffline) {
+        return 0
+      }
+
+      const localById = new Map(localTasks.filter(item => Boolean(item.id)).map(item => [item.id as string, item]))
+      const candidateIds = localTasks
+        .filter(item => Boolean(item.id) && isOverdueTask(item) && !isOverdueSuppressed(item))
+        .map(item => item.id as string)
+
+      for (const id of candidateIds) {
+        if (!isSameScope(scope, currentRetentionScope()) || syncStore.isSyncing || syncStore.isResettingOffline) {
+          break
+        }
+        if (updatingTaskIds.value.includes(id)) continue
+        const localTask = localById.get(id)
+        if (!localTask || !isOverdueTask(localTask) || isOverdueSuppressed(localTask)) continue
+        const currentInMemory = allTasks.value.find(item => item.id === id)
+        if (
+          currentInMemory
+          && ((currentInMemory.sync_version ?? 0) !== (localTask.sync_version ?? 0) || !isOverdueTask(currentInMemory))
+        ) {
+          continue
+        }
+        try {
+          const updated = await persistTaskUpdate({ ...localTask, status: 'completed' }, false)
+          if (updated && isSameScope(scope, currentRetentionScope())) {
+            recoveredCount += 1
+          }
+        } catch {
+          // Keep recovering remaining overdue tasks if one local write fails
+        }
+      }
+
+      if (recoveredCount > 0 && isSameScope(scope, currentRetentionScope()) && !syncStore.isSyncing && !syncStore.isResettingOffline) {
+        void syncPendingChanges().catch(() => {})
+      }
+    } finally {
+      recoveringOverdue = false
+    }
+    return recoveredCount
+  }
+
+  async function fetchTasks() {
+    await loadLocalTasks()
+    try {
+      const { useSyncStore } = await import('./useSyncStore')
+      await useSyncStore().triggerSync()
+    } catch (e) {
+      console.warn('[Mobile Store] Server unreachable, using local database cache:', e)
+    }
+    await recoverOverdueTasks()
+  }
+
+  async function syncPendingChanges() {
     const online = await checkOnline()
     if (!online || isSyncing.value) return
     isSyncing.value = true
@@ -108,201 +221,186 @@ export const useTaskStore = defineStore('task', () => {
       const { useSyncStore } = await import('./useSyncStore')
       await useSyncStore().triggerSync()
     } catch (err) {
-      console.error(`[Mobile Store] Background sync failed:`, err)
+      console.error('[Mobile Store] Background sync failed:', err)
     } finally {
       isSyncing.value = false
     }
   }
 
-  const addTask = async (task: Task) => {
-    const allTasks = [...pendingTasks.value, ...timeSlots.value.map(s => s.task).filter(Boolean) as Task[]]
-    allTasks.sort((a, b) => (a.position || '0').localeCompare(b.position || '0'))
-    const lastTask = allTasks[allTasks.length - 1]
-    const lastPos = lastTask ? (lastTask.position || '0') : ''
-    const newPos = Lexorank.getMedian(lastPos, '')
+  function nextPosition(): string {
+    const sorted = [...allTasks.value].sort((a, b) => compareTaskPosition(a.position, b.position))
+    const lastPos = sorted.length > 0 ? normalizeTaskPosition(sorted[sorted.length - 1].position) : ''
+    return Lexorank.getMedian(lastPos, '')
+  }
 
+  async function addTask(task: Task) {
+    const id = task.id || uuidv7()
+    if (updatingTaskIds.value.includes(id)) return
+    const scope = currentRetentionScope()
+    const scheduledAt = task.scheduledAt || undefined
+    const status: Task['status'] = task.status === 'completed'
+      ? 'completed'
+      : task.status === 'cancelled'
+        ? 'cancelled'
+        : scheduledAt
+          ? 'scheduled'
+          : 'pending'
     const newTask: Task = {
-      id: task.id || uuidv7(),
+      id,
       name: task.name,
       subject: task.subject,
       desc: task.desc || '',
       duration: task.duration,
-      status: task.status || 'pending',
-      startTime: task.startTime || '',
+      status,
+      scheduledAt,
+      dueAt: task.dueAt || undefined,
+      startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : (task.startTime || undefined),
       sync_status: 'pending_create',
-      position: newPos,
-      subjectId: task.subjectId
+      position: task.position || nextPosition(),
+      subjectId: task.subjectId,
     }
 
-    if (newTask.status === 'pending') {
-      pendingTasks.value.push(newTask)
-    } else {
-      const slot = timeSlots.value.find(s => s.time === newTask.startTime)
-      if (slot) slot.task = newTask
-    }
-
-    await localDb.saveTask(newTask, 'pending_create')
-    await recordMutation('task', newTask.id || '', 'create', newTask)
-    syncPendingChanges()
-  }
-
-  const removeTask = async (id: string) => {
-    pendingTasks.value = pendingTasks.value.filter(t => t.id !== id)
-    timeSlots.value.forEach(slot => {
-      if (slot.task && slot.task.id === id) {
-        slot.task = null
-      }
-    })
-    await localDb.deleteTask(id)
-    await recordMutation('task', id, 'delete', { id })
-    syncPendingChanges()
-  }
-
-  const updateTask = async (task: Task) => {
-    if (!task.id) return
-    const updatedTask: Task = {
-      ...task,
-      sync_status: task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
-    }
-
-    if (updatedTask.status === 'pending') {
-      const idx = pendingTasks.value.findIndex(t => t.id === task.id)
-      if (idx !== -1) pendingTasks.value[idx] = updatedTask
-    } else {
-      const slot = timeSlots.value.find(s => s.time === updatedTask.startTime)
-      if (slot) slot.task = updatedTask
-    }
-
-    await localDb.saveTask(updatedTask, updatedTask.sync_status)
-    await recordMutation('task', task.id, 'update', updatedTask)
-    syncPendingChanges()
-  }
-
-  // Getters
-  const completedCount = computed(() => timeSlots.value.filter(s => s.task?.status === 'completed').length)
-  const pendingCount = computed(() => pendingTasks.value.length)
-  const totalFocusHours = computed(() => {
-    let mins = 0
-    timeSlots.value.forEach(s => {
-      if (s.task && s.task.status === 'completed') mins += s.task.duration * 60
-    })
-    return (mins / 60).toFixed(1) + 'h'
-  })
-
-  /**
-   * 完成任务（移动端手势操作）
-   */
-  const completeTask = async (slotTime: string) => {
-    const slot = timeSlots.value.find(s => s.time === slotTime)
-    if (slot && slot.task) {
-      slot.task.status = 'completed'
-      const updated: Task = {
-        ...slot.task,
-        sync_status: slot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
-      }
-      await localDb.saveTask(updated, updated.sync_status)
-      await recordMutation('task', updated.id || '', 'update', updated)
-      syncPendingChanges()
+    updatingTaskIds.value = [...updatingTaskIds.value, id]
+    try {
+      const clientId = await resolveClientId()
+      if (!isSameScope(scope, currentRetentionScope())) return
+      await localDb.saveTask(newTask, 'pending_create')
+      if (!isSameScope(scope, currentRetentionScope())) return
+      await localDb.addLocalMutation(clientId, 'task', id, 'create', newTask)
+      if (!isSameScope(scope, currentRetentionScope())) return
+      allTasks.value = [...allTasks.value.filter(item => item.id !== id), newTask]
+      void syncPendingChanges()
+    } finally {
+      updatingTaskIds.value = updatingTaskIds.value.filter(item => item !== id)
     }
   }
 
-  /**
-   * 延后任务（移动端手势操作 — 从时间轴退回待办）
-   */
-  const deferTask = async (slotTime: string) => {
-    const slot = timeSlots.value.find(s => s.time === slotTime)
-    if (slot && slot.task) {
-      const allTasks = [...pendingTasks.value, ...timeSlots.value.map(s => s.task).filter(Boolean) as Task[]]
-      allTasks.sort((a, b) => (a.position || '0').localeCompare(b.position || '0'))
-      const lastTask = allTasks[allTasks.length - 1]
-      const lastPos = lastTask ? (lastTask.position || '0') : ''
-      const newPos = Lexorank.getMedian(lastPos, '')
-
-      const task = { 
-        ...slot.task, 
-        status: 'pending' as const, 
-        startTime: '',
-        position: newPos
-      }
-      const updated: Task = {
+  async function persistTaskUpdate(task: Task, shouldSync = true): Promise<boolean> {
+    if (!task.id || updatingTaskIds.value.includes(task.id)) return false
+    const scope = currentRetentionScope()
+    const id = task.id
+    updatingTaskIds.value = [...updatingTaskIds.value, id]
+    try {
+      const existing = allTasks.value.find(item => item.id === id)
+      const scheduledAt = task.scheduledAt || undefined
+      const updatedTask: Task = {
+        ...existing,
         ...task,
-        sync_status: task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
+        scheduledAt,
+        dueAt: task.dueAt || undefined,
+        startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : undefined,
+        sync_status: existing?.sync_status === 'pending_create' ? 'pending_create' : 'pending_update',
       }
-      
-      pendingTasks.value.push(updated)
-      slot.task = null
-      
-      await localDb.saveTask(updated, updated.sync_status)
-      await recordMutation('task', updated.id || '', 'update', updated)
-      syncPendingChanges()
+      const clientId = await resolveClientId()
+      if (!isSameScope(scope, currentRetentionScope())) return false
+      await localDb.saveTask(updatedTask, updatedTask.sync_status)
+      if (!isSameScope(scope, currentRetentionScope())) return false
+      await localDb.addLocalMutation(clientId, 'task', id, 'update', updatedTask)
+      if (!isSameScope(scope, currentRetentionScope())) return false
+      allTasks.value = allTasks.value.some(item => item.id === id)
+        ? allTasks.value.map(item => item.id === id ? updatedTask : item)
+        : [...allTasks.value, updatedTask]
+      if (shouldSync) void syncPendingChanges()
+      return true
+    } finally {
+      updatingTaskIds.value = updatingTaskIds.value.filter(item => item !== id)
     }
   }
 
-  const syncFromRemote = (data: { pending: Task[], slots: TimeSlot[] }) => {
-    const tasksToSave: Task[] = []
-    data.pending.forEach(t => tasksToSave.push({ ...t, status: 'pending', startTime: '' }))
-    data.slots.forEach(s => {
-      if (s.task) {
-        tasksToSave.push({ ...s.task, status: s.task.status, startTime: s.time })
-      }
-    })
-    
-    localDb.mergeTasksFromServer(tasksToSave).then(() => loadLocalTasks())
+  async function updateTask(task: Task) {
+    await persistTaskUpdate(task, true)
   }
 
-  // Set up reactive sync listener on network status change
+  async function removeTask(id: string) {
+    if (!id || updatingTaskIds.value.includes(id)) return
+    const scope = currentRetentionScope()
+    updatingTaskIds.value = [...updatingTaskIds.value, id]
+    try {
+      const existing = allTasks.value.find(item => item.id === id)
+      const clientId = await resolveClientId()
+      if (!isSameScope(scope, currentRetentionScope())) return
+      await localDb.deleteTask(id)
+      if (!isSameScope(scope, currentRetentionScope())) return
+      await localDb.addLocalMutation(clientId, 'task', id, 'delete', {
+        id,
+        sync_version: existing?.sync_version ?? 0,
+      })
+      if (!isSameScope(scope, currentRetentionScope())) return
+      allTasks.value = allTasks.value.filter(item => item.id !== id)
+      if (retainedCompletedTodoIds.value.has(id)) setTodoRetained(id, false)
+      void syncPendingChanges()
+    } finally {
+      updatingTaskIds.value = updatingTaskIds.value.filter(item => item !== id)
+    }
+  }
+
+  async function scheduleTask(id: string, scheduledAtIso: string) {
+    const task = allTasks.value.find(item => item.id === id)
+    if (!task) return
+    await updateTask({
+      ...task,
+      scheduledAt: scheduledAtIso,
+      startTime: formatLocalTimeHHmm(scheduledAtIso),
+      status: task.status === 'completed' ? 'completed' : 'scheduled',
+    })
+    if (retainedCompletedTodoIds.value.has(id)) setTodoRetained(id, false)
+  }
+
+  async function unscheduleTask(id: string) {
+    const task = allTasks.value.find(item => item.id === id)
+    if (!task) return
+    await updateTask({
+      ...task,
+      scheduledAt: undefined,
+      startTime: undefined,
+      status: task.status === 'completed' ? 'completed' : 'pending',
+    })
+  }
+
+  async function toggleTaskComplete(id: string): Promise<boolean> {
+    if (updatingTaskIds.value.includes(id)) return false
+    const scope = currentRetentionScope()
+    const task = allTasks.value.find(item => item.id === id)
+    if (!task) return false
+    if (isScheduledCompletionLocked(task)) return false
+    const nextStatus: Task['status'] = task.status === 'completed'
+      ? (task.scheduledAt ? 'scheduled' : 'pending')
+      : 'completed'
+    await updateTask({
+      ...task,
+      status: nextStatus,
+    })
+    if (!task.scheduledAt && isSameScope(scope, currentRetentionScope())) {
+      setTodoRetained(id, nextStatus === 'completed')
+    }
+    return true
+  }
+
   uni.onNetworkStatusChange((res) => {
     if (res.isConnected) {
       console.log('[Mobile Store] Network re-established. Auto-syncing tasks...')
-      syncPendingChanges()
+      void syncPendingChanges()
     }
   })
 
-  // Pomodoro local tracking
-  const todayPomodoros = ref(0)
-  const pomodoroStorageKey = () => `auralis:local:${localDataScope.current()}:pomodoro_counts`
-  const loadPomodoroCount = () => {
-    const dateStr = new Date().toISOString().split('T')[0]
-    const storedStr = uni.getStorageSync(pomodoroStorageKey())
-    if (storedStr) {
-      try {
-        const counts = JSON.parse(storedStr)
-        todayPomodoros.value = counts[dateStr] || 0
-      } catch(e) {}
-    }
-  }
-  loadPomodoroCount()
-
-  const incrementPomodoro = () => {
-    todayPomodoros.value++
-    const dateStr = new Date().toISOString().split('T')[0]
-    const storageKey = pomodoroStorageKey()
-    const storedStr = uni.getStorageSync(storageKey)
-    let counts: Record<string, number> = {}
-    if (storedStr) {
-      try { counts = JSON.parse(storedStr) } catch(e) {}
-    }
-    counts[dateStr] = todayPomodoros.value
-    uni.setStorageSync(storageKey, JSON.stringify(counts))
-  }
-
   return {
+    allTasks,
     pendingTasks,
-    timeSlots,
+    homePendingTasks,
+    updatingTaskIds,
     completedCount,
     pendingCount,
-    totalFocusHours,
-    todayPomodoros,
-    loadPomodoroCount,
+    getScheduledTasksForDate,
     loadLocalTasks,
     fetchTasks,
     addTask,
     removeTask,
     updateTask,
-    completeTask,
-    deferTask,
-    syncFromRemote,
+    scheduleTask,
+    unscheduleTask,
+    toggleTaskComplete,
+    recoverOverdueTasks,
+    suppressOverdueRecovery,
     syncPendingChanges,
-    incrementPomodoro
   }
 })

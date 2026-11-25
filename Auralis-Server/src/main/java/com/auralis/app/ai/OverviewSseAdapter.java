@@ -365,8 +365,7 @@ public final class OverviewSseAdapter {
 
     private String safeDetail(String code) {
         return switch (code) {
-            case "AI_CONCURRENCY_LIMIT", "AI_HOURLY_BUDGET_EXCEEDED", "AI_DAILY_BUDGET_EXCEEDED",
-                    "AI_GLOBAL_DAILY_BUDGET_EXCEEDED", "AI_TASK_BUDGET_EXCEEDED", "AI_REQUEST_BUDGET_EXCEEDED" -> code;
+            case "AI_CONCURRENCY_LIMIT", "AI_TASK_BUDGET_EXCEEDED", "AI_REQUEST_BUDGET_EXCEEDED" -> code;
             case "MODEL_TIMEOUT" -> "Overview generation exceeded its time limit";
             case "SERVICE_UNAVAILABLE" -> "Service is busy; retry shortly";
             case "MODEL_UNAVAILABLE", "MODEL_PROVIDER_ERROR", "RATE_LIMITED" -> "AI provider could not complete the overview";

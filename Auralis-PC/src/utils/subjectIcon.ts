@@ -59,8 +59,6 @@ const iconComponents: Record<SubjectIconKey, Component> = {
   school: IconSchool
 }
 
-const semanticIconPattern = /^[a-z0-9_-]+$/i
-
 export const isSubjectIconKey = (icon?: string | null): icon is SubjectIconKey => {
   const value = icon?.trim()
   return !!value && Object.hasOwn(iconComponents, value)
@@ -69,9 +67,4 @@ export const isSubjectIconKey = (icon?: string | null): icon is SubjectIconKey =
 export const getSubjectIconComponent = (icon?: string | null): Component => {
   const value = icon?.trim()
   return value && isSubjectIconKey(value) ? iconComponents[value] : iconComponents.book
-}
-
-export const getLegacySubjectIcon = (icon?: string | null): string | null => {
-  const value = icon?.trim()
-  return value && !semanticIconPattern.test(value) ? value : null
 }

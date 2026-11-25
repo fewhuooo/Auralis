@@ -209,7 +209,7 @@ function validOutbox(value: unknown): value is OverviewOutboxRecord {
   return typeof item.clientWriteId === 'string' && ['FILE', 'SUBJECT'].includes(String(item.scopeType))
     && typeof item.scopeId === 'string' && typeof item.revisionKey === 'string'
     && ['ALL', 'OUTLINE', 'SUMMARY'].includes(String(item.mode))
-    && ['LOCAL_WRITE', 'LEGACY_SEED'].includes(String(item.origin))
+    && ['LOCAL_WRITE', 'LOCAL_CACHE_SEED'].includes(String(item.origin))
     && Boolean(item.result && typeof item.result === 'object')
     && nullableString(item.inputFingerprint)
     && ['PREPARED', 'PENDING', 'INFLIGHT', 'CONFLICT', 'ERROR', 'STALE'].includes(String(item.state))
@@ -237,8 +237,7 @@ export async function computeSubjectInputFingerprint(files: FileFingerprintInput
 }
 
 function fromRow(row: Row): OverviewCacheRecord | null {
-  // Legacy v1 rows are retained in DB, but not returned as valid v2 content
-  if (row.schema_version !== 2) return null
+  if (row.schema_version !== 2) throw new Error('OVERVIEW_CACHE_CORRUPT')
   return {
     scopeType: row.scope_type,
     scopeId: row.scope_id,
@@ -327,9 +326,7 @@ export class OverviewRepository {
     try {
       const state = JSON.parse(raw) as BrowserState
       if (!Array.isArray(state.records) || !Array.isArray(state.states) || !Array.isArray(state.outbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
-      // Ignore legacy v1 records from cache
-      state.records = state.records.filter(r => r && (r.schemaVersion as unknown) === 2 && validCacheRecord(r))
-      if (!state.states.every(validSyncState) || !state.outbox.every(validOutbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
+      if (!state.records.every(validCacheRecord) || !state.states.every(validSyncState) || !state.outbox.every(validOutbox)) throw new Error('OVERVIEW_CACHE_CORRUPT')
       return state
     } catch { throw new Error('OVERVIEW_CACHE_CORRUPT') }
   }
@@ -659,7 +656,7 @@ export class OverviewRepository {
     })
   }
 
-  async enqueueLegacySeed(record: OverviewCacheRecord): Promise<OverviewOutboxRecord | null> {
+  async enqueueLocalCacheSeed(record: OverviewCacheRecord): Promise<OverviewOutboxRecord | null> {
     if (!isComplete(record)) return null
     const token = this.captureScopeFenceToken(record.scopeType,record.scopeId)
     return this.serializeWrite(async () => {
@@ -669,7 +666,7 @@ export class OverviewRepository {
       const queued = await this.getOutboxForScope(record.scopeType,record.scopeId,record.revisionKey,database)
       const syncable = queued.filter(item => item.state !== 'STALE' && !isGenerationEditConflict(item))
       if (syncable.length) return syncable[0]
-      const intent = this.makeIntent(record,'ALL','LEGACY_SEED')
+      const intent = this.makeIntent(record,'ALL','LOCAL_CACHE_SEED')
       await this.insertOutbox(intent,database)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       return intent
@@ -730,7 +727,7 @@ export class OverviewRepository {
     })
   }
 
-  async installRemoteOverview(record: OverviewCacheRecord, remoteState: OverviewSyncState, discardLegacySeed = false,
+  async installRemoteOverview(record: OverviewCacheRecord, remoteState: OverviewSyncState, discardLocalCacheSeed = false,
     expectedToken?: OverviewScopeFenceToken): Promise<boolean> {
     try {
     const token = this.captureAndValidateToken(record.scopeType,record.scopeId,expectedToken)
@@ -743,8 +740,8 @@ export class OverviewRepository {
         const intents = browser.outbox.filter(item => item.scopeType === remoteState.scopeType && item.scopeId === remoteState.scopeId
           && item.revisionKey === remoteState.revisionKey)
         const keepCandidate = intents.some(item => item.origin === 'LOCAL_WRITE' && item.state !== 'STALE')
-        if (discardLegacySeed) browser.outbox = browser.outbox.filter(item => !(item.scopeType === remoteState.scopeType
-          && item.scopeId === remoteState.scopeId && item.revisionKey === remoteState.revisionKey && item.origin === 'LEGACY_SEED'))
+        if (discardLocalCacheSeed) browser.outbox = browser.outbox.filter(item => !(item.scopeType === remoteState.scopeType
+          && item.scopeId === remoteState.scopeId && item.revisionKey === remoteState.revisionKey && item.origin === 'LOCAL_CACHE_SEED'))
         browser.states = browser.states.filter(item => !(item.scopeType === remoteState.scopeType && item.scopeId === remoteState.scopeId && item.revisionKey === remoteState.revisionKey))
         browser.states.push(remoteState)
         if (!keepCandidate) {
@@ -757,8 +754,8 @@ export class OverviewRepository {
       }
       const intents = await this.getOutboxForScope(remoteState.scopeType,remoteState.scopeId,remoteState.revisionKey,database)
       const keepCandidate = intents.some(item => item.origin === 'LOCAL_WRITE' && item.state !== 'STALE')
-      if (discardLegacySeed) {
-        const seeds = intents.filter(item => item.origin === 'LEGACY_SEED')
+      if (discardLocalCacheSeed) {
+        const seeds = intents.filter(item => item.origin === 'LOCAL_CACHE_SEED')
         for (const seed of seeds) await this.removeIntent(seed.clientWriteId,database)
       }
       await this.saveSyncState(remoteState,database)

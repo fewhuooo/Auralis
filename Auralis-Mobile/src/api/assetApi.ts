@@ -3,6 +3,7 @@ import { defaultApiCallClient, type ApiCallClient } from './apiCallClient'
 
 type UploadIntentRequest = components['schemas']['AssetUploadIntentRequest']
 type UploadIntentResponse = components['schemas']['AssetUploadIntentResponse']
+export type AssetDownloadUrlResponse = components['schemas']['AssetDownloadUrlResponse']
 
 export function createAssetApi(client: ApiCallClient = defaultApiCallClient) {
   return {
@@ -14,7 +15,7 @@ export function createAssetApi(client: ApiCallClient = defaultApiCallClient) {
     ),
     downloadUrl: (id: string) => client.request(
       '/api/assets/{id}/download-url', 'post', { pathParams: { id } },
-    ),
+    ) as Promise<AssetDownloadUrlResponse>,
   }
 }
 

@@ -21,6 +21,22 @@ test('selection actions support explain, ask and saving a bounded knowledge bloc
   assert.match(editor, /emit\('save'/)
 })
 
+test('Chat message text can be quoted into the next question or prefilled into the subject knowledge editor', async () => {
+  const workspace = await source('src/views/SubjectWorkspace/index.vue')
+  assert.match(workspace, /class="chat-message-text-selection"/)
+  assert.match(workspace, /@mouseup="updateSelectionPosition\('chat'\)"/)
+  assert.match(workspace, /selectionScope === 'chat' \? messages\.addToNextQuestion : messages\.addToQuestion/)
+  assert.match(workspace, /quotedSelection\.value = \[quotedSelection\.value, selectedText\.value\].*\.slice\(0, 4000\)/)
+  assert.match(workspace, /:initial-content="selectedText"/)
+  const saveSelection = workspace.slice(workspace.indexOf('const saveSelection ='), workspace.indexOf('const saveKnowledgeBlock ='))
+  const saveKnowledgeBlock = workspace.slice(workspace.indexOf('const saveKnowledgeBlock ='), workspace.indexOf('const createKnowledgeBlock ='))
+  assert.doesNotMatch(saveSelection, /selectionScope\.value = null/)
+  assert.match(saveKnowledgeBlock, /const isPreviewSelection = selectionScope\.value === 'preview'/)
+  assert.match(saveKnowledgeBlock, /const validSourceFileId = isPreviewSelection[\s\S]*?\? \(selectedFileId\.value \|\| undefined\)/)
+  assert.match(saveKnowledgeBlock, /subjectId: subjectId\.value,[\s\S]*?source: isPreviewSelection \? selectedFile\.value\?\.name \|\| '选中文本' : t\(messages\.chatSelectionSource\)/)
+  assert.match(workspace, /class="floating-selection-bubble"[\s\S]*?Teleport to="body"|Teleport to="body"[\s\S]*?class="selection-actions floating-selection-bubble"/)
+})
+
 test('workspace retrieval offers the chosen source scope', async () => {
   const workspaceSource = await source('src/views/SubjectWorkspace/index.vue')
   const workspace = workspaceSource.slice(workspaceSource.indexOf('// ===== AI Chat (Right Panel) ====='))
@@ -192,7 +208,7 @@ test('whole-subject indicators include only READY sources from the current subje
   const selected = evaluate('const isAiSourceSelected =', 'const toggleAiSource =', 'isAiSourceSelected')
   assert.equal(selected('ready'), true)
   for (const id of ['pending', 'failed', 'foreign', 'missing']) assert.equal(selected(id), false, id)
-  const title = evaluate('const aiSourceSummaryTitle =', 'const aiGreetingName =', 'aiSourceSummaryTitle.value')
+  const title = evaluate('const aiSourceSummaryTitle =', 'const isChatComposing =', 'aiSourceSummaryTitle.value')
   assert.equal(title, '当前参考：全学科资料 (共 1 份)')
 })
 

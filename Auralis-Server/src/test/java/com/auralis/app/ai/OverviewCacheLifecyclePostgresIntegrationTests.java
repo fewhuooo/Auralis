@@ -75,7 +75,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         registry.add("auralis.identity.jwt-secret", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.encryption-key", () -> "0123456789abcdef0123456789abcdef");
         registry.add("auralis.ai.ingestion-worker-enabled", () -> "false");
-        registry.add("auralis.ai.overview-jobs-poll-ms", () -> "3600000");
     }
 
     @AfterAll
@@ -90,7 +89,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
     @Autowired private SubjectService subjectService;
     @Autowired private OverviewGenerationCoordinator coordinator;
     @Autowired private OverviewResultCleanupListener cleanupListener;
-    @Autowired private OverviewPrivatePayloadRetentionService privatePayloadRetention;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private Clock clock;
 
@@ -126,39 +124,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
     }
 
     @Test
-    void linkedRunningJobKeepsCurrentGenerationPayloadOutsideReusableCacheCapacity() {
-        UUID userId = createUser("pinned-working-job");
-        ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor();
-        try {
-            OverviewGenerationCoordinator tiny = new OverviewGenerationCoordinator(jdbc, transactionManager, clock,
-                    30_000, 2_000, heartbeat, 1, 1);
-            UUID subjectId = UUID.randomUUID();
-            var current = tiny.acquire(request(userId, subjectId, UUID.randomUUID()));
-            UUID jobId = UUID.randomUUID();
-            UUID workerId = UUID.randomUUID();
-            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-            jdbc.update("insert into overview_generation_jobs(id,user_id,client_request_id,generation_request_id,scope_type,scope_id,mode,"
-                            + "request_hash,request_json,source_manifest_json,input_fingerprint,profile_fingerprint,algorithm_version,generation_id,"
-                            + "status,stage,worker_owner_id,lease_until,deadline_at) values (?,?,?,?,'SUBJECT',?,'ALL',?,'{}','[]',?,?,?,?,'RUNNING',"
-                            + "'WRITING',?,?,?)",
-                    jobId, userId, UUID.randomUUID(), UUID.randomUUID(), subjectId, HASH_A, HASH_B, HASH_C, "adaptive-v1",
-                    current.generationId(), workerId, now.plusHours(1), now.plusHours(2));
-            OverviewHistoricalFixtures.insertCheckpoint(jdbc, current.lease(), "writer", "{\"raw\":\"checkpoint\"}");
-
-            assertThat(tiny.complete(current.lease(), "{\"raw\":\"result larger than configured cache\"}", usage(), 0, List.of()))
-                    .isTrue();
-            assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
-                    current.generationId())).isNotNull();
-            assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                    Integer.class, current.generationId())).isEqualTo(1);
-            assertThat(jdbc.queryForObject("select status from overview_generation_jobs where id=?", String.class, jobId))
-                    .isEqualTo("RUNNING");
-        } finally {
-            heartbeat.shutdownNow();
-        }
-    }
-
-    @Test
     void sourceDeletionRevokesPrivateCopiesWithoutDeletingUsageEvidenceOrAnotherOwnersCache() {
         UUID userId = createUser("source-delete");
         UUID otherUserId = createUser("other-owner");
@@ -171,12 +136,8 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                 revision, HASH_A, HASH_B, HASH_C, "adaptive-v1",
                 List.of(new OverviewGenerationCoordinator.SourceDependency(sourceId, revision, "Source " + sourceId)));
         var generation = coordinator.acquire(sourceRequest);
-        OverviewHistoricalFixtures.insertCheckpoint(jdbc, generation.lease(), "writer-step", "{\"raw\":\"private checkpoint\"}");
         assertThat(coordinator.complete(generation.lease(), "{\"raw\":\"private result\"}", usage(), 0, List.of())).isTrue();
-        UUID planId = seedPlanAndNode(generation.lease(), sourceId);
-        UUID reservationId = seedCall(generation.lease(), planId);
-        UUID jobId = seedCompletedJob(userId, sourceId, generation.generationId(), sourceId);
-        seedPendingIntent(userId, jobId, generation.generationId(), planId);
+        UUID reservationId = seedCall(generation.lease());
         UUID sourceReceiptId = UUID.randomUUID();
         UUID subjectReceiptId = UUID.randomUUID();
         jdbc.update("insert into overview_write_receipts(id,user_id,client_write_id,scope_type,scope_id,base_version,payload_hash,response_snapshot) "
@@ -212,19 +173,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                 budgetFailure.generationId())).isNull();
         assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
                 generation.generationId())).isNull();
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, generation.generationId())).isZero();
-        assertThat(jdbc.queryForObject("select payload_json from overview_execution_plans where id=?", String.class, planId))
-                .isEqualTo("{}");
-        assertThat(jdbc.queryForObject("select descriptor_json from overview_execution_nodes where plan_id=?", String.class,
-                planId)).isEqualTo("{}");
-        assertThat(jdbc.queryForObject("select request_json from overview_generation_jobs where id=?", String.class, jobId))
-                .isEqualTo("{}");
-        assertThat(jdbc.queryForObject("select source_manifest_json from overview_generation_jobs where id=?", String.class, jobId))
-                .isEqualTo("[]");
-        assertThat(jdbc.queryForObject("select candidate_json from overview_generation_jobs where id=?", String.class, jobId)).isNull();
-        assertThat(jdbc.queryForObject("select status from overview_publication_intents where job_id=?", String.class, jobId))
-                .isEqualTo("FAILED");
         assertThat(jdbc.queryForObject("select response_snapshot from overview_write_receipts where id=?", String.class,
                 sourceReceiptId)).isEqualTo("{\"revoked\":true}");
         assertThat(jdbc.queryForObject("select payload_hash from overview_write_receipts where id=?", String.class,
@@ -233,8 +181,6 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                 subjectReceiptId)).isEqualTo("{\"revoked\":true}");
         assertThat(jdbc.queryForObject("select payload_hash from overview_write_receipts where id=?", String.class,
                 subjectReceiptId)).isEqualTo(HASH_B);
-        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where reservation_id=?",
-                Integer.class, reservationId)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select request_dispatched from ai_usage_reservations where id=?",
                 Boolean.class, reservationId)).isTrue();
         assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
@@ -242,44 +188,12 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         assertThat(coordinator.complete(generation.lease(), "{\"raw\":\"late write\"}", usage(), 0, List.of())).isFalse();
 
         jdbc.update("update sources set deleted_at=null,version=version+1 where id=?", sourceId);
-        assertThatThrownBy(() -> coordinator.acquire(sourceRequest))
-                .isInstanceOf(RuntimeException.class);
+        assertThat(coordinator.acquire(sourceRequest).state())
+                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
         var fresh = coordinator.acquire(new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SOURCE", sourceId,
                 revision, HASH_A, HASH_B, HASH_C, "adaptive-v1",
                 List.of(new OverviewGenerationCoordinator.SourceDependency(sourceId, revision, "Source " + sourceId))));
         assertThat(fresh.generationId()).isNotEqualTo(generation.generationId());
-    }
-
-    @Test
-    void privatePayloadTtlScrubsCompletedJobAndGenerationCopiesInOneRetentionPass() {
-        UUID userId = createUser("private-payload-ttl");
-        UUID subjectId = createSubject(userId);
-        UUID sourceId = createSource(userId, subjectId, "private retention source");
-        UUID revision = jdbc.queryForObject("select ingestion_revision from sources where id=?", UUID.class, sourceId);
-        var generation = coordinator.acquire(new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SOURCE", sourceId,
-                revision, HASH_A, HASH_B, HASH_C, "adaptive-v1"));
-        OverviewHistoricalFixtures.insertCheckpoint(jdbc, generation.lease(), "writer-step", "{\"raw\":\"private checkpoint\"}");
-        assertThat(coordinator.complete(generation.lease(), "{\"raw\":\"private result\"}", usage(), 0, List.of())).isTrue();
-        UUID planId = seedPlanAndNode(generation.lease(), sourceId);
-        UUID jobId = seedCompletedJob(userId, sourceId, generation.generationId(), sourceId);
-        seedPendingIntent(userId, jobId, generation.generationId(), planId);
-        OffsetDateTime oldCompletion = OffsetDateTime.now(ZoneOffset.UTC).minusDays(15);
-        jdbc.update("update overview_generation_jobs set completed_at=?,updated_at=? where id=?", oldCompletion, oldCompletion, jobId);
-
-        assertThat(privatePayloadRetention.cleanupExpiredPrivatePayloads()).isGreaterThan(0);
-        assertThat(jdbc.queryForObject("select status from overview_generation_jobs where id=?", String.class, jobId))
-                .isEqualTo("EXPIRED");
-        assertThat(jdbc.queryForObject("select candidate_json from overview_generation_jobs where id=?", String.class, jobId)).isNull();
-        assertThat(jdbc.queryForObject("select request_json from overview_generation_jobs where id=?", String.class, jobId)).isEqualTo("{}");
-        assertThat(jdbc.queryForObject("select source_manifest_json from overview_generation_jobs where id=?", String.class, jobId)).isEqualTo("[]");
-        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class, generation.generationId())).isNull();
-        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
-                Integer.class, generation.generationId())).isZero();
-        assertThat(jdbc.queryForObject("select payload_json from overview_execution_plans where id=?", String.class, planId)).isEqualTo("{}");
-        assertThat(jdbc.queryForObject("select descriptor_json from overview_execution_nodes where plan_id=?", String.class, planId))
-                .isEqualTo("{}");
-        assertThat(jdbc.queryForObject("select status from overview_publication_intents where job_id=?", String.class, jobId))
-                .isEqualTo("FAILED");
     }
 
     private UUID createUser(String suffix) {
@@ -301,22 +215,7 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
         return sourceId;
     }
 
-    private UUID seedPlanAndNode(OverviewGenerationCoordinator.GenerationLease lease, UUID sourceId) {
-        UUID planId = UUID.randomUUID();
-        UUID nodeId = UUID.randomUUID();
-        String descriptor = "{\"sourceId\":\"" + sourceId + "\"}";
-        jdbc.update("insert into overview_execution_plans(id,generation_id,input_fingerprint,profile_fingerprint,algorithm_version,"
-                        + "plan_fingerprint,mode,state,payload_json) values (?,?,?,?,?,?,'ALL','ASSEMBLED',?)",
-                planId, lease.generationId(), lease.inputFingerprint(), lease.profileFingerprint(), lease.algorithmVersion(),
-                HASH_A, "{\"sourceId\":\"" + sourceId + "\"}");
-        jdbc.update("insert into overview_execution_nodes(id,plan_id,generation_id,node_ordinal,descriptor_json,descriptor_sha256,"
-                        + "checkpoint_step,state,attempt) values (?,?,?,?,?,?,?,'VERIFIED',1)",
-                nodeId, planId, lease.generationId(), 0, descriptor, HASH_B, "writer-step");
-        return planId;
-    }
-
-    private UUID seedCall(OverviewGenerationCoordinator.GenerationLease lease, UUID planId) {
-        UUID nodeId = jdbc.queryForObject("select id from overview_execution_nodes where plan_id=?", UUID.class, planId);
+    private UUID seedCall(OverviewGenerationCoordinator.GenerationLease lease) {
         UUID reservationId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
@@ -324,33 +223,11 @@ class OverviewCacheLifecyclePostgresIntegrationTests {
                         + "estimated_input_tokens,reserved_output_tokens,request_dispatched,owner_id,lease_until) "
                         + "values (?,?,?,'OVERVIEW','WRITER','OPENAI_COMPATIBLE','test','RESERVED',1,1,true,?,?)",
                 reservationId, taskId, lease.userId(), ownerId, OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5));
-        jdbc.update("insert into overview_execution_calls(id,generation_id,plan_id,node_id,attempt,reservation_id,task_id,user_id,operation_kind) "
-                        + "values (?,?,?,?,1,?,?,?,'SOURCE_OVERVIEW')",
-                UUID.randomUUID(), lease.generationId(), planId, nodeId, reservationId, taskId, lease.userId());
+        jdbc.update("insert into overview_generation_invocations(id,generation_id,reservation_id,task_id,user_id,"
+                        + "purpose,stage,owner_id,generation_fence) values (?,?,?,?,?,'SOURCE','INTERMEDIATE',?,?)",
+                UUID.randomUUID(), lease.generationId(), reservationId, taskId, lease.userId(),
+                lease.ownerId(), lease.fence());
         return reservationId;
-    }
-
-    private UUID seedCompletedJob(UUID userId, UUID sourceId, UUID generationId, UUID scopeId) {
-        UUID id = UUID.randomUUID();
-        OffsetDateTime time = OffsetDateTime.now(ZoneOffset.UTC);
-        jdbc.update("insert into overview_generation_jobs(id,user_id,client_request_id,generation_request_id,scope_type,scope_id,mode,"
-                        + "request_hash,request_json,source_manifest_json,input_fingerprint,profile_fingerprint,algorithm_version,generation_id,"
-                        + "status,stage,verified_nodes,total_nodes,candidate_json,created_at,updated_at,completed_at) "
-                        + "values (?,?,?,?,'SOURCE',?,'ALL',?,'{\"instruction\":\"private instruction\"}',?,?,?,?,?,'COMPLETED','COMPLETE',1,1,?,?,?,?)",
-                id, userId, UUID.randomUUID(), UUID.randomUUID(), scopeId, HASH_A,
-                "[{\"sourceId\":\"" + sourceId + "\",\"raw\":\"private manifest\"}]", HASH_B, HASH_C, "adaptive-v1",
-                generationId, "{\"candidate\":\"private candidate\"}", time, time, time);
-        return id;
-    }
-
-    private void seedPendingIntent(UUID userId, UUID jobId, UUID generationId, UUID planId) {
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        jdbc.update("insert into overview_publication_intents(id,user_id,job_id,generation_id,plan_id,client_publish_id,"
-                        + "result_client_write_id,expected_job_version,request_hash,candidate_sha256,input_fingerprint,profile_fingerprint,"
-                        + "algorithm_version,base_version,status,version,attempt_count,created_at,updated_at) "
-                        + "values (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'PENDING',1,0,?,?)",
-                UUID.randomUUID(), userId, jobId, generationId, planId, UUID.randomUUID(), UUID.randomUUID(), 1,
-                HASH_A, HASH_B, HASH_A, HASH_C, "adaptive-v1", now, now);
     }
 
     private OverviewGenerationCoordinator.Request request(UUID userId, UUID subjectId, UUID requestId) {

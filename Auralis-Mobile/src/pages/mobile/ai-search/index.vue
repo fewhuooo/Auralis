@@ -1,1089 +1,2439 @@
 <template>
-  <AppPageLayout anim-origin="bottom-right" :disableAnimation="isSeamless" :showTabBar="false">
-    <view class="ai-chat-page">
+  <AppPageLayout anim-origin="bottom-right" :show-tab-bar="false" custom-bg>
+    <view class="ai-page">
+      <AppHeader
+        show-back
+        back-url="/pages/mobile/home/index"
+        right-icon="history"
+        right-aria-label="历史对话"
+        @right-click="openHistoryDrawer"
+      />
 
-      <!-- ===== Custom Header ===== -->
-      <view class="custom-header">
-        <view class="header-content">
-          <!-- Left: Back Button + Model Selector (贴紧左侧) -->
-          <view class="header-left">
-            <view class="icon-btn" @click.stop="goBack">
-              <LineIcon name="back" size="52rpx" color="var(--text-primary)" />
-            </view>
-            <!-- Model name 点击弹出小菜单 -->
-            <view class="model-name-btn" @click.stop="isModelMenuOpen = !isModelMenuOpen">
-              <text class="model-icon-top">{{ currentModelObj.icon }}</text>
-              <text class="model-text">{{ currentModelObj.label }}</text>
-              <svg class="chevron-icon" :class="{ 'is-rotated': isModelMenuOpen }"
-                width="10" height="7" viewBox="0 0 10 7" fill="none">
-                <path d="M1 1L5 5.5L9 1" stroke="var(--text-muted)" stroke-width="1.8"
-                  stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </view>
+      <view v-if="messages.length === 0" class="welcome-stage">
+        <view class="welcome-hero">
+          <text class="welcome-title">{{ welcomeTitle }}</text>
+          <text class="welcome-subtitle num-tabular">{{ welcomeSubtitle }}</text>
+        </view>
 
-            <!-- Small dropdown -->
-            <view class="model-mini-dropdown" :class="{ 'is-open': isModelMenuOpen }">
-              <view v-for="m in modelOptions" :key="m.id"
-                class="mini-menu-item" @click.stop="selectModel(m.label)">
-                <text class="mini-menu-icon">{{ m.icon }}</text>
-                <view class="mini-menu-text">
-                  <text class="mini-menu-label" :class="{ 'is-active': currentModel === m.label }">{{ m.label }}</text>
-                  <text class="mini-menu-desc">{{ m.desc }}</text>
-                </view>
-                <view v-if="currentModel === m.label" class="mini-check">✓</view>
-              </view>
-            </view>
+        <view class="starter-section">
+          <view v-if="preSendError" class="pre-send-error" role="alert">
+            <LineIcon name="alert" size="14px" color="var(--color-danger)" />
+            <text class="pre-send-error-text">{{ preSendError }}</text>
           </view>
 
-          <!-- Right: New Chat (极简加号) -->
-          <view class="icon-btn" @click="startNewChat">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M12 5V19M5 12H19" stroke="var(--text-primary)" stroke-width="2" stroke-linecap="round"/>
-            </svg>
+          <view class="starter-cards">
+            <view
+              v-for="item in starterItems"
+              :key="item.prompt"
+              class="starter-card"
+              role="button"
+              @click="submitStarterPrompt(item.prompt)"
+            >
+              <text class="starter-card-title">{{ item.prompt }}</text>
+              <text class="starter-card-hint">{{ item.hint }}</text>
+            </view>
           </view>
         </view>
       </view>
 
-      <!-- Dropdown Mask -->
-      <view class="dropdown-mask" v-if="isModelMenuOpen" @click="isModelMenuOpen = false" />
-
-      <!-- ===== Content Area ===== -->
       <scroll-view
-        :scroll-y="messages.length > 0"
-        class="chat-content"
-        :scroll-into-view="bottomId"
-        :style="{ paddingBottom: scrollPaddingBottom + 'px' }"
+        v-else
+        scroll-y
+        :show-scrollbar="false"
+        class="chat-scroll"
+        :scroll-into-view="scrollTargetId"
+        @scroll="handleChatScroll"
+        @wheel="handleChatWheel"
+        @touchstart="handleChatTouchStart"
+        @touchmove="handleChatTouchMove"
       >
-
-        <!-- ===== Welcome / Empty State ===== -->
-        <view class="welcome-section" v-if="messages.length === 0">
-          <!-- AI Spark Icon -->
-          <view class="spark-icon-wrap">
-            <view class="spark-ring" />
-            <svg class="spark-svg" width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <!-- 四芒星 star shape -->
-              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z"
-                fill="url(#sparkGrad)" />
-              <defs>
-                <linearGradient id="sparkGrad" x1="4" y1="4" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#7D9372"/>
-                  <stop offset="50%" stop-color="#9AB08F"/>
-                  <stop offset="100%" stop-color="#5C7051"/>
-                </linearGradient>
-              </defs>
-            </svg>
-          </view>
-
-          <!-- Greeting -->
-          <text class="greeting-main">{{ username }}，</text>
-          <text class="greeting-sub">今天想探索点什么？</text>
-        </view>
-
-        <!-- ===== Chat Stream ===== -->
-        <view class="chat-stream" v-if="messages.length > 0">
+        <view class="chat-list">
           <view
-            v-for="(msg, index) in messages"
-            :key="index"
-            class="chat-bubble"
+            v-for="(msg, idx) in messages"
+            :key="msg.id"
+            class="chat-row"
             :class="msg.role"
           >
-            <!-- Assistant avatar dot -->
-            <view v-if="msg.role === 'assistant'" class="assistant-avatar">
-              <svg width="18" height="18" viewBox="0 0 52 52" fill="none">
-                <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z"
-                  fill="url(#avatarGrad)"/>
-                <defs>
-                  <linearGradient id="avatarGrad" x1="4" y1="4" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stop-color="#7D9372"/>
-                    <stop offset="100%" stop-color="#5C7051"/>
-                  </linearGradient>
-                </defs>
-              </svg>
+            <view v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
+              <text class="user-text">{{ msg.content }}</text>
             </view>
 
-            <view class="bubble-body">
-              <view class="bubble-content" :class="{ 'rich-text': msg.role === 'assistant' }">
-                <rich-text :nodes="formatMarkdown(msg.content)" />
+            <view v-else class="assistant-entry">
+              <MobileChatProcessArea
+                :reasoning="msg.reasoningText"
+                :tools="msg.tools"
+                :timeline="msg.processTimeline"
+                :streaming="msg.status === 'streaming'"
+                :has-content="hasVisibleAssistantContent(msg)"
+                :expanded="msg.processExpanded"
+                :error-highlight="hasFailedToolWithoutAnswer(msg)"
+                @toggle="toggleProcess(idx)"
+                @progress="handleStreamingTextProgress"
+              />
+
+              <MobileChatPartList
+                v-if="hasVisibleAssistantContent(msg)"
+                :parts="msg.parts"
+                :fallback-text="msg.content"
+                :streaming="msg.status === 'streaming'"
+                :settling="Boolean(msg.animateOnMount && msg.status === 'completed')"
+                :busy="isTyping || isStopping"
+                :read-only="isConversationUnsupported"
+                @submit="handleSubmitActivity"
+                @drain-change="(draining) => setMessageDraining(msg.id, draining)"
+                @text-progress="handleStreamingTextProgress"
+              />
+
+              <view v-if="msg.status === 'failed'" class="assistant-error-banner" role="alert">
+                <LineIcon name="alert" size="14px" color="var(--color-danger)" />
+                <text class="assistant-error-text">{{ msg.errorMessage || '请求失败，请重试' }}</text>
               </view>
 
-              <!-- Actions for assistant -->
-              <view class="bubble-actions" v-if="msg.role === 'assistant' && msg.content">
-                <view class="action-btn icon-only" @click="copyText(msg.content)">
-                  <LineIcon name="copy" size="30rpx" color="var(--text-muted)" />
+              <text
+                v-else-if="msg.status === 'cancelled' && !hasVisibleAssistantContent(msg)"
+                class="assistant-status-note"
+              >
+                已停止生成
+              </text>
+
+              <view
+                v-if="msg.status !== 'streaming' && !drainingMessageIds[msg.id] && (hasCopyableContent(msg) || msg.status === 'failed' || msg.status === 'cancelled')"
+                class="assistant-footer"
+              >
+                <view
+                  v-if="hasCopyableContent(msg)"
+                  class="footer-action-chip"
+                  role="button"
+                  aria-label="复制回答"
+                  @click="copyAssistantMessage(msg)"
+                >
+                  <LineIcon name="copy" size="13px" color="var(--text-muted)" />
+                  <text class="footer-action-label">复制</text>
                 </view>
-                <button class="action-btn text-btn" @click="extractToBlock(msg.content)">
-                  ✨ 存为知识块
-                </button>
+                <view
+                  v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && !isConversationUnsupported && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
+                  class="footer-action-chip"
+                  role="button"
+                  :aria-label="msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成'"
+                  @click="regenerateAssistantMessage(msg.id)"
+                >
+                  <LineIcon name="refresh" size="13px" color="var(--text-muted)" />
+                  <text class="footer-action-label">{{ msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成' }}</text>
+                </view>
+                <view
+                  v-if="hasCopyableContent(msg)"
+                  class="footer-action-chip"
+                  role="button"
+                  aria-label="存为知识块"
+                  @click="openSaveBlockModal(msg)"
+                >
+                  <LineIcon name="plus" size="13px" color="var(--text-muted)" />
+                  <text class="footer-action-label">存为知识块</text>
+                </view>
+                <text v-if="msg.status === 'cancelled'" class="assistant-status-note">已停止</text>
               </view>
-            </view>
-          </view>
-
-          <!-- Typing indicator -->
-          <view class="typing-indicator" v-if="isAiTyping">
-            <view class="assistant-avatar small">
-              <svg width="14" height="14" viewBox="0 0 52 52" fill="none">
-                <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z"
-                  fill="url(#typingGrad)"/>
-                <defs>
-                  <linearGradient id="typingGrad" x1="4" y1="4" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stop-color="#7D9372"/>
-                    <stop offset="100%" stop-color="#5C7051"/>
-                  </linearGradient>
-                </defs>
-              </svg>
-            </view>
-            <view class="typing-dots">
-              <view class="dot" /><view class="dot" /><view class="dot" />
             </view>
           </view>
         </view>
 
-        <view id="bottom-anchor" class="bottom-anchor" />
+        <view :id="anchorId" class="bottom-anchor"></view>
       </scroll-view>
 
-      <!-- ===== Custom Bottom Action Panel ===== -->
-      <!-- Overlay -->
-      <view
-        v-if="isActionOpen"
-        class="action-overlay"
-        @click="closeActionPanel"
-      />
-      <!-- Panel -->
-      <view class="action-panel" :class="{ 'is-open': isActionOpen }">
-        <view class="action-panel-row" @click="onActionTap(0)">
-          <view class="action-panel-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M12 20h9" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
-              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </view>
-          <text class="action-panel-label">拍照</text>
+      <view class="input-dock">
+        <view
+          v-if="autoScrollLocked && messages.length > 0"
+          class="scroll-resume-pill"
+          role="button"
+          aria-label="回到最新"
+          @click="resumeAutoScroll"
+        >
+          <view v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></view>
+          <text class="scroll-resume-text">↓ 回到最新</text>
         </view>
-        <view class="action-panel-divider" />
-        <view class="action-panel-row" @click="onActionTap(1)">
-          <view class="action-panel-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <rect x="3" y="3" width="18" height="18" rx="3" stroke="var(--text-muted)" stroke-width="2"/>
-              <circle cx="8.5" cy="8.5" r="1.5" fill="var(--text-muted)"/>
-              <path d="M21 15l-5-5L5 21" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </view>
-          <text class="action-panel-label">选择照片</text>
-        </view>
-        <view class="action-panel-divider" />
-        <view class="action-panel-row" @click="onActionTap(2)">
-          <view class="action-panel-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M4 6h16M4 12h10M4 18h7" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
-              <circle cx="19" cy="18" r="3" stroke="#7D9372" stroke-width="2"/>
-              <path d="M19 16v2l1 1" stroke="#7D9372" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </view>
-          <text class="action-panel-label">从知识块导入</text>
-        </view>
-      </view>
 
-      <!-- ===== Bottom Capsule Input ===== -->
-      <view
-        class="ai-capsule-wrapper"
-        :class="{ 'action-open': isActionOpen }"
-        :style="{ bottom: capsuleBottom + 'px' }"
-      >
-        <view class="ai-capsule" :class="{ 'is-focused': isInputFocused }">
-          <!-- Plus btn -->
-          <view class="capsule-left" @click="openActionSheet">
-            <view class="plus-icon-wrap" :class="{ 'is-rotated': isActionOpen }">
-              <LineIcon name="plus" size="50rpx" color="var(--text-muted)" />
-            </view>
-          </view>
-
-          <input
-            class="ai-capsule-input"
+        <view class="composer-card">
+          <textarea
             v-model="query"
-            placeholder="问问 Auralis AI..."
-            placeholder-style="color: #c4bdb6; font-size: 32rpx;"
-            :focus="isInputFocused"
-            :adjust-position="false"
-            @focus="onInputFocus"
-            @blur="onInputBlur"
-            @confirm="handleSearch"
-            :cursor-spacing="20"
+            class="composer-textarea"
+            auto-height
+            :maxlength="2000"
+            :show-confirm-bar="false"
+            confirm-type="send"
+            :disabled="isConversationUnsupported"
+            :placeholder="composerPlaceholder"
+            placeholder-style="color: #8A8A85"
+            @input="onQueryInput"
+            @confirm="sendMessage"
           />
 
-          <!-- Divider -->
-          <view class="capsule-divider" v-if="query.trim().length === 0" />
+          <view class="composer-toolbar">
+            <view class="composer-tools-left">
+              <view class="scope-dropdown-anchor">
+                <view
+                  class="scope-capsule"
+                  :class="{ 'is-locked': isScopeLocked || isTyping || isStopping, 'is-open': showScopeMenu }"
+                  role="button"
+                  :aria-expanded="showScopeMenu"
+                  :aria-label="isScopeLocked ? `当前检索范围已锁定为${activeScopeLabel}` : `选择检索范围，当前为${activeScopeLabel}`"
+                  @click="handleScopePillClick"
+                >
+                  <view
+                    class="scope-status-dot"
+                    :class="{ 'is-locked': isScopeLocked }"
+                    aria-hidden="true"
+                  ></view>
+                  <text class="scope-capsule-text">{{ activeScopeLabel }}</text>
+                  <LineIcon
+                    v-if="!isScopeLocked"
+                    class="scope-capsule-chevron"
+                    :class="{ 'is-rotated': showScopeMenu }"
+                    name="chevron-down"
+                    size="12px"
+                    color="var(--text-muted)"
+                  />
+                </view>
 
-          <!-- Mic / Send -->
-          <view class="capsule-right">
-            <view v-if="query.trim().length === 0" class="mic-btn" @click="startVoice">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <rect x="9" y="2" width="6" height="11" rx="3" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
-                <path d="M19 10v2a7 7 0 01-14 0v-2" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
-                <path d="M12 19v3M9 22h6" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
-              </svg>
+                <view v-if="showScopeMenu" class="scope-dropdown-mask" @click="showScopeMenu = false"></view>
+
+                <view v-if="showScopeMenu" class="scope-dropdown-menu" @click.stop>
+                  <scroll-view scroll-y :show-scrollbar="false" class="scope-dropdown-scroll">
+                    <view class="dropdown-section-header">
+                      <text>检索范围</text>
+                    </view>
+                    <view
+                      class="dropdown-item"
+                      :class="{ 'is-active': selectedSubjectId === null }"
+                      role="button"
+                      @click="selectScope(null)"
+                    >
+                      <view class="dropdown-item-icon">
+                        <view
+                          class="scope-status-dot"
+                          :class="{ 'is-muted': selectedSubjectId !== null }"
+                          aria-hidden="true"
+                        ></view>
+                      </view>
+                      <view class="dropdown-item-text">
+                        <text class="dropdown-item-label">全部资料</text>
+                        <text class="dropdown-item-desc">检索全部学科已就绪资料</text>
+                      </view>
+                    </view>
+
+                    <template v-if="subjectStore.subjects.length > 0">
+                      <view class="dropdown-divider"></view>
+                      <view class="dropdown-section-header">
+                        <text>按学科限定</text>
+                      </view>
+                      <view
+                        v-for="sub in subjectStore.subjects"
+                        :key="sub.id"
+                        class="dropdown-item"
+                        :class="{ 'is-active': selectedSubjectId === sub.id }"
+                        role="button"
+                        @click="selectScope(sub.id)"
+                      >
+                        <view class="dropdown-item-icon">
+                          <LineIcon
+                            :name="resolveSubjectIcon(sub.icon)"
+                            size="15px"
+                            :color="selectedSubjectId === sub.id ? 'var(--color-sage-ink)' : 'var(--text-muted)'"
+                          />
+                        </view>
+                        <view class="dropdown-item-text">
+                          <text class="dropdown-item-label">{{ sub.name }}</text>
+                          <text class="dropdown-item-desc num-tabular">{{ formatSubjectStats(sub) }}</text>
+                        </view>
+                      </view>
+                    </template>
+
+                    <view v-else class="dropdown-empty-hint">
+                      <text>暂无学科，可先使用「全部资料」</text>
+                    </view>
+                  </scroll-view>
+                </view>
+              </view>
+
+              <view
+                v-if="messages.length > 0 || currentConversationId"
+                class="composer-tool-btn"
+                :class="{ disabled: isTyping || isStopping }"
+                role="button"
+                aria-label="开启新对话"
+                @click="startNewChat"
+              >
+                <LineIcon name="plus" size="15px" color="var(--color-sage-ink)" />
+              </view>
             </view>
-            <view v-else class="send-btn" @click="handleSearch">
-              <LineIcon name="arrow-up" size="40rpx" color="#ffffff" />
+
+            <view
+              v-if="isTyping || isStopping"
+              class="composer-action-btn stop-btn"
+              :class="{ disabled: isStopping }"
+              role="button"
+              aria-label="停止生成"
+              @click="stopGeneration"
+            >
+              <view class="stop-square"></view>
+            </view>
+            <view
+              v-else
+              class="composer-action-btn send-btn"
+              :class="{ disabled: isConversationUnsupported || !query.trim() }"
+              role="button"
+              aria-label="发送"
+              @click="sendMessage"
+            >
+              <LineIcon name="arrow-up" size="17px" color="#FFFFFF" />
             </view>
           </view>
         </view>
       </view>
-
     </view>
+
+    <template #overlay>
+      <view v-if="showHistorySheet" class="history-drawer-mask" @click="showHistorySheet = false">
+        <view class="history-drawer-panel" @click.stop>
+          <view class="history-drawer-header" :style="historyDrawerHeaderStyle">
+            <view class="history-drawer-heading">
+              <text class="history-drawer-title">历史对话</text>
+              <text v-if="!loadingHistory && conversations.length > 0" class="history-drawer-count num-tabular">
+                {{ conversations.length }}
+              </text>
+            </view>
+            <view class="history-close-btn" role="button" aria-label="关闭" @click="showHistorySheet = false">
+              <LineIcon name="close" size="15px" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <view
+            v-if="messages.length > 0 || currentConversationId"
+            class="history-new-btn"
+            :class="{ disabled: isTyping || isStopping }"
+            role="button"
+            aria-label="开启新对话"
+            @click="startNewChat"
+          >
+            <LineIcon name="plus" size="14px" color="var(--color-sage-ink)" />
+            <text>开启新对话</text>
+          </view>
+
+          <view v-if="loadingHistory" class="history-empty">加载历史对话…</view>
+          <view v-else-if="conversations.length === 0" class="history-empty">暂无历史对话</view>
+          <scroll-view v-else scroll-y :show-scrollbar="false" class="history-drawer-scroll">
+            <view class="history-drawer-list">
+              <view
+                v-for="conv in conversations"
+                :key="conv.id"
+                class="history-row"
+                :class="{ active: conv.id === currentConversationId }"
+                role="button"
+                @click="conv.id && loadConversation(conv.id)"
+              >
+                <view class="history-meta">
+                  <text class="history-title">{{ conv.title || '新对话' }}</text>
+                  <view class="history-subline">
+                    <text class="history-time num-tabular">{{ formatConvDate(conv.updatedAt || conv.createdAt) }}</text>
+                    <text v-if="conv.chatScopeState === 'BOUND'" class="history-scope-tag">
+                      {{ resolveConversationScope(conv, subjectStore.subjects).label }}
+                    </text>
+                  </view>
+                </view>
+                <view
+                  v-if="conv.id"
+                  class="history-delete"
+                  role="button"
+                  aria-label="删除对话"
+                  @click.stop="confirmDeleteConversation(conv.id, conv.version ?? 0)"
+                >
+                  <LineIcon name="trash" size="14px" color="var(--text-muted)" />
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+      </view>
+
+      <SaveKnowledgeBlockModal
+        :visible="showSaveBlockModal"
+        :default-subject-id="selectedSubjectId"
+        :initial-title="saveBlockSeedTitle"
+        :initial-preview="saveBlockSeedContent"
+        @close="showSaveBlockModal = false"
+        @saved="showSaveBlockModal = false"
+      />
+    </template>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, inject, computed } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { storeToRefs } from 'pinia'
-import { useBlockStore } from '@/store/useBlockStore'
-import { chatWithAI } from '@/api/aiClient'
-import { aiApi } from '@/api/aiApi'
-import { uuidv7 } from '@/utils/uuid'
-import LineIcon from '@/components/LineIcon.vue'
+import { aiApi, type ConversationView } from '@/api/aiApi'
+import {
+  chatWithAI,
+  retryChatRun,
+  submitChatActivity,
+  type ChatStreamEnvelope,
+  type ChatWithAiOptions,
+} from '@/api/aiClient'
+import { ApiProblemError } from '@/api/protocol'
+import AppHeader from '@/components/AppHeader.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
+import LineIcon from '@/components/LineIcon.vue'
+import MobileChatPartList from '@/components/MobileChatPartList.vue'
+import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
+import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
-const goBack = () => {
-  uni.redirectTo({ url: '/pages/mobile/home/index' })
-}
+import { useBlockStore } from '@/store/useBlockStore'
+import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import {
+  applyContentDelta,
+  applyReasoningDelta,
+  applyRunStatusSnapshot,
+  applyTerminalState,
+  applyToolEvent,
+  buildMobileReadingContext,
+  buildMobileStarterPrompts,
+  canSelectMobileScope,
+  createAssistantPlaceholder,
+  deriveKnowledgeBlockTitle,
+  evaluateSmartScroll,
+  formatMobileAiScopeAnchor,
+  isConversationProtocolSupported,
+  resolveConversationScope,
+  restoreConversationMessages,
+  safeDecodeQueryParam,
+  type MobileChatMessage,
+} from '@/utils/mobileAiChat'
+import {
+  extractPartsPlainText,
+  reduceMobileChatPartEvent,
+  type MobileChatActivityAnswer,
+} from '@/utils/mobileChatParts'
+import { copyTextWithFallback } from '@/utils/mobileLearning'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
+import { uuidv7 } from '@/utils/uuid'
+
+const STARTER_HINTS = [
+  '定位高频考点与薄弱项',
+  '拆解核心异同与边界',
+  '随堂检验掌握度并附解析',
+] as const
 
 const authStore = useAuthStore()
-const username = computed(() => authStore.username || '同学')
-
 const blockStore = useBlockStore()
-const { recentBlocks } = storeToRefs(blockStore)
+const subjectStore = useSubjectStore()
+const instanceProxy = getCurrentInstance()?.proxy
 
 const query = ref('')
-const messages = ref<{role: 'user' | 'assistant', content: string}[]>([])
+const messages = ref<MobileChatMessage[]>([])
 const currentConversationId = ref('')
-const ensureConversation = async () => {
-  if (currentConversationId.value) return currentConversationId.value
-  const conversation = await aiApi.createConversation({ title: 'AI 问答', baseVersion: 0, clientRequestId: uuidv7() })
-  if (!conversation.id) throw new Error('Conversation response is incomplete')
-  currentConversationId.value = conversation.id
-  return conversation.id
-}
-const isAiTyping = ref(false)
-const bottomId = ref('')
-const isInputFocused = ref(false)
-const isSeamless = ref(false)
-const isModelMenuOpen = ref(false)
-const isActionOpen = ref(false)
-const ACTION_PANEL_HEIGHT = 180 // px
+const conversationScopeState = ref<'UNBOUND' | 'BOUND'>('UNBOUND')
+const selectedSubjectId = ref<string | null>(null)
+const boundScopeLabelOverride = ref<string | null>(null)
+const isTyping = ref(false)
+const isStopping = ref(false)
+const activeRunId = ref('')
+const activeAttemptId = ref('')
+const isConversationUnsupported = ref(false)
+const preSendError = ref('')
+const scrollTargetId = ref('')
+const anchorId = 'chat-bottom-anchor'
+const autoScrollLocked = ref(false)
+const drainingMessageIds = ref<Record<string, boolean>>({})
 
-const keyboardHeight = ref(0)
-const capsuleBottom = computed(() =>
-  isActionOpen.value
-    ? ACTION_PANEL_HEIGHT + keyboardHeight.value
-    : keyboardHeight.value
-)
-const scrollPaddingBottom = computed(() => keyboardHeight.value + 120)
-const currentModel = ref('通用模式')
+const showScopeMenu = ref(false)
+const showHistorySheet = ref(false)
+const loadingHistory = ref(false)
+const conversations = ref<ConversationView[]>([])
 
-const modelOptions = [
-  { 
-    id: 1, 
-    icon: '✦', 
-    label: '学霸模式', 
-    desc: '深度推演与严谨解析',
-    welcomeDesc: '深度严谨，逻辑清晰，为你推演每道难题'
-  },
-  { 
-    id: 2, 
-    icon: '◈', 
-    label: '通用模式', 
-    desc: '全能助手与问答探索',
-    welcomeDesc: '今天想探索点什么？'
-  },
-  { 
-    id: 3, 
-    icon: '✧', 
-    label: '翻译模式', 
-    desc: '学术润色与精准翻译',
-    welcomeDesc: '精准翻译，流畅润色，打造地道学术语篇'
-  },
-]
+const showSaveBlockModal = ref(false)
+const saveBlockSeedTitle = ref('')
+const saveBlockSeedContent = ref('')
 
-const currentModelObj = computed(() => {
-  return modelOptions.find(m => m.label === currentModel.value) || modelOptions[1]
+useEscapeKey(() => showScopeMenu.value, () => {
+  showScopeMenu.value = false
+})
+useEscapeKey(() => showHistorySheet.value, () => {
+  showHistorySheet.value = false
 })
 
+let activeStreamToken = 0
+let activeViewToken = 0
+let scrollTimer: ReturnType<typeof setTimeout> | null = null
+let runPollTimer: ReturnType<typeof setTimeout> | null = null
+let abortLocalStream: (() => void) | null = null
+let subjectsLoadPromise: Promise<void> | null = null
+let hydratedUserKey = ''
+let prevScrollTop = 0
+let chatViewportHeight = 0
+let touchStartY = 0
+let touchPullUpDetected = false
+let programmaticScrollUntil = 0
+let lastAuthScope = `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
+const pendingSubmissionIds: Record<string, string> = {}
+const activityVersions: Record<string, number> = {}
 
-
-// Markdown rich-text parser
-const formatMarkdown = (text: string) => {
-  if (!text) return ''
-  const lines = text.split('\n')
-  const htmlLines = []
-  for (let line of lines) {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('### ')) {
-      htmlLines.push(`<h3 style="font-size: 34rpx; font-weight: 700; margin: 18rpx 0 10rpx; color: var(--text-primary);">${trimmed.slice(4)}</h3>`)
-      continue
+const historyDrawerHeaderStyle = computed(() => {
+  // #ifdef MP-WEIXIN
+  try {
+    const menuRect = (uni as unknown as {
+      getMenuButtonBoundingClientRect?: () => { bottom: number }
+    }).getMenuButtonBoundingClientRect?.()
+    if (menuRect && menuRect.bottom > 0) {
+      return { paddingTop: `${Math.max(48, Math.round(menuRect.bottom + 10))}px` }
     }
-    if (trimmed.startsWith('## ')) {
-      htmlLines.push(`<h2 style="font-size: 38rpx; font-weight: 700; margin: 26rpx 0 14rpx; color: var(--text-primary); border-bottom: 1rpx solid var(--border-subtle); padding-bottom: 6rpx;">${trimmed.slice(3)}</h2>`)
-      continue
-    }
-    if (trimmed.startsWith('# ')) {
-      htmlLines.push(`<h1 style="font-size: 42rpx; font-weight: 700; margin: 34rpx 0 18rpx; color: var(--text-primary);">${trimmed.slice(2)}</h1>`)
-      continue
-    }
-    if (trimmed.startsWith('> ')) {
-      htmlLines.push(`<blockquote style="border-left: 6rpx solid var(--border-strong); padding-left: 20rpx; margin: 16rpx 0; color: var(--text-secondary); font-style: italic;">${trimmed.slice(2)}</blockquote>`)
-      continue
-    }
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      const content = trimmed.slice(2)
-      htmlLines.push(`<div style="display:flex;align-items:flex-start;margin:10rpx 0;padding-left:12rpx;"><span style="color:var(--text-accent);margin-right:12rpx;font-weight:bold;">•</span><div style="flex:1;font-size:32rpx;color:var(--text-primary);">${content}</div></div>`)
-      continue
-    }
-    const numMatch = trimmed.match(/^(\d+)\.\s(.*)/)
-    if (numMatch) {
-      htmlLines.push(`<div style="display:flex;align-items:flex-start;margin:10rpx 0;padding-left:12rpx;"><span style="color:var(--text-accent);margin-right:12rpx;font-weight:bold;">${numMatch[1]}.</span><div style="flex:1;font-size:32rpx;color:var(--text-primary);">${numMatch[2]}</div></div>`)
-      continue
-    }
-    if (trimmed === '') {
-      htmlLines.push('<div style="height:12rpx;"></div>')
-    } else {
-      htmlLines.push(`<div style="margin-bottom:6rpx;min-height:38rpx;">${line}</div>`)
-    }
+  } catch {
+    // Fallback to default Mini Program capsule clearance
   }
-  let formatted = htmlLines.join('')
-  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight:700;color:var(--text-primary);">$1</strong>')
-  formatted = formatted.replace(/`(.*?)`/g, '<code style="font-family:monospace;background:var(--color-bg-tertiary);padding:4rpx 10rpx;border-radius:8rpx;font-size:28rpx;color:var(--text-accent);border:1rpx solid var(--border-subtle);">$1</code>')
-  return `<div style="line-height:1.65;font-size:32rpx;color:var(--text-primary);">${formatted}</div>`
+  return { paddingTop: '88px' }
+  // #endif
+  // #ifndef MP-WEIXIN
+  return {}
+  // #endif
+})
+
+const selectedSubject = computed(() => (
+  selectedSubjectId.value
+    ? subjectStore.subjects.find(item => item.id === selectedSubjectId.value) || null
+    : null
+))
+
+const selectedSubjectName = computed(() => selectedSubject.value?.name?.trim() || null)
+
+const isScopeLocked = computed(() => conversationScopeState.value === 'BOUND' || messages.value.length > 0)
+
+const activeScopeLabel = computed(() => {
+  if (boundScopeLabelOverride.value) return boundScopeLabelOverride.value
+  if (selectedSubjectId.value) return selectedSubjectName.value || '指定学科'
+  return '全部资料'
+})
+
+const totalBlockCount = computed(() => (
+  blockStore.recentBlocks.length > 0
+    ? blockStore.recentBlocks.filter(item => !item.is_deleted).length
+    : undefined
+))
+
+const welcomeTitle = computed(() => (
+  selectedSubjectName.value ? `《${selectedSubjectName.value}》想先看哪部分？` : '想先攻克哪部分？'
+))
+
+const welcomeSubtitle = computed(() => formatMobileAiScopeAnchor({
+  selectedSubject: selectedSubject.value,
+  subjects: subjectStore.subjects,
+  totalBlockCount: totalBlockCount.value,
+}))
+
+const composerPlaceholder = computed(() => {
+  if (isConversationUnsupported.value) return '旧版对话仅供查看，请开启新对话继续提问'
+  return selectedSubjectName.value ? `在《${selectedSubjectName.value}》中提问…` : '输入学习问题…'
+})
+
+const starterItems = computed(() => (
+  buildMobileStarterPrompts(selectedSubjectName.value).map((prompt, index) => ({
+    prompt,
+    hint: STARTER_HINTS[index] || STARTER_HINTS[STARTER_HINTS.length - 1],
+  }))
+))
+
+function resolveSubjectIcon(icon?: string | null): string {
+  const key = icon?.trim()
+  if (key && isSubjectIconKey(key)) return `subj-${key}`
+  return 'subj-book'
 }
 
-const copyText = (text: string) => {
-  uni.setClipboardData({
-    data: text,
-    success: () => uni.showToast({ title: '已复制', icon: 'none' })
+function formatSubjectStats(subject: Subject): string {
+  const files = subject.fileCount ?? 0
+  const blocks = subject.blockCount ?? 0
+  if (files === 0 && blocks === 0) return '暂无资料与知识块'
+  return `${files} 份资料 · ${blocks} 个知识块`
+}
+
+function hasFailedToolWithoutAnswer(msg: MobileChatMessage): boolean {
+  return !msg.content && msg.parts.length === 0 && msg.tools.some(step => step.status === 'FAILED')
+}
+
+function hasVisibleAssistantContent(msg: MobileChatMessage): boolean {
+  return msg.parts.length > 0 || Boolean(msg.content)
+}
+
+function hasCopyableContent(msg: MobileChatMessage): boolean {
+  return Boolean(extractPartsPlainText(msg.parts, msg.content).trim())
+}
+
+function stopRunPolling() {
+  if (runPollTimer) {
+    clearTimeout(runPollTimer)
+    runPollTimer = null
+  }
+}
+
+function setMessageDraining(msgId: string, draining: boolean) {
+  if (draining) {
+    drainingMessageIds.value = { ...drainingMessageIds.value, [msgId]: true }
+    return
+  }
+  if (Object.hasOwn(drainingMessageIds.value, msgId)) {
+    const next = { ...drainingMessageIds.value }
+    delete next[msgId]
+    drainingMessageIds.value = next
+  }
+}
+
+function isLastAssistantMessage(msgId: string): boolean {
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    if (messages.value[i].role === 'assistant') {
+      return messages.value[i].id === msgId
+    }
+  }
+  return false
+}
+
+function measureChatViewport(): Promise<number> {
+  if (chatViewportHeight > 0) return Promise.resolve(chatViewportHeight)
+  return new Promise((resolve) => {
+    const queryBuilder = instanceProxy
+      ? uni.createSelectorQuery().in(instanceProxy)
+      : uni.createSelectorQuery()
+    queryBuilder.select('.chat-scroll').boundingClientRect((rect) => {
+      const box = Array.isArray(rect) ? rect[0] : rect
+      if (box && typeof box.height === 'number' && box.height > 0) {
+        chatViewportHeight = box.height
+      }
+      resolve(chatViewportHeight)
+    }).exec()
   })
 }
 
-const startNewChat = () => {
+function scrollToBottom(force = false) {
+  if (!force && autoScrollLocked.value) return
+  if (force) {
+    autoScrollLocked.value = false
+    touchPullUpDetected = false
+  }
+  if (scrollTimer) return
+  void measureChatViewport()
+  nextTick(() => {
+    programmaticScrollUntil = Date.now() + 180
+    scrollTargetId.value = anchorId
+    scrollTimer = setTimeout(() => {
+      scrollTargetId.value = ''
+      scrollTimer = null
+    }, 90)
+  })
+}
+
+function resumeAutoScroll() {
+  scrollToBottom(true)
+}
+
+function handleStreamingTextProgress() {
+  if (!autoScrollLocked.value) {
+    scrollToBottom(false)
+  }
+}
+
+function handleChatTouchStart(event: unknown) {
+  const payload = event as { touches?: Array<{ clientY?: number }> }
+  const y = payload?.touches?.[0]?.clientY
+  if (typeof y === 'number') {
+    touchStartY = y
+    touchPullUpDetected = false
+  }
+}
+
+function handleChatTouchMove(event: unknown) {
+  const payload = event as { touches?: Array<{ clientY?: number }> }
+  const y = payload?.touches?.[0]?.clientY
+  if (typeof y === 'number' && y > touchStartY + 12) {
+    touchPullUpDetected = true
+    autoScrollLocked.value = true
+  }
+}
+
+function handleChatWheel(event: unknown) {
+  const payload = event as { deltaY?: number }
+  if (typeof payload?.deltaY !== 'number') return
+  if (payload.deltaY < 0) {
+    programmaticScrollUntil = 0
+    touchPullUpDetected = true
+    autoScrollLocked.value = true
+  } else if (payload.deltaY > 0 && autoScrollLocked.value) {
+    touchPullUpDetected = false
+  }
+}
+
+function handleChatScroll(event: unknown) {
+  const payload = event as { detail?: { scrollTop?: number; scrollHeight?: number } }
+  const scrollTop = Number(payload?.detail?.scrollTop ?? 0)
+  const scrollHeight = Number(payload?.detail?.scrollHeight ?? 0)
+  const isProgrammatic = Date.now() < programmaticScrollUntil
+  if (chatViewportHeight <= 0) {
+    void measureChatViewport()
+    prevScrollTop = scrollTop
+    return
+  }
+  const decision = evaluateSmartScroll({
+    scrollTop,
+    scrollHeight,
+    viewportHeight: chatViewportHeight,
+    prevScrollTop,
+    touchPullUpDetected,
+  }, autoScrollLocked.value, isProgrammatic)
+  autoScrollLocked.value = decision.locked
+  prevScrollTop = decision.nextPrevScrollTop
+  if (!decision.locked) {
+    touchPullUpDetected = false
+  }
+}
+
+function onQueryInput() {
+  if (preSendError.value) {
+    preSendError.value = ''
+  }
+}
+
+function toggleProcess(index: number) {
+  const target = messages.value[index]
+  if (!target || (!target.reasoningText && target.tools.length === 0)) return
+  messages.value[index] = {
+    ...target,
+    processExpanded: !target.processExpanded,
+    processManuallyToggled: true,
+  }
+}
+
+function ensureSubjectsLoaded(): Promise<void> {
+  const currentUserKey = `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
+  if (hydratedUserKey === currentUserKey && subjectStore.subjects.length > 0) {
+    return Promise.resolve()
+  }
+  if (!subjectsLoadPromise) {
+    subjectsLoadPromise = Promise.all([
+      subjectStore.loadSubjects(),
+      blockStore.loadLocalBlocks(),
+    ]).then(() => {
+      if (currentUserKey === `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`) {
+        hydratedUserKey = currentUserKey
+      }
+    }).finally(() => {
+      subjectsLoadPromise = null
+    })
+  }
+  return subjectsLoadPromise
+}
+
+function handleScopePillClick() {
+  if (isTyping.value || isStopping.value || isScopeLocked.value) {
+    showScopeMenu.value = false
+    notifyScopeLocked()
+    return
+  }
+  if (showScopeMenu.value) {
+    showScopeMenu.value = false
+    return
+  }
+  void openScopeMenu()
+}
+
+async function openScopeMenu() {
+  if (!canSelectMobileScope({ isTyping: isTyping.value, isStopping: isStopping.value, scopeLocked: isScopeLocked.value })) {
+    notifyScopeLocked()
+    return
+  }
+  await ensureSubjectsLoaded()
+  if (!canSelectMobileScope({ isTyping: isTyping.value, isStopping: isStopping.value, scopeLocked: isScopeLocked.value })) return
+  showScopeMenu.value = true
+}
+
+function notifyScopeLocked() {
+  uni.showToast({
+    title: '当前对话范围已锁定，切换范围可在历史对话中开启新对话',
+    icon: 'none',
+  })
+}
+
+function selectScope(subjectId: string | null) {
+  if (!canSelectMobileScope({ isTyping: isTyping.value, isStopping: isStopping.value, scopeLocked: isScopeLocked.value })) {
+    showScopeMenu.value = false
+    notifyScopeLocked()
+    return
+  }
+  selectedSubjectId.value = subjectId
+  boundScopeLabelOverride.value = null
+  showScopeMenu.value = false
+}
+
+function clearMapKeys(map: Record<string, string> | Record<string, number>) {
+  for (const key of Object.keys(map)) {
+    delete map[key]
+  }
+}
+
+function resetChatState() {
+  activeStreamToken += 1
+  activeViewToken += 1
+  stopRunPolling()
+  const abortFn = abortLocalStream
+  abortLocalStream = null
+  abortFn?.()
+  isTyping.value = false
+  isStopping.value = false
+  showScopeMenu.value = false
+  currentConversationId.value = ''
+  conversationScopeState.value = 'UNBOUND'
+  selectedSubjectId.value = null
+  boundScopeLabelOverride.value = null
   messages.value = []
   query.value = ''
+  activeRunId.value = ''
+  activeAttemptId.value = ''
+  isConversationUnsupported.value = false
+  preSendError.value = ''
+  autoScrollLocked.value = false
+  drainingMessageIds.value = {}
+  prevScrollTop = 0
+  touchPullUpDetected = false
+  clearMapKeys(pendingSubmissionIds)
+  clearMapKeys(activityVersions)
 }
 
-const selectModel = (model: string) => {
-  currentModel.value = model
-  isModelMenuOpen.value = false
+function startNewChat() {
+  if (isTyping.value || isStopping.value) {
+    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    return
+  }
+  showHistorySheet.value = false
+  resetChatState()
 }
 
-const closeActionPanel = () => {
-  isActionOpen.value = false
+function submitStarterPrompt(prompt: string) {
+  if (isTyping.value || isStopping.value) return
+  query.value = prompt
+  void sendMessage()
 }
 
-const openActionSheet = () => {
-  isActionOpen.value = !isActionOpen.value
+async function copyText(text: string) {
+  const ok = await copyTextWithFallback(text)
+  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
 }
 
-const onActionTap = (index: number) => {
-  closeActionPanel()
-  if (index === 0 || index === 1) {
-    scanPhoto()
-  } else {
-    uni.showToast({ title: '知识块导入开发中...', icon: 'none' })
+function copyAssistantMessage(msg: MobileChatMessage) {
+  const text = extractPartsPlainText(msg.parts, msg.content).trim()
+  if (!text) return
+  void copyText(text)
+}
+
+function openSaveBlockModal(msg: MobileChatMessage) {
+  const plainContent = extractPartsPlainText(msg.parts, msg.content).trim()
+  if (!plainContent) return
+  const msgIdx = messages.value.findIndex(item => item.id === msg.id)
+  let precedingQuestion = ''
+  for (let i = msgIdx - 1; i >= 0; i -= 1) {
+    if (messages.value[i].role === 'user') {
+      precedingQuestion = messages.value[i].content
+      break
+    }
+  }
+  saveBlockSeedTitle.value = deriveKnowledgeBlockTitle(precedingQuestion, plainContent)
+  saveBlockSeedContent.value = plainContent.slice(0, 4000)
+  showSaveBlockModal.value = true
+}
+
+function formatConvDate(iso?: string): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+async function openHistoryDrawer() {
+  showScopeMenu.value = false
+  showHistorySheet.value = true
+  loadingHistory.value = true
+  const generation = authStore.getLoginGeneration()
+  try {
+    if (subjectStore.subjects.length === 0) {
+      await subjectStore.loadSubjects()
+    }
+    const list = await aiApi.listConversations()
+    if (generation !== authStore.getLoginGeneration()) return
+    conversations.value = list.filter(item => !item.deletedAt)
+  } catch {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: '加载失败', icon: 'none' })
+  } finally {
+    if (generation === authStore.getLoginGeneration()) {
+      loadingHistory.value = false
+    }
   }
 }
 
-if (uni.onKeyboardHeightChange) {
-  uni.onKeyboardHeightChange((res) => { keyboardHeight.value = res.height })
-}
-
-const onInputFocus = () => {
-  isInputFocused.value = true
-  scrollToBottom()
-}
-
-const onInputBlur = () => {
-  isInputFocused.value = false
-}
-
-onLoad((options) => {
-  if (options && options.seamless) isSeamless.value = true
-  if (options && options.q) {
-    query.value = decodeURIComponent(options.q)
-    nextTick(() => { handleSearch() })
+async function loadConversation(conversationId: string) {
+  if (isTyping.value || isStopping.value) {
+    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    return
   }
-})
+  const generation = authStore.getLoginGeneration()
+  const viewToken = ++activeViewToken
+  try {
+    await ensureSubjectsLoaded()
+    const detail = await aiApi.getConversation(conversationId)
+    if (
+      generation !== authStore.getLoginGeneration()
+      || viewToken !== activeViewToken
+      || isTyping.value
+      || isStopping.value
+    ) {
+      return
+    }
 
-const extractToBlock = (content: string) => {
-  uni.showModal({
-    title: '提炼为知识块',
-    content: '确认将此回复保存到本地知识库吗？',
-    success: (res) => {
-      if (res.confirm) {
-        blockStore.addBlock({
-          subject: 'AI 问答',
-          title: 'AI 提炼笔记',
-          preview: content,
-          source: 'Auralis AI',
-          color: '#7D9372',
-          id: uuidv7()
-        })
-        uni.showToast({ title: '已保存', icon: 'success' })
+    activeStreamToken += 1
+    stopRunPolling()
+    isTyping.value = false
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+    isConversationUnsupported.value = !isConversationProtocolSupported(detail)
+    preSendError.value = isConversationUnsupported.value ? '旧版对话仅供查看，请在历史对话中开启新对话' : ''
+    const abortFn = abortLocalStream
+    abortLocalStream = null
+    abortFn?.()
+    drainingMessageIds.value = {}
+    clearMapKeys(pendingSubmissionIds)
+    clearMapKeys(activityVersions)
+    currentConversationId.value = detail.id || conversationId
+
+    const resolvedScope = resolveConversationScope(detail, subjectStore.subjects)
+    conversationScopeState.value = resolvedScope.locked ? 'BOUND' : 'UNBOUND'
+    selectedSubjectId.value = resolvedScope.subjectId
+    boundScopeLabelOverride.value = resolvedScope.locked && resolvedScope.label.includes('指定资料')
+      ? resolvedScope.label
+      : null
+
+    messages.value = restoreConversationMessages(detail)
+
+    if (detail.activeRun?.executionActive && detail.activeRun.runId) {
+      if (detail.activeRun.status === 'UNKNOWN' && detail.activeRun.currentAttemptId) {
+        void recoverUnknownRun(
+          currentConversationId.value,
+          detail.activeRun.runId,
+          detail.activeRun.currentAttemptId,
+          viewToken,
+          generation,
+        )
+      } else {
+        activeRunId.value = detail.activeRun.runId
+        activeAttemptId.value = detail.activeRun.currentAttemptId || ''
+        isTyping.value = true
+        scheduleRunPolling(currentConversationId.value, detail.activeRun.runId, viewToken, generation)
       }
     }
-  })
-}
+    if (isConversationUnsupported.value && messages.value.length > 0) {
+      uni.showToast({ title: '旧版对话仅供查看，请开启新对话继续提问', icon: 'none' })
+    }
 
-const scanPhoto = () => uni.showToast({ title: '相机调用中...', icon: 'none' })
-const startVoice = () => uni.showToast({ title: '正在录音...', icon: 'none' })
-
-const scrollToBottom = () => {
-  nextTick(() => {
-    bottomId.value = 'bottom-anchor'
-    setTimeout(() => { bottomId.value = '' }, 100)
-  })
-}
-
-const handleSearch = async () => {
-  if (!query.value.trim()) return
-  const text = query.value.trim()
-  messages.value.push({ role: 'user', content: text })
-  query.value = ''
-  scrollToBottom()
-  isAiTyping.value = true
-  messages.value.push({ role: 'assistant', content: '' })
-  const aiMsgIndex = messages.value.length - 1
-  try {
-    const conversationId = await ensureConversation()
-    const history = messages.value.slice(0, -1).map(m => ({ role: m.role, content: m.content }))
-    await chatWithAI(text, history, (delta) => {
-      messages.value[aiMsgIndex].content += delta
-      scrollToBottom()
-    }, conversationId)
-  } catch (err) {
-    messages.value[aiMsgIndex].content = err instanceof Error ? err.message : '网络请求失败，请稍后再试。'
-  } finally {
-    isAiTyping.value = false
-    scrollToBottom()
+    showHistorySheet.value = false
+    scrollToBottom(true)
+  } catch {
+    if (generation !== authStore.getLoginGeneration() || viewToken !== activeViewToken) return
+    uni.showToast({ title: '加载失败', icon: 'none' })
   }
 }
+
+async function recoverUnknownRun(
+  conversationId: string,
+  runId: string,
+  attemptId: string,
+  viewToken: number,
+  generation: symbol,
+) {
+  try {
+    const recovered = await aiApi.recoverRunAttempt(conversationId, runId, attemptId)
+    if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+    messages.value = applyRunStatusSnapshot(messages.value, recovered)
+    scrollToBottom(false)
+    if (recovered.executionActive && recovered.runId && recovered.status !== 'UNKNOWN') {
+      activeRunId.value = recovered.runId
+      activeAttemptId.value = recovered.currentAttemptId || attemptId
+      isTyping.value = true
+      scheduleRunPolling(conversationId, recovered.runId, viewToken, generation)
+      return
+    }
+    isTyping.value = false
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+  } catch {
+    if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+    isTyping.value = false
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+  }
+}
+
+function scheduleRunPolling(
+  conversationId: string,
+  runId: string,
+  viewToken: number,
+  generation: symbol,
+  failureCount = 0,
+) {
+  stopRunPolling()
+  const delayMs = failureCount > 0 ? 2000 : 1500
+  runPollTimer = setTimeout(() => {
+    void (async () => {
+      if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+      try {
+        const statusView = await aiApi.getRunStatus(conversationId, runId)
+        if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+        messages.value = applyRunStatusSnapshot(messages.value, statusView)
+        scrollToBottom(false)
+        if (statusView.executionActive && statusView.status !== 'UNKNOWN') {
+          scheduleRunPolling(conversationId, runId, viewToken, generation, 0)
+          return
+        }
+        if (statusView.status === 'UNKNOWN' && statusView.currentAttemptId) {
+          await recoverUnknownRun(conversationId, runId, statusView.currentAttemptId, viewToken, generation)
+          return
+        }
+        isTyping.value = false
+        activeRunId.value = ''
+        activeAttemptId.value = ''
+      } catch {
+        if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+        if (failureCount < 2) {
+          scheduleRunPolling(conversationId, runId, viewToken, generation, failureCount + 1)
+          return
+        }
+        messages.value = messages.value.map(item => (
+          item.role === 'assistant' && item.status === 'streaming' && (!item.runId || item.runId === runId)
+            ? applyTerminalState(item, 'failed', '网络波动，暂未获取到最新生成状态，请点击重试')
+            : item
+        ))
+        isTyping.value = false
+        activeRunId.value = ''
+        activeAttemptId.value = ''
+      }
+    })()
+  }, delayMs)
+}
+
+function confirmDeleteConversation(conversationId: string, baseVersion: number) {
+  if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) {
+    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    return
+  }
+  uni.showModal({
+    title: '删除对话',
+    content: '删除后无法恢复该对话记录',
+    confirmText: '删除',
+    confirmColor: '#C93B3B',
+    success: (res) => {
+      if (res.confirm) {
+        void deleteConversation(conversationId, baseVersion)
+      }
+    },
+  })
+}
+
+async function syncConversationMeta(conversationId: string, generation: symbol) {
+  try {
+    const detail = await aiApi.getConversation(conversationId)
+    if (generation !== authStore.getLoginGeneration()) return
+    const idx = conversations.value.findIndex(item => item.id === conversationId)
+    const nextItem: ConversationView = {
+      id: detail.id ?? conversationId,
+      title: detail.title,
+      version: detail.version,
+      chatScopeState: detail.chatScopeState,
+      chatScope: detail.chatScope,
+      updatedAt: detail.updatedAt,
+      createdAt: detail.createdAt,
+    }
+    if (idx >= 0) {
+      conversations.value = conversations.value.map(item => (
+        item.id === conversationId ? { ...item, ...nextItem } : item
+      ))
+    } else {
+      conversations.value = [nextItem, ...conversations.value]
+    }
+  } catch {
+    // Keep existing conversation list item when offline
+  }
+}
+
+async function deleteConversation(conversationId: string, baseVersion: number) {
+  if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) return
+  const generation = authStore.getLoginGeneration()
+  try {
+    try {
+      await aiApi.deleteConversation(conversationId, baseVersion)
+    } catch (error) {
+      if (error instanceof ApiProblemError && error.status === 409) {
+        const latest = await aiApi.getConversation(conversationId)
+        if (generation !== authStore.getLoginGeneration()) return
+        await aiApi.deleteConversation(conversationId, Number(latest.version ?? baseVersion))
+      } else {
+        throw error
+      }
+    }
+    if (generation !== authStore.getLoginGeneration()) return
+    conversations.value = conversations.value.filter(item => item.id !== conversationId)
+    if (currentConversationId.value === conversationId) {
+      resetChatState()
+    }
+    uni.showToast({ title: '已删除', icon: 'none' })
+  } catch {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: '删除失败', icon: 'none' })
+  }
+}
+
+async function ensureConversation(seedTitle: string, generation: symbol, isCurrent: () => boolean): Promise<string> {
+  if (currentConversationId.value) return currentConversationId.value
+  const created = await aiApi.createConversation({
+    title: seedTitle.slice(0, 20) || 'AI 问答',
+    baseVersion: 0,
+    clientRequestId: uuidv7(),
+  })
+  if (generation !== authStore.getLoginGeneration()) {
+    throw new Error('登录状态已变化，请重试')
+  }
+  if (!created.id) throw new Error('创建对话失败')
+  if (isCurrent()) {
+    currentConversationId.value = created.id
+  }
+  return created.id
+}
+
+async function stopGeneration() {
+  if (!isTyping.value || isStopping.value) return
+  stopRunPolling()
+  isStopping.value = true
+  const targetConversationId = currentConversationId.value
+  const targetRunId = activeRunId.value
+  const lastIndex = messages.value.length - 1
+  if (lastIndex >= 0 && messages.value[lastIndex].role === 'assistant') {
+    const targetMsg = messages.value[lastIndex]
+    setMessageDraining(targetMsg.id, false)
+    messages.value[lastIndex] = applyTerminalState(targetMsg, 'cancelled')
+  }
+
+  const stopStreamToken = ++activeStreamToken
+  const stopViewToken = ++activeViewToken
+  const abortFn = abortLocalStream
+  abortLocalStream = null
+  abortFn?.()
+
+  try {
+    if (targetConversationId && targetRunId) {
+      await aiApi.cancelRun(targetConversationId, targetRunId)
+    }
+  } catch {
+    // Server-side run may have already settled; UI stays safely unlocked.
+  } finally {
+    if (stopStreamToken === activeStreamToken && stopViewToken === activeViewToken) {
+      isStopping.value = false
+      isTyping.value = false
+      activeRunId.value = ''
+      activeAttemptId.value = ''
+      scrollToBottom(false)
+    }
+  }
+}
+
+function applyEnvelopeToSlot(aiIndex: number, envelope: ChatStreamEnvelope) {
+  if (envelope.event === 'activity.ready') {
+    const qId = typeof envelope.payload.questionId === 'string'
+      ? envelope.payload.questionId
+      : (typeof envelope.payload.activityId === 'string' ? envelope.payload.activityId : '')
+    const qVer = typeof envelope.payload.questionVersion === 'number' ? envelope.payload.questionVersion : 1
+    if (qId) {
+      activityVersions[qId] = qVer
+    }
+  }
+
+  if (envelope.event === 'activity.submitted') {
+    const rawPart = envelope.payload.part as { componentId?: unknown; questionId?: unknown } | undefined
+    const targetCompId = typeof rawPart?.componentId === 'string' ? rawPart.componentId : ''
+    const targetQId = typeof envelope.payload.questionId === 'string'
+      ? envelope.payload.questionId
+      : (typeof rawPart?.questionId === 'string' ? rawPart.questionId : '')
+    if (targetQId && Object.hasOwn(pendingSubmissionIds, targetQId)) {
+      delete pendingSubmissionIds[targetQId]
+    }
+    for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+      const m = messages.value[i]
+      if (m.role !== 'assistant') continue
+      const ownsTarget = m.parts.some(
+        p => p.kind === 'block' && ((targetCompId && p.componentId === targetCompId) || (targetQId && p.questionId === targetQId)),
+      )
+      if (ownsTarget) {
+        messages.value[i] = {
+          ...m,
+          parts: reduceMobileChatPartEvent(m.parts, envelope, m.id),
+        }
+        break
+      }
+    }
+    return
+  }
+
+  const target = messages.value[aiIndex]
+  if (!target) return
+  messages.value[aiIndex] = {
+    ...target,
+    parts: reduceMobileChatPartEvent(target.parts, envelope, envelope.replyMessageId || target.id),
+  }
+  if (envelope.event.startsWith('block.') || envelope.event === 'activity.ready') {
+    scrollToBottom(false)
+  }
+}
+
+async function runStreamIntoSlot(params: {
+  aiIndex: number
+  streamToken: number
+  generation: symbol
+  resolveConversationId: () => Promise<string>
+  invoke: (conversationId: string, onDelta: (delta: string) => void, options: ChatWithAiOptions) => Promise<void>
+  restoreDraftText?: string
+  dropPairOnPreAdmitError?: boolean
+  readingContext?: ReturnType<typeof buildMobileReadingContext>
+}) {
+  const { aiIndex, streamToken, generation } = params
+  const isCurrent = () => streamToken === activeStreamToken && generation === authStore.getLoginGeneration()
+  let admittedTurn = false
+  let resumedPolling = false
+  let terminalStatus: 'COMPLETED' | 'CANCELLED' | 'UNKNOWN' | 'FAILED' | null = null
+
+  const recoverInterruptedSlot = async (convId: string): Promise<'resolved' | 'polling' | 'none'> => {
+    if (!activeRunId.value || !activeAttemptId.value) return 'none'
+    try {
+      const recovered = await aiApi.recoverRunAttempt(convId, activeRunId.value, activeAttemptId.value)
+      if (!isCurrent()) return 'resolved'
+      messages.value = applyRunStatusSnapshot(messages.value, recovered)
+      if (recovered.executionActive && recovered.runId && recovered.status !== 'UNKNOWN') {
+        activeRunId.value = recovered.runId
+        activeAttemptId.value = recovered.currentAttemptId || activeAttemptId.value
+        resumedPolling = true
+        scheduleRunPolling(convId, recovered.runId, activeViewToken, generation)
+        return 'polling'
+      }
+      if (recovered.status === 'COMPLETED' || recovered.status === 'FAILED' || recovered.status === 'CANCELLED') {
+        return 'resolved'
+      }
+      return 'none'
+    } catch {
+      return 'none'
+    }
+  }
+
+  const markAdmitted = () => {
+    if (admittedTurn) return
+    admittedTurn = true
+    conversationScopeState.value = 'BOUND'
+  }
+
+  try {
+    const conversationId = await params.resolveConversationId()
+    if (!isCurrent()) return
+
+    await params.invoke(conversationId, (delta) => {
+      if (!isCurrent()) return
+      markAdmitted()
+      messages.value[aiIndex] = applyContentDelta(messages.value[aiIndex], delta)
+      scrollToBottom(false)
+    }, {
+      readingContext: params.readingContext,
+      onRunStarted: ({ runId, attemptId }) => {
+        if (!isCurrent()) return
+        markAdmitted()
+        activeRunId.value = runId
+        activeAttemptId.value = attemptId
+        messages.value[aiIndex] = { ...messages.value[aiIndex], runId }
+      },
+      onEnvelope: (envelope) => {
+        if (!isCurrent()) return
+        markAdmitted()
+        applyEnvelopeToSlot(aiIndex, envelope)
+      },
+      onReasoningDelta: (delta) => {
+        if (!isCurrent()) return
+        markAdmitted()
+        messages.value[aiIndex] = applyReasoningDelta(messages.value[aiIndex], delta)
+        scrollToBottom(false)
+      },
+      onToolEvent: (ev) => {
+        if (!isCurrent()) return
+        markAdmitted()
+        messages.value[aiIndex] = applyToolEvent(messages.value[aiIndex], ev)
+      },
+      onTerminal: ({ status }) => {
+        if (!isCurrent()) return
+        markAdmitted()
+        terminalStatus = status
+      },
+      onAbortReady: (abortFn) => {
+        if (!isCurrent()) {
+          abortFn()
+          return
+        }
+        abortLocalStream = abortFn
+      },
+    })
+
+    if (!isCurrent()) return
+    if (terminalStatus === 'CANCELLED') {
+      messages.value[aiIndex] = applyTerminalState(messages.value[aiIndex], 'cancelled')
+      return
+    }
+    if (terminalStatus === 'UNKNOWN') {
+      const recovery = await recoverInterruptedSlot(conversationId)
+      if (!isCurrent() || recovery !== 'none') return
+      messages.value[aiIndex] = applyTerminalState(
+        messages.value[aiIndex],
+        'failed',
+        '连接中断，请稍后在历史对话中确认最终结果',
+      )
+      return
+    }
+    if (terminalStatus === null) {
+      const recovery = await recoverInterruptedSlot(conversationId)
+      if (!isCurrent() || recovery !== 'none') return
+      if (params.restoreDraftText && !admittedTurn && !query.value.trim()) {
+        query.value = params.restoreDraftText
+      }
+      if (params.dropPairOnPreAdmitError && !admittedTurn && messages.value.length === 2) {
+        messages.value = []
+        preSendError.value = '连接已中断，未收到模型响应，请重试'
+        return
+      }
+      messages.value[aiIndex] = applyTerminalState(
+        messages.value[aiIndex],
+        'failed',
+        '连接意外结束，响应可能不完整，请稍后确认或重试',
+      )
+      return
+    }
+    messages.value[aiIndex] = applyTerminalState(messages.value[aiIndex], 'completed')
+  } catch (err) {
+    if (!isCurrent()) return
+    if ((terminalStatus === 'UNKNOWN' || terminalStatus === null) && currentConversationId.value) {
+      const recovery = await recoverInterruptedSlot(currentConversationId.value)
+      if (!isCurrent() || recovery !== 'none') return
+    }
+    const errMessage = err instanceof Error ? err.message : '请求失败，请重试'
+    if (params.restoreDraftText && !admittedTurn && !query.value.trim()) {
+      query.value = params.restoreDraftText
+    }
+    if (params.dropPairOnPreAdmitError && !admittedTurn && messages.value.length === 2) {
+      messages.value = []
+      preSendError.value = errMessage
+      return
+    }
+    messages.value[aiIndex] = applyTerminalState(messages.value[aiIndex], 'failed', errMessage)
+  } finally {
+    if (isCurrent()) {
+      abortLocalStream = null
+      if (!resumedPolling) {
+        isTyping.value = false
+        activeRunId.value = ''
+        activeAttemptId.value = ''
+      }
+      if (admittedTurn && currentConversationId.value) {
+        void syncConversationMeta(currentConversationId.value, generation)
+      }
+      scrollToBottom(false)
+    }
+  }
+}
+
+async function sendMessage() {
+  if (isConversationUnsupported.value) {
+    uni.showToast({ title: '旧版对话仅供查看，请在历史对话中开启新对话', icon: 'none' })
+    return
+  }
+  const text = query.value.trim()
+  if (!text || isTyping.value || isStopping.value) return
+
+  stopRunPolling()
+  activeViewToken += 1
+  const streamToken = ++activeStreamToken
+  const generation = authStore.getLoginGeneration()
+  const wasEmptyConversation = messages.value.length === 0
+  const chosenSubjectId = selectedSubjectId.value
+  const readingContext = buildMobileReadingContext(chosenSubjectId, conversationScopeState.value)
+
+  preSendError.value = ''
+  query.value = ''
+  showScopeMenu.value = false
+  messages.value.push({
+    id: `user-${uuidv7()}`,
+    role: 'user',
+    content: text,
+    parts: [],
+    reasoningText: '',
+    tools: [],
+    processTimeline: [],
+    processExpanded: false,
+    processManuallyToggled: false,
+    status: 'completed',
+  })
+  messages.value.push(createAssistantPlaceholder(`assistant-${uuidv7()}`))
+  const aiIndex = messages.value.length - 1
+  isTyping.value = true
+  activeRunId.value = ''
+  activeAttemptId.value = ''
+  scrollToBottom(true)
+
+  await runStreamIntoSlot({
+    aiIndex,
+    streamToken,
+    generation,
+    restoreDraftText: text,
+    dropPairOnPreAdmitError: wasEmptyConversation,
+    readingContext,
+    resolveConversationId: () => ensureConversation(text, generation, () => (
+      streamToken === activeStreamToken && generation === authStore.getLoginGeneration()
+    )),
+    invoke: (conversationId, onDelta, options) => chatWithAI(text, [], onDelta, conversationId, options),
+  })
+}
+
+async function regenerateAssistantMessage(msgId: string) {
+  if (isTyping.value || isStopping.value || isConversationUnsupported.value) return
+  const msgIndex = messages.value.findIndex(m => m.id === msgId)
+  if (msgIndex < 0) return
+  const target = messages.value[msgIndex]
+
+  if ((target.status === 'failed' || target.status === 'cancelled') && target.runId && currentConversationId.value) {
+    stopRunPolling()
+    activeViewToken += 1
+    const streamToken = ++activeStreamToken
+    const generation = authStore.getLoginGeneration()
+    const targetRunId = target.runId
+    const convId = currentConversationId.value
+    setMessageDraining(target.id, false)
+    messages.value[msgIndex] = {
+      ...createAssistantPlaceholder(target.id, target.originatingKind),
+      runId: targetRunId,
+    }
+    isTyping.value = true
+    activeRunId.value = targetRunId
+    activeAttemptId.value = ''
+    scrollToBottom(true)
+
+    await runStreamIntoSlot({
+      aiIndex: msgIndex,
+      streamToken,
+      generation,
+      resolveConversationId: async () => convId,
+      invoke: (conversationId, onDelta, options) => retryChatRun(conversationId, targetRunId, onDelta, options),
+    })
+    return
+  }
+
+  if (target.originatingKind === 'activity_submission') return
+
+  let promptText = ''
+  for (let i = msgIndex - 1; i >= 0; i -= 1) {
+    if (messages.value[i].role === 'user') {
+      promptText = messages.value[i].content.trim()
+      break
+    }
+  }
+  if (!promptText) return
+
+  if (target.status === 'failed' || target.status === 'cancelled') {
+    stopRunPolling()
+    activeViewToken += 1
+    const streamToken = ++activeStreamToken
+    const generation = authStore.getLoginGeneration()
+    const readingContext = buildMobileReadingContext(selectedSubjectId.value, conversationScopeState.value)
+    setMessageDraining(target.id, false)
+    messages.value[msgIndex] = createAssistantPlaceholder(target.id, target.originatingKind)
+    isTyping.value = true
+    activeRunId.value = ''
+    activeAttemptId.value = ''
+    scrollToBottom(true)
+
+    await runStreamIntoSlot({
+      aiIndex: msgIndex,
+      streamToken,
+      generation,
+      readingContext,
+      resolveConversationId: () => ensureConversation(promptText, generation, () => (
+        streamToken === activeStreamToken && generation === authStore.getLoginGeneration()
+      )),
+      invoke: (conversationId, onDelta, options) => chatWithAI(promptText, [], onDelta, conversationId, options),
+    })
+    return
+  }
+
+  query.value = promptText
+  await sendMessage()
+}
+
+async function handleSubmitActivity(questionId: string, answer: MobileChatActivityAnswer) {
+  if (isTyping.value || isStopping.value || isConversationUnsupported.value || !currentConversationId.value) return
+  stopRunPolling()
+  const convId = currentConversationId.value
+  const submissionId = pendingSubmissionIds[questionId] ?? (pendingSubmissionIds[questionId] = uuidv7())
+  const questionVersion = activityVersions[questionId] ?? 1
+  const apiAnswer: MobileChatActivityAnswer = typeof answer === 'string' ? answer : [...answer]
+
+  activeViewToken += 1
+  const streamToken = ++activeStreamToken
+  const generation = authStore.getLoginGeneration()
+
+  preSendError.value = ''
+  showScopeMenu.value = false
+  messages.value.push(createAssistantPlaceholder(`assistant-${uuidv7()}`, 'activity_submission'))
+  const aiIndex = messages.value.length - 1
+  isTyping.value = true
+  activeRunId.value = ''
+  activeAttemptId.value = ''
+  scrollToBottom(true)
+
+  await runStreamIntoSlot({
+    aiIndex,
+    streamToken,
+    generation,
+    resolveConversationId: async () => convId,
+    invoke: (conversationId, onDelta, options) => submitChatActivity(
+      conversationId,
+      { activityId: questionId, questionVersion, submissionId, answer: apiAnswer },
+      onDelta,
+      options,
+    ),
+  })
+}
+
+watch(
+  () => `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`,
+  (nextScope) => {
+    if (nextScope === lastAuthScope) return
+    lastAuthScope = nextScope
+    resetChatState()
+    conversations.value = []
+    hydratedUserKey = ''
+    subjectsLoadPromise = null
+    loadingHistory.value = false
+    showHistorySheet.value = false
+    showSaveBlockModal.value = false
+    saveBlockSeedTitle.value = ''
+    saveBlockSeedContent.value = ''
+    if (authStore.isAuthenticated) {
+      void ensureSubjectsLoaded()
+    }
+  },
+)
+
+onMounted(() => {
+  void ensureSubjectsLoaded()
+  void measureChatViewport()
+})
+
+onBeforeUnmount(() => {
+  activeStreamToken += 1
+  activeViewToken += 1
+  stopRunPolling()
+  if (scrollTimer) {
+    clearTimeout(scrollTimer)
+    scrollTimer = null
+  }
+  abortLocalStream?.()
+  abortLocalStream = null
+})
+
+onLoad((options) => {
+  if (options?.subjectId) {
+    const incomingSubjectId = safeDecodeQueryParam(options.subjectId).trim()
+    if (incomingSubjectId && !isScopeLocked.value) {
+      selectedSubjectId.value = incomingSubjectId
+    }
+  }
+  if (options?.q) {
+    const initialQuestion = safeDecodeQueryParam(options.q)
+    if (!initialQuestion.trim()) return
+    const viewToken = activeViewToken
+    const generation = authStore.getLoginGeneration()
+    query.value = initialQuestion
+    void ensureSubjectsLoaded().then(() => {
+      if (viewToken !== activeViewToken || generation !== authStore.getLoginGeneration()) return
+      void sendMessage()
+    })
+  }
+})
 </script>
 
 <style scoped>
-/* ========================================
-   Page Shell
-   ======================================== */
-.ai-chat-page {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  position: relative;
-  background: var(--color-zen-ivory);
-  overflow: hidden;
-}
-
-/* ---- Ambient orbs ---- */
-.bg-orb {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-.bg-orb--top {
-  width: 700rpx;
-  height: 700rpx;
-  background: radial-gradient(circle, rgba(212, 184, 150, 0.10) 0%, transparent 70%);
-  top: -200rpx;
-  right: -150rpx;
-}
-.bg-orb--bottom {
-  width: 900rpx;
-  height: 900rpx;
-  background: radial-gradient(circle, rgba(125, 147, 114, 0.08) 0%, transparent 70%);
-  bottom: -300rpx;
-  left: -200rpx;
-}
-
-/* ========================================
-   Header (按钮加上毛玻璃胶囊/圆形包裹)
-   ======================================== */
-.custom-header {
-  padding-top: calc(var(--status-bar-height, 44px) + 16rpx);
-  position: sticky;
-  top: 0;
-  z-index: 300;
-  background: transparent;
-}
-.header-content {
-  height: 112rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 36rpx;
-}
-
-.icon-btn {
-  width: 80rpx;
-  height: 80rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--color-zen-white, rgba(255, 255, 255, 0.85));
-  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.03);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.icon-btn:active {
-  background: rgba(125, 147, 114, 0.12);
-  border-color: var(--text-accent, #7D9372);
-  transform: scale(0.92);
-}
-
-/* Header left group */
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  position: relative;
-}
-.model-icon-top {
-  font-size: 30rpx;
-  color: var(--text-accent, #7D9372);
-}
-.model-text {
-  font-size: 34rpx;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.5rpx;
-}
-
-/* Model name button (胶囊包裹 area with chevron) */
-.model-name-btn {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  padding: 12rpx 28rpx;
-  background: var(--color-zen-white, rgba(255, 255, 255, 0.85));
-  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  border-radius: 999rpx;
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.03);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.model-name-btn:active {
-  background: rgba(125, 147, 114, 0.12);
-  border-color: var(--text-accent, #7D9372);
-  transform: scale(0.96);
-}
-.chevron-icon {
-  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-  flex-shrink: 0;
-  margin-top: 2rpx;
-}
-.chevron-icon.is-rotated {
-  transform: rotate(180deg);
-}
-
-/* Small inline dropdown */
-.model-mini-dropdown {
-  position: absolute;
-  top: calc(100% + 12rpx);
-  left: 32rpx;
-  background: var(--color-zen-white, rgba(255, 255, 255, 0.98));
-  backdrop-filter: blur(24rpx);
-  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  border-radius: 28rpx;
-  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.08), 0 4rpx 12rpx rgba(0, 0, 0, 0.03);
-  padding: 12rpx 0;
-  width: 360rpx;
-  z-index: 200;
-  opacity: 0;
-  transform: translateY(-8rpx) scale(0.96);
-  pointer-events: none;
-  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.model-mini-dropdown.is-open {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-.mini-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 20rpx 28rpx;
-  transition: background 0.12s;
-}
-.mini-menu-item:active {
-  background: rgba(125, 147, 114, 0.1);
-}
-.mini-menu-icon {
-  font-size: 32rpx;
-  width: 36rpx;
-  text-align: center;
-}
-.mini-menu-text {
+.ai-page {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
-}
-.mini-menu-label {
-  font-size: 30rpx;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-.mini-menu-label.is-active {
-  color: var(--text-accent, #7D9372);
-  font-weight: 600;
-}
-.mini-menu-desc {
-  font-size: 22rpx;
-  color: var(--text-muted);
-}
-.mini-check {
-  font-size: 28rpx;
-  color: var(--text-accent, #7D9372);
-  font-weight: 700;
+  background-color: var(--color-bg-primary, #F7F2EB);
 }
 
-/* Dropdown backdrop mask */
-.dropdown-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 250;
-}
-
-
-/* ========================================
-   Chat Content
-   ======================================== */
-.chat-content {
-  flex: 1;
-  height: 0;
-  padding: 0 40rpx;
-  box-sizing: border-box;
+.scope-dropdown-anchor {
   position: relative;
-  z-index: 1;
-}
-
-/* ========================================
-   Welcome / Empty State  (Gemini-style)
-   ======================================== */
-.welcome-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 600rpx;
-  animation: welcomeFadeIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes welcomeFadeIn {
-  from { opacity: 0; transform: translateY(32rpx); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* Spark icon */
-.spark-icon-wrap {
-  position: relative;
-  width: 120rpx;
-  height: 120rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 48rpx;
-}
-.spark-ring {
-  position: absolute;
-  inset: -12rpx;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(125, 147, 114, 0.22) 0%, transparent 70%);
-  animation: sparkPulse 3s ease-in-out infinite;
-}
-@keyframes sparkPulse {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.15); opacity: 1; }
-}
-.spark-svg {
-  animation: sparkFloat 4s ease-in-out infinite;
-  filter: drop-shadow(0 8rpx 24rpx rgba(125, 147, 114, 0.35));
-}
-@keyframes sparkFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8rpx); }
-}
-
-/* Greeting text */
-.greeting-main {
-  font-size: 60rpx;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.5rpx;
-  text-align: center;
-  line-height: 1.2;
-}
-.greeting-sub {
-  font-size: 40rpx;
-  font-weight: 400;
-  color: var(--text-secondary);
-  text-align: center;
-  margin-top: 12rpx;
-}
-
-/* Minimalist Zen Prompt Chips (极简细线胶囊) */
-.minimal-chips-wrap {
-  margin-top: 48rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20rpx;
-}
-
-.chips-label {
-  font-size: 24rpx;
-  color: var(--text-muted);
-  letter-spacing: 2rpx;
-  font-weight: 500;
-}
-
-.chips-list {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16rpx;
-  max-width: 640rpx;
-}
-
-.minimal-chip {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  padding: 14rpx 28rpx;
-  background: var(--color-bg-tertiary, rgba(0, 0, 0, 0.03));
-  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  border-radius: 999rpx;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: pointer;
-}
-
-.minimal-chip:active {
-  background: rgba(125, 147, 114, 0.12);
-  border-color: var(--text-accent, #7D9372);
-  transform: scale(0.96);
-}
-
-.chip-text {
-  font-size: 26rpx;
-  color: var(--text-main);
-  font-weight: 500;
-}
-
-
-/* ========================================
-   Chat Stream
-   ======================================== */
-.chat-stream {
-  padding: 24rpx 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.chat-bubble {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 40rpx;
-  gap: 16rpx;
-}
-.chat-bubble.user {
-  flex-direction: row-reverse;
-}
-.chat-bubble.assistant {
-  flex-direction: row;
-}
-
-/* Assistant avatar */
-.assistant-avatar {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
-  background: var(--color-zen-white);
-  border: 1.5rpx solid var(--color-zen-hairline);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: none;
-}
-.assistant-avatar.small {
-  width: 52rpx;
-  height: 52rpx;
-}
-
-.bubble-body {
-  display: flex;
-  flex-direction: column;
-  max-width: 82%;
-}
-
-/* User bubble */
-.chat-bubble.user .bubble-body {
-  align-items: flex-end;
-}
-.chat-bubble.user .bubble-content {
-  background: var(--color-zen-graphite);
-  color: var(--color-zen-white);
-  border-radius: var(--radius-lg) var(--radius-lg) 8rpx var(--radius-lg);
-  padding: 24rpx 36rpx;
-  font-size: 32rpx;
-  line-height: 1.55;
-  box-shadow: none;
-}
-
-/* Assistant bubble */
-.chat-bubble.assistant .bubble-content {
-  background: var(--color-zen-white);
-  border: 1.5rpx solid var(--color-zen-hairline);
-  border-radius: 8rpx var(--radius-lg) var(--radius-lg) var(--radius-lg);
-  padding: 24rpx 36rpx;
-  font-size: 32rpx;
-  line-height: 1.65;
-  box-shadow: none;
-}
-
-/* Actions */
-.bubble-actions {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin-top: 14rpx;
-  padding-left: 4rpx;
-}
-.action-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  transition: opacity 0.15s;
+  min-width: 0;
+  max-width: 100%;
 }
-.action-btn.icon-only {
-  width: 64rpx;
-  height: 64rpx;
+
+.scope-capsule {
+  position: relative;
+  z-index: 35;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background-color: #F6F3EC;
+  border: 1px solid #EAE6DD;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.14s ease;
+  box-sizing: border-box;
+}
+
+/* #ifdef H5 */
+.scope-capsule:hover {
+  background-color: #EFF3E8;
+  border-color: rgba(85, 107, 61, 0.35);
+}
+
+.scope-capsule.is-locked:hover {
+  background-color: #F4F1EA;
+  border-color: #EAE6DD;
+}
+/* #endif */
+
+.scope-capsule:active {
+  transform: scale(0.97);
+}
+
+.scope-capsule.is-open {
+  background-color: #EFF3E8;
+  border-color: rgba(85, 107, 61, 0.35);
+}
+
+.scope-capsule.is-locked {
+  background-color: #F4F1EA;
+  border-color: #EAE6DD;
+}
+
+.scope-status-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--color-zen-white);
-  border: 1.5rpx solid var(--color-zen-hairline);
-  box-shadow: none;
-}
-.action-btn.icon-only:active { opacity: 0.7; }
-.action-btn.text-btn {
-  font-size: 26rpx;
-  border: 1.5rpx solid var(--color-zen-hairline);
-  border-radius: 40rpx;
-  padding: 10rpx 28rpx;
-  font-weight: 500;
-  color: var(--color-zen-sage);
-  background: var(--color-zen-white);
-  box-shadow: none;
-}
-.action-btn.text-btn:active { opacity: 0.7; }
-
-/* Typing indicator */
-.typing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin-bottom: 40rpx;
-}
-.typing-dots {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  background: var(--color-zen-white);
-  border: 1.5rpx solid var(--color-zen-hairline);
-  border-radius: 8rpx 28rpx 28rpx 28rpx;
-  padding: 20rpx 28rpx;
-}
-.dot {
-  width: 10rpx;
-  height: 10rpx;
-  background: #7D9372;
-  border-radius: 50%;
-  animation: dotBounce 1.4s ease-in-out infinite both;
-}
-.dot:nth-child(1) { animation-delay: -0.32s; }
-.dot:nth-child(2) { animation-delay: -0.16s; }
-@keyframes dotBounce {
-  0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
-  40% { transform: scale(1); opacity: 1; }
-}
-
-.bottom-anchor { height: 40rpx; }
-
-/* ========================================
-   Bottom Capsule Input  (Gemini-style)
-   ======================================== */
-.ai-capsule-wrapper {
-  position: absolute;
-  left: 32rpx;
-  right: 32rpx;
-  z-index: 100;
-  transition: bottom 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 28rpx);
-}
-
-.ai-capsule {
-  height: 148rpx;
-  background: var(--color-zen-white, rgba(255, 255, 255, 0.95));
-  border-radius: 74rpx;
-  display: flex;
-  align-items: center;
-  padding: 0 12rpx;
-  box-shadow:
-    0 4rpx 6rpx rgba(0,0,0,0.02),
-    0 12rpx 40rpx rgba(0, 0, 0, 0.05),
-    0 0 0 1.5rpx var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
-  transition: all 0.25s ease;
-  backdrop-filter: blur(20rpx);
-}
-.ai-capsule.is-focused {
-  box-shadow:
-    0 4rpx 6rpx rgba(0,0,0,0.02),
-    0 20rpx 60rpx rgba(125, 147, 114, 0.12),
-    0 0 0 2.5rpx var(--text-accent, #7D9372);
-}
-
-.capsule-left {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background-color: var(--color-sage-ink);
   flex-shrink: 0;
-  transition: opacity 0.15s;
 }
-.capsule-left:active { opacity: 0.5; }
 
-.ai-capsule-input {
-  flex: 1;
-  height: 100%;
-  font-size: 32rpx;
+.scope-status-dot.is-locked,
+.scope-status-dot.is-muted {
+  background-color: var(--color-zen-stone);
+}
+
+.scope-capsule-text {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
-  background: transparent;
-  border: none;
-  margin: 0 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 148px;
 }
 
-.capsule-divider {
-  width: 1.5rpx;
-  height: 40rpx;
-  background: rgba(196, 168, 130, 0.35);
-  border-radius: 2rpx;
+.scope-capsule.is-locked .scope-capsule-text {
+  color: var(--text-secondary);
+}
+
+.scope-capsule-chevron {
   flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
-.capsule-right {
-  width: 88rpx;
-  height: 88rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+.scope-capsule-chevron.is-rotated {
+  transform: rotate(180deg);
+  opacity: 1;
 }
 
-.mic-btn {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.15s;
-}
-.mic-btn:active { opacity: 0.5; }
-
-.send-btn {
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2E2B26 0%, #3A362F 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6rpx 20rpx rgba(40, 35, 25, 0.25);
-  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-.send-btn:active {
-  transform: scale(0.88);
-  box-shadow: 0 2rpx 8rpx rgba(40, 35, 25, 0.15);
-}
-
-/* ========================================
-   Plus icon rotation
-   ======================================== */
-.plus-icon-wrap {
-  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.plus-icon-wrap.is-rotated {
-  transform: rotate(45deg);
-}
-
-/* ========================================
-   Bottom Action Panel
-   ======================================== */
-.action-overlay {
+.scope-dropdown-mask {
   position: fixed;
-  inset: 0;
-  background: transparent;
-  z-index: 98;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 25;
+  background-color: transparent;
 }
 
-.action-panel {
+.scope-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  top: auto;
+  z-index: 40;
+  width: 260px;
+  max-width: calc(100vw - 48px);
+  padding: 8px;
+  background-color: #FCFBF9;
+  border: 1px solid #EAE6DD;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(72, 62, 46, 0.08);
+  box-sizing: border-box;
+  transform-origin: bottom left;
+  animation: scopePopUp 0.18s var(--ease-out) both;
+}
+
+@keyframes scopePopUp {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.scope-dropdown-scroll {
+  max-height: 290px;
+  max-height: min(290px, 46vh);
+}
+
+.dropdown-section-header {
+  padding: 6px 10px 4px;
+  font-size: 11.5px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+.dropdown-divider {
+  height: 0.5px;
+  background-color: var(--border-subtle);
+  margin: 4px 6px;
+}
+
+.dropdown-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+/* #ifdef H5 */
+.dropdown-item:hover {
+  background-color: rgba(28, 28, 26, 0.04);
+}
+/* #endif */
+
+.dropdown-item:active {
+  background-color: rgba(28, 28, 26, 0.06);
+}
+
+.dropdown-item.is-active {
+  background-color: var(--color-sage-bg);
+}
+
+.dropdown-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 1.5px;
+  background-color: var(--color-zen-sage);
+}
+
+.dropdown-item-icon {
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dropdown-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dropdown-item-label {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-item.is-active .dropdown-item-label {
+  color: var(--color-sage-ink);
+  font-weight: var(--font-weight-bold);
+}
+
+.dropdown-item-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-item.is-active .dropdown-item-desc {
+  color: var(--color-sage-ink);
+  opacity: 0.85;
+}
+
+.dropdown-empty-hint {
+  padding: 10px 10px 6px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.welcome-stage {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 20px;
+  box-sizing: border-box;
+}
+
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 8px;
+  width: 100%;
+}
+
+.welcome-title {
+  font-size: 24px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.welcome-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.starter-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pre-send-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background-color: var(--color-danger-bg);
+  border: 1px solid rgba(201, 59, 59, 0.22);
+}
+
+.pre-send-error-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.starter-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.starter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 15px;
+  background-color: #FFFFFF;
+  border: 1px solid #EAE6DD;
+  box-shadow: 0 1px 2px rgba(72, 62, 46, 0.03);
+  cursor: pointer;
+  transition: transform 0.14s var(--ease-out), border-color 0.16s ease;
+  box-sizing: border-box;
+}
+
+/* #ifdef H5 */
+.starter-card:hover {
+  border-color: #D7D0C2;
+}
+/* #endif */
+
+.starter-card:active {
+  transform: scale(0.985);
+}
+
+.starter-card-title {
+  font-size: 15px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  line-height: 1.38;
+  letter-spacing: -0.015em;
+}
+
+.starter-card-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.chat-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+.chat-list {
+  padding: 8px 18px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chat-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-row.user {
+  align-items: flex-end;
+}
+
+.chat-row.user:not(:first-child) {
+  margin-top: 12px;
+}
+
+.chat-row.assistant {
+  align-items: stretch;
+}
+
+.user-bubble {
+  max-width: 84%;
+}
+
+.user-text {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-primary, #262522);
+  letter-spacing: -0.005em;
+  word-break: break-word;
+}
+
+.assistant-entry {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 2px 4px;
+  box-sizing: border-box;
+}
+
+.assistant-error-banner {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background-color: var(--color-danger-bg);
+  border: 1px solid rgba(201, 59, 59, 0.22);
+}
+
+.assistant-error-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.assistant-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  animation: footerFadeIn 0.22s ease both;
+}
+
+@keyframes footerFadeIn {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.footer-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 8px;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.14s ease, transform 0.12s ease;
+}
+
+.footer-action-chip:active {
+  transform: scale(0.96);
+  background-color: rgba(28, 28, 26, 0.05);
+}
+
+/* #ifdef H5 */
+.footer-action-chip:hover {
+  background-color: rgba(28, 28, 26, 0.05);
+}
+/* #endif */
+
+.footer-action-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+.assistant-status-note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.bottom-anchor {
+  height: 28px;
+}
+
+.input-dock {
+  position: relative;
+  z-index: 120;
+  padding: 6px 14px calc(14px + env(safe-area-inset-bottom));
+  background-color: var(--color-bg-primary, #F7F2EB);
+  flex-shrink: 0;
+}
+
+.input-dock::before {
+  content: '';
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 99;
-  background: rgba(255, 253, 250, 0.98);
-  backdrop-filter: blur(24rpx);
-  border-top: 1.5rpx solid rgba(200, 180, 155, 0.25);
-  border-radius: 36rpx 36rpx 0 0;
-  padding: 20rpx 0 calc(env(safe-area-inset-bottom) + 4rpx);
-  box-shadow: 0 -8rpx 40rpx rgba(180, 150, 110, 0.1);
-  /* Positioned just above capsule; bottom driven by capsuleBottom */
-  bottom: 0;
-  transform: translateY(100%);
-  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-}
-.action-panel.is-open {
-  transform: translateY(0);
+  top: -26px;
+  height: 26px;
+  background: linear-gradient(to bottom, rgba(247, 242, 235, 0) 0%, #F7F2EB 100%);
+  pointer-events: none;
 }
 
-.action-panel-row {
+.scroll-resume-pill {
+  position: absolute;
+  top: -38px;
+  right: 16px;
+  left: auto;
+  transform: none;
+  z-index: 125;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background-color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(28, 28, 26, 0.08);
+  box-shadow: 0 4px 12px rgba(72, 62, 46, 0.09);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scroll-resume-pill:active {
+  transform: scale(0.96);
+}
+
+.scroll-resume-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #556B3D;
+  animation: zenTypingPulse 1.2s ease-in-out infinite;
+}
+
+.scroll-resume-text {
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-ink);
+}
+
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px 10px 16px;
+  border-radius: 22px;
+  background-color: #FFFFFF;
+  border: 1px solid rgba(28, 28, 26, 0.08);
+  box-shadow: 0 6px 20px rgba(72, 62, 46, 0.07), 0 1px 3px rgba(72, 62, 46, 0.03);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  box-sizing: border-box;
+}
+
+/* #ifdef H5 */
+.composer-card:focus-within {
+  border-color: rgba(110, 127, 80, 0.55);
+  box-shadow: 0 12px 32px rgba(72, 62, 46, 0.14), 0 4px 12px rgba(85, 107, 61, 0.10);
+}
+/* #endif */
+
+.composer-textarea {
+  width: 100%;
+  min-height: 28px;
+  max-height: 112px;
+  padding: 2px 4px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: transparent;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.composer-toolbar {
   display: flex;
   align-items: center;
-  gap: 28rpx;
-  padding: 28rpx 48rpx;
-  transition: background 0.12s;
+  justify-content: space-between;
+  gap: 10px;
 }
-.action-panel-row:active {
-  background: rgba(196, 168, 130, 0.1);
+
+.composer-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
-.action-panel-icon {
-  width: 52rpx;
-  height: 52rpx;
+
+.composer-tool-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #F6F3EC;
+  border: 1px solid #EAE6DD;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.14s ease, opacity 0.14s ease;
 }
-.action-panel-label {
-  font-size: 34rpx;
-  font-weight: 500;
+
+.composer-tool-btn:active {
+  transform: scale(0.92);
+}
+
+.composer-tool-btn.disabled {
+  opacity: 0.4;
+}
+
+.composer-action-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.composer-action-btn:active {
+  transform: scale(0.92);
+}
+
+.composer-action-btn.disabled {
+  opacity: 0.36;
+  box-shadow: none;
+}
+
+.send-btn {
+  background-color: #556B3D;
+  background-image: linear-gradient(135deg, #6B7D4D 0%, #556B3D 100%);
+  box-shadow: none;
+}
+
+.stop-btn {
+  background-color: #556B3D;
+  background-image: linear-gradient(135deg, #6B7D4D 0%, #556B3D 100%);
+}
+
+.stop-square {
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  background-color: #FFFFFF;
+}
+
+.history-drawer-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-index-sheet, 1100);
+  background-color: rgba(28, 28, 26, 0.24);
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  animation: historyMaskFade 0.2s ease both;
+}
+
+.history-drawer-panel {
+  width: 82%;
+  max-width: 340px;
+  min-width: 268px;
+  height: 100%;
+  background-color: var(--color-bg-tertiary, #FAF7F2);
+  border-left: 1px solid #EAE6DD;
+  box-shadow: -12px 0 32px rgba(45, 55, 40, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  animation: historyDrawerIn 0.24s var(--ease-out) both;
+}
+
+.history-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(18px + env(safe-area-inset-top) + var(--status-bar-height, 0px)) 16px 14px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.history-drawer-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-drawer-title {
+  font-size: 17px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+  letter-spacing: -0.015em;
 }
-.action-panel-divider {
-  height: 1rpx;
-  background: rgba(200, 180, 155, 0.2);
-  margin: 0 40rpx;
+
+.history-drawer-count {
+  font-size: 12px;
+  color: var(--text-muted);
 }
+
+.history-close-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-color: #FFFFFF;
+  border: 1px solid #EAE6DD;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.14s var(--ease-out), border-color 0.16s ease;
+}
+
+.history-close-btn:active {
+  transform: scale(0.92);
+}
+
+.history-new-btn {
+  margin: 0 16px 12px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background-color: #EEF2E6;
+  border: 1px solid #DCE3CE;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-ink);
+  flex-shrink: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: transform 0.14s var(--ease-out), background-color 0.16s ease;
+}
+
+.history-new-btn:active {
+  transform: scale(0.98);
+}
+
+.history-new-btn.disabled {
+  opacity: 0.42;
+}
+
+.history-drawer-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+.history-drawer-list {
+  padding: 2px 12px calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+}
+
+.history-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background-color: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+/* #ifdef H5 */
+.history-row:hover {
+  background-color: rgba(28, 28, 26, 0.035);
+}
+/* #endif */
+
+.history-row.active {
+  background-color: #FFFFFF;
+  border-color: #EAE6DD;
+  box-shadow: 0 1px 3px rgba(72, 62, 46, 0.04);
+}
+
+.history-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-title {
+  font-size: 14px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-row.active .history-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-ink);
+}
+
+.history-subline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.history-scope-tag {
+  font-size: 10.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-sage-ink);
+  background-color: #EEF2E6;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+}
+
+.history-delete {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.68;
+  transition: opacity 0.14s ease, background-color 0.14s ease;
+}
+
+/* #ifdef H5 */
+.history-delete:hover {
+  opacity: 1;
+  background-color: var(--color-danger-bg);
+}
+/* #endif */
+
+@keyframes historyMaskFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes historyDrawerIn {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(0); }
+}
+
 </style>

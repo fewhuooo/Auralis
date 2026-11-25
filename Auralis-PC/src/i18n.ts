@@ -9,7 +9,7 @@ export const localeOptions = [
 export type Locale = (typeof localeOptions)[number]['value']
 export type Message = Record<Locale, string>
 
-const localeKey = 'sc_setting_lang'
+const localeKey = 'auralis.settings.language'
 const currentLocale = ref<Locale>(storedLocale())
 export const locale = readonly(currentLocale)
 

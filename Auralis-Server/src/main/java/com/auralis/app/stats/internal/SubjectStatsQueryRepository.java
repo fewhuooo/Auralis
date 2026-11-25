@@ -60,33 +60,24 @@ public class SubjectStatsQueryRepository {
     }
 
     public List<ReviewDay> reviewDays(UUID userId, UUID subjectId, List<DayRange> dayRanges) {
-        StringBuilder sql = new StringBuilder("with review_items as ("
-                + "select re.user_id, re.knowledge_block_id, re.reviewed_at, re.rating, "
-                + "case when re.before_state is null then 1 else 0 end as first_learning, "
-                + "case when re.before_state is null then 0 else 1 end as subsequent_review "
-                + "from review_events re where re.rating <> 'SKIP' "
-                + "union all "
-                + "select lr.user_id, lr.knowledge_block_id, lr.selected_at as reviewed_at, lr.effective_rating as rating, "
-                + "0 as first_learning, 1 as subsequent_review from review_lifecycle_reviews lr "
-                + "where lr.effective_rating is not null) select ");
+        StringBuilder sql = new StringBuilder("select ");
         List<Object> arguments = new ArrayList<>();
         for (int index = 0; index < dayRanges.size(); index++) {
             DayRange range = dayRanges.get(index);
             appendReviewMetric(sql, arguments, range, "count(case when %s then 1 end)");
             appendReviewMetric(sql, arguments, range,
                     "count(distinct case when %s then ri.knowledge_block_id end)");
+            sql.append(", 0");
             appendReviewMetric(sql, arguments, range,
-                    "count(distinct case when %s and ri.first_learning = 1 then ri.knowledge_block_id end)");
-            appendReviewMetric(sql, arguments, range,
-                    "count(distinct case when %s and ri.subsequent_review = 1 then ri.knowledge_block_id end)");
+                    "count(distinct case when %s then ri.knowledge_block_id end)");
         }
         Instant rangeStart = dayRanges.getFirst().start();
         Instant rangeEnd = dayRanges.getLast().end();
-        sql.append(" from review_items ri join knowledge_blocks kb "
+        sql.append(" from review_lifecycle_reviews ri join knowledge_blocks kb "
                 + "on kb.id = ri.knowledge_block_id and kb.user_id = ri.user_id "
                 + "join subjects s on s.id = kb.subject_id and s.user_id = kb.user_id "
                 + "where ri.user_id = ? and kb.user_id = ? and kb.subject_id = ? "
-                + "and s.deleted_at is null and ri.reviewed_at >= ? and ri.reviewed_at < ?");
+                + "and s.deleted_at is null and ri.effective_rating is not null and ri.selected_at >= ? and ri.selected_at < ?");
         arguments.add(userId);
         arguments.add(userId);
         arguments.add(subjectId);
@@ -129,18 +120,15 @@ public class SubjectStatsQueryRepository {
 
     public RatingCounts ratingCounts(UUID userId, UUID subjectId, Instant from, Instant to) {
         return jdbcTemplate.queryForObject("select "
-                        + "coalesce(sum(case when re.rating = 'AGAIN' then 1 else 0 end), 0), "
-                        + "coalesce(sum(case when re.rating = 'HARD' then 1 else 0 end), 0), "
-                        + "coalesce(sum(case when re.rating = 'GOOD' then 1 else 0 end), 0), "
-                        + "coalesce(sum(case when re.rating = 'EASY' then 1 else 0 end), 0) "
-                        + "from (select re.user_id, re.knowledge_block_id, re.reviewed_at, re.rating "
-                        + "from review_events re where re.rating <> 'SKIP' union all "
-                        + "select lr.user_id, lr.knowledge_block_id, lr.selected_at, lr.effective_rating "
-                        + "from review_lifecycle_reviews lr where lr.effective_rating is not null) re join knowledge_blocks kb "
+                        + "coalesce(sum(case when re.effective_rating = 'AGAIN' then 1 else 0 end), 0), "
+                        + "coalesce(sum(case when re.effective_rating = 'HARD' then 1 else 0 end), 0), "
+                        + "coalesce(sum(case when re.effective_rating = 'GOOD' then 1 else 0 end), 0), "
+                        + "0 "
+                        + "from review_lifecycle_reviews re join knowledge_blocks kb "
                         + "on kb.id = re.knowledge_block_id and kb.user_id = re.user_id "
                         + "join subjects s on s.id = kb.subject_id and s.user_id = kb.user_id "
                         + "where re.user_id = ? and kb.user_id = ? and kb.subject_id = ? and s.deleted_at is null "
-                        + "and re.reviewed_at >= ? and re.reviewed_at < ?",
+                        + "and re.effective_rating is not null and re.selected_at >= ? and re.selected_at < ?",
                 (resultSet, row) -> new RatingCounts(resultSet.getLong(1), resultSet.getLong(2),
                         resultSet.getLong(3), resultSet.getLong(4)),
                 userId, userId, subjectId, Timestamp.from(from), Timestamp.from(to));
@@ -184,7 +172,7 @@ public class SubjectStatsQueryRepository {
         if (!arguments.isEmpty()) {
             sql.append(", ");
         }
-        sql.append(template.formatted("ri.reviewed_at >= ? and ri.reviewed_at < ?"));
+        sql.append(template.formatted("ri.selected_at >= ? and ri.selected_at < ?"));
         arguments.add(Timestamp.from(range.start()));
         arguments.add(Timestamp.from(range.end()));
     }

@@ -110,11 +110,9 @@
           <span class="nav-active-indicator"></span>
           <div class="subject-icon-bg">
             <component
-              v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
-              :is="getSubjectIconComponent(subj.icon)"
+                         :is="getSubjectIconComponent(subj.icon)"
               class="subject-icon-glyph"
             />
-            <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
           </div>
         </div>
       </div>
@@ -203,9 +201,7 @@ import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import type { ConnectionProjection } from '@/services/connectionStatusProjection'
 import {
-  getLegacySubjectIcon,
   getSubjectIconComponent,
-  isSubjectIconKey
 } from '@/utils/subjectIcon'
 
 const messages = {

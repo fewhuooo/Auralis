@@ -1,8 +1,8 @@
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
-import { completeAiText } from '@/api/aiClient'
+import { useAuthStore } from './useAuthStore'
 
 export interface Subject {
   id: string
@@ -34,15 +34,38 @@ export interface CatalogItem {
 }
 
 export const useSubjectStore = defineStore('subject', () => {
+  const auth = useAuthStore()
   const subjects = ref<Subject[]>([])
   const activeSubjectId = ref<string | null>(null)
   const activeSourceFiles = ref<SourceFile[]>([])
+
+  watch(
+    () => [auth.isAuthenticated, auth.user?.id, auth.serverDeviceId],
+    () => {
+      subjects.value = []
+      activeSubjectId.value = null
+      activeSourceFiles.value = []
+    },
+    { flush: 'sync' },
+  )
 
   const activeSubject = computed(() => {
     return subjects.value.find(s => s.id === activeSubjectId.value) || null
   })
 
+  async function triggerBackgroundSync() {
+    try {
+      const { useSyncStore } = await import('./useSyncStore')
+      void useSyncStore().triggerSync()
+    } catch {
+      // Ignore offline sync failure
+    }
+  }
+
   const loadSubjects = async () => {
+    const auth = useAuthStore()
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
     try {
       const raw = await localDb.getSubjects()
       const list: Subject[] = []
@@ -52,9 +75,10 @@ export const useSubjectStore = defineStore('subject', () => {
         list.push({
           ...item,
           blockCount: blocks.length,
-          fileCount: files.length
+          fileCount: files.length,
         })
       }
+      if (generation !== auth.getLoginGeneration() || userId !== auth.user?.id) return
       subjects.value = list
     } catch (e) {
       console.error('[SubjectStore Mobile] Failed to load subjects:', e)
@@ -64,7 +88,7 @@ export const useSubjectStore = defineStore('subject', () => {
   const setActiveSubject = (id: string | null) => {
     activeSubjectId.value = id
     if (id) {
-      loadSourceFiles(id)
+      void loadSourceFiles(id)
     } else {
       activeSourceFiles.value = []
     }
@@ -76,12 +100,14 @@ export const useSubjectStore = defineStore('subject', () => {
       name,
       description,
       icon,
-      created_at: Date.now()
+      created_at: Date.now(),
+      version: 0,
     }
     await localDb.saveSubject(newSubject)
     const { getClientId } = await import('./useSyncStore')
     await localDb.addLocalMutation(getClientId(), 'subject', newSubject.id, 'create', newSubject)
     await loadSubjects()
+    void triggerBackgroundSync()
     return newSubject.id
   }
 
@@ -90,24 +116,35 @@ export const useSubjectStore = defineStore('subject', () => {
     const { getClientId } = await import('./useSyncStore')
     await localDb.addLocalMutation(getClientId(), 'subject', subject.id, 'update', subject)
     await loadSubjects()
+    void triggerBackgroundSync()
   }
 
   const deleteSubject = async (id: string) => {
     const current = subjects.value.find(subject => subject.id === id)
     await localDb.deleteSubject(id)
     const { getClientId } = await import('./useSyncStore')
-    await localDb.addLocalMutation(getClientId(), 'subject', id, 'delete', current || {})
+    await localDb.addLocalMutation(getClientId(), 'subject', id, 'delete', current || { id, version: 0 })
     if (activeSubjectId.value === id) {
       activeSubjectId.value = null
       activeSourceFiles.value = []
     }
     await loadSubjects()
+    void triggerBackgroundSync()
   }
 
-  // Source Files Operations
   const loadSourceFiles = async (subjectId: string) => {
+    const generation = auth.getLoginGeneration()
+    const userId = auth.user?.id
+    const serverDeviceId = auth.serverDeviceId
     try {
       const files = await localDb.getSourceFiles(subjectId)
+      if (
+        generation !== auth.getLoginGeneration()
+        || userId !== auth.user?.id
+        || serverDeviceId !== auth.serverDeviceId
+      ) {
+        return
+      }
       activeSourceFiles.value = files
     } catch (e) {
       console.error('[SubjectStore Mobile] Failed to load files:', e)
@@ -124,13 +161,13 @@ export const useSubjectStore = defineStore('subject', () => {
       file_size: fileSize,
       catalog_json: catalogJson || '[]',
       block_count: 0,
-      created_at: Date.now()
+      created_at: Date.now(),
     }
     await localDb.saveSourceFile(newFile)
     const { getClientId } = await import('./useSyncStore')
     await localDb.addLocalMutation(getClientId(), 'source', newFile.id, 'create', newFile)
     await loadSourceFiles(subjectId)
-    await loadSubjects() // refresh fileCount
+    await loadSubjects()
     return newFile.id
   }
 
@@ -143,53 +180,6 @@ export const useSubjectStore = defineStore('subject', () => {
       await loadSourceFiles(activeSubjectId.value)
     }
     await loadSubjects()
-  }
-
-  const saveSourceFileCatalog = async (file: SourceFile) => {
-    await localDb.saveSourceFile(file)
-    const { getClientId } = await import('./useSyncStore')
-    await localDb.addLocalMutation(getClientId(), 'source', file.id, 'update', file)
-    if (activeSubjectId.value) {
-      await loadSourceFiles(activeSubjectId.value)
-    }
-  }
-
-  const analyzeCatalogViaAi = async (sourceFileId: string, catalogText: string) => {
-    const file = activeSourceFiles.value.find(f => f.id === sourceFileId)
-    if (!file) return
-
-    try {
-      const prompt = `请帮我解析下面这本教材/材料的目录大纲文本。提取其中的章(Chapter)和节(Section)层级结构，请严格返回为以下 JSON 格式（不要有任何 markdown 标记、说明或 \`\`\`json 标记，只需返回纯 JSON 数组文本）：
-[
-  {
-    "title": "第一章 XXXXXX",
-    "sections": [
-      "1.1 YYYYYY",
-      "1.2 ZZZZZZ"
-    ]
-  }
-]
-
-以下是目录大纲文本：
-${catalogText}`
-
-      const rawText = await completeAiText(prompt)
-      let cleaned = rawText.trim()
-      if (cleaned.startsWith('```json')) {
-        cleaned = cleaned.substring(7);
-      }
-      if (cleaned.endsWith('```')) {
-        cleaned = cleaned.substring(0, cleaned.length - 3);
-      }
-      cleaned = cleaned.trim()
-
-      const parsed: CatalogItem[] = JSON.parse(cleaned)
-      file.catalog_json = JSON.stringify(parsed)
-      await saveSourceFileCatalog(file)
-    } catch (e) {
-      console.error('[SubjectStore Mobile] Failed to analyze catalog via AI:', e)
-      throw e
-    }
   }
 
   return {
@@ -205,7 +195,5 @@ ${catalogText}`
     loadSourceFiles,
     addSourceFile,
     deleteSourceFile,
-    saveSourceFileCatalog,
-    analyzeCatalogViaAi
   }
 })

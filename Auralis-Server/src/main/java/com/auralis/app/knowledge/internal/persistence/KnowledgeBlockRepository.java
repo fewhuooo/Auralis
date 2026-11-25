@@ -43,7 +43,6 @@ public interface KnowledgeBlockRepository extends JpaRepository<KnowledgeBlockEn
     Optional<KnowledgeBlockEntity> findForUpdate(
             @Param("id") UUID id, @Param("userId") UUID userId);
 
-    List<KnowledgeBlockEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     List<KnowledgeBlockEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(UUID userId, UUID subjectId);
 

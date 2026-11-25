@@ -39,7 +39,7 @@ class AiUsageGuardDiagnosticTests {
                 "AI_TASK_BUDGET_EXCEEDED");
         assertThat(calls.reservations()).isEqualTo(before);
 
-        Fixture tokens = new Fixture(limits(4, 3, 100, 200, 500, 10, 2));
+        Fixture tokens = new Fixture(limits(4, 3, 100, 200, 500, 10));
         AiUsageGuard.TaskLease tokenTask = tokens.guard.beginTask(tokens.context());
         assertCode(() -> tokens.guard.reserve(tokenTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "test-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 11, 0), "AI_TASK_BUDGET_EXCEEDED");
         assertThat(tokens.reservations()).isZero();
@@ -55,7 +55,7 @@ class AiUsageGuardDiagnosticTests {
 
     @Test
     void distinguishesUserAndGlobalConcurrency(CapturedOutput output) throws Exception {
-        Fixture user = new Fixture(limits(4, 1, 100, 200, 500, 1_000, 2));
+        Fixture user = new Fixture(limits(4, 1, 100, 200, 500, 1_000));
         AiUsageGuard.TaskLease userA = user.guard.beginTask(user.context());
         AiUsageGuard.TaskLease userB = user.guard.beginTask(user.context("second"));
         user.guard.reserve(userA, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 1, 0);
@@ -64,7 +64,7 @@ class AiUsageGuardDiagnosticTests {
                 "model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 1, 0), "AI_CONCURRENCY_LIMIT");
         assertThat(user.reservations()).isEqualTo(before);
 
-        Fixture global = new Fixture(limits(1, 2, 100, 200, 500, 1_000, 2));
+        Fixture global = new Fixture(limits(1, 2, 100, 200, 500, 1_000));
         AiUsageGuard.TaskLease globalA = global.guard.beginTask(global.context());
         AiUsageGuard.TaskLease globalB = global.guard.beginTask(global.context(global.otherUser(), "other"));
         global.guard.reserve(globalA, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 1, 0);
@@ -79,15 +79,15 @@ class AiUsageGuardDiagnosticTests {
 
     @Test
     void separatesHourlyDailyAndGlobalDailyQuotaRejects(CapturedOutput output) throws Exception {
-        Fixture hourly = new Fixture(limits(4, 3, 10, 100, 200, 1_000, 2));
+        Fixture hourly = new Fixture(limits(4, 3, 10, 100, 200, 1_000));
         consume(hourly, 9);
         assertQuotaReject(hourly, "AI_HOURLY_QUOTA_EXCEEDED");
 
-        Fixture daily = new Fixture(limits(4, 3, 100, 10, 200, 1_000, 2));
+        Fixture daily = new Fixture(limits(4, 3, 100, 10, 200, 1_000));
         consume(daily, 9);
         assertQuotaReject(daily, "AI_DAILY_QUOTA_EXCEEDED");
 
-        Fixture global = new Fixture(limits(4, 3, 100, 100, 10, 1_000, 2));
+        Fixture global = new Fixture(limits(4, 3, 100, 100, 10, 1_000));
         consume(global, 9);
         assertQuotaReject(global, "AI_GLOBAL_QUOTA_EXCEEDED");
 
@@ -118,14 +118,14 @@ class AiUsageGuardDiagnosticTests {
     }
 
     private static com.auralis.app.shared.config.AuralisProperties.Limits limits(
-            int global, int user, long hourly, long daily, long system, long taskTokens, int calls) {
+            int global, int user, long hourly, long daily, long system, long taskTokens) {
         return new com.auralis.app.shared.config.AuralisProperties.Limits(global, user, hourly, daily, system,
-                60_000, 1_000, 4_096, calls, taskTokens, 24, 524_288, 512, 16_777_216);
+                60_000, 1_000, 4_096, taskTokens, 24, 524_288, 512, 16_777_216);
     }
 
     private static com.auralis.app.shared.config.AuralisProperties.Limits overviewTaskCallLimit() {
         return new com.auralis.app.shared.config.AuralisProperties.Limits(4, 3, 100, 200, 500,
-                60_000, 1_000, 4_096, 2, 1_000, 1, 1_000, 512, 16_777_216);
+                60_000, 1_000, 4_096, 1_000, 1, 1_000, 512, 16_777_216);
     }
 
     private static final class Fixture implements AutoCloseable {
@@ -157,7 +157,7 @@ class AiUsageGuardDiagnosticTests {
             return new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "task-key-marker-overview");
         }
         AiTaskContext context(UUID owner, String suffix) {
-            return new AiTaskContext(owner, AiFeature.CHAT, "task-key-marker-" + suffix);
+            return new AiTaskContext(owner, AiFeature.CHAT, "task-key-marker-" + suffix, UUID.randomUUID());
         }
         UUID otherUser() { return otherUser; }
         int reservations() { return jdbc.queryForObject("select count(*) from ai_usage_reservations", Integer.class); }

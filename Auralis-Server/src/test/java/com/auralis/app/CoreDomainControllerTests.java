@@ -543,7 +543,7 @@ class CoreDomainControllerTests {
         return json(mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{" + verification + "\"username\":\"" + username.split("@", 2)[0]
-                                + "\",\"password\":\"correct horse battery staple\",\"clientDeviceKey\":\""
+                                + "\",\"password\":\"Aa!bcdef\",\"clientDeviceKey\":\""
                                 + clientDeviceKey + "\",\"deviceName\":\"Browser\",\"platform\":\"WEB\"}"))
                 .andExpect(status().isCreated())
                 .andReturn());

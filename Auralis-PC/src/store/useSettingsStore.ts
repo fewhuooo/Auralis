@@ -33,7 +33,7 @@ export const useSettingsStore = defineStore('settings', () => {
         }, 500)
       }
       void updateWindowTheme(val)
-      window.dispatchEvent(new CustomEvent('sc-theme-change', { detail: { dark: val, isViewTransition: isViewTransitioning } }))
+      window.dispatchEvent(new CustomEvent('auralis:theme-change', { detail: { dark: val, isViewTransition: isViewTransitioning } }))
     }
   })
 

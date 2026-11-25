@@ -39,7 +39,6 @@ const {
 const task = (overrides = {}) => ({
   id: 'task-default',
   subjectId: 'subject-1',
-  name: 'Task',
   title: 'Task',
   status: 'pending',
   dueAt: undefined,
@@ -272,11 +271,11 @@ test('uses the full calendar week containing the selected day', () => {
 })
 
 test('comparePendingTasks prioritizes tasks with deadline, earlier deadline, and shorter duration', () => {
-  const taskA = task({ id: 'has-due-near-short', name: 'A', dueAt: '2026-08-22T10:00:00Z', duration: 30 })
-  const taskB = task({ id: 'has-due-near-long', name: 'B', dueAt: '2026-08-22T10:00:00Z', duration: 90 })
-  const taskC = task({ id: 'has-due-far-short', name: 'C', dueAt: '2026-08-25T10:00:00Z', duration: 30 })
-  const taskD = task({ id: 'no-due-short', name: 'D', dueAt: null, duration: 30 })
-  const taskE = task({ id: 'no-due-long', name: 'E', dueAt: null, duration: 120 })
+  const taskA = task({ id: 'has-due-near-short', title: 'A', dueAt: '2026-08-22T10:00:00Z', durationMinutes: 30 })
+  const taskB = task({ id: 'has-due-near-long', title: 'B', dueAt: '2026-08-22T10:00:00Z', durationMinutes: 90 })
+  const taskC = task({ id: 'has-due-far-short', title: 'C', dueAt: '2026-08-25T10:00:00Z', durationMinutes: 30 })
+  const taskD = task({ id: 'no-due-short', title: 'D', dueAt: null, durationMinutes: 30 })
+  const taskE = task({ id: 'no-due-long', title: 'E', dueAt: null, durationMinutes: 120 })
 
   const list = [taskE, taskD, taskC, taskB, taskA]
   const sorted = [...list].sort(comparePendingTasks)

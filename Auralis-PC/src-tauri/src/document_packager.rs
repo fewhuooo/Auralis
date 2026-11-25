@@ -1095,28 +1095,6 @@ pub fn document_local_cache_delete(
     state.store()?.delete_local(&cache_id)
 }
 
-#[tauri::command]
-pub fn document_cache_payload_info(
-    cache_id: String,
-    user_id: String,
-    server_device_id: String,
-    source_id: String,
-    job_id: String,
-    ingestion_revision: String,
-    state: State<'_, DocumentPackagerState>,
-) -> Result<CachePayloadInfo, String> {
-    state.store()?.payload_info(
-        &cache_id,
-        &CacheScope {
-            user_id,
-            server_device_id,
-            source_id,
-            job_id,
-            ingestion_revision,
-        },
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

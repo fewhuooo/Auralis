@@ -812,86 +812,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ai/overview-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_5"];
-        put?: never;
-        post: operations["start"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["resume"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/reconcile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["reconcile"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/pause": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["pause"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cancel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/messages/stream": {
         parameters: {
             query?: never;
@@ -933,7 +853,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["cancel_1"];
+        post: operations["cancel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1068,6 +988,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews/lifecycle/history": {
         parameters: {
             query?: never;
@@ -1124,38 +1060,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["models"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_5"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/overview-jobs/{id}/candidate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["candidate"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1318,36 +1222,6 @@ export interface components {
             /** Format: date-time */
             deletedAt?: string;
         };
-        OverviewInputDescriptor: {
-            /** @enum {string} */
-            origin: "SOURCE_REVISION" | "SOURCE_OVERVIEW_PARTS" | "SOURCE_CONTENT";
-            scopeType: string;
-            /** Format: uuid */
-            scopeId: string;
-            sourceIds: string[];
-            sourceRevisions: components["schemas"]["SourceRevision"][];
-            rawUnits: components["schemas"]["OverviewPartInputUnit"][];
-            overviewParts: components["schemas"]["OverviewSourceManifestEntry"][];
-            inputFingerprint: string;
-        };
-        OverviewPartInputUnit: {
-            alias?: string;
-            /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            sourceRevision?: string;
-            /** Format: uuid */
-            chunkId?: string;
-            /** Format: uuid */
-            generation?: string;
-            /** Format: int32 */
-            ordinal?: number;
-            contentHash?: string;
-            /** Format: int32 */
-            charStart?: number;
-            /** Format: int32 */
-            charEnd?: number;
-        };
         OverviewResponse: {
             /** Format: int32 */
             schemaVersion: number;
@@ -1371,7 +1245,6 @@ export interface components {
             /** Format: date-time */
             summaryGeneratedAt?: string;
             result: components["schemas"]["OverviewResponse"];
-            inputDescriptor?: components["schemas"]["OverviewInputDescriptor"];
         };
         OverviewSourceManifestEntry: {
             /** Format: uuid */
@@ -1383,11 +1256,16 @@ export interface components {
             /** Format: int64 */
             summaryVersion?: number;
         };
-        SourceRevision: {
+        OverviewInputDescriptor: {
+            /** @enum {string} */
+            origin: "SOURCE_REVISION" | "SOURCE_OVERVIEW_PARTS";
+            scopeType: string;
             /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            ingestionRevision?: string;
+            scopeId: string;
+            sourceIds: string[];
+            sourceRevisions: components["schemas"]["SourceRevision"][];
+            overviewParts: components["schemas"]["OverviewSourceManifestEntry"][];
+            inputFingerprint: string;
         };
         OverviewResultView: {
             /** Format: uuid */
@@ -1423,11 +1301,17 @@ export interface components {
             outlineInputDescriptor: components["schemas"]["OverviewInputDescriptor"];
             summaryInputDescriptor: components["schemas"]["OverviewInputDescriptor"];
         };
+        SourceRevision: {
+            /** Format: uuid */
+            sourceId?: string;
+            /** Format: uuid */
+            ingestionRevision?: string;
+        };
         PasswordChangeRequest: {
             /** Format: int64 */
             baseVersion: number;
             currentPassword: string;
-            /** @description At most 72 UTF-8 bytes */
+            /** @description At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes */
             newPassword: string;
         };
         ProfileUpdateRequest: {
@@ -1844,7 +1728,7 @@ export interface components {
             /** Format: email */
             email: string;
             emailCode: string;
-            /** @description At most 72 UTF-8 bytes */
+            /** @description At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes */
             password: string;
             clientDeviceKey: string;
             deviceName: string;
@@ -1878,7 +1762,7 @@ export interface components {
             /** Format: email */
             email: string;
             emailCode: string;
-            /** @description At most 72 UTF-8 bytes */
+            /** @description At least 8 characters with uppercase and lowercase letters and a symbol; at most 72 UTF-8 bytes */
             newPassword: string;
         };
         LoginRequest: {
@@ -2015,56 +1899,6 @@ export interface components {
             reachable?: boolean;
             chatModel?: string;
         };
-        StartRequest: {
-            /** Format: uuid */
-            clientRequestId: string;
-            /** @enum {string} */
-            scope: "SOURCE" | "SUBJECT";
-            /** Format: uuid */
-            sourceId?: string;
-            /** Format: uuid */
-            subjectId?: string;
-            sourceIds?: string[];
-            /** @enum {string} */
-            mode: "ALL" | "OUTLINE";
-            instruction?: string;
-        };
-        JobView: {
-            /** Format: uuid */
-            jobId: string;
-            /** @enum {string} */
-            status: "QUEUED" | "RUNNING" | "PAUSING" | "PAUSED" | "CANCELLING" | "CANCELLED" | "COMPLETED" | "FAILED" | "RECOVERY_REQUIRED" | "EXPIRED";
-            /** Format: int32 */
-            version: number;
-            /** @enum {string} */
-            scope: "SOURCE" | "SUBJECT";
-            /** Format: uuid */
-            sourceId: string | null;
-            /** Format: uuid */
-            subjectId: string | null;
-            sourceIds: string[] | null;
-            /** @enum {string} */
-            mode: "ALL" | "OUTLINE";
-            /** @enum {string} */
-            stage: "QUEUED" | "VALIDATING" | "INDEXING" | "PLANNING" | "WRITING" | "ASSEMBLING" | "COMPLETE";
-            /** Format: int32 */
-            verifiedNodes: number;
-            /** Format: int32 */
-            totalNodes: number | null;
-            /** Format: date-time */
-            deadlineAt: string | null;
-            safeErrorCode: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            /** Format: date-time */
-            completedAt: string | null;
-        };
-        ControlRequest: {
-            /** Format: int32 */
-            expectedVersion: number;
-        };
         AiMessageCommand: {
             /**
              * Format: int32
@@ -2102,27 +1936,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            container?: boolean;
-            floatingPointNumber?: boolean;
-            bigDecimal?: boolean;
-            valueNode?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             missingNode?: boolean;
+            container?: boolean;
+            object?: boolean;
+            valueNode?: boolean;
             integralNumber?: boolean;
             bigInteger?: boolean;
-            boolean?: boolean;
+            bigDecimal?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            int?: boolean;
             string?: boolean;
             double?: boolean;
-            binary?: boolean;
-            object?: boolean;
-            pojo?: boolean;
-            int?: boolean;
             /** @deprecated */
             textual?: boolean;
-            number?: boolean;
+            binary?: boolean;
             short?: boolean;
+            pojo?: boolean;
+            boolean?: boolean;
             long?: boolean;
+            number?: boolean;
+            floatingPointNumber?: boolean;
             embeddedValue?: boolean;
         };
         ReadingContext: {
@@ -2139,10 +1973,6 @@ export interface components {
             /** Format: int64 */
             baseVersion: number;
             clientRequestId?: string;
-            /** @enum {string} */
-            purpose?: "GENERAL" | "READING_SESSION";
-            /** Format: uuid */
-            sourceId?: string;
         };
         ActiveChatRunView: {
             /** Format: uuid */
@@ -2186,16 +2016,12 @@ export interface components {
             deletedAt?: string;
             /** Format: int64 */
             version?: number;
-            /** @enum {string} */
-            purpose?: "GENERAL" | "READING_SESSION";
-            /** Format: uuid */
-            sourceId?: string;
             /** Format: int32 */
             chatProtocolVersion?: number;
             chatSupported?: boolean;
             activeRun?: components["schemas"]["ActiveChatRunView"];
             /** @enum {string} */
-            chatScopeState: "LEGACY" | "UNBOUND" | "BOUND";
+            chatScopeState: "UNBOUND" | "BOUND";
             chatScope: components["schemas"]["ChatConversationScope"] | null;
         };
         MessageView: {
@@ -2523,17 +2349,6 @@ export interface components {
             /** @enum {string} */
             provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
             models?: string[];
-        };
-        JobList: {
-            jobs: components["schemas"]["JobView"][];
-            nextCursor: string | null;
-        };
-        Candidate: {
-            /** Format: uuid */
-            jobId: string;
-            /** Format: int32 */
-            version: number;
-            result: components["schemas"]["OverviewResponse"];
         };
         AccountDeletionRequest: {
             password: string;
@@ -3367,6 +3182,7 @@ export interface operations {
     list_2: {
         parameters: {
             query?: {
+                subjectId?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -4281,159 +4097,6 @@ export interface operations {
             };
         };
     };
-    list_5: {
-        parameters: {
-            query?: {
-                limit?: number;
-                cursor?: string;
-                scope?: "SOURCE" | "SUBJECT";
-                scopeId?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobList"];
-                };
-            };
-        };
-    };
-    start: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartRequest"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    resume: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    reconcile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    pause: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    cancel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControlRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
     streamMessage: {
         parameters: {
             query?: never;
@@ -4502,7 +4165,7 @@ export interface operations {
             };
         };
     };
-    cancel_1: {
+    cancel: {
         parameters: {
             query?: never;
             header?: never;
@@ -4624,6 +4287,7 @@ export interface operations {
             query: {
                 from: string;
                 to: string;
+                timeZone?: string;
             };
             header?: never;
             path?: never;
@@ -4693,6 +4357,31 @@ export interface operations {
         parameters: {
             query: {
                 subjectId: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CursorPageReviewStateView"];
+                };
+            };
+        };
+    };
+    queue: {
+        parameters: {
+            query: {
+                at: string;
+                subjectId?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -4793,50 +4482,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["AiModelListView"];
-                };
-            };
-        };
-    };
-    get_5: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["JobView"];
-                };
-            };
-        };
-    };
-    candidate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["Candidate"];
                 };
             };
         };

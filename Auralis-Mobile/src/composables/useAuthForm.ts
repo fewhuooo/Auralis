@@ -95,12 +95,15 @@ export function useAuthForm(homeRoute: string) {
         feedback.value = '请输入邮件中的 6 位验证码。'
         return
       }
-      if (password.length < 12) {
-        feedback.value = '密码至少 12 位。'
-        return
-      }
       if (utf8Length(password) > 72) {
         feedback.value = '密码太长，请缩短后重试。'
+        return
+      }
+      if (password.length < 8
+        || !/\p{Lu}/u.test(password)
+        || !/\p{Ll}/u.test(password)
+        || !/[\p{P}\p{S}]/u.test(password)) {
+        feedback.value = '密码至少 8 位，且包含大写字母、小写字母和符号。'
         return
       }
       if (password !== form.confirmPassword) {

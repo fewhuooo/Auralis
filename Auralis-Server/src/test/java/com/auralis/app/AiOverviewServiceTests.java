@@ -832,7 +832,7 @@ class AiOverviewServiceTests {
     private static SubjectService subjectService(UUID userId, UUID subjectId) {
         SubjectService service = mock(SubjectService.class);
         when(service.requireActiveSubject(userId, subjectId)).thenReturn(new SubjectView(subjectId,
-                "Mathematics", null, null, null, false, 1, Instant.now(), Instant.now(), null));
+                "Mathematics", null, null, null, 1, Instant.now(), Instant.now(), null));
         return service;
     }
 
@@ -935,7 +935,7 @@ class AiOverviewServiceTests {
                 AiCredentialSource.requireKnown(source);
                 assertThat(stage).isIn(AiStage.OVERVIEW_MAP, AiStage.OVERVIEW_REDUCE);
                 assertThat(role).isIn(com.auralis.app.ai.usage.AiOutputRole.INTERMEDIATE,
-                        com.auralis.app.ai.usage.AiOutputRole.FINAL);
+                        com.auralis.app.ai.usage.AiOutputRole.INTERMEDIATE);
                 return new AiInvocationResult<>(registry.require(providerType)
                         .complete(request, credential, timeout, cancellation), usage());
             }

@@ -147,22 +147,26 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         assertThat(firstCoordinator.fail(owner.lease(), "MODEL_TIMEOUT",
                 new AiProviderUsage(10, 20, null, null, 30, false), 1, List.of("REPACK"))).isTrue();
 
-        var retry = otherCoordinator.acquire(request(userId, subjectId, UUID.randomUUID()));
+        UUID retryRequestId = UUID.randomUUID();
+        var retry = otherCoordinator.acquire(retryRequest(userId, subjectId, retryRequestId, firstRequest.requestId()));
         assertThat(retry.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
-        assertThat(retry.generationId()).isEqualTo(owner.generationId());
-        assertThat(retry.budgetTaskId()).isEqualTo(owner.budgetTaskId());
-        assertThat(retry.lease().fence()).isGreaterThan(owner.lease().fence());
+        assertThat(retry.generationId()).isNotEqualTo(owner.generationId());
+        assertThat(retry.budgetTaskId()).isNotEqualTo(owner.budgetTaskId());
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?", UUID.class,
+                retry.generationId())).isEqualTo(owner.generationId());
         assertThat(firstCoordinator.complete(owner.lease(), "{\"schemaVersion\":1}",
                 new AiProviderUsage(0, 0, 0L, 0L, 0, true), 0, List.of())).isFalse();
 
         assertThat(otherCoordinator.complete(retry.lease(), "{\"schemaVersion\":1}",
                 new AiProviderUsage(10, 20, 9L, 18L, 27, true), 0, List.of())).isTrue();
+        assertThat(firstCoordinator.acquire(retryRequest(userId, subjectId, retryRequestId, firstRequest.requestId())).state())
+                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.REPLAY);
         assertThat(firstCoordinator.acquire(firstRequest).state())
-                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.REPLAY);
+                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
         assertThat(firstCoordinator.acquire(concurrentRequest).state())
-                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.REPLAY);
+                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
         assertThat(jdbc.queryForObject("select count(*) from overview_generations where user_id=?", Integer.class,
-                userId)).isEqualTo(1);
+                userId)).isEqualTo(2);
         otherHeartbeat.shutdownNow();
     }
 
@@ -174,10 +178,10 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         var parent = firstCoordinator.acquire(parentRequest);
         assertThat(firstCoordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR",
                 new AiProviderUsage(10, 20, 9L, 18L, 27, true), 0, List.of())).isTrue();
-        var unrelated = firstCoordinator.acquireDirect(request(userId, scopeId, UUID.randomUUID()));
+        var unrelated = firstCoordinator.acquire(request(userId, scopeId, UUID.randomUUID()));
         var retry = retryRequest(userId, scopeId, UUID.randomUUID(), parentRequest.requestId());
 
-        assertThatThrownBy(() -> firstCoordinator.acquireDirect(retry))
+        assertThatThrownBy(() -> firstCoordinator.acquire(retry))
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("RESOURCE_VERSION_CONFLICT");
@@ -194,13 +198,13 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         UUID userId = createUser();
         UUID parentScope = UUID.randomUUID();
         var parentRequest = request(userId, parentScope, UUID.randomUUID());
-        var parent = firstCoordinator.acquireDirect(parentRequest);
+        var parent = firstCoordinator.acquire(parentRequest);
         assertThat(firstCoordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR",
                 new AiProviderUsage(10, 20, 9L, 18L, 27, true), 0, List.of())).isTrue();
-        var child = firstCoordinator.acquireDirect(retryRequest(userId, parentScope,
+        var child = firstCoordinator.acquire(retryRequest(userId, parentScope,
                 UUID.randomUUID(), parentRequest.requestId()));
-        var firstOrdinary = firstCoordinator.acquireDirect(request(userId, UUID.randomUUID(), UUID.randomUUID()));
-        var secondOrdinary = firstCoordinator.acquireDirect(request(userId, UUID.randomUUID(), UUID.randomUUID()));
+        var firstOrdinary = firstCoordinator.acquire(request(userId, UUID.randomUUID(), UUID.randomUUID()));
+        var secondOrdinary = firstCoordinator.acquire(request(userId, UUID.randomUUID(), UUID.randomUUID()));
 
         assertThat(jdbc.queryForObject("select count(*) from overview_generations where user_id=? "
                 + "and retry_of_generation_id is null", Integer.class, userId)).isEqualTo(3);
@@ -214,18 +218,18 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
     }
 
     @Test
-    void directRetryFencesExpiredUnrelatedGenerationButDoesNotTouchJobOwnedGeneration() {
+    void directRetryIgnoresHistoricalJobRowsWhenFencingExpiredGeneration() {
         UUID userId = createUser();
         UUID scopeId = UUID.randomUUID();
         var parentRequest = request(userId, scopeId, UUID.randomUUID());
         var parent = firstCoordinator.acquire(parentRequest);
         assertThat(firstCoordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR",
                 new AiProviderUsage(10, 20, 9L, 18L, 27, true), 0, List.of())).isTrue();
-        var expiredDirect = firstCoordinator.acquireDirect(request(userId, scopeId, UUID.randomUUID()));
+        var expiredDirect = firstCoordinator.acquire(request(userId, scopeId, UUID.randomUUID()));
         jdbc.update("update overview_generations set lease_until=? where id=?",
                 clock.instant().minusSeconds(2).atOffset(java.time.ZoneOffset.UTC), expiredDirect.generationId());
 
-        var child = firstCoordinator.acquireDirect(retryRequest(userId, scopeId,
+        var child = firstCoordinator.acquire(retryRequest(userId, scopeId,
                 UUID.randomUUID(), parentRequest.requestId()));
 
         assertThat(child.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
@@ -239,33 +243,18 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         var secondParent = firstCoordinator.acquire(secondParentRequest);
         assertThat(firstCoordinator.fail(secondParent.lease(), "MODEL_PROVIDER_ERROR",
                 new AiProviderUsage(10, 20, 9L, 18L, 27, true), 0, List.of())).isTrue();
-        var jobOwned = firstCoordinator.acquireDirect(request(userId, jobOwnedScope, UUID.randomUUID()));
+        var jobOwned = firstCoordinator.acquire(request(userId, jobOwnedScope, UUID.randomUUID()));
         jdbc.update("update overview_generations set lease_until=? where id=?",
                 clock.instant().minusSeconds(2).atOffset(java.time.ZoneOffset.UTC), jobOwned.generationId());
-        insertFailedJob(userId, jobOwnedScope, jobOwned.generationId(), jobOwned.budgetTaskId());
+        insertHistoricalJob(userId, jobOwnedScope, jobOwned.generationId(), jobOwned.budgetTaskId());
 
-        assertThatThrownBy(() -> firstCoordinator.acquireDirect(retryRequest(userId, jobOwnedScope,
-                UUID.randomUUID(), secondParentRequest.requestId())))
-                .isInstanceOf(DomainException.class)
-                .extracting(error -> ((DomainException) error).code())
-                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+        var historicalJobRetry = firstCoordinator.acquire(retryRequest(userId, jobOwnedScope,
+                UUID.randomUUID(), secondParentRequest.requestId()));
+        assertThat(historicalJobRetry.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
         assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
-                jobOwned.generationId())).isEqualTo("ACTIVE");
-        assertThat(jdbc.queryForObject("select count(*) from overview_generations where retry_of_generation_id=?",
-                Integer.class, secondParent.generationId())).isZero();
-
-        assertThatThrownBy(() -> firstCoordinator.acquireDirect(request(userId, jobOwnedScope, UUID.randomUUID())))
-                .isInstanceOf(DomainException.class)
-                .extracting(error -> ((DomainException) error).code())
-                .isEqualTo("RESOURCE_VERSION_CONFLICT");
-        insertFailedJob(userId, jobOwnedScope, secondParent.generationId(), secondParent.budgetTaskId());
-        assertThatThrownBy(() -> firstCoordinator.acquireDirect(retryRequest(userId, jobOwnedScope,
-                UUID.randomUUID(), secondParentRequest.requestId())))
-                .isInstanceOf(DomainException.class)
-                .extracting(error -> ((DomainException) error).code())
-                .isEqualTo("RESOURCE_VERSION_CONFLICT");
-        assertThat(jdbc.queryForObject("select count(*) from overview_generations where retry_of_generation_id=?",
-                Integer.class, secondParent.generationId())).isZero();
+                jobOwned.generationId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
+                UUID.class, historicalJobRetry.generationId())).isEqualTo(secondParent.generationId());
     }
 
     private UUID createUser() {
@@ -277,7 +266,7 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
         return userId;
     }
 
-    private void insertFailedJob(UUID userId, UUID scopeId, UUID generationId, UUID budgetTaskId) {
+    private void insertHistoricalJob(UUID userId, UUID scopeId, UUID generationId, UUID budgetTaskId) {
         jdbc.update("insert into overview_generation_jobs (id,user_id,client_request_id,generation_request_id,scope_type,scope_id,"
                         + "mode,request_hash,request_json,source_manifest_json,input_fingerprint,profile_fingerprint,algorithm_version,"
                         + "generation_id,budget_task_id,status,stage,verified_nodes) "
@@ -311,9 +300,10 @@ class OverviewGenerationCoordinatorPostgresIntegrationTests {
 
             var takeover = otherCoordinator.acquire(request(userId, subjectId, UUID.randomUUID()));
 
-            assertThat(takeover.generationId()).isEqualTo(oldOwner.generationId());
-            assertThat(takeover.budgetTaskId()).isEqualTo(oldOwner.budgetTaskId());
-            assertThat(takeover.lease().fence()).isGreaterThan(oldOwner.lease().fence());
+            assertThat(takeover.generationId()).isNotEqualTo(oldOwner.generationId());
+            assertThat(takeover.budgetTaskId()).isNotEqualTo(oldOwner.budgetTaskId());
+            assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
+                    oldOwner.generationId())).isEqualTo("FAILED");
             assertThat(firstCoordinator.complete(oldOwner.lease(), "{\"schemaVersion\":1}",
                     new AiProviderUsage(1, 1, 1L, 1L, 2, true), 0, List.of())).isFalse();
             assertThat(otherCoordinator.complete(takeover.lease(), "{\"schemaVersion\":1}",

@@ -1,138 +1,243 @@
 <template>
-  <view class="app-bar-container">
-    <!-- Left Pill TabBar -->
-    <view class="app-tabbar-float">
-      <!-- 弹性滑动小球背景 -->
-      <view 
-        class="active-ball-indicator" 
-        :class="{ 'animate-ball': isAnimateBall }"
-        :style="{ transform: `translateX(${displayIndex * 100}%)` }"
-      >
-        <view class="ball-inner"></view>
+  <view class="app-bar-shell">
+    <view class="app-bar-scrim" aria-hidden="true"></view>
+    <view class="app-bar-container" role="navigation" aria-label="主导航">
+      <view class="app-tabbar-float" role="tablist">
+        <view
+          class="active-pill-indicator"
+          :class="{ 'animate-pill': isAnimatePill }"
+          :style="{ transform: `translateX(${displayIndex * 100}%)` }"
+        >
+          <view class="pill-inner"></view>
+        </view>
+
+        <view
+          v-for="(item, idx) in tabItems"
+          :key="item.path"
+          class="tab-item"
+          role="tab"
+          :aria-label="item.label"
+          :aria-selected="displayIndex === idx"
+          @click="switchTab(item.path)"
+        >
+          <LineIcon
+            :name="item.icon"
+            size="19px"
+            :color="displayIndex === idx ? '#556B3D' : '#7A7A75'"
+          />
+          <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
+        </view>
       </view>
 
-      <view 
-        class="tab-item" 
-        @click="switchTab('/pages/mobile/home/index')"
+      <view
+        class="app-ai-float"
+        role="button"
+        aria-label="AI 助手"
+        @click="goToAi"
       >
-        <LineIcon name="home" size="40rpx" :color="displayIndex === 0 ? '#ffffff' : '#A8A8A5'" />
+        <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
       </view>
-      
-      <view 
-        class="tab-item" 
-        @click="switchTab('/pages/mobile/review/index')"
-      >
-        <LineIcon name="book" size="40rpx" :color="displayIndex === 1 ? '#ffffff' : '#A8A8A5'" />
-      </view>
-
-      <view 
-        class="tab-item" 
-        @click="switchTab('/pages/mobile/pomodoro/index')"
-      >
-        <LineIcon name="clock" size="40rpx" :color="displayIndex === 2 ? '#ffffff' : '#A8A8A5'" />
-      </view>
-      
-      <view 
-        class="tab-item" 
-        @click="switchTab('/pages/mobile/stats/index')"
-      >
-        <LineIcon name="chart" size="40rpx" :color="displayIndex === 3 ? '#ffffff' : '#A8A8A5'" />
-      </view>
-    </view>
-
-    <!-- Right AI Float Button -->
-    <view class="app-ai-float" @click="goToAi">
-      <LineIcon name="ai" size="48rpx" color="#ffffff" />
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useLayoutStore } from '@/store/useLayoutStore'
+import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 
-const currentPath = ref('')
+const aiAssistantPath = '/pages/mobile/ai-search/index'
+const tabItems = [
+  { path: '/pages/mobile/home/index', icon: 'calendar', label: '今日' },
+  { path: '/pages/mobile/learn/index', icon: 'book', label: '学习' },
+  { path: '/pages/mobile/pomodoro/index', icon: 'clock', label: '专注' },
+  { path: '/pages/mobile/profile/index', icon: 'avatar', label: '我的' },
+]
+
 const displayIndex = ref(0)
-const isAnimateBall = ref(false)
+const isAnimatePill = ref(false)
+let stopSiblingPreload: (() => void) | null = null
+let pillTimer: ReturnType<typeof setTimeout> | null = null
+let exitDelayTimer: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
+let hasPendingExit = false
 
-const getIndexByUrl = (path: string) => {
-  if (path.includes('review/index')) return 1
+function getIndexByUrl(path: string): number {
+  if (path.includes('learn/index') || path.includes('review/index')) return 1
   if (path.includes('pomodoro/index')) return 2
-  if (path.includes('stats/index')) return 3
+  if (path.includes('profile/index')) return 3
   return 0
 }
 
-onMounted(() => {
+function resolveCurrentRoute(): string {
   const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
-  const targetIdx = getIndexByUrl(nowRoute)
-  currentPath.value = nowRoute
+  return pages.length > 0 ? '/' + (pages[pages.length - 1].route || '') : ''
+}
 
-  // 彻底废除 prevIdx 回弹闪回！
-  isAnimateBall.value = false
-  displayIndex.value = targetIdx
-
-  setTimeout(() => {
-    isAnimateBall.value = true
+onMounted(() => {
+  isUnmounted = false
+  const nowRoute = resolveCurrentRoute()
+  isAnimatePill.value = false
+  displayIndex.value = getIndexByUrl(nowRoute)
+  pillTimer = setTimeout(() => {
+    pillTimer = null
+    isAnimatePill.value = true
   }, 50)
+  stopSiblingPreload = scheduleSiblingPreload(
+    [...tabItems.map(item => item.path), aiAssistantPath],
+    nowRoute,
+  )
 })
 
-const switchTab = (url: string) => {
-  const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+onUnmounted(() => {
+  isUnmounted = true
+  if (pillTimer) {
+    clearTimeout(pillTimer)
+    pillTimer = null
+  }
+  if (exitDelayTimer) {
+    clearTimeout(exitDelayTimer)
+    exitDelayTimer = null
+  }
+  stopSiblingPreload?.()
+  stopSiblingPreload = null
+  if (hasPendingExit) {
+    hasPendingExit = false
+    useLayoutStore().clearExit()
+  }
+})
+
+function navigateWithTransition(url: string, dir: 'left' | 'right', nowRoute: string) {
+  const layoutStore = useLayoutStore()
+  layoutStore.setSlideDirection(dir)
+  layoutStore.startExit(dir, 140, nowRoute)
+  hasPendingExit = true
+
+  if (exitDelayTimer) {
+    clearTimeout(exitDelayTimer)
+    exitDelayTimer = null
+  }
+  const preloadTask = preloadRoute(url)
+  const exitDelay = new Promise<void>((resolve) => {
+    exitDelayTimer = setTimeout(() => {
+      exitDelayTimer = null
+      resolve()
+    }, 140)
+  })
+  void Promise.all([exitDelay, preloadTask]).then(() => {
+    if (isUnmounted || (Boolean(nowRoute) && resolveCurrentRoute() !== nowRoute)) {
+      if (hasPendingExit) {
+        hasPendingExit = false
+        layoutStore.clearExit()
+      }
+      return
+    }
+    uni.redirectTo({
+      url,
+      complete: () => {
+        hasPendingExit = false
+        layoutStore.clearExit()
+      },
+    })
+  })
+}
+
+function switchTab(url: string) {
+  const nowRoute = resolveCurrentRoute()
   const layoutStore = useLayoutStore()
   if (nowRoute === url || layoutStore.isExiting) return
 
   const targetIndex = getIndexByUrl(url)
   const currentIdx = getIndexByUrl(nowRoute)
-
   const dir = targetIndex > currentIdx ? 'right' : 'left'
-  layoutStore.setSlideDirection(dir)
-  layoutStore.startExit(dir, 160)
 
-  isAnimateBall.value = true
+  isAnimatePill.value = true
   displayIndex.value = targetIndex
-  currentPath.value = url
-
-  setTimeout(() => {
-    uni.redirectTo({ url })
-  }, 160)
+  navigateWithTransition(url, dir, nowRoute)
 }
 
-const goToAi = () => {
-  uni.redirectTo({ url: '/pages/mobile/ai-search/index' })
+function goToAi() {
+  const nowRoute = resolveCurrentRoute()
+  const layoutStore = useLayoutStore()
+  if (nowRoute === aiAssistantPath || layoutStore.isExiting) return
+
+  if (nowRoute) layoutStore.setReturnRoute(nowRoute)
+  navigateWithTransition(aiAssistantPath, 'right', nowRoute)
 }
 </script>
 
 <style scoped>
+.app-bar-shell {
+  pointer-events: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
+  max-width: 440px;
+  z-index: var(--z-index-tabbar, 800);
+}
+
+.app-bar-scrim {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(92px + env(safe-area-inset-bottom));
+  z-index: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(239, 235, 226, 0) 0%,
+    rgba(239, 235, 226, 0.72) 24%,
+    rgba(239, 235, 226, 0.94) 56%,
+    #EFEBE2 100%
+  );
+}
+
 .app-bar-container {
   pointer-events: none;
+  position: relative;
+  z-index: 1;
+  padding: 0 20px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 390px) {
+  .app-bar-container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 
 .app-tabbar-float {
   pointer-events: auto;
-  position: fixed;
-  bottom: 40rpx;
-  left: 30rpx;
-  right: 180rpx;
-  height: 112rpx;
-  background-color: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  border-radius: 9999rpx;
+  flex: 1;
+  min-width: 0;
+  height: 56px;
+  position: relative;
+  background-color: rgba(252, 251, 249, 0.72);
+  backdrop-filter: blur(28px) saturate(185%);
+  -webkit-backdrop-filter: blur(28px) saturate(185%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
-  padding: 0;
-  z-index: 999;
-  box-shadow: 0 12rpx 36rpx rgba(0, 0, 0, 0.04);
+  padding: 0 5px;
+  box-shadow: var(--glass-shadow);
+  box-sizing: border-box;
 }
 
-.active-ball-indicator {
+.active-pill-indicator {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0;
-  width: 25%;
+  left: 5px;
+  width: calc((100% - 10px) / 4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -140,51 +245,68 @@ const goToAi = () => {
   z-index: 1;
 }
 
-.active-ball-indicator.animate-ball {
-  transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+.active-pill-indicator.animate-pill {
+  transition: transform 0.26s var(--ease-spring);
 }
 
-.ball-inner {
-  width: 90rpx;
-  height: 90rpx;
-  border-radius: 50%;
-  background-color: var(--color-zen-graphite);
-  box-shadow: 0 6rpx 18rpx rgba(0, 0, 0, 0.16);
+.pill-inner {
+  width: 92%;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background-color: rgba(139, 154, 110, 0.16);
 }
 
 .tab-item {
   flex: 1;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   position: relative;
   z-index: 2;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-out);
 }
 
 .tab-item:active {
-  transform: scale(0.85);
+  transform: scale(0.92);
+}
+
+.tab-label {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.tab-label.is-active {
+  color: var(--color-sage-ink);
+  font-weight: var(--font-weight-bold);
 }
 
 .app-ai-float {
   pointer-events: auto;
-  position: fixed;
-  bottom: 40rpx;
-  right: 30rpx;
-  width: 112rpx;
-  height: 112rpx;
-  background-color: var(--color-zen-sage);
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  background: var(--accent-gradient);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-zen-hairline);
-  z-index: 999;
-  transition: transform 0.2s;
+  box-shadow: 0 4px 16px rgba(118, 135, 88, 0.22);
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-out), box-shadow 0.18s ease;
+}
+
+.app-ai-float:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(118, 135, 88, 0.30);
 }
 
 .app-ai-float:active {
-  transform: scale(0.95);
+  transform: scale(0.92);
 }
 </style>

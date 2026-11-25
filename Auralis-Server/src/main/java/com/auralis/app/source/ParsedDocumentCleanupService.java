@@ -2,12 +2,16 @@ package com.auralis.app.source;
 
 import com.auralis.app.source.internal.persistence.ParsedDocumentEntity;
 import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
+import com.auralis.app.source.internal.persistence.SourceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -25,28 +29,34 @@ public class ParsedDocumentCleanupService {
     private final Clock clock;
     private final Duration uploadTimeout;
     private final Duration metadataRetention;
+    private final SourceRepository sources;
+    private final TransactionTemplate transactions;
 
     public ParsedDocumentCleanupService(
             ParsedDocumentRepository repository,
             AssetStoragePort assetStorage,
             Clock clock,
+            SourceRepository sources,
+            PlatformTransactionManager transactionManager,
             @Value("${auralis.ai.parsed-document-upload-timeout-hours:24}") long uploadTimeoutHours,
             @Value("${auralis.ai.parsed-document-retention-days:30}") long retentionDays) {
         this.repository = repository;
         this.assetStorage = assetStorage;
         this.clock = clock;
+        this.sources = sources;
+        this.transactions = new TransactionTemplate(transactionManager);
         this.uploadTimeout = Duration.ofHours(Math.max(1, uploadTimeoutHours));
         this.metadataRetention = Duration.ofDays(Math.max(1, retentionDays));
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NEVER)
     public int purgeExpired(Instant now) {
         int purged = 0;
         purged += purge(repository.findAllByStatusInAndUpdatedAtBefore(
                 List.of(ParsedDocumentStatus.UPLOADING, ParsedDocumentStatus.REJECTED),
-                now.minus(uploadTimeout)));
+                now.minus(uploadTimeout)), now.minus(uploadTimeout));
         purged += purge(repository.findAllByStatusInAndUpdatedAtBefore(
-                List.of(ParsedDocumentStatus.SUPERSEDED), now.minus(metadataRetention)));
+                List.of(ParsedDocumentStatus.SUPERSEDED), now.minus(metadataRetention)), now.minus(metadataRetention));
         return purged;
     }
 
@@ -57,22 +67,47 @@ public class ParsedDocumentCleanupService {
         purgeExpired(clock.instant());
     }
 
-    private int purge(List<ParsedDocumentEntity> documents) {
+    private int purge(List<ParsedDocumentEntity> documents, Instant cutoff) {
         int purged = 0;
-        for (ParsedDocumentEntity document : documents) {
-            if (document.getObjectDeletedAt() != null) {
-                continue;
-            }
+        for (ParsedDocumentEntity candidate : documents) {
             try {
-                assetStorage.deleteObject(document.getObjectKey());
-                document.markObjectDeleted();
-                repository.save(document);
+                String objectKey = transactions.execute(status -> {
+                    if (sources.findForUpdateByIdAndUserId(candidate.getSourceId(), candidate.getUserId()).isEmpty()) {
+                        return null;
+                    }
+                    ParsedDocumentEntity current = repository.findByIdAndUserId(candidate.getId(), candidate.getUserId())
+                            .orElse(null);
+                    if (current == null || current.getObjectDeletedAt() != null
+                            || !current.getUpdatedAt().isBefore(cutoff)
+                            || current.getStatus() != candidate.getStatus()) {
+                        return null;
+                    }
+                    // A committed rejection prevents an in-flight completion from accepting the object being deleted.
+                    if (current.getStatus() == ParsedDocumentStatus.UPLOADING) {
+                        current.reject();
+                        repository.saveAndFlush(current);
+                    }
+                    return current.getObjectKey();
+                });
+                if (objectKey == null) {
+                    continue;
+                }
+                assetStorage.deleteObject(objectKey);
+                transactions.executeWithoutResult(status -> {
+                    if (sources.findForUpdateByIdAndUserId(candidate.getSourceId(), candidate.getUserId()).isEmpty()) {
+                        return;
+                    }
+                    repository.findByIdAndUserId(candidate.getId(), candidate.getUserId()).ifPresent(current -> {
+                        current.markObjectDeleted();
+                        repository.saveAndFlush(current);
+                    });
+                });
                 purged++;
                 log.info("PARSED_DOCUMENT_OBJECT_PURGED parsedDocumentId={} status={}",
-                        document.getId(), document.getStatus());
+                        candidate.getId(), candidate.getStatus());
             } catch (RuntimeException exception) {
                 log.warn("PARSED_DOCUMENT_OBJECT_PURGE_FAILED parsedDocumentId={} errorType={}",
-                        document.getId(), exception.getClass().getSimpleName());
+                        candidate.getId(), exception.getClass().getSimpleName());
             }
         }
         return purged;

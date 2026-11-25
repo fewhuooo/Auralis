@@ -122,7 +122,7 @@ class IdentityRepositoryTests {
 
     private UserEntity saveUser(String username) {
         return userRepository.save(new UserEntity(
-                UUID.randomUUID(), username, username, "{bcrypt}hash", username, null, UserStatus.ACTIVE));
+                UUID.randomUUID(), username, username, "{bcrypt}hash", username, UserStatus.ACTIVE));
     }
 
     private DeviceEntity saveDevice(UserEntity user, String clientDeviceKey) {

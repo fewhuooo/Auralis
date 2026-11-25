@@ -17,7 +17,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles({"test", "prod"})
 @TestPropertySource(properties = {
-        "AURALIS_PUBLIC_BASE_URL=http://localhost",
         "AURALIS_UPLOAD_MAX_FILE_SIZE_BYTES=52428800"
 })
 class ProductionConfigurationTests {

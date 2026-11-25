@@ -12,7 +12,7 @@ public final class AiChatRequestCapacity {
 
     public static Check inspect(AiProviderRequest request, ObjectMapper mapper,
                                 long serializedRequestByteLimit, long toolResultByteLimit,
-                                long legacyMessageByteLimit) {
+                                long messageContentByteLimit) {
         Objects.requireNonNull(request);
         Objects.requireNonNull(mapper);
         try {
@@ -32,9 +32,9 @@ public final class AiChatRequestCapacity {
                 return new Check(Dimension.SERIALIZED_REQUEST_BYTES, serializedBytes,
                         serializedRequestByteLimit, messageBytes);
             }
-            if (messageBytes > legacyMessageByteLimit) {
-                return new Check(Dimension.LEGACY_MESSAGE_BYTES, messageBytes,
-                        legacyMessageByteLimit, serializedBytes);
+            if (messageBytes > messageContentByteLimit) {
+                return new Check(Dimension.MESSAGE_CONTENT_BYTES, messageBytes,
+                        messageContentByteLimit, serializedBytes);
             }
             return new Check(Dimension.FITS, serializedBytes, serializedRequestByteLimit, messageBytes);
         } catch (ArithmeticException | JacksonException invalidRequest) {
@@ -89,7 +89,7 @@ public final class AiChatRequestCapacity {
     public enum Dimension {
         FITS,
         SERIALIZED_REQUEST_BYTES,
-        LEGACY_MESSAGE_BYTES,
+        MESSAGE_CONTENT_BYTES,
         TOOL_RESULT_BYTES,
         INVALID_REQUEST
     }

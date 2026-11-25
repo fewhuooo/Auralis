@@ -30,10 +30,8 @@ springdoc:
     path: /swagger-ui/index.html
 
 auralis:
-  environment: local
   api:
-    public-base-url: http://localhost:8080
-    allowed-origins: ${AURALIS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost}
+    allowed-origins: ${AURALIS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1,http://tauri.localhost}
   upload:
     max-file-size-bytes: 52428800
     storage-provider: ${AURALIS_UPLOAD_STORAGE_PROVIDER:unavailable}
@@ -90,11 +88,9 @@ auralis:
       max-result-chars: ${AURALIS_AI_OVERVIEW_MAX_RESULT_CHARS:0}
       max-input-snapshot-chars: ${AURALIS_AI_OVERVIEW_MAX_INPUT_SNAPSHOT_CHARS:0}
       max-source-manifest-chars: ${AURALIS_AI_OVERVIEW_MAX_SOURCE_MANIFEST_CHARS:0}
-      max-job-request-chars: ${AURALIS_AI_OVERVIEW_MAX_JOB_REQUEST_CHARS:0}
       max-sources: ${AURALIS_AI_OVERVIEW_MAX_SOURCES:0}
       max-title-chars: ${AURALIS_AI_OVERVIEW_MAX_TITLE_CHARS:0}
     max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}
-    max-retrieved-chunks: ${AURALIS_AI_MAX_RETRIEVED_CHUNKS:8}
     ingestion-max-bytes: ${AURALIS_AI_INGESTION_MAX_BYTES:5242880}
     ingestion-embedding-batch-max-items: ${AURALIS_AI_INGESTION_EMBEDDING_BATCH_MAX_ITEMS:32}
     ingestion-embedding-batch-max-utf8-bytes: ${AURALIS_AI_INGESTION_EMBEDDING_BATCH_MAX_UTF8_BYTES:32768}
@@ -119,7 +115,6 @@ auralis:
       reservation-lease-millis: ${AURALIS_AI_LIMITS_RESERVATION_LEASE_MILLIS:300000}
       heartbeat-millis: ${AURALIS_AI_LIMITS_HEARTBEAT_MILLIS:10000}
       chat-max-output-tokens: ${AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS:4096}
-      chat-max-calls: ${AURALIS_AI_LIMITS_CHAT_MAX_CALLS:2}
       chat-task-tokens: ${AURALIS_AI_LIMITS_CHAT_TASK_TOKENS:32000}
       # 0 disables the separate Overview call-count cap; token quotas remain enforced.
       overview-max-calls: ${AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS:0}

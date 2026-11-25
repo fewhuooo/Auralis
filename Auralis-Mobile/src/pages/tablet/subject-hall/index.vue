@@ -1,690 +1,936 @@
 <template>
   <TabletLayout>
     <view class="t-subject-hall">
-      <!-- Header -->
-      <view class="header">
-        <view class="header-left">
-          <text class="page-title">学科大厅</text>
-          <text class="page-sub">构建与拓展你的专属知识体系</text>
-        </view>
-        <view class="header-actions">
-          <view class="search-box">
-            <LineIcon name="search" size="26rpx" color="var(--color-zen-stone, #A8A8A5)" />
-            <input class="search-input" v-model="searchQuery" placeholder="搜索学科..." />
+      <view class="hall-content zen-panel">
+        <view class="hall-header">
+          <view class="title-row">
+            <text class="page-title">学科空间</text>
+            <text v-if="subjects.length > 0" class="count-num num-tabular">{{ subjects.length }}</text>
           </view>
-          <view class="btn primary-btn" @click="openCreateModal">
-            <text>+ 新建学科</text>
-          </view>
-        </view>
-      </view>
 
-      <!-- Content -->
-      <scroll-view scroll-y class="content">
-        <!-- Empty State -->
-        <view v-if="filteredSubjects.length === 0 && !searchQuery" class="empty-state">
-          <LineIcon name="grid" size="88rpx" color="var(--color-zen-stone, #A8A8A5)" />
-          <text class="empty-title">还没有学科</text>
-          <text class="empty-hint">点击右上角「+ 新建学科」开始创建你的知识空间</text>
+          <view class="header-actions">
+            <view v-if="subjects.length > 0" class="search-box">
+              <LineIcon name="search" size="14px" color="var(--text-muted)" />
+              <input class="search-input" v-model="searchQuery" placeholder="搜索学科" />
+              <view v-if="searchQuery" class="search-clear" role="button" aria-label="清空搜索" @click="searchQuery = ''">
+                <LineIcon name="close" size="13px" color="var(--text-muted)" />
+              </view>
+            </view>
+
+            <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
+              <LineIcon name="plus" size="15px" color="#FFFFFF" />
+              <text>新建学科</text>
+            </view>
+          </view>
         </view>
 
-        <!-- Grid -->
-        <view class="grid" v-else>
+        <view v-if="hydrated && subjects.length === 0" class="empty-hall zen-card">
+          <LineIcon name="book" size="30px" color="var(--color-zen-sage)" />
+          <text class="empty-title">暂无学科空间</text>
+          <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
+            <LineIcon name="plus" size="15px" color="#FFFFFF" />
+            <text>新建学科</text>
+          </view>
+        </view>
+
+        <view v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
+          <text class="empty-title">无匹配学科</text>
+          <view class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</view>
+        </view>
+
+        <view v-else-if="hydrated" class="grid">
           <view
             v-for="subj in filteredSubjects"
             :key="subj.id"
-            class="subject-card"
+            class="subject-card zen-card"
+            role="button"
+            :aria-label="`进入学科 ${subj.name}`"
             @click="enterWorkspace(subj.id)"
           >
-            <view class="card-accent-stripe" />
-            <view class="card-header">
+            <view class="card-top">
               <view class="s-icon">
-                <LineIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :name="`subj-${subj.icon || 'book'}`" size="56rpx" />
-                <text v-else>{{ getLegacySubjectIcon(subj.icon) }}</text>
+                <LineIcon
+                  :name="`subj-${isSubjectIconKey(subj.icon) ? subj.icon : 'book'}`"
+                  size="21px"
+                  color="var(--color-sage-ink)"
+                />
               </view>
-              <view class="card-actions">
-                <view class="action-btn" @click.stop="openEditModal(subj)">
-                  <text>编辑</text>
+              <view class="card-actions" @click.stop>
+                <view class="icon-action-btn" role="button" aria-label="编辑学科" @click="openEditModal(subj)">
+                  <LineIcon name="edit" size="13px" color="var(--text-muted)" />
                 </view>
-                <view class="action-btn danger" @click.stop="handleDeleteSubject(subj)">
-                  <text>删除</text>
+                <view class="icon-action-btn danger" role="button" aria-label="删除学科" @click="handleDeleteSubject(subj)">
+                  <LineIcon name="close" size="13px" color="var(--text-muted)" />
                 </view>
               </view>
             </view>
+
             <text class="s-name">{{ subj.name }}</text>
-            <text class="s-desc" v-if="subj.description">{{ subj.description }}</text>
-            <text class="s-desc placeholder-desc" v-else>暂无描述</text>
-            <view class="s-meta">
-              <text class="s-blocks">{{ subj.blockCount || 0 }} 个知识块</text>
-              <text class="s-files">{{ subj.fileCount || 0 }} 个文件</text>
+            <text v-if="subj.description" class="s-desc">{{ subj.description }}</text>
+
+            <view class="s-footer">
+              <view class="s-metrics num-tabular">
+                <view class="s-metric-item">
+                  <LineIcon name="file-text" size="13px" color="var(--text-muted)" />
+                  <text>{{ subj.fileCount || 0 }}</text>
+                </view>
+                <view class="s-metric-item">
+                  <LineIcon name="layers" size="13px" color="var(--text-muted)" />
+                  <text>{{ subj.blockCount || 0 }}</text>
+                </view>
+              </view>
+              <LineIcon name="arrow-right" size="14px" color="var(--text-muted)" class="card-arrow" />
             </view>
-            <view class="progress-bar">
-              <view
-                class="progress-fill"
-                :style="{ width: getMasteryPercent(subj) + '%' }"
-              ></view>
-            </view>
-            <text class="mastery-label">掌握度 {{ getMasteryPercent(subj) }}%</text>
           </view>
 
-          <!-- Add Card -->
-          <view class="subject-card add-card" @click="openCreateModal">
-            <view class="add-circle"><LineIcon name="plus" size="36rpx" color="var(--color-zen-stone, #A8A8A5)" /></view>
-            <text class="add-text">创建新学科</text>
+          <view class="subject-card add-card" role="button" aria-label="新建学科" @click="openCreateModal">
+            <view class="add-plus-btn">
+              <LineIcon name="plus" size="20px" color="var(--color-sage-ink)" />
+            </view>
+            <text class="add-label">新建学科</text>
           </view>
         </view>
-      </scroll-view>
+      </view>
+    </view>
 
-      <!-- 重构后的弹窗根容器：将遮罩层与卡片分离为同级兄弟元素，固定合适像素宽度适配平板，彻底解决软键盘/焦点与布局错位问题 -->
-      <view v-if="showModal" class="modal-root">
-        <!-- 遮罩层 (层级 1) -->
-        <view class="modal-overlay" @click="showModal = false" @touchmove.stop.prevent></view>
-
-        <!-- 弹窗卡片 (层级 2) -->
-        <view class="modal-card" @click.stop>
+    <template #modal>
+      <view v-if="showModal" class="zen-modal-mask subject-modal-mask" @click="closeModal">
+        <view
+          class="subject-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="isEditing ? '编辑学科空间' : '创建学科空间'"
+          @click.stop
+        >
           <view class="modal-header">
-            <view class="title-group">
-              <text class="modal-title">{{ isEditing ? '编辑学科' : '新建学科' }}</text>
+            <text class="modal-title">{{ isEditing ? '编辑学科空间' : '创建学科空间' }}</text>
+            <view
+              class="modal-close-btn"
+              :class="{ 'is-disabled': savingSubject }"
+              role="button"
+              aria-label="关闭"
+              @click="closeModal"
+            >
+              <LineIcon name="close" size="15px" color="var(--text-muted)" />
             </view>
-            <view class="modal-close" @click="showModal = false"><LineIcon name="close" size="26rpx" /></view>
           </view>
 
-          <scroll-view scroll-y class="modal-body">
-            <view class="form-group">
-              <text class="form-label">学科名称 <text class="required">*</text></text>
+          <view class="modal-body">
+            <view class="preview-row">
+              <view class="preview-icon">
+                <LineIcon :name="`subj-${formData.icon}`" size="26px" color="#FFFFFF" />
+              </view>
+              <view class="preview-info">
+                <text class="preview-name">{{ formData.name.trim() || '学科名称预览' }}</text>
+                <text class="preview-desc">{{ formData.description.trim() || '这是您的专属学科知识沉淀空间' }}</text>
+              </view>
+            </view>
+
+            <view class="modal-form-group">
+              <view class="modal-form-label">
+                <text>学科名称</text>
+                <text class="required">*</text>
+              </view>
               <input
-                class="form-input"
                 v-model="formData.name"
-                placeholder="例如: 高等数学、现代物理..."
-                cursor-spacing="24"
+                class="modal-form-input"
+                maxlength="20"
+                placeholder="例如: 算法与数据结构、应用物理学"
+                :disabled="savingSubject"
+                @confirm="handleSave"
               />
             </view>
 
-            <view class="form-group">
-              <text class="form-label">学科简介</text>
-              <input
-                class="form-input"
+            <view class="modal-form-group">
+              <text class="modal-form-label">学科简述</text>
+              <textarea
                 v-model="formData.description"
-                placeholder="添加重点研究方向或简介..."
-                cursor-spacing="24"
+                class="modal-form-textarea"
+                maxlength="100"
+                placeholder="简短描述这个学科的研究方向或课程定位..."
+                :disabled="savingSubject"
               />
             </view>
 
-            <view class="form-group">
-              <text class="form-label">标志图标</text>
+            <view class="modal-form-group">
+              <text class="modal-form-label">选择空间图标</text>
               <view class="icon-grid">
                 <view
                   v-for="option in subjectIconOptions"
                   :key="option.key"
                   class="icon-option"
                   :class="{ selected: formData.icon === option.key }"
-                  @click="formData.icon = option.key"
+                  role="button"
                   :title="option.label"
+                  :aria-label="`选择${option.label}图标`"
+                  @click="!savingSubject && (formData.icon = option.key)"
                 >
-                  <LineIcon :name="`subj-${option.key}`" size="40rpx" :color="formData.icon === option.key ? '#7D9372' : 'var(--color-zen-stone)'" />
+                  <LineIcon
+                    :name="`subj-${option.key}`"
+                    size="20px"
+                    :color="formData.icon === option.key ? '#76855B' : 'var(--text-secondary)'"
+                  />
                 </view>
               </view>
             </view>
-          </scroll-view>
+
+            <text v-if="modalError" class="modal-error">{{ modalError }}</text>
+          </view>
 
           <view class="modal-footer">
-            <view class="btn secondary-btn" @click="showModal = false"><text>取消</text></view>
-            <view class="btn primary-btn submit-btn" @click="handleSave">
-              <text class="btn-text">{{ isEditing ? '保存修改' : '立即创建' }}</text>
-            </view>
+            <button
+              type="button"
+              class="modal-btn modal-btn-secondary"
+              :disabled="savingSubject"
+              @click="closeModal"
+            >取消</button>
+            <button
+              type="button"
+              class="modal-btn modal-btn-primary"
+              :disabled="savingSubject || !formData.name.trim()"
+              @click="handleSave"
+            >{{ savingSubject ? '保存中…' : isEditing ? '保存修改' : '确认创建' }}</button>
           </view>
         </view>
       </view>
-
-    </view>
+    </template>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
-import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
-import { subjectIconOptions, isSubjectIconKey, getLegacySubjectIcon } from '@/utils/subjectIcon'
+import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import { isSubjectIconKey, subjectIconOptions } from '@/utils/subjectIcon'
 
+const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
 const { subjects } = storeToRefs(subjectStore)
-const { recentBlocks } = storeToRefs(blockStore)
 
-// State
 const searchQuery = ref('')
 const showModal = ref(false)
 const isEditing = ref(false)
 const editingId = ref<string | null>(null)
-const formData = ref({
+const savingSubject = ref(false)
+const modalError = ref('')
+
+const formData = reactive({
   name: '',
   description: '',
-  icon: 'book'
+  icon: 'book',
 })
 
-// Computed
 const filteredSubjects = computed(() => {
-  const q = searchQuery.value.toLowerCase()
+  const q = searchQuery.value.trim().toLowerCase()
   if (!q) return subjects.value
   return subjects.value.filter(s =>
-    s.name.toLowerCase().includes(q) ||
-    (s.description || '').toLowerCase().includes(q)
+    s.name.toLowerCase().includes(q)
+    || (s.description || '').toLowerCase().includes(q),
   )
 })
 
-// Methods
-const getMasteryPercent = (subj: Subject): number => {
-  const blocks = recentBlocks.value.filter(b => b.subjectId === subj.id)
-  if (blocks.length === 0) return 0
-  const totalMastery = blocks.reduce((sum, b) => sum + (b.mastery || 0), 0)
-  return Math.round(totalMastery / blocks.length)
-}
-
-const openCreateModal = () => {
+function openCreateModal() {
   isEditing.value = false
   editingId.value = null
-  formData.value = { name: '', description: '', icon: 'book' }
+  formData.name = ''
+  formData.description = ''
+  formData.icon = 'book'
+  modalError.value = ''
   showModal.value = true
 }
 
-const openEditModal = (subj: Subject) => {
+function openEditModal(subj: Subject) {
   isEditing.value = true
   editingId.value = subj.id
-  formData.value = {
-    name: subj.name,
-    description: subj.description || '',
-    icon: subj.icon
-  }
+  formData.name = subj.name
+  formData.description = subj.description || ''
+  formData.icon = isSubjectIconKey(subj.icon) ? subj.icon : 'book'
+  modalError.value = ''
   showModal.value = true
 }
 
-const handleSave = async () => {
-  if (!formData.value.name.trim()) {
-    uni.showToast({ title: '请输入学科名称', icon: 'none' })
-    return
-  }
-
-  if (isEditing.value && editingId.value) {
-    const existing = subjects.value.find(s => s.id === editingId.value)
-    if (existing) {
-      await subjectStore.updateSubject({
-        ...existing,
-        name: formData.value.name,
-        description: formData.value.description,
-        icon: formData.value.icon
-      })
-      uni.showToast({ title: '学科已更新', icon: 'success' })
-    }
-  } else {
-    const newId = await subjectStore.addSubject(
-      formData.value.name,
-      formData.value.description,
-      formData.value.icon
-    )
-    uni.showToast({ title: '学科已创建', icon: 'success' })
-    // Auto-navigate to workspace
-    enterWorkspace(newId)
-  }
+function closeModal() {
+  if (savingSubject.value) return
   showModal.value = false
 }
 
-const handleDeleteSubject = (subj: Subject) => {
-  uni.showModal({
-    title: '确认删除',
-    content: `删除「${subj.name}」及其所有数据？`,
-    success: async (res) => {
-      if (res.confirm) {
-        await subjectStore.deleteSubject(subj.id)
-        uni.showToast({ title: '已删除', icon: 'success' })
-      }
+useEscapeKey(() => showModal.value, closeModal)
+
+async function handleSave() {
+  if (savingSubject.value) return
+  modalError.value = ''
+  const trimmedName = formData.name.trim()
+  if (!trimmedName) {
+    modalError.value = '请输入学科名称'
+    return
+  }
+
+  const normalizedName = trimmedName.toLowerCase()
+  const duplicate = subjects.value.some(item =>
+    item.id !== editingId.value && item.name.trim().toLowerCase() === normalizedName,
+  )
+  if (duplicate) {
+    modalError.value = '已存在同名学科'
+    return
+  }
+
+  const generation = authStore.getLoginGeneration()
+  savingSubject.value = true
+  try {
+    if (isEditing.value && editingId.value) {
+      const existing = subjects.value.find(s => s.id === editingId.value)
+      if (!existing) throw new Error('学科不存在或已删除')
+      await subjectStore.updateSubject({
+        ...existing,
+        name: trimmedName,
+        description: formData.description.trim(),
+        icon: formData.icon,
+      })
+      if (generation !== authStore.getLoginGeneration()) return
+      showModal.value = false
+      uni.showToast({ title: '已更新', icon: 'none' })
+      return
     }
+
+    const newId = await subjectStore.addSubject(trimmedName, formData.description.trim(), formData.icon)
+    if (generation !== authStore.getLoginGeneration()) return
+    showModal.value = false
+    uni.showToast({ title: '已创建', icon: 'none' })
+    enterWorkspace(newId)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    modalError.value = err instanceof Error ? err.message : '保存失败'
+  } finally {
+    if (generation === authStore.getLoginGeneration()) {
+      savingSubject.value = false
+    }
+  }
+}
+
+function handleDeleteSubject(subj: Subject) {
+  const generation = authStore.getLoginGeneration()
+  uni.showModal({
+    title: '删除学科',
+    content: `确定删除「${subj.name}」吗？`,
+    confirmColor: '#C93B3B',
+    success: async (res) => {
+      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
+      try {
+        await subjectStore.deleteSubject(subj.id)
+        if (generation !== authStore.getLoginGeneration()) return
+        uni.showToast({ title: '已删除', icon: 'none' })
+      } catch (err) {
+        if (generation !== authStore.getLoginGeneration()) return
+        uni.showToast({ title: err instanceof Error ? err.message : '删除失败', icon: 'none' })
+      }
+    },
   })
 }
 
-const enterWorkspace = (id: string) => {
-  uni.navigateTo({
-    url: `/pages/tablet/workspace/index?id=${id}`
-  })
+function enterWorkspace(id: string) {
+  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${id}` })
 }
+
+const hydrated = ref(false)
+
+async function hydrateHallData() {
+  const gen = authStore.getLoginGeneration()
+  try {
+    await Promise.all([blockStore.fetchBlocks(), subjectStore.loadSubjects()])
+  } finally {
+    if (gen === authStore.getLoginGeneration()) {
+      hydrated.value = true
+    }
+  }
+}
+
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    hydrated.value = false
+    showModal.value = false
+    savingSubject.value = false
+    editingId.value = null
+    searchQuery.value = ''
+    modalError.value = ''
+    if (!authStore.isAuthenticated) return
+    void hydrateHallData()
+  },
+)
 
 onMounted(async () => {
-  await blockStore.fetchBlocks()
-  await subjectStore.loadSubjects()
+  if (!authStore.isAuthenticated) return
+  await hydrateHallData()
 })
 </script>
 
 <style scoped>
 .t-subject-hall {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 48rpx 56rpx;
+  padding: 16px 20px;
+  background-color: transparent;
+  overflow-y: auto;
   box-sizing: border-box;
-  background: var(--color-zen-ivory, #F9F9F7);
 }
 
-/* Header */
-.header {
+.hall-content {
+  width: 100%;
+  max-width: 1360px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 28px 32px;
+  border-radius: 20px;
+  box-sizing: border-box;
+}
+
+.hall-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 48rpx;
-  flex-shrink: 0;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
 }
-.header-left {
+
+.title-row {
   display: flex;
-  flex-direction: column;
-  gap: 8rpx;
+  align-items: baseline;
+  gap: 10px;
 }
+
 .page-title {
-  font-size: 48rpx;
+  font-size: 24px;
   font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
-.page-sub {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
+
+.count-num {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
 }
+
 .header-actions {
   display: flex;
-  gap: 20rpx;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
+
 .search-box {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  padding: 16rpx 32rpx;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16rpx);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  width: 320rpx;
-  box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.04);
-  transition: all 0.2s;
+  gap: 8px;
+  height: 36px;
+  padding: 0 13px;
+  border-radius: var(--radius-full);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
+  width: 220px;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+/* #ifdef H5 */
 .search-box:focus-within {
-  border-color: var(--color-zen-graphite, #1C1C1A);
-  width: 380rpx;
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
+/* #endif */
+
 .search-input {
   flex: 1;
-  font-size: 26rpx;
-  color: var(--color-zen-graphite, #1C1C1A);
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
   background: transparent;
 }
-.btn {
-  padding: 18rpx 40rpx;
-  border-radius: 999rpx;
-  font-weight: 600;
-  font-size: 28rpx;
+
+.search-clear {
+  cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn:active { transform: scale(0.96); }
-.primary-btn {
-  background: var(--color-zen-graphite, #1C1C1A);
-  color: var(--color-zen-white, #FFFFFF);
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
-}
-.secondary-btn {
-  background: var(--color-zen-ivory, #F9F9F7);
-  color: var(--color-zen-graphite, #1C1C1A);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
 }
 
-/* Content */
-.content {
-  flex: 1;
-  height: 0;
+.create-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-full);
 }
 
-/* Empty State */
-.empty-state {
+.empty-hall {
+  padding: 56px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 120rpx;
-  gap: 16rpx;
-}
-.empty-title {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.empty-hint {
-  font-size: 28rpx;
-  color: var(--color-zen-stone, #A8A8A5);
+  gap: 14px;
 }
 
-/* Grid */
+.empty-title {
+  font-size: 16px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 36rpx;
-  padding-bottom: 40rpx;
+  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+  gap: 18px;
 }
 
-/* Subject Card */
 .subject-card {
-  position: relative;
-  overflow: hidden;
-  background: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 36rpx;
-  padding: 44rpx 40rpx 40rpx;
+  padding: 20px 22px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  min-height: 158px;
   cursor: pointer;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.subject-card:hover {
-  transform: translateY(-4rpx);
-  box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.06);
-}
-.card-accent-stripe {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 12rpx;
-  transition: height 0.25s;
-}
-.subject-card:hover .card-accent-stripe {
-  height: 16rpx;
+  box-sizing: border-box;
+  transition: transform 0.22s var(--ease-out), box-shadow 0.22s ease, border-color 0.22s ease;
 }
 
-.card-header {
+.subject-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--glass-border);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.36), 0 12px 30px rgba(45, 55, 40, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.90);
+}
+
+.subject-card:hover .card-arrow {
+  transform: translateX(3px);
+}
+
+.card-arrow {
+  transition: transform 0.2s var(--ease-out);
+}
+
+.card-top {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24rpx;
+  justify-content: space-between;
 }
+
 .s-icon {
-  font-size: 56rpx;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background-color: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
 .card-actions {
   display: flex;
-  gap: 12rpx;
-  opacity: 0;
-  transition: opacity 0.2s;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.85;
+  transition: opacity 0.18s ease;
 }
+
 .subject-card:hover .card-actions {
   opacity: 1;
 }
-.action-btn {
-  padding: 10rpx 20rpx;
-  border-radius: 999rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  font-size: 22rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
-  transition: all 0.2s;
+
+.icon-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
 }
-.action-btn:hover {
-  background: #f0f0ee;
+
+.icon-action-btn:hover {
+  border-color: var(--border-accent);
 }
-.action-btn.danger {
-  color: #b05555;
-  border-color: rgba(212, 163, 163, 0.4);
+
+.icon-action-btn.danger:hover {
+  background-color: var(--color-danger-bg);
+  border-color: transparent;
 }
 
 .s-name {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite, #1C1C1A);
-  margin-bottom: 8rpx;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-size: 17px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
 }
+
 .s-desc {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-bottom: 20rpx;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
   display: -webkit-box;
-  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  height: 68rpx;
-  line-height: 1.5;
 }
-.placeholder-desc {
-  opacity: 0.5;
-  font-style: italic;
-}
-.s-meta {
+
+.s-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
   display: flex;
-  gap: 24rpx;
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-bottom: 20rpx;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.progress-bar {
-  height: 14rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  overflow: hidden;
-  margin-bottom: 10rpx;
-}
-.progress-fill {
-  height: 100%;
-  border-radius: 999rpx;
-  transition: width 0.3s;
-}
-.mastery-label {
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  text-align: right;
-  font-weight: 600;
+.s-metrics {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
-/* Add Card */
+.s-metric-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+}
+
 .add-card {
-  display: flex;
+  border: 1px dashed rgba(139, 154, 110, 0.34);
+  border-radius: 16px;
   align-items: center;
   justify-content: center;
-  border: 2rpx dashed var(--color-zen-stone, #A8A8A5);
-  background: transparent;
-  gap: 16rpx;
-  opacity: 0.7;
-  min-height: 260rpx;
-  border-radius: 36rpx;
-  box-shadow: none;
-}
-.add-card:hover {
-  opacity: 1;
-  border-color: var(--color-zen-graphite, #1C1C1A);
-  background: rgba(255, 255, 255, 0.4);
-}
-.add-circle {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 50%;
-  background: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.04);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.add-text {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  gap: 10px;
 }
 
-/* Modal Root 架构：同级分层，适配平板固定宽度 */
-.modal-root {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9999;
+.add-card:hover {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.08);
+}
+
+.add-plus-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(28, 28, 26, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: 1;
+
+.add-label {
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-sage-ink);
 }
-.modal-card {
-  position: relative;
-  z-index: 2;
-  width: 540px;
-  max-width: 88vw;
-  max-height: 85vh;
-  background: var(--color-zen-white, #FFFFFF);
-  border-radius: 40rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.08);
+
+.subject-modal-mask {
+  background-color: rgba(28, 28, 26, 0.42);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  padding: 24px;
+}
+
+.subject-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 24px 64px -12px rgba(0, 0, 0, 0.13),
+    0 8px 24px -6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes modalPop {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(16rpx);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  box-sizing: border-box;
+  animation: uiModalIn 0.22s var(--ease-out) both;
 }
 
 .modal-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  padding: 36rpx 40rpx;
-  border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
+  gap: 12px;
+  padding: 24px 28px 12px;
+  flex-shrink: 0;
 }
-.title-group {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
+
 .modal-title {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
-.modal-close {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 50%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  display: flex;
+
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.18s ease, transform 0.2s var(--ease-out);
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+.modal-close-btn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .modal-body {
-  padding: 36rpx 40rpx;
-  max-height: 58vh;
-  box-sizing: border-box;
-}
-
-.form-group {
-  margin-bottom: 32rpx;
-}
-.form-label {
-  font-size: 26rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite, #1C1C1A);
-  display: block;
-  margin-bottom: 12rpx;
-}
-.required {
-  color: #b05555;
-  margin-left: 4rpx;
-}
-.form-input {
-  width: 100%;
-  padding: 24rpx 32rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  font-size: 28rpx;
-  color: var(--color-zen-graphite, #1C1C1A);
-  box-sizing: border-box;
-  min-height: 80rpx;
-}
-
-.icon-grid {
+  padding: 8px 28px 18px;
+  overflow-y: auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 16rpx;
+  flex-direction: column;
+  gap: 18px;
+  box-sizing: border-box;
 }
-.icon-option {
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 24rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 2px;
+  box-sizing: border-box;
+}
+
+.preview-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: var(--radius-md);
+  background: #7D9372;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 36rpx;
+  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.3);
+  flex-shrink: 0;
+}
+
+.preview-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.preview-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-desc {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-form-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.modal-form-label .required {
+  color: #D14343;
+  font-weight: 700;
+}
+
+.modal-form-input,
+.modal-form-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04), 0 0.5px 1.5px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
+}
+
+.modal-form-input {
+  height: 40px;
+}
+
+.modal-form-textarea {
+  height: 84px;
+  line-height: 1.5;
+}
+
+/* #ifdef H5 */
+.modal-form-input:focus,
+.modal-form-textarea:focus {
+  outline: none;
+  border-color: var(--color-zen-sage);
+  background: #FDFBF8;
+  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
+}
+/* #endif */
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.icon-option {
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.18s var(--ease-out);
 }
+
 .icon-option:hover {
-  background: #f0f0ee;
+  background: #FFFFFF;
+  border-color: var(--color-zen-sage);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
+
 .icon-option.selected {
-  border-color: #7D9372;
-  border-width: 3rpx;
-  background: rgba(125, 147, 114, 0.1);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
+  background: rgba(139, 154, 110, 0.16);
+  border-color: var(--color-zen-sage);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.35), 0 3px 8px rgba(0, 0, 0, 0.08);
+  transform: scale(1.04);
+}
+
+.modal-error {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
 }
 
 .modal-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 20rpx;
-  padding: 28rpx 40rpx;
-  border-top: 1px solid var(--color-zen-hairline, #E6E6E4);
-  background: var(--color-zen-white, #FFFFFF);
+  gap: 10px;
+  padding: 12px 28px 24px;
+  flex-shrink: 0;
 }
-.primary-btn {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 20px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.2s var(--ease-out);
+}
+
+.modal-btn::after {
+  border: none;
+}
+
+.modal-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-btn-secondary {
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  color: var(--text-primary);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.065);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.modal-btn-primary {
+  background: var(--accent-gradient);
   color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.32), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
-.submit-btn {
-  transition: opacity 0.2s;
+
+.modal-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
-.submit-btn:hover {
-  opacity: 0.9;
-}
-.btn-text {
-  color: var(--color-zen-white, #FFFFFF);
-  font-weight: 700;
+
+@media (max-width: 760px) {
+  .t-subject-hall {
+    padding: 12px;
+  }
+
+  .hall-content {
+    padding: 20px 18px;
+  }
+
+  .search-box {
+    width: 100%;
+  }
 }
 </style>

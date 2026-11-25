@@ -1,0 +1,704 @@
+{
+  "user": {
+    "id": "01933f00-0000-7000-8000-000000000001",
+    "username": "linnea",
+    "displayName": "Linnea",
+    "email": "linnea@auralis.test",
+    "version": 1
+  },
+  "sessions": [
+    {
+      "id": "01933f00-0000-7000-8000-000000000101",
+      "deviceName": "Mobile H5 Preview",
+      "platform": "WEB",
+      "current": true,
+      "lastUsedOffsetHours": 0
+    },
+    {
+      "id": "01933f00-0000-7000-8000-000000000102",
+      "deviceName": "Auralis Desktop",
+      "platform": "WINDOWS",
+      "current": false,
+      "lastUsedOffsetHours": -6
+    }
+  ],
+  "subjects": [
+    {
+      "id": "01933f00-0001-7000-8000-000000000001",
+      "name": "高等数学",
+      "description": "微分中值定理、泰勒展开、定积分与级数收敛判定",
+      "iconKey": "math",
+      "sortKey": "001",
+      "version": 1,
+      "createdOffsetDays": -14
+    },
+    {
+      "id": "01933f00-0001-7000-8000-000000000002",
+      "name": "线性代数",
+      "description": "矩阵的秩、特征值分解、正交对角化与二次型",
+      "iconKey": "analysis",
+      "sortKey": "002",
+      "version": 1,
+      "createdOffsetDays": -12
+    },
+    {
+      "id": "01933f00-0001-7000-8000-000000000003",
+      "name": "数据结构与算法",
+      "description": "平衡二叉树、图论最短路径、动态规划与哈希表",
+      "iconKey": "code",
+      "sortKey": "003",
+      "version": 1,
+      "createdOffsetDays": -10
+    },
+    {
+      "id": "01933f00-0001-7000-8000-000000000004",
+      "name": "操作系统",
+      "description": "虚拟内存多级页表、进程调度算法与死锁避免",
+      "iconKey": "computer",
+      "sortKey": "004",
+      "version": 1,
+      "createdOffsetDays": -8
+    },
+    {
+      "id": "01933f00-0001-7000-8000-000000000005",
+      "name": "计算机网络",
+      "description": "TCP 状态机、拥塞控制算法与 TLS 1.3 安全握手",
+      "iconKey": "research",
+      "sortKey": "005",
+      "version": 1,
+      "createdOffsetDays": -6
+    },
+    {
+      "id": "01933f00-0001-7000-8000-000000000006",
+      "name": "数据库系统",
+      "description": "事务 ACID、隔离级别、B+ 树索引与 MVCC 机制",
+      "iconKey": "library",
+      "sortKey": "006",
+      "version": 1,
+      "createdOffsetDays": -4
+    }
+  ],
+  "knowledgeBlocks": [
+    {
+      "id": "01933f00-0002-7000-8000-000000000001",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "sourceId": "01933f00-0003-7000-8000-000000000001",
+      "title": "拉格朗日中值定理与构造思路",
+      "content": "### 核心结论\n\n若 $f(x)$ 在闭区间 $[a, b]$ 连续、开区间 $(a, b)$ 可导，则至少存在一点 $\\xi \\in (a, b)$ 满足：\n\n$$f(b) - f(a) = f'(\\xi)(b - a)$$\n\n- **几何意义**：曲线上必存在一点的切线平行于两端点连线。\n- **证明抓手**：构造辅助函数 $\\varphi(x) = f(x) - f(a) - \\frac{f(b)-f(a)}{b-a}(x-a)$ 后使用罗尔定理。",
+      "version": 1,
+      "createdOffsetDays": -7,
+      "review": {
+        "dueOffsetHours": -12,
+        "reps": 2,
+        "lapses": 0,
+        "stability": 5.4,
+        "difficulty": 4.6,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000002",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "sourceId": "01933f00-0003-7000-8000-000000000001",
+      "title": "泰勒展开与皮亚诺余项适用边界",
+      "content": "### 局部多项式逼近\n\n$$f(x) = \\sum_{k=0}^{n} \\frac{f^{(k)}(x_0)}{k!}(x - x_0)^k + o((x-x_0)^n)$$\n\n1. **极限运算**：加减法需展开到分子分母同阶非零项，避免抵消后丢失主部。\n2. **高频展开**：$\\sin x = x - \\frac{x^3}{6} + o(x^3)$，$e^x = 1 + x + \\frac{x^2}{2} + o(x^2)$。",
+      "version": 1,
+      "createdOffsetDays": -6,
+      "review": {
+        "dueOffsetHours": -6,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.2,
+        "difficulty": 5.1,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000003",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "sourceId": null,
+      "title": "牛顿-莱布尼茨公式与变限积分求导",
+      "content": "### 定积分核心桥梁\n\n$$\\int_{a}^{b} f(x)\\,dx = F(b) - F(a)$$\n\n若 $g(x) = \\int_{\\alpha(x)}^{\\beta(x)} f(t)\\,dt$ 且 $f$ 连续，则：\n\n$$g'(x) = f(\\beta(x))\\beta'(x) - f(\\alpha(x))\\alpha'(x)$$",
+      "version": 1,
+      "createdOffsetDays": -5,
+      "review": {
+        "dueOffsetHours": -2,
+        "reps": 1,
+        "lapses": 1,
+        "stability": 2.4,
+        "difficulty": 5.8,
+        "nextReviewStage": "EARLY_RECALL"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000004",
+      "subjectId": "01933f00-0001-7000-8000-000000000002",
+      "sourceId": "01933f00-0003-7000-8000-000000000002",
+      "title": "实对称矩阵的正交相似对角化",
+      "content": "### 谱定理关键结论\n\n设 $A$ 为 $n$ 阶实对称矩阵，则：\n\n- 特征值全部为实数；\n- 不同特征值对应的特征向量必**正交**；\n- 必存在正交矩阵 $Q$（满足 $Q^T Q = I$），使得 $Q^T A Q = \\Lambda$。",
+      "version": 1,
+      "createdOffsetDays": -6,
+      "review": {
+        "dueOffsetHours": -10,
+        "reps": 2,
+        "lapses": 0,
+        "stability": 4.8,
+        "difficulty": 4.9,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000005",
+      "subjectId": "01933f00-0001-7000-8000-000000000002",
+      "sourceId": "01933f00-0003-7000-8000-000000000002",
+      "title": "矩阵的秩与线性方程组解空间维数",
+      "content": "### 秩-零化度定理\n\n对于矩阵 $A \\in \\mathbb{R}^{m \\times n}$：\n\n$$\\operatorname{rank}(A) + \\dim(\\ker A) = n$$\n\n- 齐次方程 $Ax = 0$ 的基础解系含 $n - r$ 个线性无关解向量；\n- 非齐次方程 $Ax = b$ 有解当且仅当 $\\operatorname{rank}(A) = \\operatorname{rank}(A \\mid b)$。",
+      "version": 1,
+      "createdOffsetDays": -5,
+      "review": {
+        "dueOffsetHours": -5,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.5,
+        "difficulty": 5.0,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000006",
+      "subjectId": "01933f00-0001-7000-8000-000000000002",
+      "sourceId": null,
+      "title": "二次型正定性的四种等价判定",
+      "content": "### 正定矩阵判定清单\n\n1. 对任意非零向量 $x$，均有 $x^T A x > 0$；\n2. $A$ 的**全部特征值严格大于 0**；\n3. 正惯性指数 $p = n$，即 $A$ 合同于单位阵 $I$；\n4. $A$ 的各阶**顺序主子式**全部大于 0。",
+      "version": 1,
+      "createdOffsetDays": -4,
+      "review": {
+        "dueOffsetHours": -1,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.0,
+        "difficulty": 5.2,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000007",
+      "subjectId": "01933f00-0001-7000-8000-000000000003",
+      "sourceId": "01933f00-0003-7000-8000-000000000003",
+      "title": "红黑树五大核心性质与旋转修复",
+      "content": "### 五大不变式\n\n1. 节点非红即黑，根节点与 NIL 叶节点必为黑；\n2. 红节点的两个子节点必须为黑（不能出现连续红节点）；\n3. 任意节点到其后代叶节点的每条路径包含相同数目的黑节点。\n\n> 最长路径不超过最短路径的 2 倍，查询、插入、删除最坏复杂度均为 $O(log n)$。",
+      "version": 1,
+      "createdOffsetDays": -6,
+      "review": {
+        "dueOffsetHours": -9,
+        "reps": 2,
+        "lapses": 0,
+        "stability": 4.1,
+        "difficulty": 5.4,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000008",
+      "subjectId": "01933f00-0001-7000-8000-000000000003",
+      "sourceId": "01933f00-0003-7000-8000-000000000003",
+      "title": "Dijkstra 单源最短路径与非负权限制",
+      "content": "### 贪心松弛机制\n\n每次从最小堆中弹出距源点最近的未确定节点 $u$，遍历出边 $(u, v, w)$ 更新 $dist[v] = \\min(dist[v], dist[u] + w)$。\n\n- **堆优化复杂度**：$O((V + E)\\log V)$\n- **为什么不能有负权边**：一旦节点出堆即假定其最短路已锁定，后续负边无法再修正。",
+      "version": 1,
+      "createdOffsetDays": -5,
+      "review": {
+        "dueOffsetHours": -4,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.4,
+        "difficulty": 4.8,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000009",
+      "subjectId": "01933f00-0001-7000-8000-000000000003",
+      "sourceId": null,
+      "title": "0-1 背包与完全背包的遍历顺序差异",
+      "content": "### 一维滚动数组转移\n\n$$dp[j] = \\max(dp[j], dp[j - w_i] + v_i)$$\n\n- **0-1 背包**：内层容量 $j$ **倒序遍历**，保证每个物品在本轮只被转移一次；\n- **完全背包**：内层容量 $j$ **正序遍历**，允许同一物品在同一阶段被重复累加。",
+      "version": 1,
+      "createdOffsetDays": -3,
+      "review": {
+        "dueOffsetHours": -1,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.1,
+        "difficulty": 4.7,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000010",
+      "subjectId": "01933f00-0001-7000-8000-000000000004",
+      "sourceId": "01933f00-0003-7000-8000-000000000004",
+      "title": "多级页表与 TLB 快表加速原理",
+      "content": "### 虚拟地址翻译路径\n\n1. **痛点**：64 位（常用 48 位有效）虚拟地址若用单级页表，每个进程都要常驻连续 GB 级页表。\n2. **多级页表**：仅按需分配实际使用的叶子页表页。\n3. **TLB 命中**：CPU 优先查询快表缓存 `VPN -> PPN`，未命中才触发硬件 Page Table Walk。",
+      "version": 1,
+      "createdOffsetDays": -6,
+      "review": {
+        "dueOffsetHours": -8,
+        "reps": 2,
+        "lapses": 0,
+        "stability": 4.2,
+        "difficulty": 5.0,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000011",
+      "subjectId": "01933f00-0001-7000-8000-000000000004",
+      "sourceId": null,
+      "title": "进程上下文切换与线程切换的成本差异",
+      "content": "### 开销拆解\n\n- **直接开销**：保存/恢复寄存器现场、内核栈指针切换、调度器选取下一个任务。\n- **核心差异**：同进程内线程切换**不需要切换页表基址寄存器（CR3）**，从而保留 TLB 缓存命中率，显著减少缺页与 Cache Miss。",
+      "version": 1,
+      "createdOffsetDays": -4,
+      "review": {
+        "dueOffsetHours": -3,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.3,
+        "difficulty": 4.9,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000012",
+      "subjectId": "01933f00-0001-7000-8000-000000000004",
+      "sourceId": null,
+      "title": "死锁四大必要条件与银行家算法",
+      "content": "### 必要条件\n\n1. **互斥**（资源独占）\n2. **占有且等待**（Hold and Wait）\n3. **不可抢占**（No Preemption）\n4. **循环等待**（Circular Wait）\n\n> 银行家算法属于**死锁避免**：在分配前试算是否存在安全序列，若进入不安全状态则拒绝本次分配。",
+      "version": 1,
+      "createdOffsetDays": -3,
+      "review": {
+        "dueOffsetHours": -1,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.0,
+        "difficulty": 4.5,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000013",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "sourceId": "01933f00-0003-7000-8000-000000000005",
+      "title": "TCP TIME_WAIT 为什么等待 2MSL",
+      "content": "### 主动关闭方的最后保障\n\n1. **保证最后一个 ACK 到达**：若被动方未收到 `ACK` 会重传 `FIN`，主动方在 `2MSL` 内仍能重发确认。\n2. **清除网络残留旧报文**：等待本连接所有迟到报文在网络中自然消亡，避免复用同一四元组端口时发生串包。",
+      "version": 1,
+      "createdOffsetDays": -5,
+      "review": {
+        "dueOffsetHours": -7,
+        "reps": 2,
+        "lapses": 0,
+        "stability": 4.5,
+        "difficulty": 4.8,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000014",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "sourceId": "01933f00-0003-7000-8000-000000000005",
+      "title": "TCP 拥塞控制四大阶段演进",
+      "content": "### 拥塞窗口 `cwnd` 动态变化\n\n1. **慢启动**：`cwnd < ssthresh` 时每个 RTT 指数翻倍。\n2. **拥塞避免**：达到 `ssthresh` 后转为线性增长（每 RTT +1 MSS）。\n3. **快重传**：连续收到 3 个冗余 ACK 立即重传丢失段。\n4. **快恢复**：`ssthresh = cwnd / 2`，不必跌回 1 MSS。",
+      "version": 1,
+      "createdOffsetDays": -4,
+      "review": {
+        "dueOffsetHours": -3,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.2,
+        "difficulty": 5.1,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000015",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "sourceId": null,
+      "title": "TLS 1.3 相比 TLS 1.2 的关键安全与延迟改进",
+      "content": "### 1-RTT 握手与前向安全\n\n- **延迟减半**：客户端在 `ClientHello` 中直接携带 `ECDHE` 公钥份额，常规握手降至 **1-RTT**（会话复用支持 0-RTT）。\n- **强制 PFS**：彻底移除静态 RSA 密钥交换、RC4、SHA-1 与 CBC 填充模式，只保留 AEAD 套件（如 AES-GCM / ChaCha20-Poly1305）。",
+      "version": 1,
+      "createdOffsetDays": -3,
+      "review": {
+        "dueOffsetHours": -1,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.1,
+        "difficulty": 4.9,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000016",
+      "subjectId": "01933f00-0001-7000-8000-000000000006",
+      "sourceId": "01933f00-0003-7000-8000-000000000006",
+      "title": "InnoDB MVCC 与 ReadView 可见性规则",
+      "content": "### 隐藏列与版本链\n\n每行记录维护 `trx_id` 与指向 Undo Log 旧版本的 `roll_pointer`。\n\n- `trx_id < min_trx_id`：生成 ReadView 前已提交，**可见**；\n- `trx_id >= max_trx_id`：快照之后开启的事务，**不可见**；\n- 落在 `[min_trx_id, max_trx_id)` 之间：若在活跃列表 `m_ids` 中则不可见，否则已提交可见。",
+      "version": 1,
+      "createdOffsetDays": -4,
+      "review": {
+        "dueOffsetHours": -6,
+        "reps": 2,
+        "lapses": 0,
+        "stability": 4.4,
+        "difficulty": 5.3,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000017",
+      "subjectId": "01933f00-0001-7000-8000-000000000006",
+      "sourceId": "01933f00-0003-7000-8000-000000000006",
+      "title": "B+ 树索引相对哈希与 B 树的优势",
+      "content": "### 面向磁盘页的平衡结构\n\n1. **高扇出低树高**：非叶节点只存索引键不存完整记录，单页（16KB）可容纳上千分支，通常 3~4 层覆盖千万行。\n2. **叶子双向链表**：天然支持 `BETWEEN`、`ORDER BY` 范围扫描，避免哈希索引全表退化。\n3. **覆盖索引**：二级索引已包含所需字段时无需回表查聚簇索引。",
+      "version": 1,
+      "createdOffsetDays": -3,
+      "review": {
+        "dueOffsetHours": -2,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.5,
+        "difficulty": 4.6,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    },
+    {
+      "id": "01933f00-0002-7000-8000-000000000018",
+      "subjectId": "01933f00-0001-7000-8000-000000000006",
+      "sourceId": null,
+      "title": "事务隔离级别与三类并发异常对照",
+      "content": "### 标准 SQL 隔离级别\n\n| 隔离级别 | 脏读 | 不可重复读 | 幻读 |\n| --- | --- | --- | --- |\n| Read Uncommitted | 允许 | 允许 | 允许 |\n| Read Committed | 避免 | 允许 | 允许 |\n| Repeatable Read | 避免 | 避免 | InnoDB 借助间隙锁避免 |\n| Serializable | 避免 | 避免 | 避免 |",
+      "version": 1,
+      "createdOffsetDays": -2,
+      "review": {
+        "dueOffsetHours": -1,
+        "reps": 1,
+        "lapses": 0,
+        "stability": 3.0,
+        "difficulty": 4.9,
+        "nextReviewStage": "CROSS_DAY"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "01933f00-0004-7000-8000-000000000001",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "title": "精读微分中值定理证明构造讲义",
+      "description": "整理罗尔定理到柯西中值定理的辅助函数套路",
+      "durationMinutes": 60,
+      "status": "IN_PROGRESS",
+      "scheduleOffsetDays": 0,
+      "scheduleTime": "09:00",
+      "sortKey": "a001",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000002",
+      "subjectId": "01933f00-0001-7000-8000-000000000003",
+      "title": "手写红黑树左旋与 Dijkstra 堆优化代码",
+      "description": "重点核对松弛跳过已出堆节点的条件",
+      "durationMinutes": 90,
+      "status": "IN_PROGRESS",
+      "scheduleOffsetDays": 0,
+      "scheduleTime": "14:00",
+      "sortKey": "a002",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000003",
+      "subjectId": "01933f00-0001-7000-8000-000000000004",
+      "title": "推导四级页表地址拆分与 TLB 命中率",
+      "description": "计算 4KB 页与 48 位虚拟地址的各级索引位数",
+      "durationMinutes": 60,
+      "status": "IN_PROGRESS",
+      "scheduleOffsetDays": 0,
+      "scheduleTime": "19:30",
+      "sortKey": "a003",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000004",
+      "subjectId": "01933f00-0001-7000-8000-000000000002",
+      "title": "复习实对称矩阵谱分解例题 4 道",
+      "description": "整理施密特正交化步骤",
+      "durationMinutes": 60,
+      "status": "IN_PROGRESS",
+      "scheduleOffsetDays": 1,
+      "scheduleTime": "10:00",
+      "sortKey": "a004",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000005",
+      "subjectId": "01933f00-0001-7000-8000-000000000006",
+      "title": "梳理 InnoDB Next-Key Lock 加锁范围案例",
+      "description": "对比 RC 与 RR 级别下的快照读与当前读",
+      "durationMinutes": 60,
+      "status": "IN_PROGRESS",
+      "scheduleOffsetDays": 1,
+      "scheduleTime": "15:30",
+      "sortKey": "a005",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000006",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "title": "绘制 TCP 状态迁移与拥塞窗口曲线图",
+      "description": "标注 3 个冗余 ACK 后的快恢复阈值变化",
+      "durationMinutes": 30,
+      "status": "IN_PROGRESS",
+      "scheduleOffsetDays": 2,
+      "scheduleTime": "16:00",
+      "sortKey": "a006",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000007",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "title": "完成泰勒公式等价无穷小替换专项练习",
+      "description": "",
+      "durationMinutes": 60,
+      "status": "TODO",
+      "dueOffsetDays": 1,
+      "sortKey": "a007",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000008",
+      "subjectId": "01933f00-0001-7000-8000-000000000002",
+      "title": "整理二次型正定判定四条等价条件对照卡",
+      "description": "",
+      "durationMinutes": 30,
+      "status": "TODO",
+      "dueOffsetDays": 2,
+      "sortKey": "a008",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000009",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "title": "总结 TLS 1.3 0-RTT 与重放防护边界",
+      "description": "",
+      "durationMinutes": 60,
+      "status": "TODO",
+      "dueOffsetDays": 4,
+      "sortKey": "a009",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000010",
+      "subjectId": "01933f00-0001-7000-8000-000000000003",
+      "title": "补全 0-1 背包与完全背包状态压缩模板",
+      "description": "",
+      "durationMinutes": 60,
+      "status": "TODO",
+      "sortKey": "a010",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000011",
+      "subjectId": "01933f00-0001-7000-8000-000000000004",
+      "title": "整理银行家算法安全性检查反例",
+      "description": "",
+      "durationMinutes": 30,
+      "status": "TODO",
+      "sortKey": "a011",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000012",
+      "subjectId": "01933f00-0001-7000-8000-000000000006",
+      "title": "对比聚集索引与覆盖索引的执行计划差异",
+      "description": "",
+      "durationMinutes": 90,
+      "status": "TODO",
+      "sortKey": "a012",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000013",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "title": "复盘 TCP 四次挥手 TIME_WAIT 状态",
+      "description": "",
+      "durationMinutes": 30,
+      "status": "DONE",
+      "scheduleOffsetDays": -1,
+      "scheduleTime": "20:00",
+      "sortKey": "a013",
+      "version": 1
+    },
+    {
+      "id": "01933f00-0004-7000-8000-000000000014",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "title": "晨间公式默写：微分中值定理全链",
+      "description": "",
+      "durationMinutes": 30,
+      "status": "DONE",
+      "scheduleOffsetDays": 0,
+      "scheduleTime": "07:30",
+      "sortKey": "a014",
+      "version": 1
+    }
+  ],
+  "sources": [
+    {
+      "id": "01933f00-0003-7000-8000-000000000001",
+      "subjectId": "01933f00-0001-7000-8000-000000000001",
+      "type": "FILE",
+      "title": "第三章_微分中值定理与泰勒展开讲义.pdf",
+      "assetId": "01933f00-0005-7000-8000-000000000001",
+      "assetSizeBytes": 2485120,
+      "ingestionStatus": "READY",
+      "ingestionRevision": "rev-math-1",
+      "version": 1,
+      "createdOffsetDays": -7
+    },
+    {
+      "id": "01933f00-0003-7000-8000-000000000002",
+      "subjectId": "01933f00-0001-7000-8000-000000000002",
+      "type": "FILE",
+      "title": "线性代数_正交对角化与二次型专题.pdf",
+      "assetId": "01933f00-0005-7000-8000-000000000002",
+      "assetSizeBytes": 1730400,
+      "ingestionStatus": "READY",
+      "ingestionRevision": "rev-alg-1",
+      "version": 1,
+      "createdOffsetDays": -6
+    },
+    {
+      "id": "01933f00-0003-7000-8000-000000000003",
+      "subjectId": "01933f00-0001-7000-8000-000000000003",
+      "type": "FILE",
+      "title": "图论最短路与平衡树复习笔记.md",
+      "assetId": "01933f00-0005-7000-8000-000000000003",
+      "assetSizeBytes": 184320,
+      "ingestionStatus": "READY",
+      "ingestionRevision": "rev-algo-1",
+      "version": 1,
+      "createdOffsetDays": -5
+    },
+    {
+      "id": "01933f00-0003-7000-8000-000000000004",
+      "subjectId": "01933f00-0001-7000-8000-000000000004",
+      "type": "FILE",
+      "title": "虚拟内存与多级页表课程讲义.pdf",
+      "assetId": "01933f00-0005-7000-8000-000000000004",
+      "assetSizeBytes": 3120500,
+      "ingestionStatus": "READY",
+      "ingestionRevision": "rev-os-1",
+      "version": 1,
+      "createdOffsetDays": -5
+    },
+    {
+      "id": "01933f00-0003-7000-8000-000000000005",
+      "subjectId": "01933f00-0001-7000-8000-000000000005",
+      "type": "FILE",
+      "title": "TCP拥塞控制与TLS1.3协议拆解.pdf",
+      "assetId": "01933f00-0005-7000-8000-000000000005",
+      "assetSizeBytes": 1954800,
+      "ingestionStatus": "READY",
+      "ingestionRevision": "rev-net-1",
+      "version": 1,
+      "createdOffsetDays": -4
+    },
+    {
+      "id": "01933f00-0003-7000-8000-000000000006",
+      "subjectId": "01933f00-0001-7000-8000-000000000006",
+      "type": "FILE",
+      "title": "InnoDB事务并发与索引内核笔记.docx",
+      "assetId": "01933f00-0005-7000-8000-000000000006",
+      "assetSizeBytes": 924100,
+      "ingestionStatus": "READY",
+      "ingestionRevision": "rev-db-1",
+      "version": 1,
+      "createdOffsetDays": -3
+    }
+  ],
+  "subjectOverviews": {
+    "01933f00-0001-7000-8000-000000000001": {
+      "title": "高等数学 · 微分与积分主线",
+      "outlineMarkdown": "# 微分与积分主线\n\n## 1. 中值定理链条\n- 罗尔定理：驻点存在性\n- 拉格朗日中值定理：平均变化率与切线斜率\n- 柯西中值定理：参数比值与洛必达法则\n\n## 2. 泰勒逼近与定积分\n- 皮亚诺余项处理局部极限\n- 牛顿-莱布尼茨公式与变限积分求导",
+      "summaryMarkdown": "以连续性与可导性为基础，通过构造线性辅助函数统一微分中值定理体系，并借助泰勒展开与变限积分连接局部逼近与整体累积。"
+    },
+    "01933f00-0001-7000-8000-000000000002": {
+      "title": "线性代数 · 秩与二次型体系",
+      "outlineMarkdown": "# 秩、谱分解与二次型\n\n## 1. 矩阵秩与解空间\n- 秩-零化度定理\n- 齐次与非齐次方程组判别\n\n## 2. 正交对角化与正定性\n- 实对称矩阵谱定理\n- 正惯性指数与顺序主子式",
+      "summaryMarkdown": "围绕矩阵秩统摄线性方程组解结构，并以实对称矩阵的正交相似对角化为桥梁完成二次型标准化与正定判定。"
+    },
+    "01933f00-0001-7000-8000-000000000003": {
+      "title": "数据结构与算法 · 核心结构与转移",
+      "outlineMarkdown": "# 核心数据结构与算法模型\n\n## 1. 平衡查找树\n- 红黑树五大不变式与最坏 $O(\\log n)$ 保证\n\n## 2. 图论与动态规划\n- Dijkstra 非负权贪心松弛\n- 背包问题滚动数组正倒序差异",
+      "summaryMarkdown": "覆盖树高平衡不变式、贪心松弛前提条件以及背包状态转移的无后效性约束。"
+    },
+    "01933f00-0001-7000-8000-000000000004": {
+      "title": "操作系统 · 内存、调度与并发",
+      "outlineMarkdown": "# 操作系统内核脉络\n\n## 1. 虚拟内存\n- 多级页表按需映射\n- TLB 快表与缺页处理\n\n## 2. 调度与死锁\n- 进程 vs 线程切换 TLB 成本\n- 死锁四条件与银行家算法",
+      "summaryMarkdown": "重点对照地址翻译路径中的局部性加速机制，以及资源分配安全性检验在死锁避免中的作用。"
+    },
+    "01933f00-0001-7000-8000-000000000005": {
+      "title": "计算机网络 · 传输控制与安全握手",
+      "outlineMarkdown": "# TCP 与 TLS 1.3\n\n## 1. 可靠传输\n- TIME_WAIT 与 2MSL\n- 慢启动、拥塞避免、快重传、快恢复\n\n## 2. 传输安全\n- TLS 1.3 1-RTT 密钥协商与前向安全",
+      "summaryMarkdown": "围绕 TCP 状态闭环、拥塞窗口调节节奏与 TLS 1.3 的低延迟安全增强展开。"
+    },
+    "01933f00-0001-7000-8000-000000000006": {
+      "title": "数据库系统 · 存储引擎与事务隔离",
+      "outlineMarkdown": "# 存储索引与并发控制\n\n## 1. 磁盘索引\n- B+ 树高扇出、范围扫描与覆盖索引\n\n## 2. 事务并发\n- MVCC ReadView 版本链\n- 四种隔离级别与间隙锁",
+      "summaryMarkdown": "以 InnoDB 页结构为基础串联 B+ 树索引查询路径，并结合 ReadView 与锁机制解释不同隔离级别的一致性保障。"
+    }
+  },
+  "conversations": [
+    {
+      "id": "01933f00-0006-7000-8000-000000000001",
+      "title": "各学科本周复习优先级梳理",
+      "updatedOffsetHours": -3,
+      "createdOffsetHours": -4,
+      "version": 1,
+      "chatScopeState": "BOUND",
+      "chatScope": {
+        "subjectId": "01933f00-0001-7000-8000-000000000001",
+        "currentSourceId": null,
+        "retrievalMode": "SUBJECT",
+        "sourceIds": []
+      },
+      "messages": [
+        {
+          "role": "USER",
+          "content": "拉格朗日中值定理和柯西中值定理的核心联系是什么？"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "### 核心联系与记忆要点\n\n1. **拉格朗日中值定理**可视为柯西中值定理在 $g(x) = x$ 时的特例。\n2. **柯西中值定理**引入了参数曲线切线斜率 $\\frac{f'(\\xi)}{g'(\\xi)}$ 的视角，常用于推导洛必达法则与证明双函数比值等式。"
+        }
+      ]
+    }
+  ],
+  "aiUsage": {
+    "hourly": {
+      "limitTokens": 50000,
+      "chargedTokens": 8600,
+      "reservedTokens": 0,
+      "resetOffsetHours": 1
+    },
+    "daily": {
+      "limitTokens": 300000,
+      "chargedTokens": 34200,
+      "reservedTokens": 0,
+      "resetOffsetHours": 10
+    }
+  },
+  "aiSettings": [],
+  "statsBaseline": {
+    "historicalFocusSeconds": 28800,
+    "historicalFocusCompletedCount": 14,
+    "historicalReviewedCount": 12,
+    "historicalCreatedKnowledgeCount": 18,
+    "historicalCompletedTaskCount": 4
+  }
+}

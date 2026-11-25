@@ -75,7 +75,7 @@ export interface ChatMessageDetail {
   tools?: import('../services/aiStreamReducer').ChatToolActivity[]
 }
 
-export type ChatScopeState = 'LEGACY' | 'UNBOUND' | 'BOUND'
+export type ChatScopeState = 'UNBOUND' | 'BOUND'
 
 export interface ChatConversationScope {
   retrievalMode: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'

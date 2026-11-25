@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 import {
   cancelChatRun,
   createConversation,
@@ -18,7 +18,16 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { SyncScopeChangedError } from '@/api/request'
 import { uuidv7 } from '@/utils/uuid'
 import { AiStreamController } from '@/services/aiStreamController'
-import { createChatStreamState, reduceChatStreamEvent, setPart, type ChatStreamState } from '@/services/aiStreamReducer'
+import {
+  buildFallbackProcessTimeline,
+  createChatStreamState,
+  projectToolTrace,
+  reconcileProcessMetadata,
+  reduceChatStreamEvent,
+  setPart,
+  type ChatProcessTimelineItem,
+  type ChatStreamState,
+} from '@/services/aiStreamReducer'
 import { projectChatContentParts } from '@/services/chatContentProjection'
 import type { ChatActivityAnswer, ChatActivityDraft, ChatBlockPart, ChatContentPart } from '@/types/chatContent'
 import type { ChatScopeState, ChatConversationScope } from '@/types/chatProtocol'
@@ -119,6 +128,7 @@ export interface ChatMessage {
   attemptId?: string
   executionActive?: boolean
   tools?: ChatStreamState['tools']
+  processTimeline?: readonly ChatProcessTimelineItem[]
   messageSequence?: number
   createdAt?: string
   requestOptions?: ChatRequestOptions
@@ -150,8 +160,6 @@ function mapSafeErrorMessage(errorCode?: string): string {
       return '当前尝试状态不可恢复或已变更。'
     case 'CHAT_SCOPE_CONFLICT':
       return '当前会话已固定资料范围，无法切换范围提问。请开启新会话。'
-    case 'CHAT_SCOPE_LEGACY':
-      return '此历史会话未绑定资料范围，不可继续提问。请开始新会话。'
     default:
       return '生成遇到问题，请重试。'
   }
@@ -161,11 +169,13 @@ export const useChatStore = defineStore('chat', () => {
   const sessions = ref<ChatSession[]>([])
   const activeSessionId = ref<string | null>(null)
   const messages = ref<ChatMessage[]>([])
+
   const isStreaming = ref(false)
   const streamingContent = ref('')
   const streamingReasoning = ref('')
   const streamingParts = ref<readonly ChatContentPart[]>([])
   const streamingTools = ref<ChatStreamState['tools']>([])
+  const streamingProcessTimeline = ref<ChatStreamState['processTimeline']>([])
   const lastError = ref<string | null>(null)
   const lastErrorCode = ref<string | null>(null)
   const activeRun = ref<ActiveRunState | null>(null)
@@ -177,11 +187,9 @@ export const useChatStore = defineStore('chat', () => {
 
   const activeSession = computed(() => sessions.value.find((session) => session.id === activeSessionId.value) || null)
   // Both PENDING/FAILED user turns and FAILED/INTERRUPTED assistant replies expose retry entry points
-  const isLegacySession = computed(() => activeSession.value?.chatScopeState === 'LEGACY')
   const isBoundSession = computed(() => activeSession.value?.chatScopeState === 'BOUND')
 
   const pendingMessage = computed(() => {
-    if (activeSession.value?.chatScopeState === 'LEGACY') return null
     return (
       [...messages.value]
         .reverse()
@@ -245,6 +253,7 @@ export const useChatStore = defineStore('chat', () => {
         text: view.content,
       })
     }
+    const mappedTools = projectToolTrace(view.tools)
     return {
       id: view.id,
       serverMessageId: view.id,
@@ -254,7 +263,8 @@ export const useChatStore = defineStore('chat', () => {
       content: view.content || '',
       parts,
       reasoningText: view.reasoningText || '',
-      tools: view.tools || [],
+      tools: mappedTools,
+      processTimeline: buildFallbackProcessTimeline(view.reasoningText || '', mappedTools),
       messageSequence: view.messageSequence,
       createdAt: view.createdAt,
     }
@@ -312,14 +322,47 @@ export const useChatStore = defineStore('chat', () => {
     const detail = await getConversation(conversationId).catch(() => null)
     if (!isCurrent()) return false
     if (detail) {
+      const existingById = new Map<string, ChatMessage>()
+      for (const existingMsg of messages.value) {
+        existingById.set(existingMsg.id, existingMsg)
+        if (existingMsg.serverMessageId) {
+          existingById.set(existingMsg.serverMessageId, existingMsg)
+        }
+      }
       const session = activeSession.value
       if (session && detail.chatScopeState) {
         session.chatScopeState = detail.chatScopeState
         session.chatScope = detail.chatScope ?? null
       }
+      const statusTools = projectToolTrace(status.toolTrace)
+      const isTerminal = status.status !== 'UNKNOWN'
+      const terminalFailed = status.status === 'FAILED'
       messages.value = (detail.messages || []).map((message) => {
         const mapped = mapMessage(message, targetSessionId)
-        if (message.id === status.userMessageId || message.id === status.currentReplyMessageId) {
+        const existing = existingById.get(message.id)
+        const isCurrentReply = message.id === status.currentReplyMessageId
+        if (existing || isCurrentReply) {
+          const reconciled = reconcileProcessMetadata({
+            mappedReasoning: mapped.reasoningText,
+            existingReasoning: existing?.reasoningText,
+            mappedTools: mapped.tools,
+            statusTools: isCurrentReply ? statusTools : undefined,
+            existingTools: existing?.tools,
+            existingTimeline: existing?.processTimeline,
+            isTerminal,
+            terminalFailed,
+          })
+          if (reconciled.reasoningText !== undefined) {
+            mapped.reasoningText = reconciled.reasoningText
+          }
+          if (reconciled.tools !== undefined) {
+            mapped.tools = reconciled.tools
+          }
+          if (reconciled.processTimeline !== undefined) {
+            mapped.processTimeline = reconciled.processTimeline
+          }
+        }
+        if (message.id === status.userMessageId || isCurrentReply) {
           mapped.runId = status.runId
           mapped.attemptId = status.currentAttemptId
           mapped.executionActive = false
@@ -370,6 +413,9 @@ export const useChatStore = defineStore('chat', () => {
       reasoningText: existing?.reasoningText,
       createdAt: existing?.createdAt ?? status.updatedAt,
     }, targetSessionId)
+    if (existing?.processTimeline && existing.processTimeline.length > 0) {
+      reply.processTimeline = [...existing.processTimeline]
+    }
     reply.content ||= reply.parts.filter((part) => part.kind === 'text').map((part) => part.text).join('')
     reply.runId = status.runId
     reply.attemptId = status.currentAttemptId
@@ -424,10 +470,6 @@ export const useChatStore = defineStore('chat', () => {
       session.chatScopeState = detail.chatScopeState
       session.chatScope = detail.chatScope ?? null
     }
-    if (session.chatScopeState === 'LEGACY') {
-      lastError.value = '此历史会话未绑定资料范围，不可继续提问。请开始新会话。'
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-    }
     messages.value = (detail.messages || []).map((message) => mapMessage(message, session.id))
 
     // Restore top-level activeRun from ConversationView including public snapshot
@@ -438,16 +480,7 @@ export const useChatStore = defineStore('chat', () => {
 
       if (!exists && replyId) {
         const snapshotParts = projectChatContentParts(run.publicSnapshot || [])
-        const snapshotTools = Array.isArray(run.toolTrace)
-          ? run.toolTrace.map((t: Record<string, unknown>) => ({
-              id: String(t.id || t.toolCallId || ''),
-              name: String(t.name || '工具'),
-              status: (t.status === 'FAILED' ? 'FAILED' : t.status === 'RUNNING' ? 'RUNNING' : 'COMPLETED') as
-                | 'RUNNING'
-                | 'COMPLETED'
-                | 'FAILED',
-            }))
-          : []
+        const snapshotTools = projectToolTrace(run.toolTrace)
         const publicText = snapshotParts
           .filter((p) => p.kind === 'text')
           .map((p) => (p as { text: string }).text)
@@ -465,6 +498,7 @@ export const useChatStore = defineStore('chat', () => {
           attemptId: run.currentAttemptId,
           executionActive: run.executionActive,
           tools: snapshotTools,
+          processTimeline: buildFallbackProcessTimeline('', snapshotTools),
           createdAt: run.updatedAt || new Date().toISOString(),
         })
       }
@@ -584,6 +618,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning.value = ''
     streamingParts.value = []
     streamingTools.value = []
+    streamingProcessTimeline.value = []
     lastError.value = null
     lastErrorCode.value = null
     activeRun.value = null
@@ -639,6 +674,12 @@ export const useChatStore = defineStore('chat', () => {
       attemptId: eventState.attemptId || existing?.attemptId,
       executionActive: eventState.executionActive,
       tools: eventState.tools && eventState.tools.length > 0 ? [...eventState.tools] : existing?.tools ? [...existing.tools] : [],
+      processTimeline:
+        eventState.processTimeline && eventState.processTimeline.length > 0
+          ? [...eventState.processTimeline]
+          : existing?.processTimeline
+            ? [...existing.processTimeline]
+            : undefined,
       createdAt: existing?.createdAt || new Date().toISOString(),
     }
     if (index >= 0) {
@@ -669,6 +710,7 @@ export const useChatStore = defineStore('chat', () => {
           publicText: '',
           parts: msg.parts,
           tools: [],
+          processTimeline: [],
           executionActive: false,
         }
         const updatedState = setPart(dummyState, partPayload)
@@ -694,6 +736,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning.value = ''
     streamingParts.value = []
     streamingTools.value = []
+    streamingProcessTimeline.value = []
     lastError.value = null
     lastErrorCode.value = null
     const targetSessionId = activeSessionId.value || message.conversationId
@@ -759,6 +802,7 @@ export const useChatStore = defineStore('chat', () => {
           streamingReasoning.value = state.reasoningText || ''
           streamingParts.value = state.parts
           streamingTools.value = state.tools
+          streamingProcessTimeline.value = state.processTimeline
         },
       })
       if (!isCurrent()) return
@@ -795,6 +839,7 @@ export const useChatStore = defineStore('chat', () => {
         streamingReasoning.value = ''
         streamingParts.value = []
         streamingTools.value = []
+        streamingProcessTimeline.value = []
       }
     }
   }
@@ -819,12 +864,6 @@ export const useChatStore = defineStore('chat', () => {
     const text = content.trim()
     const session = activeSession.value
     if (!text || !session || isStreaming.value || activeRun.value?.executionActive || isRecovering.value) return
-
-    if (session.chatScopeState === 'LEGACY') {
-      lastError.value = '此历史会话未绑定资料范围，不可继续提问。请开始新会话。'
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-      return
-    }
 
     const message = appendUser(text, options)
     const requestId = message.clientRequestId!
@@ -868,11 +907,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function retryPendingMessage(messageId: string): Promise<void> {
-    if (isLegacySession.value) {
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-      lastError.value = mapSafeErrorMessage(lastErrorCode.value)
-      return
-    }
     const targetMsg = messages.value.find((item) => item.id === messageId)
     if (!targetMsg || isStreaming.value || activeRun.value?.executionActive || isRecovering.value) return
 
@@ -945,6 +979,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning.value = ''
     streamingParts.value = []
     streamingTools.value = []
+    streamingProcessTimeline.value = []
     const runId = message.runId
     let state = createChatStreamState({ runId, conversationId: session.remoteId })
     const requestId = uuidv7()
@@ -969,6 +1004,7 @@ export const useChatStore = defineStore('chat', () => {
         streamingReasoning.value = state.reasoningText || ''
         streamingParts.value = state.parts
         streamingTools.value = state.tools
+        streamingProcessTimeline.value = state.processTimeline
         activeRun.value = {
           conversationId: session.remoteId,
           runId,
@@ -1002,6 +1038,7 @@ export const useChatStore = defineStore('chat', () => {
         streamingReasoning.value = ''
         streamingParts.value = []
         streamingTools.value = []
+        streamingProcessTimeline.value = []
       }
     }
   }
@@ -1011,11 +1048,6 @@ export const useChatStore = defineStore('chat', () => {
     answer: ChatActivityAnswer,
     block: ChatBlockPart
   ): Promise<void> {
-    if (isLegacySession.value) {
-      lastErrorCode.value = 'CHAT_SCOPE_LEGACY'
-      lastError.value = mapSafeErrorMessage(lastErrorCode.value)
-      return
-    }
     if (isStreaming.value || activeRun.value?.executionActive || isRecovering.value || block.state !== 'READY') return
     const session = activeSession.value
     if (!session) return
@@ -1072,6 +1104,7 @@ export const useChatStore = defineStore('chat', () => {
       streamingReasoning.value = ''
       streamingParts.value = []
       streamingTools.value = []
+      streamingProcessTimeline.value = []
       await applyRunStatus(status, running.conversationId, targetSessionId, isCurrentSettlement)
     } catch (error) {
       if (!isCurrent()) return
@@ -1194,7 +1227,6 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId,
     activeSession,
     pendingMessage,
-    isLegacySession,
     isBoundSession,
     messages,
     activityDrafts,
@@ -1205,6 +1237,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingReasoning,
     streamingParts,
     streamingTools,
+    streamingProcessTimeline,
     lastError,
     lastErrorCode,
     activeRun,
@@ -1225,3 +1258,7 @@ export const useChatStore = defineStore('chat', () => {
     deleteSession,
   }
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useChatStore, import.meta.hot))
+}

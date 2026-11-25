@@ -52,14 +52,13 @@ public final class SubjectDtos {
             String description,
             String iconKey,
             String sortKey,
-            boolean defaultSubject,
             long version,
             Instant createdAt,
             Instant updatedAt,
             Instant deletedAt) {
         static Response from(SubjectView view) {
             return new Response(view.id(), view.name(), view.description(), view.iconKey(), view.sortKey(),
-                    view.defaultSubject(), view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
+                    view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
         }
     }
 }

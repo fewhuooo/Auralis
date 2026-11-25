@@ -78,12 +78,6 @@ public class RelationService {
     }
 
     @Transactional(readOnly = true)
-    public List<RelationView> list(UUID userId) {
-        return relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
-                .stream().map(this::view).toList();
-    }
-
-    @Transactional(readOnly = true)
     public CursorPage<RelationView> list(UUID userId, String encodedCursor, int requestedLimit) {
         int limit = pageLimit(requestedLimit);
         CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
@@ -273,11 +267,6 @@ public class RelationService {
 
     private RelationEntity active(UUID userId, UUID id) {
         return relationRepository.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
-    }
-
-    private RelationEntity mutable(UUID userId, UUID id) {
-        return relationRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
     }
 

@@ -84,7 +84,6 @@ test('maps source DTO fields and preserves deletedAt/version', () => {
     name: source.name,
     filePath: source.filePath,
     fileType: source.fileType,
-    catalogJson: source.catalogJson,
     version: source.version,
     deletedAt: source.deletedAt,
   }, {
@@ -93,7 +92,6 @@ test('maps source DTO fields and preserves deletedAt/version', () => {
     name: 'notes.pdf',
     filePath: 'asset-1',
     fileType: 'application/octet-stream',
-    catalogJson: '[{"title":"Chapter 1","sections":[]}]',
     version: 3,
     deletedAt: '2026-08-20T02:00:00Z',
   })
@@ -139,10 +137,16 @@ test('SearchPalette keeps knowledge navigation and removes AI shortcut wiring', 
   ])
 
   assert.match(searchPalette, /router\.push\(\{\s*path:\s*['"]\/['"],\s*query:\s*\{\s*openBlock:\s*block\.id\s*\}\s*\}\)/)
-  assert.match(searchPalette, /b\.content/)
   assert.doesNotMatch(searchPalette, /search-trigger-ai-chat|triggerAiChat|快捷操作/)
   assert.match(dashboard, /watch\(\s*\(\) => route\.query\.openBlock[\s\S]*?await knowledgeStore\.loadLocalBlocks\(\)[\s\S]*?openBlockDetail\(block\)[\s\S]*?delete query\.openBlock/)
   assert.match(dashboard, /<KnowledgeBlockViewDialog/)
+
+  const searchedBlock = mapKnowledgeBlockView({
+    id: 'search-block', subjectId: 'search-subject', title: 'Algorithms',
+    content: 'A phrase that appears only in the knowledge block body.',
+  })
+  assert.equal(searchedBlock.content, 'A phrase that appears only in the knowledge block body.',
+    'the local knowledge view model supplies body text to SearchPalette')
 })
 
 test('knowledge block writes and editors expose only content as the body field', async () => {

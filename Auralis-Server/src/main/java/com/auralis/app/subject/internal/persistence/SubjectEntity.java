@@ -33,9 +33,6 @@ public class SubjectEntity {
     @Column(name = "sort_key", nullable = false, length = 128)
     private String sortKey;
 
-    @Column(name = "is_default", nullable = false)
-    private boolean defaultSubject;
-
     @Version
     @Column(nullable = false)
     private long version;
@@ -58,15 +55,13 @@ public class SubjectEntity {
             String name,
             String description,
             String iconKey,
-            String sortKey,
-            boolean defaultSubject) {
+            String sortKey) {
         this.id = id;
         this.userId = userId;
         this.name = name;
         this.description = description;
         this.iconKey = iconKey;
         this.sortKey = sortKey;
-        this.defaultSubject = defaultSubject;
     }
 
     @PrePersist
@@ -93,7 +88,6 @@ public class SubjectEntity {
     public String getDescription() { return description; }
     public String getIconKey() { return iconKey; }
     public String getSortKey() { return sortKey; }
-    public boolean isDefaultSubject() { return defaultSubject; }
     public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

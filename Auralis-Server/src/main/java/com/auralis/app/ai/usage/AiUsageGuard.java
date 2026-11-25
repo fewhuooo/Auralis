@@ -588,20 +588,6 @@ public class AiUsageGuard implements AiUsageQueryService {
                 }, args);
     }
 
-    @Override
-    public boolean isConservativelyChargedTerminalFailure(UUID userId, UUID taskId, UUID reservationId,
-                                                           AiOperationKind operationKind) {
-        if (userId == null || taskId == null || reservationId == null || operationKind == null) return false;
-        return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1 from ai_usage_reservations "
-                        + "where id=? and user_id=? and task_id=? and operation_kind=? "
-                        + "and credential_source in ('PLATFORM','USER_SUPPLIED') and state='FAILED' "
-                        + "and request_dispatched=true and actual_input_tokens is null and actual_output_tokens is null "
-                        + "and settled_at is not null and (estimated_input_tokens>0 or reserved_output_tokens>0) "
-                        + "and charged_tokens>=estimated_input_tokens "
-                        + "and charged_tokens-estimated_input_tokens>=reserved_output_tokens)", Boolean.class,
-                reservationId, userId, taskId, operationKind.name()));
-    }
-
     private Object[] prepend(Object first, Object second, java.util.List<Object> rest) {
         Object[] args = new Object[rest.size() + 2];
         args[0] = first;
@@ -762,24 +748,6 @@ public class AiUsageGuard implements AiUsageQueryService {
                     java.time.OffsetDateTime value = rs.getObject(1, java.time.OffsetDateTime.class);
                     return value == null ? null : value.toInstant();
                 }, sqlTimestamp(now));
-    }
-
-    private int taskCallLimit(AiFeature feature) {
-        return switch (feature) {
-            case CHAT -> limits.chatMaxCalls();
-            case SOURCE_OVERVIEW, SUBJECT_OVERVIEW -> limits.overviewMaxCalls();
-            case INGESTION -> limits.ingestionMaxCalls();
-            case PROVIDER_SETUP -> 2;
-        };
-    }
-
-    private long taskTokenLimit(AiFeature feature) {
-        return switch (feature) {
-            case CHAT -> limits.chatTaskTokens();
-            case SOURCE_OVERVIEW, SUBJECT_OVERVIEW -> limits.overviewTaskTokens();
-            case INGESTION -> limits.ingestionTaskTokens();
-            case PROVIDER_SETUP -> 8_192;
-        };
     }
 
     private AiUsageLimitException limit(String code, int status, Instant resetAt) {

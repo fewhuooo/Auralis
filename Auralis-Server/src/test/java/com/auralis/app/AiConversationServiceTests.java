@@ -1,7 +1,6 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.ConversationCommand;
-import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
 import com.auralis.app.ai.ChatConversationScope;
@@ -67,27 +66,18 @@ class AiConversationServiceTests {
     }
 
     @Test
-    void createsGeneralConversationAndRejectsPersistedReadingScope() {
+    void createsCurrentConversationWithUnboundScope() {
         UUID userId = UUID.randomUUID();
-        UUID sourceId = UUID.randomUUID();
         when(conversationRepository.saveAndFlush(any(ConversationEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ConversationView view = conversationService.create(userId,
                 new ConversationCommand("Chapter 1", 0L, null));
 
-        assertThat(view.purpose()).isEqualTo(ConversationPurpose.GENERAL);
-        assertThat(view.sourceId()).isNull();
         assertThat(view.chatScopeState()).isEqualTo(ChatConversationScopeState.UNBOUND);
         assertThat(view.chatScope()).isNull();
-        assertThatThrownBy(() -> conversationService.create(userId,
-                new ConversationCommand("Missing source", 0L, null, ConversationPurpose.READING_SESSION, null)))
-                .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
-                .hasMessageContaining("GENERAL purpose");
-        assertThatThrownBy(() -> conversationService.create(userId,
-                new ConversationCommand("General", 0L, null, ConversationPurpose.GENERAL, sourceId)))
-                .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
-                .hasMessageContaining("GENERAL purpose");
+        assertThat(view.chatProtocolVersion()).isEqualTo((short) 1);
+        assertThat(view.chatSupported()).isTrue();
     }
 
     @Test
@@ -99,7 +89,6 @@ class AiConversationServiceTests {
                 com.auralis.app.ai.retrieval.ReadingContext.RetrievalMode.SUBJECT, List.of());
         ConversationEntity entity = new ConversationEntity(conversationId, userId, "Scoped chat");
         entity.enableChatProtocolOne();
-        entity.markChatScopeUnbound();
         entity.bindChatScope("{\"currentSourceId\":null,\"subjectId\":\"" + subjectId
                 + "\",\"retrievalMode\":\"SUBJECT\",\"sourceIds\":[]}");
         when(conversationRepository.findByIdAndUserIdAndDeletedAtIsNull(conversationId, userId))

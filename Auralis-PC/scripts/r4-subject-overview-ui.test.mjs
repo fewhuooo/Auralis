@@ -134,6 +134,9 @@ test('SubjectWorkspace keeps chat failures in the chat region and retries the pe
   assert.match(source, /chatStore\.lastError/)
   assert.match(source, /chatStore\.retryPendingMessage\(pending\.id\)/)
   assert.match(source, /@click="retryChat"/)
+  assert.match(source, /<template v-if="msg\.status !== 'FAILED'">[\s\S]*?<ChatContentRenderer/)
+  assert.match(source, /msg\.status === 'FAILED' \? t\(messages\.generationFailed\) : t\(messages\.partialReply\)/)
+  assert.match(source, /class="chat-retry-reply-btn" @click="handleRetryAssistantMessage\(msg\.id\)"/)
 })
 
 test('file overview failures expose direct retry actions with classified copy', async () => {

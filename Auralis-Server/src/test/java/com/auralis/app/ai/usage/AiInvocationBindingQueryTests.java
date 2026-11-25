@@ -273,7 +273,7 @@ class AiInvocationBindingQueryTests {
         assertThat(guard.invocationStateForOwner(owner, task.taskId(), UUID.randomUUID(), OVERVIEW_KINDS))
                 .isEmpty();
         assertThat(guard.invocationStateForOwner(owner, task.taskId(), reservation.id(),
-                Set.of(AiOperationKind.CHAT_TURN))).isEmpty();
+                Set.of(AiOperationKind.CHAT_AGENT_TURN))).isEmpty();
         assertThat(guard.invocationStateForOwner(owner, task.taskId(), reservation.id(), Set.of())).isEmpty();
 
         fixture.clock.advanceSeconds(61);
@@ -357,7 +357,7 @@ class AiInvocationBindingQueryTests {
             transactions = new DataSourceTransactionManager(source);
             clock = new MutableClock(Instant.parse("2026-10-19T03:00:00Z"));
             limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000, 2_000_000,
-                    60_000, 1_000, 16, 2, 32_000, 24, 524_288, 512, 16_777_216);
+                    60_000, 1_000, 16, 32_000, 24, 524_288, 512, 16_777_216);
         }
 
         UUID user() {
@@ -375,7 +375,7 @@ class AiInvocationBindingQueryTests {
             AuralisProperties.Ai ai = new AuralisProperties.Ai(false, "", new AuralisProperties.GenerationEndpoint(
                     "https://provider.test/v1", "synthetic-model", "synthetic-test-key", 100_000, 16_384),
                     null, 3_000, 10_000, 120_000,
-                    240_000, 12_000, 8, 5_242_880, 32, 32_768, 3_000, 10_000, 3,
+                    240_000, 12_000, 5_242_880, 32, 32_768, 3_000, 10_000, 3,
                     1_048_576, List.of(), false, 1_000, 60_000, 3, limits, true,
                     List.of(new AuralisProperties.OverviewModelCapacity(
                     AiProviderType.OPENAI_COMPATIBLE.name(), "https://provider.test/v1", "synthetic-model", 100_000, 16_384)),

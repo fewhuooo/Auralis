@@ -168,6 +168,7 @@ import { IconMinus, IconSquare, IconSquares, IconX } from '@tabler/icons-vue'
 import { closeWindow, isTauriEnvironment, isWindowMaximized, minimizeWindow, toggleMaximizeWindow } from '@/api/tauri'
 import { t } from '@/i18n'
 import { useAuthStore } from '@/store/useAuthStore'
+import { validateNewPassword } from '@/utils/passwordPolicy'
 import { resolveLoginReturnPath } from '@/auth/authGuard'
 import { useAuthApi } from '@/api/useAuthApi'
 import { ApiProblemError } from '@/api/httpError'
@@ -195,9 +196,9 @@ const messages = {
   newPassword: { 'zh-CN': '新密码', en: 'New password', ja: '新しいパスワード' },
   confirmPassword: { 'zh-CN': '确认密码', en: 'Confirm password', ja: 'パスワードを確認' },
   passwordRequirements: {
-    'zh-CN': '密码至少 12 位',
-    en: 'Use at least 12 characters',
-    ja: 'パスワードは12文字以上',
+    'zh-CN': '密码至少 8 位，且包含大写字母、小写字母和符号',
+    en: 'Use at least 8 characters with an uppercase letter, a lowercase letter, and a symbol',
+    ja: 'パスワードは8文字以上で、大文字・小文字・記号を含めてください',
   },
   passwordTooLong: {
     'zh-CN': '密码太长，请缩短后重试。',
@@ -360,12 +361,9 @@ const handleAction = async () => {
     if (!isEmail(email)) errors.email = [t(messages.invalidEmail)]
     if (!/^[0-9]{6}$/.test(emailCode)) errors.emailCode = [t(messages.invalidCode)]
     const passwordField = mode.value === 'reset' ? 'newPassword' : 'password'
-    if (!password.trim() || password.length < 12) {
-      errors[passwordField] = [t(messages.passwordRequirements)]
-    }
-    if (new TextEncoder().encode(password).length > 72) {
-      errors[passwordField] = [t(messages.passwordTooLong)]
-    }
+    const passwordError = validateNewPassword(password)
+    if (passwordError === 'requirements') errors[passwordField] = [t(messages.passwordRequirements)]
+    if (passwordError === 'tooLong') errors[passwordField] = [t(messages.passwordTooLong)]
     if (password !== form.value.confirmPassword) errors.confirmPassword = [t(messages.passwordMismatch)]
   }
   if (Object.keys(errors).length > 0) return

@@ -7,7 +7,6 @@ export interface SubjectModel {
   icon: string
   iconKey: string
   sortKey?: string
-  defaultSubject?: boolean
   version: number
   createdAt?: string
   updatedAt?: string
@@ -24,8 +23,6 @@ export interface SourceFileModel {
   filePath: string
   fileType: string
   fileSize: number
-  catalogJson: string
-  blockCount: number
   assetId?: string
   originUrl?: string
   rawText?: string
@@ -55,9 +52,7 @@ export interface KnowledgeBlockModel {
   deletedAt: string | null
   sourceFileId?: string
   difficulty?: 'easy' | 'medium' | 'hard'
-  mastery: number
   reviewAt?: string
-  relatedBlockIds: string[]
 }
 
 export interface AssetModel {
@@ -121,7 +116,6 @@ export interface SubjectDtoLike {
   description?: string
   iconKey?: string
   sortKey?: string
-  defaultSubject?: boolean
   version?: number
   createdAt?: string
   updatedAt?: string
@@ -224,7 +218,6 @@ export function mapSubjectView(view: SubjectDtoLike, counts: Pick<SubjectModel, 
     icon: iconKey,
     iconKey,
     sortKey: view.sortKey,
-    defaultSubject: view.defaultSubject,
     version: view.version ?? 0,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
@@ -249,8 +242,6 @@ export function mapSourceView(view: SourceDtoLike): SourceFileModel {
     filePath: view.assetId || view.originUrl || '',
     fileType: fileTypeForSource(view),
     fileSize: view.assetSizeBytes ?? 0,
-    catalogJson: view.outline || '[]',
-    blockCount: 0,
     assetId: view.assetId,
     originUrl: view.originUrl,
     rawText: view.rawText,
@@ -287,8 +278,6 @@ export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike, sourceTitle?:
     updatedAt: view.updatedAt,
     deletedAt: view.deletedAt ?? null,
     sourceFileId: view.sourceId,
-    mastery: 0,
-    relatedBlockIds: [],
   }
 }
 

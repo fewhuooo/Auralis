@@ -98,44 +98,6 @@ public record OverviewSourceSnapshot(
                 chunkRanges);
     }
 
-    public String readRange(int start, int end) {
-        requireRange(start, end);
-        return text.substring(start, end);
-    }
-
-    public List<SourceRangeRef> project(int start, int end) {
-        requireRange(start, end);
-        List<SourceRangeRef> result = new ArrayList<>();
-        int cursor = start;
-        for (ChunkRange chunk : chunks) {
-            int projectedStart = Math.max(cursor, chunk.ownedStart());
-            int projectedEnd = Math.min(end, chunk.ownedEnd());
-            if (projectedStart >= projectedEnd) continue;
-            if (projectedStart != cursor) throw staleSnapshot();
-            result.add(new SourceRangeRef(sourceId, ingestionRevision, chunk.chunkId(), chunk.generation(),
-                    projectedStart, projectedEnd));
-            cursor = projectedEnd;
-            if (cursor == end) break;
-        }
-        if (cursor != end) throw staleSnapshot();
-        return List.copyOf(result);
-    }
-
-    private void requireRange(int start, int end) {
-        if (start < 0 || end <= start || end > text.length()) {
-            throw new IllegalArgumentException("Overview source range is invalid");
-        }
-        if (splitsSurrogatePair(start) || splitsSurrogatePair(end)) {
-            throw new IllegalArgumentException("Overview source range splits a Unicode character");
-        }
-    }
-
-    private boolean splitsSurrogatePair(int position) {
-        return position > 0 && position < text.length()
-                && Character.isHighSurrogate(text.charAt(position - 1))
-                && Character.isLowSurrogate(text.charAt(position));
-    }
-
     private static SourceChunkProvenance decode(String json) {
         if (json == null || json.isBlank()) throw staleSnapshot();
         try {
@@ -156,7 +118,5 @@ public record OverviewSourceSnapshot(
     public record ChunkRange(UUID chunkId, UUID generation, int ordinal, int start, int end,
                              int ownedStart, int ownedEnd) { }
 
-    public record SourceRangeRef(UUID sourceId, UUID ingestionRevision, UUID chunkId, UUID generation,
-                                 int charStart, int charEnd) { }
 
 }

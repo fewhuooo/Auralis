@@ -5,7 +5,6 @@ import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewResultCommand;
 import com.auralis.app.ai.OverviewResultService;
-import com.auralis.app.ai.OverviewInputDescriptor;
 import com.auralis.app.ai.OverviewSourceManifestEntry;
 import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
@@ -198,59 +197,28 @@ class OverviewResultControllerTests {
     }
 
     @Test
-    void legacyResultIsUnavailableUntilACompleteWriteMatchesItsPhysicalVersion() throws Exception {
+    void unsupportedStoredSchemaCannotBeReadOrReplaced() throws Exception {
         var owner = owner();
         UUID userId = owner.user().id();
         String token = bearer(owner.tokens().accessToken());
-        UUID subjectId = subjectService.create(userId, new SubjectCommand("Legacy overview", null, null, "001")).id();
-        SourceEntity source = createReadySource(userId, subjectId, "Legacy source");
+        UUID subjectId = subjectService.create(userId, new SubjectCommand("Unsupported overview", null, null, "001")).id();
+        SourceEntity source = createReadySource(userId, subjectId, "Unsupported source");
         putSourceOverview(userId, token, source, 0, "Initial");
-        String oldOutline = "[{\"title\":\"Legacy chapter\",\"sections\":[]}]";
-        jdbcTemplate.update("update overview_results set schema_version=1, version=7, outline=?, summary=? where scope_id=?",
-                oldOutline, "{\"overview\":\"Legacy summary\"}", source.getId());
+        jdbcTemplate.update("update overview_results set schema_version=1 where scope_id=?", source.getId());
 
         mockMvc.perform(get("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isNotFound());
-        assertThat(overviewResultService.readCurrentSource(userId, source.getId(), source.getIngestionRevision())).isEmpty();
-        assertThat(overviewResultService.currentSourceOverviewIds(userId,
-                java.util.Map.of(source.getId(), source.getIngestionRevision()))).isEmpty();
-
-        var stale = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL,
-                source.getIngestionRevision(), null, null, null, null, fullResult("New Markdown"));
-        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(stale)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.current.version").value(7))
-                .andExpect(jsonPath("$.current.schemaVersion").value(1))
-                .andExpect(jsonPath("$.current.outline").doesNotExist());
-        var partial = new OverviewResultCommand(7L, UUID.randomUUID(), OverviewMode.OUTLINE,
-                source.getIngestionRevision(), null, null, null, null, outlineOnlyResult("New Markdown"));
-        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(partial)))
-                .andExpect(status().isConflict());
-        assertThat(jdbcTemplate.queryForObject("select outline from overview_results where scope_id=?",
-                String.class, source.getId())).isEqualTo(oldOutline);
-
-        var replacement = new OverviewResultCommand(7L, UUID.randomUUID(), OverviewMode.ALL,
-                source.getIngestionRevision(), null, null, null, null, fullResult("New Markdown"));
+                .andExpect(status().isInternalServerError());
+        var replacement = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.ALL,
+                source.getIngestionRevision(), null, null, null, null, fullResult("Replacement"));
         mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(replacement)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.version").value(8))
-                .andExpect(jsonPath("$.schemaVersion").value(2))
-                .andExpect(jsonPath("$.outlineMarkdown").value(replacement.result().outlineMarkdown()))
-                .andExpect(jsonPath("$.summaryMarkdown").value(replacement.result().summaryMarkdown()));
-
-        jdbcTemplate.update("update overview_write_receipts set response_snapshot=? where client_write_id=?",
-                "{\"schemaVersion\":1,\"outline\":[],\"summary\":{}}", replacement.clientWriteId());
-        mockMvc.perform(put("/api/overview-results/sources/{id}", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(replacement)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isInternalServerError());
+        assertThat(jdbcTemplate.queryForObject("select schema_version from overview_results where scope_id=?",
+                Integer.class, source.getId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select version from overview_results where scope_id=?",
+                Long.class, source.getId())).isEqualTo(1L);
     }
 
     @Test
@@ -442,12 +410,6 @@ class OverviewResultControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(staleSourceUpdate)))
                 .andExpect(status().isOk());
-        OverviewInputDescriptor deletedRawInput = new OverviewInputDescriptor(
-                OverviewInputDescriptor.Origin.SOURCE_CONTENT, "SUBJECT", staleSubjectId, List.of(staleSource.getId()),
-                List.of(), List.of(), List.of(), "stale-raw-input-fingerprint");
-        jdbcTemplate.update("update overview_results set outline_input_origin='SOURCE_CONTENT', outline_input_snapshot_json=? "
-                        + "where user_id=? and scope_type='SUBJECT' and scope_id=?",
-                objectMapper.writeValueAsString(deletedRawInput), owner.user().id(), staleSubjectId);
         jdbcTemplate.update("update sources set deleted_at=? where id=?", Instant.now(), staleSource.getId());
         subjectService.delete(owner.user().id(), deletedSubjectId, 0);
 

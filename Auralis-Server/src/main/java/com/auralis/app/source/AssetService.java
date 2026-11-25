@@ -5,12 +5,12 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.source.internal.persistence.AssetEntity;
 import com.auralis.app.source.internal.persistence.AssetRepository;
-import com.auralis.app.source.internal.AssetFailureRecorder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Locale;
@@ -29,23 +29,23 @@ public class AssetService {
             "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$");
     private static final Pattern SHA256 = Pattern.compile("^[0-9a-fA-F]{64}$");
 
+    private final jakarta.persistence.EntityManager entityManager;
     private final AssetRepository assetRepository;
     private final AssetStoragePort assetStorage;
-    private final AssetFailureRecorder assetFailureRecorder;
     private final IdentityService identityService;
     private final AuralisProperties properties;
     private final TransactionTemplate transactionTemplate;
 
     public AssetService(
             AssetRepository assetRepository,
+            jakarta.persistence.EntityManager entityManager,
             AssetStoragePort assetStorage,
-            AssetFailureRecorder assetFailureRecorder,
             IdentityService identityService,
             AuralisProperties properties,
             org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.assetRepository = assetRepository;
+        this.entityManager = entityManager;
         this.assetStorage = assetStorage;
-        this.assetFailureRecorder = assetFailureRecorder;
         this.identityService = identityService;
         this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -66,9 +66,10 @@ public class AssetService {
                 identityService.lockActiveUserForStorage(userId);
                 return assetRepository.findByUserIdAndClientImportId(userId, command.clientImportId())
                         .map(existing -> {
-                            verifyImmutableMetadata(existing, metadata);
-                            existing.prepareUploadRetry();
-                            return existing;
+                            AssetEntity current = lockAsset(userId, existing.getId());
+                            verifyImmutableMetadata(current, metadata);
+                            current.prepareUploadRetry();
+                            return current;
                         })
                         .orElseThrow(() -> race);
             });
@@ -78,8 +79,7 @@ public class AssetService {
         UUID assetId = asset.getId();
         return transactionTemplate.execute(status -> {
             identityService.lockActiveUserForStorage(userId);
-            AssetEntity current = assetRepository.findByIdAndUserId(assetId, userId)
-                    .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
+            AssetEntity current = lockAsset(userId, assetId);
             return issueUploadIntent(userId, current);
         });
     }
@@ -91,9 +91,10 @@ public class AssetService {
         identityService.lockActiveUserForStorage(userId);
         var existing = assetRepository.findByUserIdAndClientImportId(userId, command.clientImportId());
         if (existing.isPresent()) {
-            verifyImmutableMetadata(existing.get(), metadata);
-            existing.get().prepareUploadRetry();
-            return existing.get();
+            AssetEntity current = lockAsset(userId, existing.get().getId());
+            verifyImmutableMetadata(current, metadata);
+            current.prepareUploadRetry();
+            return current;
         }
 
         UUID assetId = UUID.randomUUID();
@@ -141,7 +142,7 @@ public class AssetService {
         if (!existing.getOriginalName().equals(metadata.originalName())
                 || existing.getSizeBytes() != metadata.sizeBytes()
                 || !existing.getMimeType().equals(metadata.mimeType())
-                || !java.util.Objects.equals(existing.getSha256(), metadata.sha256())) {
+                || (metadata.sha256() != null && !java.util.Objects.equals(existing.getSha256(), metadata.sha256()))) {
             throw new DomainException(
                     "MUTATION_REJECTED",
                     "clientImportId is already bound to different asset metadata");
@@ -150,46 +151,52 @@ public class AssetService {
 
     private record UploadMetadata(String originalName, long sizeBytes, String mimeType, String sha256) { }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NEVER)
     public AssetView complete(UUID userId, UUID assetId) {
-        log.info("ASSET_UPLOAD_COMPLETE_REQUESTED userId={} assetId={}", userId, assetId);
-        AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
-        if (asset.getUploadStatus() == AssetUploadStatus.READY) {
-            return view(asset);
+        AssetSnapshot snapshot = snapshot(userId, assetId);
+        if (snapshot.asset().uploadStatus() == AssetUploadStatus.READY) {
+            return snapshot.asset();
         }
-        if (asset.getUploadStatus() != AssetUploadStatus.UPLOADING) {
+        if (snapshot.asset().uploadStatus() != AssetUploadStatus.UPLOADING) {
             throw new DomainException("MUTATION_REJECTED", "Asset is not awaiting completion");
         }
 
-        AssetStoragePort.ObjectMetadata metadata;
-        try {
-            metadata = assetStorage.headObject(asset.getObjectKey()).orElse(null);
-        } catch (RuntimeException exception) {
-            log.warn("ASSET_UPLOAD_COMPLETE_FAILED userId={} assetId={} stage=head errorType={}",
-                    userId, assetId, exception.getClass().getSimpleName());
-            throw exception;
+        AssetStoragePort.ObjectMetadata metadata = assetStorage.headObject(snapshot.objectKey()).orElse(null);
+        CompletionResult result = transactionTemplate.execute(status -> {
+            identityService.lockActiveUserForStorage(userId);
+            AssetEntity current = lockAsset(userId, assetId);
+            if (current.getUploadStatus() == AssetUploadStatus.READY) {
+                return new CompletionResult(view(current), null);
+            }
+            requireUnchanged(current, snapshot);
+            if (current.getUploadStatus() != AssetUploadStatus.UPLOADING) {
+                throw new DomainException("MUTATION_REJECTED", "Asset is not awaiting completion");
+            }
+            String failure = metadata == null ? "Uploaded object was not found"
+                    : metadata.sizeBytes() != current.getSizeBytes() ? "Uploaded object size does not match"
+                    : metadata.mimeType() == null || !current.getMimeType().equalsIgnoreCase(metadata.mimeType())
+                    ? "Uploaded object MIME type does not match"
+                    : current.getSha256() != null && (metadata.sha256() == null
+                            || !current.getSha256().equalsIgnoreCase(metadata.sha256()))
+                    ? "Uploaded object checksum does not match" : null;
+            if (failure != null) {
+                current.markFailed();
+                assetRepository.saveAndFlush(current);
+                return new CompletionResult(null, failure);
+            }
+            current.markReady();
+            return new CompletionResult(view(assetRepository.saveAndFlush(current)), null);
+        });
+        if (result.failure() != null) {
+            // A retry can replace this object immediately after FAILED commits. Deleting
+            // outside the transaction could remove that retry's successfully uploaded bytes.
+            log.warn("ASSET_UPLOAD_REJECTED userId={} assetId={} reason={}", userId, assetId, result.failure());
+            throw new DomainException("UPLOAD_VALIDATION_FAILED", result.failure());
         }
-        if (metadata == null) {
-            throw failUpload(userId, asset, "Uploaded object was not found");
-        }
-        if (metadata.sizeBytes() != asset.getSizeBytes()) {
-            throw failUpload(userId, asset, "Uploaded object size does not match");
-        }
-        if (metadata.mimeType() == null || !asset.getMimeType().equalsIgnoreCase(metadata.mimeType())) {
-            throw failUpload(userId, asset, "Uploaded object MIME type does not match");
-        }
-        if (asset.getSha256() != null
-                && (metadata.sha256() == null || !asset.getSha256().equalsIgnoreCase(metadata.sha256()))) {
-            throw failUpload(userId, asset, "Uploaded object checksum does not match");
-        }
-
-        asset.markReady();
-        AssetView result = view(assetRepository.saveAndFlush(asset));
-        log.info("ASSET_UPLOAD_READY userId={} assetId={} sizeBytes={} mimeType={}",
-                userId, assetId, asset.getSizeBytes(), asset.getMimeType());
-        return result;
+        return result.asset();
     }
+
+    private record CompletionResult(AssetView asset, String failure) { }
 
     @Transactional(readOnly = true)
     public AssetDownloadUrlView downloadUrl(UUID userId, UUID assetId) {
@@ -208,43 +215,55 @@ public class AssetService {
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found")));
     }
 
-    @Transactional(readOnly = true)
-    public AssetContent openContent(UUID userId, UUID assetId) {
-        AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
-        if (asset.getUploadStatus() != AssetUploadStatus.READY) {
-            throw new DomainException("MUTATION_REJECTED", "Asset is not ready for ingestion");
-        }
-        InputStream stream = assetStorage.openObject(asset.getObjectKey());
-        return new AssetContent(asset.getId(), asset.getObjectKey(), asset.getOriginalName(),
-                asset.getMimeType(), asset.getSizeBytes(), stream);
-    }
-
-    /**
-     * Computes the hash from the server-side object stream and conditionally
-     * fills the nullable legacy Asset checksum. Client declarations are never
-     * used as the source of truth.
-     */
-    @Transactional(noRollbackFor = DomainException.class)
+    @Transactional(propagation = Propagation.NEVER)
     public String ensureSha256(UUID userId, UUID assetId) {
-        AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
-        if (asset.getSha256() != null) {
-            return asset.getSha256();
-        }
-        if (asset.getUploadStatus() != AssetUploadStatus.READY) {
+        AssetSnapshot snapshot = snapshot(userId, assetId);
+        if (snapshot.asset().uploadStatus() != AssetUploadStatus.READY) {
             throw new DomainException("MUTATION_REJECTED", "Asset is not ready for checksum verification");
         }
-        String computed = hashObject(asset.getObjectKey());
-        int updated = assetRepository.updateSha256IfAbsent(assetId, userId, computed);
-        if (updated > 0) {
-            return computed;
+        if (snapshot.asset().sha256() != null) {
+            return snapshot.asset().sha256();
         }
-        return assetRepository.findByIdAndUserId(assetId, userId)
-                .map(AssetEntity::getSha256)
-                .filter(value -> value != null)
-                .orElse(computed);
+        String computed = hashObject(snapshot.objectKey());
+        return transactionTemplate.execute(status -> {
+            identityService.lockActiveUserForStorage(userId);
+            AssetEntity current = lockAsset(userId, assetId);
+            if (current.getUploadStatus() != AssetUploadStatus.READY) {
+                throw new DomainException("MUTATION_REJECTED", "Asset is not ready for checksum verification");
+            }
+            if (current.getSha256() != null) {
+                return current.getSha256();
+            }
+            requireUnchanged(current, snapshot);
+            current.setSha256IfAbsent(computed);
+            assetRepository.saveAndFlush(current);
+            return current.getSha256();
+        });
     }
+
+    private AssetSnapshot snapshot(UUID userId, UUID assetId) {
+        return transactionTemplate.execute(status -> {
+            AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
+                    .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
+            return new AssetSnapshot(view(asset), asset.getObjectKey());
+        });
+    }
+
+    private AssetEntity lockAsset(UUID userId, UUID assetId) {
+        AssetEntity asset = assetRepository.findForUpdateByIdAndUserId(assetId, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
+        entityManager.refresh(asset);
+        return asset;
+    }
+
+    private void requireUnchanged(AssetEntity current, AssetSnapshot snapshot) {
+        if (!java.util.Objects.equals(current.getUpdatedAt(), snapshot.asset().updatedAt())
+                || !current.getObjectKey().equals(snapshot.objectKey())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Asset changed during object verification");
+        }
+    }
+
+    private record AssetSnapshot(AssetView asset, String objectKey) { }
 
     private String hashObject(String objectKey) {
         MessageDigest digest;
@@ -265,17 +284,6 @@ public class AssetService {
             throw new DomainException("UPLOAD_VALIDATION_FAILED", "Asset checksum could not be verified", null, exception);
         }
         return java.util.HexFormat.of().formatHex(digest.digest());
-    }
-
-    private DomainException failUpload(UUID userId, AssetEntity asset, String detail) {
-        log.warn("ASSET_UPLOAD_REJECTED userId={} assetId={} reason={}", userId, asset.getId(), detail);
-        assetFailureRecorder.markFailed(userId, asset.getId());
-        try {
-            assetStorage.deleteObject(asset.getObjectKey());
-        } catch (RuntimeException ignored) {
-            // The failed DB state remains auditable when object cleanup is unavailable.
-        }
-        return new DomainException("UPLOAD_VALIDATION_FAILED", detail);
     }
 
     private String requiredName(String value) {

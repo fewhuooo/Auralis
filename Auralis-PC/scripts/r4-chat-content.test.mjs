@@ -27,7 +27,10 @@ import {
   updateChatActivityDraft,
 } from '../src/services/chatContentProjection.ts'
 import {
+  appendStreamCursorDot,
   autoCloseMarkdown,
+  extractStreamingBlockDraft,
+  renderMarkdown,
   wrapTrailingToken,
 } from '../src/utils/markdown.ts'
 
@@ -283,4 +286,587 @@ test('wrapTrailingToken wraps trailing characters with token-fade span', () => {
   const htmlWithTrailingWhitespace = '<p>正在讲解知识点</p>\n'
   const wrappedWs = wrapTrailingToken(htmlWithTrailingWhitespace)
   assert.ok(wrappedWs.includes('<span class="token-fade">解知识点</span>'))
+})
+
+test('extractStreamingBlockDraft holds unclosed math blocks and multiline tables while ignoring fenced code', () => {
+  const unclosedDollar = extractStreamingBlockDraft('推导出如下公式：\n\n$$\\frac{a}{b}')
+  assert.equal(unclosedDollar.stablePrefix, '推导出如下公式：\n\n')
+  assert.deepEqual(unclosedDollar.draft, { kind: 'math', raw: '$$\\frac{a}{b}' })
+
+  const closedDollar = extractStreamingBlockDraft('推导出如下公式：\n\n$$\\frac{a}{b}$$\n\n完毕')
+  assert.equal(closedDollar.draft, null)
+
+  const unclosedBracket = extractStreamingBlockDraft('矩阵为：\n\\[A = B')
+  assert.equal(unclosedBracket.stablePrefix, '矩阵为：\n')
+  assert.deepEqual(unclosedBracket.draft, { kind: 'math', raw: '\\[A = B' })
+
+  const unclosedTable = extractStreamingBlockDraft('对比如下：\n| 协议 | 特点 |\n| :--- | :--- |\n| SSE | 单向推流')
+  assert.equal(unclosedTable.stablePrefix, '对比如下：\n')
+  assert.equal(unclosedTable.draft?.kind, 'table')
+  assert.ok(unclosedTable.draft?.raw.includes('| SSE | 单向推流'))
+
+  const closedTable = extractStreamingBlockDraft('| 协议 | 特点 |\n| :--- | :--- |\n| SSE | 单向 |\n\n后续结论')
+  assert.equal(closedTable.draft, null)
+
+  const unclosedFence = extractStreamingBlockDraft('```md\n$$x\n| a | b |')
+  assert.equal(unclosedFence.draft, null)
+})
+
+test('renderMarkdown injects 8px stream-cursor-dot inside text blocks and stable draft cards while streaming', () => {
+  const unclosedTableHtml = renderMarkdown('说明如下：\n\n| 列A | 列B |\n| :--- | :--- |\n| 1 | 2', true)
+  assert.match(unclosedTableHtml, /streaming-block-draft--table/)
+  assert.match(unclosedTableHtml, /表格生成中…/)
+  assert.doesNotMatch(unclosedTableHtml, /<table>/)
+
+  const completedTableStreaming = renderMarkdown('| 列A | 列B |\n| :--- | :--- |\n| 1 | 2 |\n\n结论如下', true)
+  assert.match(completedTableStreaming, /<table>/)
+  assert.match(completedTableStreaming, /<span class="stream-cursor-dot" aria-hidden="true"><\/span><\/p>/)
+
+  const settledHtml = renderMarkdown('| 列A | 列B |\n| :--- | :--- |\n| 1 | 2 |', false)
+  assert.match(settledHtml, /<table>/)
+  assert.doesNotMatch(settledHtml, /stream-cursor-dot/)
+  assert.doesNotMatch(settledHtml, /streaming-block-draft/)
+
+  const inlineCursor = appendStreamCursorDot('<p>核心<span class="token-fade">定义</span></p>\n')
+  assert.equal(inlineCursor, '<p>核心<span class="token-fade">定义</span><span class="stream-cursor-dot" aria-hidden="true"></span></p>\n')
+})
+
+test('wrapTrailingToken preserves complete HTML entities without splitting inside token-fade spans', async () => {
+  const { wrapTrailingToken, renderMarkdown } = await import('../src/utils/markdown.ts')
+
+  for (const entity of ['&amp;', '&quot;', '&#039;', '&nbsp;']) {
+    const wrapped = wrapTrailingToken(`<p>A${entity}</p>`)
+    assert.equal(wrapped, `<p>A<span class="token-fade">${entity}</span></p>`)
+  }
+
+  const trailingPlain = wrapTrailingToken('<p>AT&amp;T 协议</p>')
+  assert.equal(trailingPlain, '<p>AT&amp;T <span class="token-fade">协议</span></p>')
+
+  const streamedHtml = renderMarkdown('AT&T & "Demo"', true)
+  assert.doesNotMatch(streamedHtml, /<span class="token-fade">[a-z0-9#]+;<\/span>/i)
+  assert.match(streamedHtml, /&amp;/)
+})
+
+test('reduceChatStreamEvent builds interleaved chronological processTimeline with Chinese tool labels', async () => {
+  const { createChatStreamState, reduceChatStreamEvent } = await import('../src/services/aiStreamReducer.ts')
+
+  const baseEnvelope = {
+    protocolVersion: 1,
+    conversationId: 'conv-1',
+    requestId: 'req-1',
+    runId: 'run-1',
+    attemptId: 'att-1',
+    userMessageId: 'user-1',
+    replyMessageId: 'reply-1',
+  }
+
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 1,
+    event: 'reasoning.delta',
+    payload: { text: '先查找课程目录中的定义，' },
+  })
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 2,
+    event: 'tool.started',
+    payload: { toolCallId: 'tc-1', name: '检索资料', label: '检索「335次咨询」' },
+  })
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 3,
+    event: 'tool.completed',
+    payload: { toolCallId: 'tc-1', name: '检索资料', label: '检索「335次咨询」' },
+  })
+  state = reduceChatStreamEvent(state, {
+    ...baseEnvelope,
+    sequence: 4,
+    event: 'reasoning.delta',
+    payload: { text: '再结合原文摘录整理结论。' },
+  })
+
+  assert.equal(state.processTimeline.length, 3)
+  assert.deepEqual(
+    state.processTimeline.map((item) => item.kind),
+    ['reasoning', 'tool', 'reasoning'],
+  )
+  assert.equal(state.processTimeline[0].kind === 'reasoning' && state.processTimeline[0].text, '先查找课程目录中的定义，')
+  assert.deepEqual(state.processTimeline[1].kind === 'tool' && state.processTimeline[1].tool, {
+    id: 'tc-1',
+    name: '检索资料',
+    label: '检索「335次咨询」',
+    status: 'COMPLETED',
+  })
+  assert.equal(state.processTimeline[2].kind === 'reasoning' && state.processTimeline[2].text, '再结合原文摘录整理结论。')
+})
+
+test('chatProcessFormat formats concise Chinese tool labels and strips leaked internal tokens from reasoning', async () => {
+  const { formatToolCapsuleLabel, sanitizeReasoningText } = await import('../src/utils/chatProcessFormat.ts')
+
+  assert.equal(formatToolCapsuleLabel({ name: 'search', label: '检索「事务隔离」' }), '检索「事务隔离」')
+  assert.equal(formatToolCapsuleLabel({ name: 'read_source_overview' }), '查看资料总览')
+  assert.equal(formatToolCapsuleLabel({ name: 'render_compare' }), '生成对比卡片')
+
+  const cleaned = sanitizeReasoningText(
+    '先调用 list_sources 查看并传 search.sourceIds，确认 chunkId=c1 的 hasOverview 状态。\n```ts\nconst list_sources = 1\n```',
+  )
+  const [proseBeforeFence] = cleaned.split('```ts')
+  assert.doesNotMatch(proseBeforeFence, /list_sources|search\.sourceIds|chunkId|hasOverview/)
+  assert.match(proseBeforeFence, /查看资料目录/)
+  assert.match(cleaned, /const list_sources = 1/)
+})
+
+test('createSmoothStreamBuffer drains push-then-finish and prevents rAF or onComplete after destroy', async () => {
+  const { createSmoothStreamBuffer } = await import('../src/services/smoothStreamBuffer.ts')
+
+  const scheduledCallbacks = new Map()
+  let nextFrameId = 1
+  const originalWindow = globalThis.window
+  const originalRaf = globalThis.requestAnimationFrame
+  const originalCancel = globalThis.cancelAnimationFrame
+
+  globalThis.window = globalThis
+  globalThis.requestAnimationFrame = (cb) => {
+    const id = nextFrameId++
+    scheduledCallbacks.set(id, cb)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id) => {
+    scheduledCallbacks.delete(id)
+  }
+
+  try {
+    let text = ''
+    let completed = 0
+    const buffer = createSmoothStreamBuffer((val) => { text = val }, {
+      onComplete: () => { completed += 1 },
+    })
+
+    buffer.push('平滑流式测试文本')
+    assert.equal(scheduledCallbacks.size, 1)
+    buffer.finish('平滑流式测试文本')
+
+    let guard = 0
+    while (scheduledCallbacks.size > 0 && guard < 40) {
+      guard += 1
+      const entry = scheduledCallbacks.entries().next().value
+      scheduledCallbacks.delete(entry[0])
+      entry[1](guard * 60)
+    }
+
+    assert.equal(text, '平滑流式测试文本')
+    assert.equal(buffer.isDrained(), true)
+    assert.equal(completed, 1)
+
+    let reentrantCompleted = 0
+    let reentrantUpdates = 0
+    const reentrantBuffer = createSmoothStreamBuffer(() => {
+      reentrantUpdates += 1
+      reentrantBuffer.destroy()
+    }, {
+      onComplete: () => { reentrantCompleted += 1 },
+    })
+    reentrantBuffer.push('ABCDEFGH')
+    reentrantBuffer.finish('ABCDEFGH')
+    const first = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(first[0])
+    first[1](80)
+    const second = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(second[0])
+    second[1](150)
+
+    assert.equal(reentrantUpdates, 1)
+    assert.equal(scheduledCallbacks.size, 0)
+    assert.equal(reentrantCompleted, 0)
+
+    // Reaching fullText.length inside tick then calling finish() must cancel pending rAF and fire onComplete once
+    let onceCompleted = 0
+    const finishAfterReachBuffer = createSmoothStreamBuffer(() => {}, {
+      minSpeed: 100,
+      baseSpeed: 100,
+      maxSpeed: 100,
+      onComplete: () => { onceCompleted += 1 },
+    })
+    finishAfterReachBuffer.push('AB')
+    const rTick1 = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(rTick1[0])
+    rTick1[1](100)
+    const rTick2 = scheduledCallbacks.entries().next().value
+    scheduledCallbacks.delete(rTick2[0])
+    rTick2[1](180)
+    assert.equal(scheduledCallbacks.size, 1)
+    finishAfterReachBuffer.finish('AB')
+    assert.equal(scheduledCallbacks.size, 0)
+    assert.equal(onceCompleted, 1)
+  } finally {
+    globalThis.window = originalWindow
+    globalThis.requestAnimationFrame = originalRaf
+    globalThis.cancelAnimationFrame = originalCancel
+  }
+})
+
+test('projectToolTrace normalizes lowercase server statuses alongside explicit labels', async () => {
+  const { projectToolTrace } = await import('../src/services/aiStreamReducer.ts')
+
+  const projected = projectToolTrace([
+    { id: 't1', name: '检索资料', label: '检索「MVCC」', status: 'started' },
+    { id: 't2', name: '查看资料总览', label: '查看《数据库》总览', status: 'error' },
+    { id: 't3', name: '生成对比卡片', status: 'completed' },
+  ])
+  assert.deepEqual(projected, [
+    { id: 't1', name: '检索资料', label: '检索「MVCC」', status: 'RUNNING' },
+    { id: 't2', name: '查看资料总览', label: '查看《数据库》总览', status: 'FAILED' },
+    { id: 't3', name: '生成对比卡片', status: 'COMPLETED' },
+  ])
+})
+
+test('chatSmartScroll enforces 50px threshold and preserves upward wheel intent near bottom', async () => {
+  const { evaluatePcScrollEvent, isPcNearBottom, shouldPcAutoScroll } = await import('../src/utils/chatSmartScroll.ts')
+
+  assert.equal(isPcNearBottom({ scrollTop: 560, scrollHeight: 1000, clientHeight: 400 }), true)
+  assert.equal(isPcNearBottom({ scrollTop: 550, scrollHeight: 1000, clientHeight: 400 }), false)
+
+  const upwardWithin50Px = evaluatePcScrollEvent(
+    { locked: true, prevScrollTop: 600 },
+    { scrollTop: 575, scrollHeight: 1000, clientHeight: 400, userPullUpActive: true },
+    false,
+  )
+  assert.equal(upwardWithin50Px.locked, true)
+
+  const lockedState = evaluatePcScrollEvent(
+    { locked: false, prevScrollTop: 560 },
+    { scrollTop: 480, scrollHeight: 1000, clientHeight: 400 },
+    false,
+  )
+  assert.equal(lockedState.locked, true)
+  assert.equal(shouldPcAutoScroll(lockedState.locked), false)
+
+  const programmaticWhileLocked = evaluatePcScrollEvent(
+    lockedState,
+    { scrollTop: 480, scrollHeight: 1400, clientHeight: 400 },
+    true,
+  )
+  assert.equal(programmaticWhileLocked.locked, true)
+
+  const recoveredAtBottom = evaluatePcScrollEvent(
+    programmaticWhileLocked,
+    { scrollTop: 960, scrollHeight: 1400, clientHeight: 400 },
+    false,
+  )
+  assert.equal(recoveredAtBottom.locked, false)
+  assert.equal(shouldPcAutoScroll(recoveredAtBottom.locked), true)
+})
+
+test('buildVisibleProcessTimelineGroups gates subsequent tools until preceding reasoning finishes draining', async () => {
+  const { buildVisibleProcessTimelineGroups } = await import('../src/utils/chatProcessFormat.ts')
+
+  const r0Text = '先分析问题结构。'
+  const r1Text = '根据初步检索继续确认细节。'
+  const r2Text = '证据已充分，准备作答。'
+  const t1 = { id: 'call-1', name: '检索资料', label: '检索「335次咨询」', status: 'COMPLETED' }
+  const t2 = { id: 'call-2', name: '检索资料', label: '检索「对比实验」', status: 'COMPLETED' }
+  const t3 = { id: 'call-3', name: '阅读资料摘录', label: '阅读《讲义》片段', status: 'RUNNING' }
+
+  const timeline = [
+    { id: 'reasoning:0', kind: 'reasoning', text: r0Text },
+    { id: 'tool:call-1', kind: 'tool', tool: t1 },
+    { id: 'reasoning:2', kind: 'reasoning', text: r1Text },
+    { id: 'tool:call-2', kind: 'tool', tool: t2 },
+    { id: 'tool:call-3', kind: 'tool', tool: t3 },
+    { id: 'reasoning:5', kind: 'reasoning', text: r2Text },
+  ]
+
+  // While R0 is still mid-stream, T1, R1, and T2 must wait instead of clumping ahead
+  assert.deepEqual(buildVisibleProcessTimelineGroups(timeline, 3), [
+    { id: 'reasoning:0', kind: 'reasoning', text: '先分析' },
+  ])
+
+  // Once R0 finishes draining, T1 appears while R1 and later tools remain gated
+  assert.deepEqual(buildVisibleProcessTimelineGroups(timeline, r0Text.length), [
+    { id: 'reasoning:0', kind: 'reasoning', text: r0Text },
+    { id: 'tool:call-1', kind: 'tools', tools: [t1] },
+  ])
+
+  // While R1 is partially typed, T2/T3 stay behind R1
+  assert.deepEqual(buildVisibleProcessTimelineGroups(timeline, r0Text.length + 4), [
+    { id: 'reasoning:0', kind: 'reasoning', text: r0Text },
+    { id: 'tool:call-1', kind: 'tools', tools: [t1] },
+    { id: 'reasoning:2', kind: 'reasoning', text: r1Text.slice(0, 4) },
+  ])
+
+  // At full reveal, interleaved reasoning separates tool groups and skips whitespace-only segments
+  const withBlankSegment = [
+    ...timeline,
+    { id: 'reasoning:blank', kind: 'reasoning', text: '   \n\t  ' },
+  ]
+  assert.deepEqual(buildVisibleProcessTimelineGroups(withBlankSegment, Number.POSITIVE_INFINITY), [
+    { id: 'reasoning:0', kind: 'reasoning', text: r0Text },
+    { id: 'tool:call-1', kind: 'tools', tools: [t1] },
+    { id: 'reasoning:2', kind: 'reasoning', text: r1Text },
+    { id: 'tool:call-2', kind: 'tools', tools: [t2, t3] },
+    { id: 'reasoning:5', kind: 'reasoning', text: r2Text },
+  ])
+
+  const leadTool = { id: 'lead-1', name: '查看资料目录', label: '查看资料目录', status: 'COMPLETED' }
+  assert.deepEqual(buildVisibleProcessTimelineGroups([
+    { id: 'tool:lead-1', kind: 'tool', tool: leadTool },
+    ...timeline,
+  ], 0), [
+    { id: 'tool:lead-1', kind: 'tools', tools: [leadTool] },
+  ])
+})
+
+test('computeSmoothStreamTargetSpeed is monotonic across backlog regimes and smooth finish drains incrementally', async () => {
+  const { computeSmoothStreamTargetSpeed, createSmoothStreamBuffer } = await import('../src/services/smoothStreamBuffer.ts')
+  const { createChatStreamState, reduceChatStreamEvent } = await import('../src/services/aiStreamReducer.ts')
+  const { buildVisibleProcessTimelineGroups } = await import('../src/utils/chatProcessFormat.ts')
+
+  const speedConfig = { minSpeed: 14, baseSpeed: 28, maxSpeed: 105, finishSpeed: 58 }
+  const samples = [1, 2, 4, 5, 12, 24, 48, 80, 160, 320, 600]
+  let prev = 0
+  for (const remaining of samples) {
+    const rate = computeSmoothStreamTargetSpeed(remaining, false, speedConfig)
+    assert.ok(rate >= prev, `expected monotonic rate at remaining=${remaining}, got ${rate} < ${prev}`)
+    assert.ok(rate <= speedConfig.maxSpeed)
+    prev = rate
+  }
+  assert.equal(computeSmoothStreamTargetSpeed(1, false, speedConfig), 14)
+  assert.equal(computeSmoothStreamTargetSpeed(12, false, speedConfig), 28)
+  assert.ok(computeSmoothStreamTargetSpeed(48, false, speedConfig) < 46)
+  assert.equal(computeSmoothStreamTargetSpeed(600, false, speedConfig), 105)
+  assert.equal(computeSmoothStreamTargetSpeed(20, true, speedConfig), 58)
+  assert.equal(computeSmoothStreamTargetSpeed(300, true, speedConfig), 105)
+
+  const scheduled = new Map()
+  let nextId = 1
+  const origRaf = globalThis.requestAnimationFrame
+  const origCancel = globalThis.cancelAnimationFrame
+  const origWindow = globalThis.window
+  globalThis.window = globalThis
+  globalThis.requestAnimationFrame = (cb) => {
+    const id = nextId++
+    scheduled.set(id, cb)
+    return id
+  }
+  globalThis.cancelAnimationFrame = (id) => {
+    scheduled.delete(id)
+  }
+
+  try {
+    const snapshots = []
+    let completed = 0
+    const longAnswer = '这是一段模拟高速模型连续输出的正文内容，用于验证流式结束后仍然分帧平滑排空而不会整段瞬间弹出。'.repeat(2)
+    const buffer = createSmoothStreamBuffer((val) => {
+      snapshots.push(val.length)
+    }, {
+      minSpeed: 14,
+      baseSpeed: 28,
+      maxSpeed: 105,
+      finishSpeed: 58,
+      speedDampingFactor: 3.8,
+      onComplete: () => {
+        completed += 1
+      },
+    })
+
+    // First burst -> drain completely while still streaming -> verify second burst after idle pause eases in calmly
+    const firstBurst = '第一段高并发突发推送文本，用于先把内部游标速率抬高到巡航上限以上，测试池空后的冷却效果。'.repeat(2)
+    buffer.push(firstBurst)
+    let ts = 16
+    let guard = 0
+    while (scheduled.size > 0 && guard < 400) {
+      guard += 1
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+    assert.equal(buffer.isDrained(), true)
+
+    const countBeforeSecondBurst = snapshots.length
+    const secondBurst = `${firstBurst}${longAnswer}`
+    buffer.push(secondBurst)
+    for (let i = 0; i < 6 && scheduled.size > 0; i += 1) {
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+    const firstSecondBurstDelta = (snapshots[countBeforeSecondBurst] ?? firstBurst.length) - firstBurst.length
+    assert.ok(firstSecondBurstDelta <= 2, `expected calm cooldown start after idle pause, got +${firstSecondBurstDelta} chars`)
+
+    buffer.reset()
+    snapshots.length = 0
+    scheduled.clear()
+
+    buffer.finish(longAnswer)
+    assert.equal(completed, 0)
+    assert.equal(snapshots.length, 0)
+
+    let frames = 0
+    while (scheduled.size > 0 && frames < 240) {
+      frames += 1
+      const entry = scheduled.entries().next().value
+      scheduled.delete(entry[0])
+      ts += 16
+      entry[1](ts)
+    }
+
+    assert.ok(frames >= 3, `expected multi-frame smooth drain, got ${frames} frame(s)`)
+    assert.equal(completed, 1)
+    assert.equal(buffer.isDrained(), true)
+    assert.ok(snapshots[0] < longAnswer.length)
+    assert.equal(snapshots[snapshots.length - 1], longAnswer.length)
+  } finally {
+    globalThis.requestAnimationFrame = origRaf
+    globalThis.cancelAnimationFrame = origCancel
+    globalThis.window = origWindow
+  }
+
+  // Simulate multi-iteration backend sequence matching real runtime trace and verify interleaved layout
+  let streamState = createChatStreamState()
+  let seq = 0
+  const env = (event, payload) => ({
+    protocolVersion: 1,
+    conversationId: 'conv-1',
+    requestId: 'req-1',
+    runId: 'run-1',
+    attemptId: 'att-1',
+    userMessageId: 'u-1',
+    replyMessageId: 'r-1',
+    sequence: ++seq,
+    event,
+    payload,
+  })
+  const events = [
+    env('run.started', { status: 'RUNNING' }),
+    env('reasoning.delta', { text: '先列出目录。' }),
+    env('tool.started', { toolCallId: 'c0', name: 'list_sources', label: '查看资料目录' }),
+    env('tool.completed', { toolCallId: 'c0', name: 'list_sources', label: '查看资料目录' }),
+    env('reasoning.delta', { text: '读取资料总览。' }),
+    env('tool.started', { toolCallId: 'c1', name: 'read_source_overview', label: '查看资料总览' }),
+    env('tool.completed', { toolCallId: 'c1', name: 'read_source_overview', label: '查看资料总览' }),
+    env('reasoning.delta', { text: '检索核心数据验证。' }),
+    env('tool.started', { toolCallId: 'c2', name: 'search', label: '检索「335次咨询」' }),
+    env('tool.completed', { toolCallId: 'c2', name: 'search', label: '检索「335次咨询」' }),
+    env('tool.started', { toolCallId: 'c3', name: 'search', label: '检索「24项校园任务」' }),
+    env('tool.completed', { toolCallId: 'c3', name: 'search', label: '检索「24项校园任务」' }),
+    env('text.delta', { text: '正文内容开始。', publicTextDelta: '正文内容开始。' }),
+    env('run.completed', { replyMessageId: 'r-1', executionActive: false }),
+  ]
+  for (const item of events) {
+    streamState = reduceChatStreamEvent(streamState, item)
+  }
+
+  const finalGroups = buildVisibleProcessTimelineGroups(streamState.processTimeline, Number.POSITIVE_INFINITY)
+  assert.deepEqual(
+    finalGroups.map((g) => (g.kind === 'reasoning' ? `R:${g.text}` : `T:${g.tools.map((t) => t.id).join(',')}`)),
+    [
+      'R:先列出目录。',
+      'T:c0',
+      'R:读取资料总览。',
+      'T:c1',
+      'R:检索核心数据验证。',
+      'T:c2,c3',
+    ],
+  )
+})
+
+test('reconcileProcessMetadata preserves interleaved timeline, enriched labels, recovered suffix, and settles terminal tools', async () => {
+  const { reconcileProcessMetadata } = await import('../src/services/aiStreamReducer.ts')
+
+  const result = reconcileProcessMetadata({
+    mappedReasoning: '第一步分析。第二步思考。',
+    existingReasoning: '第一步分析。',
+    mappedTools: undefined,
+    existingTools: [
+      { id: 't1', name: 'search', label: '检索课程资料', status: 'RUNNING' },
+    ],
+    statusTools: [
+      { id: 't1', name: 'search', label: 'search', status: 'COMPLETED' },
+      { id: 't2', name: 'read', label: '读取材料', status: 'RUNNING' },
+    ],
+    existingTimeline: [
+      { id: 'reasoning:0', kind: 'reasoning', text: '第一步分析。' },
+      { id: 'tool:t1', kind: 'tool', tool: { id: 't1', name: 'search', label: '检索课程资料', status: 'RUNNING' } },
+    ],
+    isTerminal: true,
+    terminalFailed: false,
+  })
+
+  assert.equal(result.reasoningText, '第一步分析。第二步思考。')
+  assert.deepEqual(result.tools, [
+    { id: 't1', name: 'search', label: '检索课程资料', status: 'COMPLETED' },
+    { id: 't2', name: 'read', label: '读取材料', status: 'COMPLETED' },
+  ])
+  assert.deepEqual(result.processTimeline, [
+    { id: 'reasoning:0', kind: 'reasoning', text: '第一步分析。' },
+    { id: 'tool:t1', kind: 'tool', tool: { id: 't1', name: 'search', label: '检索课程资料', status: 'COMPLETED' } },
+    { id: 'tool:t2', kind: 'tool', tool: { id: 't2', name: 'read', label: '读取材料', status: 'COMPLETED' } },
+    { id: 'reasoning:3', kind: 'reasoning', text: '第二步思考。' },
+  ])
+
+  const failedFallback = reconcileProcessMetadata({
+    mappedReasoning: '失败前思考',
+    statusTools: [{ id: 't3', name: 'search', label: '检索资料', status: 'RUNNING' }],
+    isTerminal: true,
+    terminalFailed: true,
+  })
+  assert.deepEqual(failedFallback.tools, [
+    { id: 't3', name: 'search', label: '检索资料', status: 'FAILED' },
+  ])
+  assert.deepEqual(failedFallback.processTimeline, [
+    { id: 'reasoning:0', kind: 'reasoning', text: '失败前思考' },
+    { id: 'tool:t3', kind: 'tool', tool: { id: 't3', name: 'search', label: '检索资料', status: 'FAILED' } },
+  ])
+})
+
+test('resolveStreamTextDrainAction and canFinishStreamSettling prevent duplicate draining and premature bubble teardown', async () => {
+  const { resolveStreamTextDrainAction, canFinishStreamSettling } = await import('../src/utils/chatProcessFormat.ts')
+
+  assert.equal(
+    resolveStreamTextDrainAction({
+      streaming: false,
+      settling: true,
+      partId: 'p1',
+      partKind: 'text',
+      partText: '整段单包直达文本',
+      activeTextId: null,
+      isActive: false,
+      lastCompletedTextId: null,
+    }),
+    'finish_drain',
+  )
+  assert.equal(
+    resolveStreamTextDrainAction({
+      streaming: false,
+      settling: true,
+      partId: 'p1',
+      partKind: 'text',
+      partText: '整段单包直达文本',
+      activeTextId: null,
+      isActive: false,
+      lastCompletedTextId: 'p1',
+    }),
+    'sync_immediate',
+  )
+  assert.equal(
+    resolveStreamTextDrainAction({
+      streaming: false,
+      settling: false,
+      partId: 'b1',
+      partKind: 'non_text',
+      partText: '',
+      activeTextId: 'p1',
+      isActive: true,
+      lastCompletedTextId: null,
+    }),
+    'flush_and_clear',
+  )
+
+  assert.equal(canFinishStreamSettling({ streaming: false, settleTimerDone: true, processDraining: true, rendererDraining: false }), false)
+  assert.equal(canFinishStreamSettling({ streaming: false, settleTimerDone: true, processDraining: false, rendererDraining: true }), false)
+  assert.equal(canFinishStreamSettling({ streaming: false, settleTimerDone: false, processDraining: false, rendererDraining: false }), false)
+  assert.equal(canFinishStreamSettling({ streaming: false, settleTimerDone: true, processDraining: false, rendererDraining: false }), true)
 })

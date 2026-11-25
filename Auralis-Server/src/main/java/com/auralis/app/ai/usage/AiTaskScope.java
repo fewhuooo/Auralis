@@ -17,23 +17,10 @@ import java.util.UUID;
 public interface AiTaskScope extends AutoCloseable {
 
     UUID taskId();
-
-    default <T> AiInvocationResult<T> metadata(
-            AiStage stage, AiProviderType provider, String model, Supplier<T> operation) {
-        throw new AiPolicyContractException();
-    }
-
     default <T> AiInvocationResult<T> metadata(AiStage stage, AiProviderType provider, String model,
             AiCredentialSource source, Supplier<T> operation) {
         throw new AiPolicyContractException();
     }
-
-    default AiInvocationResult<AiProviderResponse> complete(
-            AiStage stage, AiProviderType provider, AiProviderRequest request,
-            AiCredential credential, long responseTimeoutMillis) {
-        throw new AiPolicyContractException();
-    }
-
     default AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
             AiProviderRequest request, AiCredential credential, AiCredentialSource source,
             long responseTimeoutMillis, AiOutputRole role) {
@@ -58,19 +45,6 @@ public interface AiTaskScope extends AutoCloseable {
             long responseTimeoutMillis, AiProviderCallCancellation cancellation) {
         throw new AiPolicyContractException();
     }
-
-    default AiInvocationResult<AiProviderResponse> complete(
-            AiStage stage, AiProviderType provider, AiProviderRequest request,
-            AiCredential credential, long responseTimeoutMillis, OverviewCancellation cancellation) {
-        return complete(stage, provider, request, credential, responseTimeoutMillis);
-    }
-
-    default AiInvocationResult<Void> stream(
-            AiStage stage, AiProviderType provider, AiProviderRequest request,
-            AiCredential credential, Consumer<AiProviderChunk> sink) {
-        throw new AiPolicyContractException();
-    }
-
     default AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
             AiProviderRequest request, AiCredential credential, AiCredentialSource source,
             Consumer<AiProviderChunk> sink) {
@@ -82,13 +56,6 @@ public interface AiTaskScope extends AutoCloseable {
             AiProviderCallCancellation cancellation, Consumer<AiProviderChunk> sink) {
         throw new AiPolicyContractException();
     }
-
-    default AiInvocationResult<EmbeddingResult> embed(
-            AiStage stage, AiProviderType provider, String model, List<String> texts,
-            AiCredential credential) {
-        throw new AiPolicyContractException();
-    }
-
     default AiInvocationResult<EmbeddingResult> embed(AiStage stage, AiProviderType provider,
             String model, List<String> texts, AiCredential credential, AiCredentialSource source) {
         throw new AiPolicyContractException();

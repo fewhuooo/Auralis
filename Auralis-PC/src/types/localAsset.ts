@@ -1,6 +1,6 @@
 /**
  * PC Local Asset Store domain types and contracts.
- * Matches docs/design/2026-09-15-pc-local-asset-store-design.md
+ * Authority: docs/modules/FrontendPC.md (historical design: docs/archive/design-and-plans/design/frontend/2026-09-15-pc-local-asset-store-design.md)
  */
 
 export const LOCAL_ASSET_STATES = [

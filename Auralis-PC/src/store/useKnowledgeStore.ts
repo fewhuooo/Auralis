@@ -39,8 +39,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const authStore = useAuthStore()
   let visibleSubjectId: string | undefined
   let syncStatusRead = 0
+  let blockLoadSequence = 0
 
   watch(() => authStore.loginGeneration, () => {
+    blockLoadSequence += 1
     visibleSubjectId = undefined
     recentBlocks.value = []
     isLoading.value = false
@@ -100,9 +102,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function loadLocalBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {
     const generation = authStore.loginGeneration
+    const sequence = ++blockLoadSequence
     visibleSubjectId = subjectId
     const local = await readLocalBlocks(subjectId)
-    if (authStore.loginGeneration !== generation) return []
+    if (authStore.loginGeneration !== generation || sequence !== blockLoadSequence) return []
     recentBlocks.value = local
     void refreshKnowledgeBlockSyncStatus()
     return local
@@ -157,6 +160,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   async function addBlock(block: Partial<KnowledgeBlockModel> & { title: string; subjectId: string }): Promise<string> {
+    const generation = authStore.loginGeneration
     const content = block.content || ''
     const payload: KnowledgeBlockCreateRequest = {
       baseVersion: 0,
@@ -183,6 +187,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         payload: localView as unknown as Record<string, unknown>,
       }),
     })
+    if (generation !== authStore.loginGeneration) return id
     const subjectStore = useSubjectStore()
     const subjectName = subjectStore.subjects.find((s) => s.id === block.subjectId)?.name || block.subject
     const model = mapKnowledgeBlockView(localView, block.source, subjectName)

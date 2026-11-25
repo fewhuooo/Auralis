@@ -36,7 +36,7 @@
     "build:quickapp-webview-union": "uni build -p quickapp-webview-union",
     "type-check": "vue-tsc --noEmit",
     "check:r4-mobile": "node scripts/check-r4-mobile.mjs",
-    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs scripts/r4-device-id-naming.test.mjs",
+    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs scripts/r4-device-id-naming.test.mjs scripts/r4-due-review.test.mjs scripts/r4-task-focus.test.mjs scripts/r4-mobile-focus-page.test.mjs scripts/r4-mobile-profile.test.mjs scripts/r4-markdown-math.test.mjs scripts/r4-mobile-ai.test.mjs scripts/r4-local-persistence.test.mjs scripts/r4-tablet-upload-subject.test.mjs",
     "test:tablet": "node --experimental-strip-types scripts/tablet-feature-flags.test.ts && node --experimental-strip-types scripts/tablet-note-model.test.ts && node --experimental-strip-types scripts/tablet-note-repository-core.test.ts"
   },
   "dependencies": {
@@ -56,7 +56,13 @@
     "@dcloudio/uni-mp-weixin": "3.0.0-4080420251103001",
     "@dcloudio/uni-mp-xhs": "3.0.0-4080420251103001",
     "@dcloudio/uni-quickapp-webview": "3.0.0-4080420251103001",
+    "@file-viewer/core": "^2.3.0",
+    "@file-viewer/renderer-pdf": "^2.3.0",
+    "@file-viewer/renderer-presentation": "^2.3.0",
+    "@file-viewer/renderer-word": "^2.3.1",
+    "@file-viewer/vite-plugin": "^2.3.2",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "marked": "^18.0.5",
     "perfect-freehand": "^1.2.3",
     "pinia": "2.1.7",

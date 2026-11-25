@@ -6,6 +6,8 @@ import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiSettingsService;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderResponse;
+import com.auralis.app.ai.internal.provider.AiProviderRegistry;
+import com.auralis.app.ai.internal.provider.SiliconFlowAiProvider;
 import com.auralis.app.ai.usage.AiInvocationGateway;
 import com.auralis.app.ai.usage.AiInvocationResult;
 import com.auralis.app.ai.usage.AiTaskScope;
@@ -146,5 +148,36 @@ class AiProviderDiscoveryServiceTests {
                     com.auralis.app.ai.usage.AiCredentialSource source) { return null; }
             @Override public void close() { }
         };
+    }
+
+    @Test
+    void siliconFlowProviderRegistersAndFallsBackWhenTimeoutIsNonPositive() {
+        ProviderEndpointPolicy endpointPolicy = mock(ProviderEndpointPolicy.class);
+        when(endpointPolicy.resolve(AiProviderType.SILICONFLOW, URI.create("https://api.siliconflow.cn/v1")))
+                .thenReturn(ENDPOINT);
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override
+            public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody) {
+                assertThat(endpoint).isSameAs(ENDPOINT);
+                assertThat(path).isEqualTo("/chat/completions");
+                assertThat(apiKey).isEqualTo(API_KEY);
+                return "{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}"
+                        .getBytes(StandardCharsets.UTF_8);
+            }
+        };
+        SiliconFlowAiProvider siliconFlowProvider = new SiliconFlowAiProvider(
+                endpointPolicy, new ProviderHttpClient(new ObjectMapper(), transport, 4096));
+        AiProviderRegistry registry = new AiProviderRegistry(List.of(siliconFlowProvider));
+
+        AiProviderResponse response = registry.require(AiProviderType.SILICONFLOW).complete(
+                new AiProviderRequest(
+                        "Qwen/Qwen2.5-7B-Instruct",
+                        List.of(new AiProviderRequest.Message(com.auralis.app.ai.AiMessageRole.USER, "ping")),
+                        0.0,
+                        32),
+                new AiCredential("https://api.siliconflow.cn/v1", API_KEY),
+                0L);
+
+        assertThat(response.content()).isEqualTo("OK");
     }
 }

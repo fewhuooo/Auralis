@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useSourceApi, type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
+import { useSourceApi, type SourceView } from '@/api/useSourceApi'
 import { SyncScopeChangedError } from '@/api/request'
 import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
 import { getOrCreateLocalAssetService } from '@/services/localAssetService'
@@ -360,10 +360,6 @@ export const useSourceStore = defineStore('source', () => {
     return id
   }
 
-  async function addSourceFile(subjectId: string, name: string, filePath: string, _fileType: string, _fileSize: number, catalogJson = '[]'): Promise<string> {
-    return createFileSource(subjectId, name, filePath, catalogJson)
-  }
-
   async function deleteSourceFile(id: string): Promise<void> {
     const source = sources.value.find((item) => item.id === id) || activeSourceFiles.value.find((item) => item.id === id)
     if (!source) return
@@ -414,43 +410,6 @@ export const useSourceStore = defineStore('source', () => {
       if (!tombstoneCommitted) cancelOverviewScopeDeletion(deletionTicket)
       throw error
     }
-  }
-
-  async function saveSourceFileCatalog(file: SourceFileModel): Promise<void> {
-    if (!file.assetId) throw new Error('资料缺少关联 Asset，无法保存目录')
-    const payload: SourceCreateRequest = {
-      baseVersion: file.version,
-      subjectId: file.subjectId,
-      type: 'FILE',
-      title: file.name,
-      assetId: file.assetId,
-      outline: file.catalogJson,
-    }
-    const repo = await repository()
-    const localView: SourceView = {
-      id: file.id,
-      subjectId: file.subjectId,
-      type: 'FILE',
-      title: file.name,
-      assetId: file.assetId,
-      outline: file.catalogJson,
-      version: file.version,
-      createdAt: file.createdAt,
-      updatedAt: new Date().toISOString(),
-      deletedAt: file.deletedAt ?? undefined,
-      ingestionStatus: file.ingestionStatus,
-      ingestionRevision: file.ingestionRevision,
-    }
-    await repo.commitMutation({
-      resourceType: 'SOURCE', resourceId: file.id, value: localView, version: file.version, deletedAt: file.deletedAt,
-      mutation: createStableMutation({
-        clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: file.id, mutationType: 'UPDATE', baseVersion: file.version,
-        payload: payload as unknown as Record<string, unknown>,
-      }),
-    })
-    const model = mapSourceView(localView)
-    replaceSources(sources.value.map((source) => source.id === file.id ? model : source))
-    scheduleSync()
   }
 
   function attachDocumentScheduler(scheduler: SourceDocumentScheduler | null): void {
@@ -554,9 +513,7 @@ export const useSourceStore = defineStore('source', () => {
     loadLocalSourceFiles,
     clearActiveSourceFiles,
     createFileSource,
-    addSourceFile,
     deleteSourceFile,
-    saveSourceFileCatalog,
     attachDocumentScheduler,
     attachFileOverviewGenerator,
     resumeDocumentProcessing,

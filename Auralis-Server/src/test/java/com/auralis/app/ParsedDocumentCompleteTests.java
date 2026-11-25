@@ -91,6 +91,8 @@ class ParsedDocumentCompleteTests {
     @Autowired private SourceRepository sourceRepository;
     @Autowired private AssetRepository assetRepository;
     @Autowired private TestAssetStorage storage;
+    @Autowired private com.auralis.app.source.ParsedDocumentCleanupService parsedDocumentCleanupService;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ChangeLogService changeLogService;
     @Autowired private RealtimeEventPublisher realtimeEventPublisher;
@@ -432,6 +434,152 @@ class ParsedDocumentCompleteTests {
                 .singleElement().satisfies(block -> assertThat(block.text()).isEqualTo("hello"));
     }
 
+    @Test
+    void rejectsSourceRevisionChangedDuringObjectValidationWithoutHoldingTransaction() throws Exception {
+        Fixture fixture = fixture("complete-io-revision");
+        Upload upload = upload(fixture, "revision");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            storage.onHead = key -> {
+                if (!key.equals(upload.document().getObjectKey())) return;
+                storage.onHead = null;
+                try {
+                    executor.submit(() -> sourceService.reingest(fixture.owner().user().id(), fixture.source().id(),
+                            sourceService.get(fixture.owner().user().id(), fixture.source().id()).version()))
+                            .get(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (Exception exception) {
+                    throw new AssertionError("Source revision must be changeable while storage is read", exception);
+                }
+            };
+            assertThatThrownBy(() -> parsedDocumentService.complete(
+                    fixture.owner().user().id(), fixture.source().id(), upload.document().getId()))
+                    .isInstanceOfSatisfying(DomainException.class,
+                            error -> assertThat(error.code()).isEqualTo("INGESTION_REVISION_STALE"));
+            assertThat(ingestionJobRepository.findAll()).isEmpty();
+            assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getStatus())
+                    .isNotEqualTo(ParsedDocumentStatus.ACCEPTED);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void lateStorageFailureCannotRejectAConcurrentlyAcceptedDocument() throws Exception {
+        Fixture fixture = fixture("complete-io-late-failure");
+        Upload upload = upload(fixture, "hello");
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var first = new java.util.concurrent.atomic.AtomicBoolean(true);
+        storage.onHead = key -> {
+            if (!key.equals(upload.document().getObjectKey()) || !first.compareAndSet(true, false)) return;
+            entered.countDown();
+            try {
+                assertThat(release.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(exception);
+            }
+            throw new IllegalStateException("late storage failure");
+        };
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<String> delayed = executor.submit(() -> completeCode(fixture, upload));
+            assertThat(entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var accepted = parsedDocumentService.complete(fixture.owner().user().id(), fixture.source().id(), upload.document().getId());
+            release.countDown();
+            assertThat(delayed.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("ACCEPTED");
+            assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getGeneration())
+                    .isEqualTo(accepted.generation());
+            assertThat(ingestionJobRepository.findAll()).hasSize(1);
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void acceptedReadRechecksDeletionAfterObjectRead() throws Exception {
+        Fixture fixture = fixture("accepted-read-io-delete");
+        Upload upload = upload(fixture, "hello");
+        parsedDocumentService.complete(fixture.owner().user().id(), fixture.source().id(), upload.document().getId());
+        storage.onOpen = key -> {
+            if (!key.equals(upload.document().getObjectKey())) return;
+            storage.onOpen = null;
+            var current = sourceService.get(fixture.owner().user().id(), fixture.source().id());
+            sourceService.delete(fixture.owner().user().id(), current.id(), current.version());
+        };
+        assertThatThrownBy(() -> parsedDocumentService.readAccepted(
+                fixture.owner().user().id(), fixture.source().id(), upload.document().getId()))
+                .isInstanceOfSatisfying(DomainException.class,
+                        error -> assertThat(error.code()).isEqualTo("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void cleanupClaimsExpiredUploadBeforeDeletingOutsideTransaction() throws Exception {
+        Fixture fixture = fixture("cleanup-io-claim");
+        Upload upload = upload(fixture, "expired");
+        jdbcTemplate.update("update parsed_documents set updated_at = ? where id = ?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(172800)), upload.document().getId());
+        storage.onDelete = key -> {
+            if (!key.equals(upload.document().getObjectKey())) return;
+            assertThat(completeCode(fixture, upload)).isEqualTo("MUTATION_REJECTED");
+        };
+        assertThat(parsedDocumentCleanupService.purgeExpired(Instant.now())).isEqualTo(1);
+        assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getObjectDeletedAt()).isNotNull();
+        assertThat(ingestionJobRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void cleanupRechecksASelectedCandidateAfterAnotherCompletionWins() throws Exception {
+        Fixture fixture = fixture("cleanup-io-winner");
+        Upload first = upload(fixture, "first");
+        Upload second = upload(fixture, "second");
+        jdbcTemplate.update("update parsed_documents set updated_at = ? where source_id = ?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(172800)), fixture.source().id());
+        storage.onDelete = key -> {
+            storage.onDelete = null;
+            Upload winner = key.equals(first.document().getObjectKey()) ? second : first;
+            assertThat(completeCode(fixture, winner)).isEqualTo("ACCEPTED");
+        };
+        assertThat(parsedDocumentCleanupService.purgeExpired(Instant.now())).isEqualTo(1);
+        assertThat(parsedDocumentRepository.findAll().stream()
+                .filter(document -> document.getStatus() == ParsedDocumentStatus.ACCEPTED))
+                .singleElement().satisfies(document -> assertThat(document.getObjectDeletedAt()).isNull());
+        assertThat(ingestionJobRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void failedCleanupKeepsObjectEligibleForLaterRetry() throws Exception {
+        Fixture fixture = fixture("cleanup-io-retry");
+        Upload upload = upload(fixture, "expired");
+        jdbcTemplate.update("update parsed_documents set updated_at = ? where id = ?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(172800)), upload.document().getId());
+        storage.onDelete = key -> { throw new IllegalStateException("storage unavailable"); };
+        assertThat(parsedDocumentCleanupService.purgeExpired(Instant.now())).isZero();
+        assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getObjectDeletedAt()).isNull();
+        storage.onDelete = null;
+        assertThat(parsedDocumentCleanupService.purgeExpired(Instant.now().plusSeconds(172800))).isEqualTo(1);
+        assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getObjectDeletedAt()).isNotNull();
+    }
+
+    @Test
+    void accountDisabledDuringObjectValidationCannotAcceptDocument() throws Exception {
+        Fixture fixture = fixture("complete-io-disabled-owner");
+        Upload upload = upload(fixture, "account data");
+        storage.onHead = key -> {
+            if (!key.equals(upload.document().getObjectKey())) return;
+            storage.onHead = null;
+            identityService.requestAccountDeletion(fixture.owner().user().id(), "correct horse battery staple");
+        };
+        assertThatThrownBy(() -> parsedDocumentService.complete(
+                fixture.owner().user().id(), fixture.source().id(), upload.document().getId()))
+                .isInstanceOfSatisfying(com.auralis.app.identity.IdentityException.class,
+                        error -> assertThat(error.code()).isEqualTo("UNAUTHENTICATED"));
+        assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getStatus())
+                .isEqualTo(ParsedDocumentStatus.UPLOADING);
+        assertThat(ingestionJobRepository.findAll()).isEmpty();
+    }
+
     private String completeCode(Fixture fixture, Upload upload) {
         try {
             return parsedDocumentService.complete(
@@ -502,23 +650,40 @@ class ParsedDocumentCompleteTests {
     }
 
     static class TestAssetStorage implements AssetStoragePort {
-        private final Map<String, ObjectMetadata> objects = new HashMap<>();
-        private final Map<String, byte[]> payloads = new HashMap<>();
+        private final Map<String, ObjectMetadata> objects = new java.util.concurrent.ConcurrentHashMap<>();
+        private volatile java.util.function.Consumer<String> onHead;
+        private volatile java.util.function.Consumer<String> onOpen;
+        private volatile java.util.function.Consumer<String> onDelete;
+        private final Map<String, byte[]> payloads = new java.util.concurrent.ConcurrentHashMap<>();
         @Override public UploadIntent createUploadIntent(String key, String mime, long size, String sha) {
             return new UploadIntent("https://storage.test/upload/" + key, Map.of("Content-Type", mime), Instant.now().plusSeconds(300));
         }
-        @Override public Optional<ObjectMetadata> headObject(String key) { return Optional.ofNullable(objects.get(key)); }
+        @Override public Optional<ObjectMetadata> headObject(String key) {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var callback = onHead;
+            if (callback != null) callback.accept(key);
+            return Optional.ofNullable(objects.get(key));
+        }
         @Override public DownloadUrl createDownloadUrl(String key) { return new DownloadUrl("https://storage.test/download/" + key, Instant.now().plusSeconds(300)); }
         @Override public InputStream openObject(String key) {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var callback = onOpen;
+            if (callback != null) callback.accept(key);
             byte[] payload = payloads.get(key);
             if (payload == null) {
                 throw new IllegalStateException("Object could not be opened");
             }
             return new ByteArrayInputStream(payload);
         }
-        @Override public void deleteObject(String key) { objects.remove(key); payloads.remove(key); }
+        @Override public void deleteObject(String key) {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var callback = onDelete;
+            if (callback != null) callback.accept(key);
+            objects.remove(key);
+            payloads.remove(key);
+        }
         void put(String key, ObjectMetadata metadata, String text) { put(key, metadata, text.getBytes(StandardCharsets.UTF_8)); }
         void put(String key, ObjectMetadata metadata, byte[] payload) { objects.put(key, metadata); payloads.put(key, payload); }
-        void clear() { objects.clear(); payloads.clear(); }
+        void clear() { objects.clear(); payloads.clear(); onHead = null; onOpen = null; onDelete = null; }
     }
 }

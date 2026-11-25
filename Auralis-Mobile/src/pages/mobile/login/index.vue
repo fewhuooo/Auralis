@@ -1,161 +1,345 @@
 <template>
-  <view class="login-container">
-    <view class="logo-area">
-      <text class="title">Auralis</text>
-      <text class="subtitle">跨平台智能生产力中枢</text>
-    </view>
+  <view class="login-viewport">
+    <view class="login-page">
+      <view class="side-shape" aria-hidden="true"></view>
 
-    <view class="form-area">
-      <text class="form-heading">{{ actionLabel }}</text>
-      <input
-        v-if="mode !== 'reset'"
-        class="input-box"
-        v-model="form.username"
-        :maxlength="mode === 'login' ? 254 : 64"
-        :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
-        :disabled="pending"
-      />
-      <template v-if="mode !== 'login'">
-        <input class="input-box" v-model="form.email" :maxlength="254" placeholder="邮箱" :disabled="pending" />
-        <view class="code-row">
-          <input class="input-box code-input" v-model="form.emailCode" type="number" :maxlength="6" placeholder="邮箱验证码" :disabled="pending" />
-          <button class="code-button" :loading="sending" :disabled="sendDisabled" @click="sendCode">{{ sendLabel }}</button>
+      <view class="login-inner">
+        <view class="brand-header">
+          <BrandLogo size="32px" />
+          <text class="brand-title">AURALIS</text>
         </view>
-      </template>
-      <input class="input-box" v-model="form.password" password :placeholder="mode === 'reset' ? '新密码' : '密码'" :disabled="pending" />
-      <input v-if="mode !== 'login'" class="input-box" v-model="form.confirmPassword" password placeholder="确认密码" :disabled="pending" />
-      <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
 
-      <button class="submit-btn" :loading="submitting" :disabled="pending" @click="submit">{{ actionLabel }}</button>
+        <view v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
+          <view
+            class="ui-seg-item"
+            :class="{ active: mode === 'login', 'is-disabled': pending }"
+            role="tab"
+            :aria-selected="mode === 'login'"
+            @click="show('login')"
+          >
+            <text>登录</text>
+          </view>
+          <view
+            class="ui-seg-item"
+            :class="{ active: mode === 'register', 'is-disabled': pending }"
+            role="tab"
+            :aria-selected="mode === 'register'"
+            @click="show('register')"
+          >
+            <text>注册</text>
+          </view>
+        </view>
+        <view v-else class="reset-header">
+          <view class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
+            <LineIcon name="back" size="16px" color="var(--text-primary)" />
+          </view>
+          <text class="form-heading">重置密码</text>
+        </view>
 
-      <view class="auth-actions">
-        <button v-if="mode === 'login'" class="switch-mode" :disabled="pending" @click="show('register')">创建账号</button>
-        <button v-if="mode === 'login'" class="switch-mode" :disabled="pending" @click="show('reset')">忘记密码？</button>
-        <button v-else class="switch-mode" :disabled="pending" @click="show('login')">返回登录</button>
+        <view class="form-stack">
+          <input
+            v-if="mode !== 'reset'"
+            class="ui-input"
+            v-model="form.username"
+            :maxlength="mode === 'login' ? 254 : 64"
+            :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
+            :disabled="pending"
+            @confirm="submit"
+          />
+
+          <template v-if="mode !== 'login'">
+            <input
+              class="ui-input"
+              v-model="form.email"
+              :maxlength="254"
+              placeholder="邮箱"
+              :disabled="pending"
+              @confirm="submit"
+            />
+            <view class="code-field">
+              <input
+                class="code-input"
+                v-model="form.emailCode"
+                type="number"
+                :maxlength="6"
+                placeholder="验证码"
+                :disabled="pending"
+                @confirm="submit"
+              />
+              <button
+                class="code-button"
+                :loading="sending"
+                :disabled="sendDisabled"
+                @click="sendCode"
+              >
+                {{ sending ? '发送中' : sendLabel }}
+              </button>
+            </view>
+          </template>
+
+          <input
+            class="ui-input"
+            v-model="form.password"
+            password
+            :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
+            :disabled="pending"
+            @confirm="submit"
+          />
+
+          <input
+            v-if="mode !== 'login'"
+            class="ui-input"
+            v-model="form.confirmPassword"
+            password
+            placeholder="确认密码"
+            :disabled="pending"
+            @confirm="submit"
+          />
+        </view>
+
+        <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
+
+        <button class="submit-btn" role="button" :loading="submitting" :disabled="pending" @click="submit">
+          {{ actionLabel }}
+        </button>
+
+        <view v-if="mode === 'login'" class="auth-footer">
+          <text class="link-btn" role="button" @click="show('reset')">忘记密码</text>
+        </view>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import BrandLogo from '@/components/BrandLogo.vue'
+import LineIcon from '@/components/LineIcon.vue'
 import { useAuthForm } from '@/composables/useAuthForm'
+import { useAuthStore } from '@/store/useAuthStore'
 
+const authStore = useAuthStore()
 const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
   = useAuthForm('/pages/mobile/home/index')
+
+function redirectIfAuthenticated() {
+  if (authStore.isAuthenticated) {
+    uni.reLaunch({ url: '/pages/mobile/home/index' })
+  }
+}
+
+onMounted(redirectIfAuthenticated)
+onShow(redirectIfAuthenticated)
 </script>
 
-<style scoped lang="scss">
-.login-container {
+<style scoped>
+.login-viewport {
+  min-height: 100vh;
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
+  display: flex;
+  justify-content: center;
+}
+
+.login-page {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 40px 20px;
-  background-color: var(--bg-color, #f3f4f6);
+  padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
+  background-color: transparent;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
-.logo-area {
-  text-align: center;
-  margin-bottom: 60px;
-  
-  .title {
-    font-size: 32px;
-    font-weight: bold;
-    color: var(--text-primary);
-    display: block;
-    margin-bottom: 10px;
-  }
-  
-  .subtitle {
-    font-size: 14px;
-    color: #6b7280;
-  }
+.side-shape {
+  position: absolute;
+  bottom: -70px;
+  right: -70px;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(139, 154, 110, 0.34) 0%, transparent 72%);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
-.form-area {
-  background: white;
-  padding: 30px 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+.login-inner {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+  animation: uiFadeUp 0.36s var(--ease-out) both;
 }
 
-.input-box {
-  height: 48px;
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 20px;
-  font-size: 16px;
+.brand-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 32px;
 }
 
-.form-heading,
-.auth-feedback {
-  display: block;
-  margin-bottom: 12px;
+.brand-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.mode-switch {
+  margin-bottom: 22px;
+}
+
+.ui-seg-item.is-disabled {
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.reset-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
 }
 
 .form-heading {
+  font-size: 20px;
+  font-weight: var(--font-weight-bold);
   color: var(--text-primary);
-  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.auth-feedback {
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.code-row,
-.auth-actions {
+.form-stack {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
 }
+
+.code-field {
+  height: 42px;
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
+  border-radius: 12px;
+  padding: 0 6px 0 14px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* #ifdef H5 */
+.code-field:focus-within {
+  border-color: var(--color-zen-sage);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+}
+/* #endif */
 
 .code-input {
   flex: 1;
   min-width: 0;
-}
-
-.code-button {
-  margin: 0;
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-size: 14px;
-}
-
-.auth-actions {
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.auth-actions .switch-mode {
-  border: none;
+  height: 100%;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
   background: transparent;
 }
 
-.auth-actions .switch-mode::after {
-  border: none;
+.code-button {
+  flex-shrink: 0;
+  padding: 0 12px;
+  height: 28px;
+  line-height: 28px;
+  margin: 0;
+  background: transparent;
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0;
+  font-size: 12.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.code-button[disabled] {
+  color: var(--text-muted);
+}
+
+.auth-feedback {
+  display: block;
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background-color: var(--color-sage-bg);
+  color: var(--color-sage-ink);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
 }
 
 .submit-btn {
-  background: var(--text-primary);
-  color: var(--color-bg-primary);
-  border-radius: 8px;
-  height: 48px;
-  line-height: 48px;
-  margin-top: 20px;
-  font-size: 16px;
-  border: none;
+  margin: 20px 0 0;
+  padding: 0;
+  width: 100%;
+  height: 44px;
+  line-height: 44px;
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  border-radius: 12px;
+  font-size: 14.5px;
+  font-weight: var(--font-weight-semibold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.26);
+  transition: transform 0.16s var(--ease-out), box-shadow 0.18s ease;
 }
 
-.switch-mode {
-  text-align: center;
-  margin-top: 20px;
-  font-size: 14px;
-  color: var(--text-accent);
+.submit-btn:active {
+  transform: scale(0.98);
 }
 
-/* Dark mode basic support */
-html.dark {
-  .form-area { background: #1f2937; }
-  .input-box { border-bottom-color: #374151; color: white; }
+.submit-btn[disabled] {
+  opacity: 0.48;
 }
+
+.auth-footer {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.link-btn {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+/* #ifdef H5 */
+.login-viewport,
+.login-page {
+  min-height: 100dvh;
+}
+
+@media (min-width: 540px) {
+  .login-page {
+    background-color: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-left: 1px solid var(--glass-border);
+    border-right: 1px solid var(--glass-border);
+    box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
+  }
+}
+/* #endif */
 </style>

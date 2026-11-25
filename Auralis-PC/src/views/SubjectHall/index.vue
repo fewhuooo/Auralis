@@ -54,10 +54,9 @@
         >
           <div class="subject-card-header">
             <div class="subject-card-icon" aria-hidden="true">
-              <ElIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :size="24">
+              <ElIcon :size="24">
                 <component :is="getSubjectIconComponent(subj.icon)" />
               </ElIcon>
-              <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
             </div>
             <div class="subject-card-actions" @click.stop>
               <button
@@ -181,7 +180,7 @@ import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import { useStatsStore } from '@/store/useStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import SubjectCreateModal from '@/components/subject/SubjectCreateModal.vue'
-import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import { getSubjectIconComponent } from '@/utils/subjectIcon'
 
 const router = useRouter()
 const subjectStore = useSubjectStore()
@@ -225,83 +224,54 @@ const filteredSubjects = computed(() => {
   )
 })
 
-const getSubjectProportions = (subj: any): SubjectMasteryStats => {
+const getSubjectProportions = (subj: Subject): SubjectMasteryStats => {
   if (subj?.id && subjectMasteryMap.value[subj.id]) {
     return subjectMasteryMap.value[subj.id]
   }
   return defaultMasteryStats
 }
 
-const getMasteryPercent = (subj: any): number => {
+const getMasteryPercent = (subj: Subject): number => {
   return getSubjectProportions(subj).masteredPercent
 }
 
 let isLoadingMastery = false
 let masteryPending = false
+let masteryGeneration = 0
+let disposed = false
 
 const loadSubjectMasteryData = async () => {
+  const generation = ++masteryGeneration
   const list = subjectStore.subjects
-  if (!list || list.length === 0) return
+  if (disposed) return
+  if (list.length === 0) {
+    subjectMasteryMap.value = {}
+    return
+  }
   if (isLoadingMastery) {
     masteryPending = true
     return
   }
   isLoadingMastery = true
   try {
+    const loginGeneration = authStore.loginGeneration
     const userId = authStore.user?.id
     const deviceId = authStore.serverDeviceId
     if (!userId || !deviceId || !authStore.isAuthenticated) {
       return
     }
 
-    const { localDb, getLocalRepository, getLocalSqlDatabase } = await import('@/services/localDb')
-    await localDb.init()
-    const repo = await getLocalRepository(userId, deviceId)
-    const db = getLocalSqlDatabase()
-
-    // 1. Fetch active knowledge blocks across all subjects in a single query
-    const blockRows = await repo.list<{ subjectId?: string; subject_id?: string }>('KNOWLEDGE_BLOCK', { includeDeleted: false })
-
-    // 2. Fetch review records across all subjects in a single query
-    let reviewRows: Array<{ knowledge_block_id: string; state_json: string | null }> = []
-    if (db === 'localstorage') {
-      const storageKey = `auralis:v2:${encodeURIComponent(userId).replace(/%/g, '_')}:${encodeURIComponent(deviceId).replace(/%/g, '_')}:review-store`
-      try {
-        const raw = localStorage.getItem(storageKey)
-        if (raw) {
-          const parsed = JSON.parse(raw)
-          reviewRows = (parsed.records || []).map((r: any) => ({
-            knowledge_block_id: r.knowledgeBlockId,
-            state_json: r.state ? JSON.stringify(r.state) : null,
-          }))
-        }
-      } catch {
-        // fallback
-      }
-    } else {
-      try {
-        reviewRows = await db.select(
-          `SELECT knowledge_block_id, state_json FROM local_review_records WHERE user_id = ? AND device_id = ?`,
-          [userId, deviceId]
-        )
-      } catch {
-        // table query fallback
-      }
-    }
-
-    const stateMap = new Map<string, { needsLearning?: boolean; mastered?: boolean }>()
-    for (const row of reviewRows) {
-      if (row.state_json) {
-        try {
-          const parsed = JSON.parse(row.state_json)
-          if (parsed && typeof parsed === 'object') {
-            stateMap.set(row.knowledge_block_id, parsed)
-          }
-        } catch {
-          // ignore parse errors
-        }
-      }
-    }
+    const [{ localDb, getLocalRepository }, { ReviewRepository }] = await Promise.all([
+      import('@/services/localDb'),
+      import('@/services/reviewRepository'),
+    ])
+    const [db, repo] = await Promise.all([localDb.init(), getLocalRepository(userId, deviceId)])
+    const reviewRepository = new ReviewRepository(db, repo)
+    const [blockRows, subjectRecords] = await Promise.all([
+      repo.list<{ subjectId: string }>('KNOWLEDGE_BLOCK', { includeDeleted: false }),
+      Promise.all(list.map(subject => reviewRepository.getSubjectRecords(userId, deviceId, subject.id))),
+    ])
+    const stateMap = new Map(subjectRecords.flat().map(record => [record.knowledgeBlockId, record.state]))
 
     // 3. Count in-memory in one fast O(N) pass
     const subjectStatsMap: Record<string, { pending: number; reviewing: number; mastered: number; total: number }> = {}
@@ -310,7 +280,7 @@ const loadSubjectMasteryData = async () => {
     }
 
     for (const row of blockRows) {
-      const subjId = row.value?.subjectId || row.value?.subject_id
+      const subjId = row.value.subjectId
       if (!subjId || !subjectStatsMap[subjId]) continue
       const target = subjectStatsMap[subjId]
       target.total += 1
@@ -347,6 +317,9 @@ const loadSubjectMasteryData = async () => {
         total,
       }
     }
+    if (disposed || generation !== masteryGeneration || loginGeneration !== authStore.loginGeneration
+      || userId !== authStore.user?.id || deviceId !== authStore.serverDeviceId
+      || !authStore.isAuthenticated || list !== subjectStore.subjects) return
     subjectMasteryMap.value = nextMap
   } catch (e) {
     console.error('Failed to load subject mastery:', e)
@@ -369,12 +342,14 @@ const handleReviewUpdated = (event: Event) => {
 }
 
 onMounted(async () => {
+  window.addEventListener('local-review-updated', handleReviewUpdated)
   await subjectStore.loadSubjects()
   await loadSubjectMasteryData()
-  window.addEventListener('local-review-updated', handleReviewUpdated)
 })
 
 onUnmounted(() => {
+  disposed = true
+  masteryGeneration += 1
   window.removeEventListener('local-review-updated', handleReviewUpdated)
 })
 
@@ -384,6 +359,14 @@ watch(
     void loadSubjectMasteryData()
   },
   { deep: false }
+)
+
+watch(
+  () => [authStore.loginGeneration, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    subjectMasteryMap.value = {}
+    void loadSubjectMasteryData()
+  },
 )
 
 const openCreateSubject = (subject: Subject | null) => {

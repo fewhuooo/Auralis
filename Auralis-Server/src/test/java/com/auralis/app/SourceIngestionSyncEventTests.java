@@ -33,7 +33,6 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.UUID;
 import java.util.List;
 import java.time.Instant;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -140,7 +139,7 @@ class SourceIngestionSyncEventTests {
                     sourceType == SourceType.URL ? "https://example.com/restore" : null,
                     sourceType == SourceType.TEXT ? "body " + status : null, null));
             if (status != SourceIngestionStatus.PENDING) {
-                source = sourceService.markParsing(owner.user().id(), source.id());
+                source = sourceService.markParsingIfRevision(owner.user().id(), source.id(), source.ingestionRevision()).orElseThrow();
             }
             if (status == SourceIngestionStatus.INDEXING) {
                 source = sourceService.markIndexing(owner.user().id(), source.id());
@@ -184,9 +183,13 @@ class SourceIngestionSyncEventTests {
             SourceView source = sourceService.create(owner.user().id(), new SourceCommand(
                     subject.id(), SourceType.TEXT, "Restore " + terminalStatus, null, null,
                     "body " + terminalStatus, null));
-            source = terminalStatus == SourceIngestionStatus.READY
-                    ? sourceService.markReady(owner.user().id(), source.id())
-                    : sourceService.markFailed(owner.user().id(), source.id(), "INGESTION_FAILED", "explicit failure");
+            if (terminalStatus == SourceIngestionStatus.READY) {
+                assertThat(sourceService.markReadyIfRevision(owner.user().id(), source.id(), source.ingestionRevision())).isTrue();
+            } else {
+                assertThat(sourceService.markFailedIfRevision(owner.user().id(), source.id(), source.ingestionRevision(),
+                        "INGESTION_FAILED", "explicit failure")).isTrue();
+            }
+            source = sourceService.get(owner.user().id(), source.id());
             UUID sourceId = source.id();
             UUID revision = source.ingestionRevision();
             sourceService.delete(owner.user().id(), sourceId, source.version());
@@ -222,30 +225,31 @@ class SourceIngestionSyncEventTests {
                 subject.id(), SourceType.TEXT, "sync source", null, null, "body", null));
 
         assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.PARSING,
-                null, null, () -> sourceService.markParsing(owner.user().id(), source.id()));
+                null, null, () -> sourceService.markParsingIfRevision(owner.user().id(), source.id(), source.ingestionRevision()).orElseThrow());
         assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.PENDING,
-                null, null, () -> sourceService.markPending(owner.user().id(), source.id()));
+                null, null, () -> sourceService.markPendingIfRevision(owner.user().id(), source.id(), source.ingestionRevision()));
         assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.INDEXING,
                 null, null, () -> sourceService.markIndexing(owner.user().id(), source.id()));
         assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.READY,
-                null, null, () -> sourceService.markReady(owner.user().id(), source.id()));
+                null, null, () -> sourceService.markReadyIfRevision(owner.user().id(), source.id(), source.ingestionRevision()));
         assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.FAILED,
                 "INGESTION_FAILED", "first failure",
-                () -> sourceService.markFailed(owner.user().id(), source.id(),
+                () -> sourceService.markFailedIfRevision(owner.user().id(), source.id(), source.ingestionRevision(),
                         "INGESTION_FAILED", "first failure"));
         assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.FAILED,
                 "MODEL_UNAVAILABLE", "first failure",
-                () -> sourceService.markFailed(owner.user().id(), source.id(),
+                () -> sourceService.markFailedIfRevision(owner.user().id(), source.id(), source.ingestionRevision(),
                         "MODEL_UNAVAILABLE", "first failure"));
         SourceView lastChanged = assertTransition(owner.user().id(), source.id(), SourceIngestionStatus.FAILED,
                 "MODEL_UNAVAILABLE", "provider unavailable",
-                () -> sourceService.markFailed(owner.user().id(), source.id(),
+                () -> sourceService.markFailedIfRevision(owner.user().id(), source.id(), source.ingestionRevision(),
                         "MODEL_UNAVAILABLE", "provider unavailable"));
 
         long noOpCursor = changeLogService.latestCursor(owner.user().id()).value();
         var noOpUpdatedAt = sourceService.get(owner.user().id(), source.id()).updatedAt();
-        SourceView noOp = sourceService.markFailed(owner.user().id(), source.id(),
-                "MODEL_UNAVAILABLE", "provider unavailable");
+        assertThat(sourceService.markFailedIfRevision(owner.user().id(), source.id(), source.ingestionRevision(),
+                "MODEL_UNAVAILABLE", "provider unavailable")).isTrue();
+        SourceView noOp = sourceService.get(owner.user().id(), source.id());
 
         assertThat(noOp.version()).isEqualTo(lastChanged.version());
         assertThat(noOp.updatedAt()).isEqualTo(noOpUpdatedAt);
@@ -261,17 +265,11 @@ class SourceIngestionSyncEventTests {
             SourceIngestionStatus expectedStatus,
             String expectedErrorCode,
             String expectedErrorDetail,
-            Supplier<SourceView> transition) {
+            Runnable transition) {
         long baselineCursor = changeLogService.latestCursor(userId).value();
 
-        SourceView returned = transition.get();
+        transition.run();
         SourceView persisted = sourceService.get(userId, sourceId);
-
-        assertThat(returned.id()).isEqualTo(persisted.id());
-        assertThat(returned.version()).isEqualTo(persisted.version());
-        assertThat(returned.ingestionStatus()).isEqualTo(persisted.ingestionStatus());
-        assertThat(returned.safeErrorCode()).isEqualTo(persisted.safeErrorCode());
-        assertThat(returned.safeErrorDetail()).isEqualTo(persisted.safeErrorDetail());
         assertThat(persisted.ingestionStatus()).isEqualTo(expectedStatus);
         assertThat(persisted.safeErrorCode()).isEqualTo(expectedErrorCode);
         assertThat(persisted.safeErrorDetail()).isEqualTo(expectedErrorDetail);
@@ -284,7 +282,10 @@ class SourceIngestionSyncEventTests {
                     assertThat(change.mutationType()).isEqualTo(SyncMutationType.UPDATE);
                     assertThat(change.version()).isEqualTo(persisted.version());
                     try {
-                        assertThat(change.payload()).isEqualTo(objectMapper.writeValueAsString(returned));
+                        SourceView published = objectMapper.readValue(change.payload(), SourceView.class);
+                        assertThat(published).usingRecursiveComparison().ignoringFields("updatedAt").isEqualTo(persisted);
+                        assertThat(published.updatedAt()).isCloseTo(persisted.updatedAt(),
+                                org.assertj.core.api.Assertions.within(1, java.time.temporal.ChronoUnit.MICROS));
                     } catch (Exception exception) {
                         throw new AssertionError("Source change payload must be valid JSON", exception);
                     }

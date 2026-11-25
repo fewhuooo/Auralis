@@ -232,12 +232,35 @@ export function autoCloseMarkdown(text: string): string {
  * 配合 CSS 动画实现水墨淡入过渡，消除纯黑边缘的锐利顿挫感
  */
 export function wrapTrailingToken(html: string): string {
-  const match = /([^<>\s]{1,4})(\s*(?:<\/[a-zA-Z0-9]+>\s*)*\s*)$/.exec(html)
-  if (!match) return html
-  const startIdx = match.index
-  const chars = match[1]
-  const rest = match[2]
-  return html.slice(0, startIdx) + '<span class="token-fade">' + chars + '</span>' + rest
+  const closeMatch = /(\s*(?:<\/[a-zA-Z0-9]+>\s*)*\s*)$/.exec(html)
+  const rest = closeMatch ? closeMatch[1] : ''
+  const body = html.slice(0, html.length - rest.length)
+  if (!body || body.endsWith('>')) return html
+
+  const entityMatch = /(&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);)$/.exec(body)
+  if (entityMatch) {
+    const startIdx = body.length - entityMatch[1].length
+    return body.slice(0, startIdx) + '<span class="token-fade">' + entityMatch[1] + '</span>' + rest
+  }
+
+  const charMatch = /([^<>\s]{1,4})$/.exec(body)
+  if (!charMatch) return html
+  let startIdx = body.length - charMatch[1].length
+  const windowBase = Math.max(0, body.length - 16)
+  const windowText = body.slice(windowBase)
+  const entityRegex = /&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);/g
+  let scan = entityRegex.exec(windowText)
+  while (scan) {
+    const absStart = windowBase + scan.index
+    const absEnd = absStart + scan[0].length
+    if (absStart < startIdx && absEnd > startIdx) {
+      startIdx = absEnd
+    }
+    scan = entityRegex.exec(windowText)
+  }
+  const chars = body.slice(startIdx)
+  if (!chars || chars.includes('<') || chars.includes('>')) return html
+  return body.slice(0, startIdx) + '<span class="token-fade">' + chars + '</span>' + rest
 }
 
 /**
@@ -264,18 +287,154 @@ function sanitizeHtml(dirtyHtml: string): string {
   return dirtyHtml
 }
 
+export interface StreamingBlockDraft {
+  kind: 'math' | 'table'
+  raw: string
+}
+
+function maskCodeRegionsPreservingOffsets(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/[^\n]/g, ' '))
+    .replace(/`[^`\n]*`/g, (span) => ' '.repeat(span.length))
+}
+
+/**
+ * 块级复杂结构延迟挂载判定：
+ * 当跨行表格或块级 LaTeX 公式（$$...$$ / \[...\]）在流式过程中尚未闭合时，
+ * 将其从正式 Markdown 解析前缀中拆出，固定展示于等高浅灰草稿容器中，闭合瞬间整块替换。
+ */
+export function extractStreamingBlockDraft(text: string): {
+  stablePrefix: string
+  draft: StreamingBlockDraft | null
+} {
+  if (!text) return { stablePrefix: '', draft: null }
+
+  const codeFenceMatches = text.match(/```/g)
+  if (codeFenceMatches && codeFenceMatches.length % 2 !== 0) {
+    return { stablePrefix: text, draft: null }
+  }
+
+  const masked = maskCodeRegionsPreservingOffsets(text)
+
+  const doubleDollarMatches = masked.match(/\$\$/g)
+  if (doubleDollarMatches && doubleDollarMatches.length % 2 !== 0) {
+    const idx = masked.lastIndexOf('$$')
+    if (idx >= 0) {
+      return {
+        stablePrefix: text.slice(0, idx),
+        draft: { kind: 'math', raw: text.slice(idx) },
+      }
+    }
+  }
+
+  const openBracketCount = (masked.match(/\\\[/g) || []).length
+  const closeBracketCount = (masked.match(/\\\]/g) || []).length
+  if (openBracketCount > closeBracketCount) {
+    const idx = masked.lastIndexOf('\\[')
+    if (idx >= 0) {
+      return {
+        stablePrefix: text.slice(0, idx),
+        draft: { kind: 'math', raw: text.slice(idx) },
+      }
+    }
+  }
+
+  if (!/\r?\n[ \t]*\r?\n[ \t]*$/.test(masked)) {
+    let paraStart = 0
+    const paraBreakRegex = /\r?\n[ \t]*\r?\n/g
+    let breakMatch = paraBreakRegex.exec(masked)
+    while (breakMatch) {
+      paraStart = breakMatch.index + breakMatch[0].length
+      breakMatch = paraBreakRegex.exec(masked)
+    }
+
+    const lines: Array<{ start: number; trimmed: string }> = []
+    let cursor = paraStart
+    const segment = masked.slice(paraStart)
+    for (const rawLine of segment.split('\n')) {
+      lines.push({ start: cursor, trimmed: rawLine.trim() })
+      cursor += rawLine.length + 1
+    }
+
+    while (lines.length > 0 && lines[lines.length - 1].trimmed.length === 0) {
+      lines.pop()
+    }
+
+    if (lines.length > 0 && lines[lines.length - 1].trimmed.startsWith('|')) {
+      let tableStartIdx = lines.length - 1
+      while (tableStartIdx > 0 && lines[tableStartIdx - 1].trimmed.startsWith('|')) {
+        tableStartIdx -= 1
+      }
+      const cutAt = lines[tableStartIdx].start
+      return {
+        stablePrefix: text.slice(0, cutAt),
+        draft: { kind: 'table', raw: text.slice(cutAt) },
+      }
+    }
+  }
+
+  return { stablePrefix: text, draft: null }
+}
+
+const STREAM_CURSOR_DOT_HTML = '<span class="stream-cursor-dot" aria-hidden="true"></span>'
+
+/**
+ * 在流式 HTML 最后一个行内/文本闭合标签前注入 8px 橄榄绿半透明跟随圆点，
+ * 避免游离于块标签外造成换行跳动，也不破坏 table / KaTeX 结构。
+ */
+export function appendStreamCursorDot(html: string): string {
+  if (!html) return STREAM_CURSOR_DOT_HTML
+  const trailMatch = /((?:\s*<\/[a-zA-Z0-9]+>)+\s*)$/.exec(html)
+  if (!trailMatch) {
+    return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
+  }
+
+  const trail = trailMatch[1]
+  if (/<\/(?:table|thead|tbody|tfoot|tr|td|th|div)\s*>/i.test(trail)) {
+    return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
+  }
+
+  const closerTokenRegex = /\s*<\/([a-zA-Z0-9]+)>/g
+  let tokenMatch = closerTokenRegex.exec(trail)
+  while (tokenMatch) {
+    const tag = tokenMatch[1].toLowerCase()
+    if (tag !== 'span') {
+      const insertPos = trailMatch.index + tokenMatch.index
+      return `${html.slice(0, insertPos)}${STREAM_CURSOR_DOT_HTML}${html.slice(insertPos)}`
+    }
+    tokenMatch = closerTokenRegex.exec(trail)
+  }
+
+  return `${html.trimEnd()}${STREAM_CURSOR_DOT_HTML}`
+}
+
+function buildStreamingDraftHtml(draft: StreamingBlockDraft): string {
+  const label = draft.kind === 'math' ? '公式排版中…' : '表格生成中…'
+  return `<div class="streaming-block-draft streaming-block-draft--${draft.kind}"><div class="streaming-block-draft__label">${label}</div><pre class="streaming-block-draft__raw">${escapeHtml(draft.raw)}${STREAM_CURSOR_DOT_HTML}</pre></div>`
+}
+
 /**
  * 核心 Markdown + LaTeX 公式渲染函数
  * @param content 要渲染的 markdown 内容
- * @param isStreaming 是否处于流式生成阶段（开启未闭合语法乐观补全与末尾 Token 柔化）
+ * @param isStreaming 是否处于流式生成阶段（开启未闭合语法乐观补全、块级防抖与末尾圆点光标）
  */
 export function renderMarkdown(content?: string | null, isStreaming = false): string {
   if (!content || typeof content !== 'string') return ''
   try {
-    const prepared = isStreaming ? autoCloseMarkdown(content) : content
-    let rawHtml = marked.parse(prepared) as string
-    if (isStreaming) {
-      rawHtml = wrapTrailingToken(rawHtml)
+    if (!isStreaming) {
+      return sanitizeHtml(marked.parse(content) as string)
+    }
+    const { stablePrefix, draft } = extractStreamingBlockDraft(content)
+    let rawHtml = ''
+    if (stablePrefix) {
+      const prepared = autoCloseMarkdown(stablePrefix)
+      rawHtml = marked.parse(prepared) as string
+      if (!draft) {
+        rawHtml = appendStreamCursorDot(wrapTrailingToken(rawHtml))
+      }
+    }
+    if (draft) {
+      rawHtml += buildStreamingDraftHtml(draft)
     }
     return sanitizeHtml(rawHtml)
   } catch (err) {

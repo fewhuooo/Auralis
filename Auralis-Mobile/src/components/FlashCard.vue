@@ -1,37 +1,54 @@
 <template>
-  <view class="flash-card-container" @click="handleFlip">
-    <view class="flash-card" :class="{ 'is-flipped': flipped }">
-      <!-- Front side -->
-      <view class="card-face card-front">
-        <view class="card-header">
-          <text class="subject-badge" :style="{ backgroundColor: badgeBg, color: badgeColor }">
-            {{ subject || '未分类' }}
-          </text>
-          <text class="state-indicator">❓ 问题</text>
-        </view>
-        <view class="card-body">
-          <text class="card-text front-text">{{ front }}</text>
-        </view>
-        <view class="card-footer">
-          <text class="hint-text">点击翻看答案</text>
-        </view>
-      </view>
+  <view class="flash-card-stage" :class="{ 'has-deck': hasNext && showDeck !== false }">
+    <view v-if="hasNext && showDeck !== false" class="deck-underlay" aria-hidden="true"></view>
 
-      <!-- Back side -->
-      <view class="card-face card-back">
-        <view class="card-header">
-          <text class="subject-badge" :style="{ backgroundColor: badgeBg, color: badgeColor }">
-            {{ subject || '未分类' }}
-          </text>
-          <text class="state-indicator success">💡 答案</text>
+    <view
+      class="flash-card-container"
+      role="button"
+      :aria-label="flipped ? '切换回题目' : '翻看答案'"
+      @click="handleCardClick"
+    >
+      <view class="flash-card" :class="{ 'is-flipped': flipped }">
+        <view class="card-face zen-card front-face">
+          <view class="card-header">
+            <view class="card-header-meta">
+              <text class="subject-caption">{{ subject || '通用' }}</text>
+              <text v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</text>
+            </view>
+            <LineIcon name="rotate" size="15px" color="var(--text-muted)" />
+          </view>
+
+          <view class="card-front-body">
+            <text class="front-text">{{ front }}</text>
+          </view>
+
+          <view class="card-footer">
+            <text class="hint-text">轻触卡片翻看答案</text>
+          </view>
         </view>
-        <scroll-view scroll-y class="card-body scrollable" @click.stop>
-          <text class="card-text back-text">{{ back }}</text>
-        </scroll-view>
-        <view class="card-footer gestures-footer">
-          <text class="gesture-hint"><text class="icon">↑</text> 上滑掌握</text>
-          <text class="gesture-divider">|</text>
-          <text class="gesture-hint"><text class="icon">↓</text> 下滑重温</text>
+
+        <view class="card-face zen-card back-face">
+          <view class="card-header" @click.stop="handleHeaderClick">
+            <view class="card-header-meta">
+              <text class="subject-caption active">{{ subject || '通用' }}</text>
+              <text v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</text>
+            </view>
+            <LineIcon name="rotate" size="15px" color="var(--color-sage-ink)" />
+          </view>
+
+          <view class="question-recap">
+            <text class="recap-label">{{ front }}</text>
+          </view>
+
+          <scroll-view scroll-y :show-scrollbar="false" class="card-back-scroll" @click.stop>
+            <view class="answer-prose">
+              <MarkdownText :content="back" />
+            </view>
+          </scroll-view>
+
+          <view class="card-footer" @click.stop="handleHeaderClick">
+            <text class="hint-text">轻触顶栏切回题目</text>
+          </view>
         </view>
       </view>
     </view>
@@ -39,169 +56,227 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import LineIcon from '@/components/LineIcon.vue'
+import MarkdownText from '@/components/MarkdownText.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   front: string
   back: string
   subject?: string
-  color?: string
+  statusTag?: string
+  statusTone?: 'warning' | 'sage'
   flipped: boolean
-}>()
+  hasNext?: boolean
+  showDeck?: boolean
+  suppressFlip?: boolean
+}>(), {
+  statusTag: '',
+  statusTone: 'warning',
+  showDeck: true,
+  suppressFlip: false,
+})
 
 const emit = defineEmits<{
-  (e: 'update:flipped', val: boolean): void
+  (event: 'update:flipped', val: boolean): void
 }>()
 
-const handleFlip = () => {
+function toggleFlip() {
+  if (props.suppressFlip) return
   emit('update:flipped', !props.flipped)
 }
 
-// Generate a soft background color for the subject badge
-const badgeBg = computed(() => {
-  if (!props.color) return 'rgba(0, 0, 0, 0.05)'
-  // If it's a hex color, we can add some transparency or use it
-  return props.color + '15' // Approx 8% opacity in hex
-})
+function handleCardClick() {
+  toggleFlip()
+}
 
-const badgeColor = computed(() => {
-  return props.color || 'var(--text-secondary)'
-})
+function handleHeaderClick() {
+  toggleFlip()
+}
 </script>
 
 <style scoped>
-.flash-card-container {
+.flash-card-stage {
+  position: relative;
   width: 100%;
   height: 100%;
-  perspective: 1500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.flash-card-stage.has-deck {
+  padding-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.deck-underlay {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 28px;
+  border-radius: 16px;
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.flash-card-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  flex: 1;
+  min-height: 280px;
+  perspective: 1400px;
   cursor: pointer;
+  display: flex;
 }
 
 .flash-card {
-  width: 100%;
-  height: 100%;
   position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 280px;
   transform-style: preserve-3d;
-  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.56s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .flash-card.is-flipped {
   transform: rotateY(180deg);
 }
 
+.flash-card.is-flipped .front-face {
+  pointer-events: none;
+}
+
+.flash-card:not(.is-flipped) .back-face {
+  pointer-events: none;
+}
+
 .card-face {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  backface-visibility: hidden;
-  border-radius: var(--radius-lg);
-  padding: 48rpx;
+  inset: 0;
+  padding: 22px 24px;
+  border-radius: 22px;
+  box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.055), 0 12px 30px rgba(45, 55, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.88);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  background: var(--color-zen-white);
-  border: 1px solid var(--color-zen-hairline);
-  box-shadow: none;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.card-front {
+.front-face {
   z-index: 2;
 }
 
-.card-back {
+.back-face {
   transform: rotateY(180deg);
+  border-color: var(--glass-border);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), 0 12px 30px rgba(45, 55, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30rpx;
+  flex-shrink: 0;
 }
 
-.subject-badge {
-  font-size: 24rpx;
-  font-weight: 600;
-  padding: 8rpx 20rpx;
-  border-radius: 30rpx;
+.card-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.state-indicator {
-  font-size: 24rpx;
-  color: var(--color-zen-stone);
-  font-weight: 500;
+.status-tag {
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-warning-ink);
+  background-color: var(--color-warning-bg);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
 }
 
-.state-indicator.success {
-  color: var(--color-zen-sage);
-  font-weight: 600;
+.status-tag.sage {
+  color: var(--color-sage-ink);
+  background-color: var(--color-sage-bg);
 }
 
-.card-body {
+.subject-caption {
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.subject-caption.active {
+  color: var(--color-sage-ink);
+}
+
+.card-front-body {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  margin: 20rpx 0;
-}
-
-.card-body.scrollable {
-  display: block;
-  text-align: left;
-}
-
-.card-text {
-  color: var(--color-zen-graphite);
-  line-height: 1.6;
-  word-break: break-all;
+  padding: 24px 8px;
 }
 
 .front-text {
-  font-size: 38rpx;
-  font-weight: 700;
+  max-width: 28ch;
+  font-size: clamp(21px, 3vw, 27px);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
   text-align: center;
+  line-height: 1.42;
+  letter-spacing: -0.025em;
+  word-break: break-word;
 }
 
-.back-text {
-  font-size: 30rpx;
-  font-weight: 400;
-  white-space: pre-wrap;
+.question-recap {
+  margin-top: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.recap-label {
+  font-size: 16px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  line-height: 1.45;
+  letter-spacing: -0.015em;
+}
+
+.card-back-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+  margin-top: 14px;
+  touch-action: pan-y;
+}
+
+.answer-prose {
+  padding-bottom: 8px;
 }
 
 .card-footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
   display: flex;
-  justify-content: center;
   align-items: center;
-  padding-top: 24rpx;
-  border-top: 1px solid var(--color-zen-hairline);
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .hint-text {
-  font-size: 24rpx;
-  color: var(--color-zen-stone);
-  letter-spacing: 1rpx;
-}
-
-.gestures-footer {
-  gap: 20rpx;
-}
-
-.gesture-hint {
-  font-size: 22rpx;
-  color: var(--color-zen-stone);
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 4rpx;
-}
-
-.gesture-hint .icon {
-  font-weight: bold;
-  color: var(--color-zen-graphite);
-}
-
-.gesture-divider {
-  font-size: 20rpx;
-  color: var(--color-zen-hairline);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
 }
 </style>

@@ -51,16 +51,6 @@ public class ReviewStateEntity {
         this.updatedAt = this.createdAt;
     }
 
-    public void apply(double difficulty, double stability, Instant dueAt, Instant reviewedAt, int reps, int lapses) {
-        this.difficulty = difficulty;
-        this.stability = stability;
-        this.dueAt = dueAt;
-        this.lastReviewedAt = reviewedAt;
-        this.reps = reps;
-        this.lapses = lapses;
-        this.updatedAt = Instant.now();
-    }
-
     public void applyLifecycle(double stability, Instant dueAt, Instant practiceAt,
                                boolean needsLearning, boolean mastered, int stableSuccessCount,
                                String nextReviewStage, UUID lastReviewId, UUID pendingReviewId,

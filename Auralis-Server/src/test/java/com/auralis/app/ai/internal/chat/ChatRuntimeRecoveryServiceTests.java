@@ -1,6 +1,5 @@
 package com.auralis.app.ai.internal.chat;
 
-import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.internal.persistence.ChatActivityRepository;
 import com.auralis.app.ai.internal.persistence.ChatAttemptEntity;
 import com.auralis.app.ai.internal.persistence.ChatAttemptRepository;
@@ -58,8 +57,7 @@ class ChatRuntimeRecoveryServiceTests {
         conversationId = UUID.randomUUID();
         runId = UUID.randomUUID();
         attemptId = UUID.randomUUID();
-        conversation = new ConversationEntity(conversationId, userId, "Chat", null,
-                ConversationPurpose.GENERAL, null);
+        conversation = new ConversationEntity(conversationId, userId, "Chat", null);
         conversation.enableChatProtocolOne();
         long fence = conversation.reserveChatRun(runId);
         run = new ChatRunEntity(runId, userId, conversationId, "request-1", "hash",

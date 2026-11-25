@@ -12,9 +12,7 @@ springdoc:
     enabled: false
 
 auralis:
-  environment: prod
   api:
-    public-base-url: ${AURALIS_PUBLIC_BASE_URL}
     allowed-origins: ${AURALIS_CORS_ALLOWED_ORIGINS}
   upload:
     max-file-size-bytes: ${AURALIS_UPLOAD_MAX_FILE_SIZE_BYTES}

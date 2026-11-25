@@ -18,6 +18,6 @@
 
 先阅读 [AGENTS.md](AGENTS.md) 和[编码前协议](docs/agent/BeforeCoding.md)，再按目标进入 [PC](docs/modules/FrontendPC.md)、[Mobile / Tablet](docs/modules/FrontendMobileTablet.md)或[后端](docs/modules/Backend.md)。
 
-环境配置与启动步骤见[部署指南](docs/operations/Deployment.md)，常见故障见[排障手册](docs/operations/Runbook.md)。目录用途与本机数据边界见[项目总览](docs/project/Overview.md)。
+环境配置与启动步骤见[部署指南](docs/operations/Deployment.md)，常见故障见[排障手册](docs/operations/Runbook.md)。目录用途与本机数据边界见[项目总览](docs/project/Overview.md)，客户端使用说明见[用户手册](docs/project/UserManual.md)。
 
 本页是仓库导航，现行文档统一由 docs/README.md 索引。验证结果和待验收范围以当前状态、问题登记为准。

@@ -31,16 +31,16 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         Clock clock = Clock.systemUTC();
         var policy = limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216);
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216);
         AiUsageGuard first = guard(db, clock, policy);
         AiUsageGuard second = guard(db, clock, policy);
         var source = first.beginTask(new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "source"));
         var subject = second.beginTask(new AiTaskContext(user, AiFeature.SUBJECT_OVERVIEW, "subject"));
-        var chat = second.beginTask(new AiTaskContext(user, AiFeature.CHAT, "chat"));
+        var chat = second.beginTask(new AiTaskContext(user, AiFeature.CHAT, "chat", UUID.randomUUID()));
         var reserved = first.reserve(source, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
                 "test", AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10);
         assertThatThrownBy(() -> second.reserve(subject, AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK,
-                "test", AiCredentialSource.USER_SUPPLIED, AiOutputRole.FINAL, 10, 10))
+                "test", AiCredentialSource.USER_SUPPLIED, AiOutputRole.INTERMEDIATE, 10, 10))
                 .isInstanceOf(AiUsageLimitException.class).hasMessage("AI_CONCURRENCY_LIMIT");
         second.reserve(chat, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
                 "test", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 10);
@@ -48,14 +48,14 @@ class AiUsageLedgerBehaviorTests {
                 .isEqualTo(2);
         first.settle(source, reserved, null, false, "NOT_DISPATCHED");
         assertThat(second.reserve(subject, AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK,
-                "test", AiCredentialSource.PLATFORM, AiOutputRole.FINAL, 10, 10)).isNotNull();
+                "test", AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10)).isNotNull();
     }
 
     @Test
     void singleUserSlotStillAllowsOverview() throws Exception {
         TestDb db = database();
         AiUsageGuard guard = guard(db, Clock.systemUTC(), limits(1, 1, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
         var task = guard.beginTask(new AiTaskContext(db.user(), AiFeature.SOURCE_OVERVIEW, "single-slot"));
         assertThat(guard.reserve(task, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
                 "test", AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10)).isNotNull();
@@ -66,11 +66,11 @@ class AiUsageLedgerBehaviorTests {
         TestDb db = database();
         UUID user = db.user();
         AuralisProperties.Limits limits = limits(1, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216);
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216);
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard first = guard(db, clock, limits);
         AiUsageGuard second = guard(db, clock, limits);
-        AiTaskContext firstContext = new AiTaskContext(user, AiFeature.CHAT, "message-1");
+        AiTaskContext firstContext = new AiTaskContext(user, AiFeature.CHAT, "message-1", UUID.randomUUID());
         AiUsageGuard.TaskLease task = first.beginTask(firstContext);
         assertThatThrownBy(() -> second.beginTask(firstContext))
                 .isInstanceOf(AiUsageLimitException.class)
@@ -100,8 +100,8 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 1, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
-        AiUsageGuard.TaskLease first = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "user-active-1"));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
+        AiUsageGuard.TaskLease first = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "user-active-1", UUID.randomUUID()));
         AiUsageGuard.TaskLease second = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "user-active-2"));
         guard.reserve(first, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 0);
@@ -120,7 +120,7 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 100, 2, 24, 100, 512, 16_777_216));
+                300_000, 10_000, 100, 24, 100, 512, 16_777_216));
         AiUsageGuard.TaskLease task = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "task-budget-overview"));
         AiUsageGuard.CallReservation first = guard.reserve(
@@ -157,7 +157,7 @@ class AiUsageLedgerBehaviorTests {
         UUID thirdUser = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard seedGuard = guard(db, clock, limits(4, 4, 10_000, 20_000, 50_000,
-                300_000, 10_000, 5_000, 24, 24, 10_000, 512, 16_777_216));
+                300_000, 10_000, 5_000, 24, 10_000, 512, 16_777_216));
 
         AiUsageGuard.TaskLease completedTask = seedGuard.beginTask(
                 new AiTaskContext(firstUser, AiFeature.INGESTION, "legacy-completed-embedding"));
@@ -176,11 +176,11 @@ class AiUsageLedgerBehaviorTests {
         seedGuard.markDispatched(expiredTask, expiredEmbedding);
         clock.advanceSeconds(301);
         seedGuard.closeTask(seedGuard.beginTask(
-                new AiTaskContext(secondUser, AiFeature.CHAT, "expire-old-reservation")));
+                new AiTaskContext(secondUser, AiFeature.CHAT, "expire-old-reservation", UUID.randomUUID())));
 
         for (UUID user : List.of(firstUser, secondUser)) {
             AiUsageGuard.TaskLease chat = seedGuard.beginTask(
-                    new AiTaskContext(user, AiFeature.CHAT, "metered-chat-" + user));
+                    new AiTaskContext(user, AiFeature.CHAT, "metered-chat-" + user, UUID.randomUUID()));
             AiUsageGuard.CallReservation metered = seedGuard.reserve(chat, AiStage.CHAT_COMPLETION,
                     AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM,
                     AiOutputRole.GENERAL, 1_000, 0);
@@ -190,7 +190,7 @@ class AiUsageLedgerBehaviorTests {
         }
 
         AiUsageGuard.TaskLease reservedTask = seedGuard.beginTask(
-                new AiTaskContext(firstUser, AiFeature.CHAT, "legacy-reserved-embedding"));
+                new AiTaskContext(firstUser, AiFeature.CHAT, "legacy-reserved-embedding", UUID.randomUUID()));
         AiUsageGuard.CallReservation reservedEmbedding = seedGuard.reserve(reservedTask,
                 AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model",
                 AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 500, 0);
@@ -204,7 +204,7 @@ class AiUsageLedgerBehaviorTests {
         seedGuard.closeTask(metadataTask);
 
         AiUsageGuard quotaGuard = guard(db, clock, limits(4, 4, 1_000, 1_000, 2_000,
-                300_000, 10_000, 5_000, 24, 24, 10_000, 512, 16_777_216));
+                300_000, 10_000, 5_000, 24, 10_000, 512, 16_777_216));
 
         assertThat(db.jdbc().queryForObject("select state from ai_usage_reservations where id=?",
                 String.class, completedEmbedding.id())).isEqualTo("COMPLETED");
@@ -233,7 +233,7 @@ class AiUsageLedgerBehaviorTests {
         quotaGuard.closeTask(newIngestion);
 
         AiUsageGuard.TaskLease newRetrieval = quotaGuard.beginTask(
-                new AiTaskContext(thirdUser, AiFeature.CHAT, "new-retrieval-embedding"));
+                new AiTaskContext(thirdUser, AiFeature.CHAT, "new-retrieval-embedding", UUID.randomUUID()));
         AiUsageGuard.CallReservation retrievalEmbedding = quotaGuard.reserve(newRetrieval,
                 AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model",
                 AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 100, 0);
@@ -259,7 +259,7 @@ class AiUsageLedgerBehaviorTests {
                 Long.class, retrievalEmbedding.id())).isEqualTo(80);
 
         AiUsageGuard.TaskLease meteredTask = quotaGuard.beginTask(
-                new AiTaskContext(thirdUser, AiFeature.CHAT, "metered-chat-still-limited"));
+                new AiTaskContext(thirdUser, AiFeature.CHAT, "metered-chat-still-limited", UUID.randomUUID()));
         assertThatThrownBy(() -> quotaGuard.reserve(meteredTask, AiStage.CHAT_COMPLETION,
                 AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM,
                 AiOutputRole.GENERAL, 1, 0))
@@ -274,12 +274,12 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 1, 100, 200, 200,
-                60_000, 10_000, 5_000, 24, 24, 10_000, 512, 16_777_216));
+                60_000, 10_000, 5_000, 24, 10_000, 512, 16_777_216));
         AiTaskContext firstContext = new AiTaskContext(user, AiFeature.INGESTION, "embedding-concurrency");
         AiUsageGuard.TaskLease firstTask = guard.beginTask(firstContext);
         AiUsageGuard.CallReservation first = guard.reserve(firstTask, AiStage.INGESTION_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 50, 0);
         AiUsageGuard.TaskLease secondTask = guard.beginTask(
-                new AiTaskContext(user, AiFeature.CHAT, "other-active-request"));
+                new AiTaskContext(user, AiFeature.CHAT, "other-active-request", UUID.randomUUID()));
         assertThatThrownBy(() -> guard.reserve(secondTask, AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 1, 0))
                 .isInstanceOf(AiUsageLimitException.class)
                 .extracting(error -> ((AiUsageLimitException) error).code())
@@ -318,7 +318,7 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T23:59:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100, 50, 100,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
         AiUsageGuard.TaskLease task = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "utc-daily-overview"));
         AiUsageGuard.CallReservation first = guard.reserve(
@@ -350,7 +350,7 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 100));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 100));
         AiTaskContext context = new AiTaskContext(user, AiFeature.INGESTION, "job-generation-7");
         AiUsageGuard.TaskLease firstScope = guard.beginTask(context);
         AiUsageGuard.CallReservation first = guard.reserve(firstScope, AiStage.INGESTION_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 60, 0);
@@ -374,13 +374,13 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
-        AiTaskContext originalContext = new AiTaskContext(user, AiFeature.CHAT, "before-disable");
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
+        AiTaskContext originalContext = new AiTaskContext(user, AiFeature.CHAT, "before-disable", UUID.randomUUID());
         AiUsageGuard.TaskLease existing = guard.beginTask(originalContext);
         db.jdbc().update("update users set status='DISABLED' where id=?", user);
 
         assertThatThrownBy(() -> guard.beginTask(
-                new AiTaskContext(user, AiFeature.CHAT, "after-disable")))
+                new AiTaskContext(user, AiFeature.CHAT, "after-disable", UUID.randomUUID())))
                 .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
                 .extracting(error -> ((com.auralis.app.shared.error.DomainException) error).code())
                 .isEqualTo("UNAUTHENTICATED");
@@ -396,8 +396,8 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
-        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "message-2"));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
+        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "message-2", UUID.randomUUID()));
         AiUsageGuard.CallReservation call = guard.reserve(
                 task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 120, 4096);
         guard.markDispatched(task, call);
@@ -418,8 +418,8 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:59:59Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100, 200, 2_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
-        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "message-3"));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
+        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "message-3", UUID.randomUUID()));
         AiUsageGuard.CallReservation call = guard.reserve(
                 task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 40, 0);
         AiUsageSnapshot inFlight = guard.snapshotForUser(user);
@@ -443,7 +443,7 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00.123456789Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100, 200, 2_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
         AiUsageGuard.TaskLease task = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "fractional-overview"));
         guard.reserve(task, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, "overview-model",
@@ -465,15 +465,15 @@ class AiUsageLedgerBehaviorTests {
         MutableClock aheadClock = new MutableClock(Instant.parse("2026-10-10T10:05:00Z"));
         MutableClock localClock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AuralisProperties.Limits limits = limits(4, 2, 100, 200, 2_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216);
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216);
         AiUsageGuard ahead = guard(db, aheadClock, limits);
         AiUsageGuard local = guard(db, localClock, limits);
         AiUsageGuard.TaskLease aheadTask = ahead.beginTask(
-                new AiTaskContext(user, AiFeature.CHAT, "ahead-clock"));
+                new AiTaskContext(user, AiFeature.CHAT, "ahead-clock", UUID.randomUUID()));
         ahead.reserve(aheadTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model",
                 AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 40, 0);
         AiUsageGuard.TaskLease localTask = local.beginTask(
-                new AiTaskContext(user, AiFeature.CHAT, "local-clock"));
+                new AiTaskContext(user, AiFeature.CHAT, "local-clock", UUID.randomUUID()));
 
         assertThat(local.snapshotForUser(user).hourly().reservedTokens()).isEqualTo(40);
         assertThatThrownBy(() -> local.reserve(
@@ -490,8 +490,8 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                60_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
-        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "not-dispatched"));
+                60_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
+        AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "not-dispatched", UUID.randomUUID()));
         AiUsageGuard.CallReservation call = guard.reserve(
                 task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 100, 500);
         clock.advanceSeconds(61);
@@ -511,7 +511,7 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
         AiUsageGuard.TaskLease task = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "adaptive-budget-accounting"));
 
@@ -544,10 +544,10 @@ class AiUsageLedgerBehaviorTests {
         UUID firstUser = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AuralisProperties.Limits limits = limits(4, 2, 100, 200, 50,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216);
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216);
         AiUsageGuard guard = guard(db, clock, limits);
         AiUsageGuard.TaskLease task = guard.beginTask(
-                new AiTaskContext(firstUser, AiFeature.CHAT, "deleted-user-charge"));
+                new AiTaskContext(firstUser, AiFeature.CHAT, "deleted-user-charge", UUID.randomUUID()));
         AiUsageGuard.CallReservation call = guard.reserve(
                 task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 20, 30);
         guard.markDispatched(task, call);
@@ -556,7 +556,7 @@ class AiUsageLedgerBehaviorTests {
         db.jdbc().update("delete from users where id=?", firstUser);
         UUID secondUser = db.user();
         AiUsageGuard.TaskLease secondTask = guard.beginTask(
-                new AiTaskContext(secondUser, AiFeature.CHAT, "new-user-after-deletion"));
+                new AiTaskContext(secondUser, AiFeature.CHAT, "new-user-after-deletion", UUID.randomUUID()));
 
         assertThatThrownBy(() -> guard.reserve(secondTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 3, 0))
                 .isInstanceOf(AiUsageLimitException.class)
@@ -572,7 +572,7 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
+                300_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
         AiUsageGuard.TaskLease task = guard.beginTask(
                 new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "heartbeat-after-settle"));
         AiUsageGuard.CallReservation call = guard.reserve(task, AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK, "overview-model", AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 100, 200);
@@ -601,8 +601,8 @@ class AiUsageLedgerBehaviorTests {
         UUID user = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
         AiUsageGuard guard = guard(db, clock, limits(4, 2, 100_000, 200_000, 2_000_000,
-                60_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
-        AiTaskContext context = new AiTaskContext(user, AiFeature.CHAT, "message-4");
+                60_000, 10_000, 32_000, 24, 524_288, 512, 16_777_216));
+        AiTaskContext context = new AiTaskContext(user, AiFeature.CHAT, "message-4", UUID.randomUUID());
         AiUsageGuard.TaskLease task = guard.beginTask(context);
         AiUsageGuard.CallReservation call = guard.reserve(
                 task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 100, 500);
@@ -614,7 +614,8 @@ class AiUsageLedgerBehaviorTests {
         AiProviderUsage late = guard.settle(task, call, null, false, "late");
         AiProviderUsage duplicate = guard.settle(task, call, new AiTokenUsage(1L, 1L), true, null);
 
-        assertThat(retry.taskId()).isNotEqualTo(task.taskId());
+        assertThat(retry.taskId()).isEqualTo(task.taskId());
+        assertThat(retry.ownerId()).isNotEqualTo(task.ownerId());
         assertThat(late.chargedTokens()).isEqualTo(600);
         assertThat(duplicate.chargedTokens()).isEqualTo(600);
         assertThat(db.jdbc().queryForObject("select state from ai_usage_reservations where id=?",
@@ -643,11 +644,11 @@ class AiUsageLedgerBehaviorTests {
     private AuralisProperties.Limits limits(int globalConcurrent, int perUserConcurrent,
                                              long hourly, long daily, long globalDaily,
                                              long leaseMillis, long heartbeatMillis,
-                                             int chatCalls, int chatMaxCalls,
+                                             int chatCalls,
                                              int overviewMaxCalls, long overviewTokens,
                                              int ingestionMaxCalls, long ingestionTokens) {
         return new AuralisProperties.Limits(globalConcurrent, perUserConcurrent, hourly, daily, globalDaily,
-                leaseMillis, heartbeatMillis, 4096, chatMaxCalls, chatCalls,
+                leaseMillis, heartbeatMillis, 4096, chatCalls,
                 overviewMaxCalls, overviewTokens, ingestionMaxCalls, ingestionTokens);
     }
 

@@ -71,12 +71,6 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public List<TaskView> list(UUID userId) {
-        return taskRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
-                .stream().map(this::view).toList();
-    }
-
-    @Transactional(readOnly = true)
     public CursorPage<TaskView> list(UUID userId, String encodedCursor, int requestedLimit) {
         int limit = pageLimit(requestedLimit);
         CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
@@ -531,11 +525,6 @@ public class TaskService {
 
     private TaskEntity activeForUpdate(UUID userId, UUID id) {
         return taskRepository.findActiveForUpdate(id, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
-    }
-
-    private TaskEntity mutable(UUID userId, UUID id) {
-        return taskRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
     }
 

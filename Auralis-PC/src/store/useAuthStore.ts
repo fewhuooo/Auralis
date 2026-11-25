@@ -47,10 +47,8 @@ export const useAuthStore = defineStore(
     const sessionId = ref<string | null>(null)
     const serverDeviceId = ref<string | null>(null)
     const isHydrated = ref<boolean>(true)
-    const showAuthModal = ref(false)
     const authStatus = ref<AuthSessionStatus>('anonymous')
     const loginGeneration = ref(Symbol('auth-session'))
-    const reauthenticationReason = ref<string | null>(null)
     const avatarUrl = ref<string>('')
     let currentAvatarBlobUrl: string | null = null
     let currentAvatarUserId: string | null = null
@@ -134,8 +132,6 @@ export const useAuthStore = defineStore(
       sessionId.value = result.sessionId
       serverDeviceId.value = result.serverDeviceId ?? null
       authStatus.value = 'authenticated'
-      reauthenticationReason.value = null
-      showAuthModal.value = false
       void loadAvatar()
     }
 
@@ -151,21 +147,17 @@ export const useAuthStore = defineStore(
       sessionId.value = null
       serverDeviceId.value = null
       authStatus.value = 'anonymous'
-      reauthenticationReason.value = null
-      showAuthModal.value = false
       clearAvatarDisplay()
       if (currentUserId) void deleteAvatarCache(currentUserId)
     }
 
-    function requireReauthentication(reason = '登录会话已失效，请重新登录。'): void {
+    function requireReauthentication(): void {
       invalidateAvatarRequest()
       user.value = null
       credentials.value = { tokens: null, sessionId: null }
       sessionId.value = null
       serverDeviceId.value = null
       authStatus.value = 'reauthentication-required'
-      reauthenticationReason.value = reason
-      showAuthModal.value = true
       clearAvatarDisplay()
     }
 
@@ -346,11 +338,9 @@ export const useAuthStore = defineStore(
       refreshToken,
       username,
       isAuthenticated,
-      showAuthModal,
       authStatus,
       loginGeneration,
       requiresReauthentication,
-      reauthenticationReason,
       setSession,
       applyRefresh,
       clearSession,
@@ -386,7 +376,6 @@ export const useAuthStore = defineStore(
           sessionId: string | null
           serverDeviceId: string | null
           authStatus: AuthSessionStatus
-          reauthenticationReason: string | null
           isHydrated: boolean
           loadAvatar(): Promise<string>
         }
@@ -397,13 +386,9 @@ export const useAuthStore = defineStore(
           store.sessionId = null
           store.serverDeviceId = null
           store.authStatus = wasReauthenticationRequired ? 'reauthentication-required' : 'anonymous'
-          store.reauthenticationReason = wasReauthenticationRequired
-            ? (store.reauthenticationReason || '登录会话已失效，请重新登录。')
-            : null
         } else {
           store.sessionId = store.credentials.sessionId
           store.authStatus = 'authenticated'
-          store.reauthenticationReason = null
           void store.loadAvatar()
         }
         store.isHydrated = true

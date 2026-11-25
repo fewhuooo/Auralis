@@ -220,25 +220,6 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-test('Stats API retains its scoped subject endpoint wrapper', () => {
-  assert.equal(typeof useStatsApi.getSubjectStats, 'function')
-})
-
-test('Stats API passes range and session ticket to the encoded subject endpoint', async () => {
-  const ticket = { key: Symbol('scope'), isCurrent: () => true }
-  let requestDetails
-  request.get = (url, config) => {
-    requestDetails = { url, config }
-    return Promise.resolve(statsView('subject/a', 0))
-  }
-
-  await useStatsApi.getSubjectStats('subject/a', { days: 7, timeZone: 'Asia/Hong_Kong' }, ticket)
-
-  assert.equal(requestDetails.url, '/api/stats/subjects/subject%2Fa')
-  assert.deepEqual(requestDetails.config.params, { days: 7, timeZone: 'Asia/Hong_Kong' })
-  assert.equal(requestDetails.config.__auralisSyncScope, ticket)
-})
-
 test('subject stats read local core data offline and never call the server aggregate', async () => {
   const { authStore, statsStore } = fixture('stats-offline-user')
   const subjectId = 'stats-offline-subject'

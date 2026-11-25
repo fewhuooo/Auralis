@@ -1,6 +1,14 @@
+import type { OverviewResultView } from '@/api/overviewApi';
+import type { ReviewState } from '@/api/reviewApi';
+import type { SourceView } from '@/api/sourceApi';
+import type { SubjectStats } from '@/api/statsApi';
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
-import { localDataScope } from './localDataScope';
+import { buildSyncedBlockRecord } from '@/utils/blockSyncMapper';
+import { formatLocalTimeHHmm } from '@/utils/dateKey';
+import { normalizeTaskPosition } from '@/utils/taskSyncMapper';
+import { localDataScope } from './localDataScope.ts';
+import { deleteCachedDocument } from './localDocumentCache.ts';
 
 function databaseIdentity() {
   const scope = localDataScope.current();
@@ -51,6 +59,44 @@ function warnInvalidTaskPayload(native: boolean): void {
   console.warn(`[SQLite Mobile] Preserving invalid TASK color payload during ${native ? 'native' : 'H5'} migration`)
 }
 
+function parseNumericVersion(record: Record<string, unknown>): number | null {
+  const raw = record.version ?? record.sync_version
+  if (raw === undefined || raw === null || raw === '') return null
+  const num = Number(raw)
+  return Number.isFinite(num) && num >= 0 ? num : null
+}
+
+export function preserveMutationBaseVersion(incoming: unknown, priorRaw: unknown): unknown {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return incoming
+  let prior: Record<string, unknown> | null = null
+  if (typeof priorRaw === 'string') {
+    try {
+      const parsed = JSON.parse(priorRaw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        prior = parsed as Record<string, unknown>
+      }
+    } catch {
+      prior = null
+    }
+  } else if (priorRaw && typeof priorRaw === 'object' && !Array.isArray(priorRaw)) {
+    prior = priorRaw as Record<string, unknown>
+  }
+  if (!prior) return incoming
+  const next = { ...(incoming as Record<string, unknown>) }
+  const priorVer = parseNumericVersion(prior)
+  if (next.sync_version === undefined && prior.sync_version !== undefined) {
+    next.sync_version = prior.sync_version
+  } else if (priorVer !== null && next.sync_version !== undefined && priorVer > Number(next.sync_version)) {
+    next.sync_version = priorVer
+  }
+  if (next.version === undefined && prior.version !== undefined) {
+    next.version = prior.version
+  } else if (priorVer !== null && next.version !== undefined && priorVer > Number(next.version)) {
+    next.version = priorVer
+  }
+  return next
+}
+
 // H5 模式下使用 localStorage 模拟 SQLite 数据表结构
 const h5Db = {
   getTable(name: string): any[] {
@@ -69,6 +115,7 @@ function parseSqlValues(str: string): any[] {
   let current = '';
   let inString = false;
   let stringChar = '';
+  let wasQuoted = false;
   for (let i = 0; i < str.length; i++) {
     const char = str[i];
     if (inString) {
@@ -82,19 +129,20 @@ function parseSqlValues(str: string): any[] {
       } else {
         current += char;
       }
-    } else {
-      if (char === "'" || char === '"') {
-        inString = true;
-        stringChar = char;
-      } else if (char === ',') {
-        result.push(cleanValue(current));
-        current = '';
-      } else {
-        current += char;
-      }
+    } else if (char === "'" || char === '"') {
+      inString = true;
+      stringChar = char;
+      wasQuoted = true;
+      current = '';
+    } else if (char === ',') {
+      result.push(wasQuoted ? current : cleanValue(current));
+      current = '';
+      wasQuoted = false;
+    } else if (!wasQuoted) {
+      current += char;
     }
   }
-  result.push(cleanValue(current));
+  result.push(wasQuoted ? current : cleanValue(current));
   return result;
 }
 
@@ -111,32 +159,120 @@ interface WhereCondition {
   val: any;
 }
 
+function advanceSqlQuote(sql: string, index: number): number {
+  let i = index + 1;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      if (i + 1 < sql.length && sql[i + 1] === "'") {
+        i += 2;
+        continue;
+      }
+      return i;
+    }
+    i++;
+  }
+  return sql.length - 1;
+}
+
+function findTopLevelKeyword(
+  sql: string,
+  pattern: RegExp,
+  startIndex = 0
+): { index: number; length: number } | null {
+  for (let i = startIndex; i < sql.length; i++) {
+    if (sql[i] === "'") {
+      i = advanceSqlQuote(sql, i);
+      continue;
+    }
+    pattern.lastIndex = i;
+    const match = pattern.exec(sql);
+    if (match) {
+      return { index: match.index, length: match[0].length };
+    }
+  }
+  return null;
+}
+
+function splitTopLevel(str: string, delimiter: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "'") {
+      i = advanceSqlQuote(str, i);
+      continue;
+    }
+    if (str[i] === delimiter) {
+      parts.push(str.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+
+function splitTopLevelKeyword(str: string, keyword: string): string[] {
+  const parts: string[] = [];
+  const pattern = new RegExp(`\\s+${keyword}\\s+`, 'iy');
+  let start = 0;
+  while (start <= str.length) {
+    const match = findTopLevelKeyword(str, pattern, start);
+    if (!match) break;
+    parts.push(str.slice(start, match.index));
+    start = match.index + match.length;
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+
+function findTopLevelOperator(str: string, op: string): number {
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "'") {
+      i = advanceSqlQuote(str, i);
+      continue;
+    }
+    if (str.startsWith(op, i)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function parseWhereClause(clause: string | undefined): WhereCondition[] {
   if (!clause) return [];
-  const parts = clause.split(/\s+AND\s+/i);
+  const parts = splitTopLevelKeyword(clause, 'AND');
   const conditions: WhereCondition[] = [];
-  
-  parts.forEach(part => {
-    part = part.trim();
-    if (part.toUpperCase().endsWith('IS NOT NULL')) {
-      const col = part.substring(0, part.toUpperCase().indexOf('IS NOT NULL')).trim();
+
+  parts.forEach(rawPart => {
+    const part = rawPart.trim();
+    if (!part) return;
+    const upper = part.toUpperCase();
+    if (!part.endsWith("'") && upper.endsWith('IS NOT NULL')) {
+      const col = part.substring(0, upper.indexOf('IS NOT NULL')).trim();
       conditions.push({ col: col.toLowerCase(), op: 'IS NOT', val: null });
-    } else if (part.toUpperCase().endsWith('IS NULL')) {
-      const col = part.substring(0, part.toUpperCase().indexOf('IS NULL')).trim();
+    } else if (!part.endsWith("'") && upper.endsWith('IS NULL')) {
+      const col = part.substring(0, upper.indexOf('IS NULL')).trim();
       conditions.push({ col: col.toLowerCase(), op: 'IS', val: null });
-    } else if (part.includes('!=')) {
-      const [col, valStr] = part.split('!=');
-      conditions.push({ col: col.trim().toLowerCase(), op: '!=', val: cleanSqlString(valStr.trim()) });
-    } else if (part.includes('=')) {
-      const [col, valStr] = part.split('=');
-      conditions.push({ col: col.trim().toLowerCase(), op: '=', val: cleanSqlString(valStr.trim()) });
+    } else {
+      const neIdx = findTopLevelOperator(part, '!=');
+      if (neIdx !== -1) {
+        const col = part.slice(0, neIdx).trim().toLowerCase();
+        const valStr = part.slice(neIdx + 2).trim();
+        conditions.push({ col, op: '!=', val: cleanSqlString(valStr) });
+        return;
+      }
+      const eqIdx = findTopLevelOperator(part, '=');
+      if (eqIdx !== -1) {
+        const col = part.slice(0, eqIdx).trim().toLowerCase();
+        const valStr = part.slice(eqIdx + 1).trim();
+        conditions.push({ col, op: '=', val: cleanSqlString(valStr) });
+      }
     }
   });
   return conditions;
 }
 
 function cleanSqlString(valStr: string): any {
-  if (valStr.startsWith("'") && valStr.endsWith("'")) {
+  if (valStr.length >= 2 && valStr.startsWith("'") && valStr.endsWith("'")) {
     return valStr.slice(1, -1).replace(/''/g, "'");
   }
   return cleanValue(valStr);
@@ -160,7 +296,8 @@ function matchRow(row: any, conditions: WhereCondition[]): boolean {
 
 function executeH5Query(sql: string) {
   const trimmed = sql.trim();
-  if (trimmed.toUpperCase().startsWith('CREATE TABLE')) {
+  const upperStart = trimmed.toUpperCase();
+  if (upperStart.startsWith('CREATE TABLE') || upperStart.startsWith('ALTER TABLE')) {
     return;
   }
   if (trimmed.toUpperCase().startsWith('INSERT INTO')) {
@@ -176,28 +313,34 @@ function executeH5Query(sql: string) {
     });
     
     const table = h5Db.getTable(tableName);
+    if (tableName === 'local_mutations' && row.id == null) {
+      const maxId = table.reduce((max, item) => Math.max(max, Number(item?.id) || 0), 0);
+      row.id = maxId + 1;
+    }
     table.push(row);
     h5Db.saveTable(tableName, table);
     return;
   }
   if (trimmed.toUpperCase().startsWith('UPDATE')) {
-    const updateMatch = trimmed.match(/UPDATE\s+(\w+)\s+SET\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+))?$/i);
-    if (!updateMatch) throw new Error('Unparseable UPDATE SQL: ' + sql);
-    const tableName = updateMatch[1].toLowerCase();
-    const setClause = updateMatch[2];
-    const whereClause = updateMatch[3];
-    
+    const header = trimmed.match(/^UPDATE\s+(\w+)\s+SET\s+/i);
+    if (!header) throw new Error('Unparseable UPDATE SQL: ' + sql);
+    const tableName = header[1].toLowerCase();
+    const body = trimmed.slice(header[0].length);
+    const whereKeyword = findTopLevelKeyword(body, /\s+WHERE\s+/iy);
+    const setClause = whereKeyword ? body.slice(0, whereKeyword.index) : body;
+    const whereClause = whereKeyword ? body.slice(whereKeyword.index + whereKeyword.length) : undefined;
+
     const sets: { [key: string]: any } = {};
-    const setPairs = setClause.split(/,(?=(?:[^']*'[^']*')*[^']*$)/);
+    const setPairs = splitTopLevel(setClause, ',');
     setPairs.forEach(pair => {
-      const parts = pair.split('=');
-      if (parts.length >= 2) {
-        const col = parts[0].trim().toLowerCase();
-        const valStr = parts.slice(1).join('=').trim();
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const col = pair.slice(0, eqIdx).trim().toLowerCase();
+        const valStr = pair.slice(eqIdx + 1).trim();
         sets[col] = cleanSqlString(valStr);
       }
     });
-    
+
     const where = parseWhereClause(whereClause);
     let table = h5Db.getTable(tableName);
     table = table.map(row => {
@@ -221,16 +364,23 @@ function executeH5Query(sql: string) {
     h5Db.saveTable(tableName, table);
     return;
   }
+  if (trimmed) {
+    console.warn('[H5 DB] Unhandled SQL statement:', trimmed);
+  }
 }
 
 function selectH5Query(sql: string): any[] {
   const trimmed = sql.trim();
   if (trimmed.toUpperCase().startsWith('SELECT')) {
-    const selectMatch = trimmed.match(/SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+))?$/i);
-    if (!selectMatch) throw new Error('Unparseable SELECT SQL: ' + sql);
-    const tableName = selectMatch[2].toLowerCase();
-    const whereClause = selectMatch[3];
-    const orderByClause = selectMatch[4];
+    const header = trimmed.match(/^SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)/i);
+    if (!header) throw new Error('Unparseable SELECT SQL: ' + sql);
+    const tableName = header[2].toLowerCase();
+    const rest = trimmed.slice(header[0].length);
+    const orderKeyword = findTopLevelKeyword(rest, /\s+ORDER\s+BY\s+/iy);
+    const beforeOrder = orderKeyword ? rest.slice(0, orderKeyword.index) : rest;
+    const orderByClause = orderKeyword ? rest.slice(orderKeyword.index + orderKeyword.length) : undefined;
+    const whereMatch = beforeOrder.match(/^\s*WHERE\s+([\s\S]+)$/i);
+    const whereClause = whereMatch ? whereMatch[1] : undefined;
     
     let table = h5Db.getTable(tableName);
     
@@ -258,6 +408,10 @@ function selectH5Query(sql: string): any[] {
   return [];
 }
 
+const initializedScopes = new Set<string>();
+const initializingScopes = new Map<string, Promise<void>>();
+const openingDatabases = new Map<string, Promise<void>>();
+
 // Helper to wrap plus.sqlite in Promises
 const sqlite = {
   isOpen(): boolean {
@@ -266,69 +420,171 @@ const sqlite = {
   },
 
   open(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (isH5) {
-        return resolve();
-      }
-      if (this.isOpen()) {
-        return resolve();
-      }
+    if (isH5 || this.isOpen()) {
+      return Promise.resolve();
+    }
+    const identity = databaseIdentity();
+    const existing = openingDatabases.get(identity.name);
+    if (existing) {
+      return existing;
+    }
+    const pending = new Promise<void>((resolve, reject) => {
       plus.sqlite.openDatabase({
-        ...databaseIdentity(),
+        ...identity,
         success: () => resolve(),
-        fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e)))
+        fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e))),
+      });
+    });
+    openingDatabases.set(identity.name, pending);
+    const cleanup = () => {
+      if (openingDatabases.get(identity.name) === pending) {
+        openingDatabases.delete(identity.name);
+      }
+    };
+    pending.then(cleanup, cleanup);
+    return pending;
+  },
+
+  async executeRaw(sql: string): Promise<void> {
+    await this.open();
+    if (isH5) {
+      executeH5Query(sql);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      plus.sqlite.executeSql({
+        name: databaseIdentity().name,
+        sql,
+        success: () => resolve(),
+        fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`)),
       });
     });
   },
 
-  execute(sql: string): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.open();
-        if (isH5) {
-          try {
-            executeH5Query(sql);
-            return resolve();
-          } catch (e) {
-            return reject(e);
-          }
-        }
-        plus.sqlite.executeSql({
-          name: databaseIdentity().name,
-          sql: sql,
-          success: () => resolve(),
-          fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`))
-        });
-      } catch (err) {
-        reject(err);
-      }
+  async selectRaw(sql: string): Promise<any[]> {
+    await this.open();
+    if (isH5) {
+      return selectH5Query(sql);
+    }
+    return new Promise<any[]>((resolve, reject) => {
+      plus.sqlite.selectSql({
+        name: databaseIdentity().name,
+        sql,
+        success: (data: any) => resolve(data || []),
+        fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`)),
+      });
     });
   },
 
-  select(sql: string): Promise<any[]> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.open();
-        if (isH5) {
-          try {
-            const data = selectH5Query(sql);
-            return resolve(data);
-          } catch (e) {
-            return reject(e);
-          }
-        }
-        plus.sqlite.selectSql({
-          name: databaseIdentity().name,
-          sql: sql,
-          success: (data: any) => resolve(data || []),
-          fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`))
-        });
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
+  async execute(sql: string): Promise<void> {
+    await ensureInitialized();
+    return this.executeRaw(sql);
+  },
+
+  async select(sql: string): Promise<any[]> {
+    await ensureInitialized();
+    return this.selectRaw(sql);
+  },
 };
+
+async function ensureInitialized(): Promise<void> {
+  const scope = safeCurrentScope() || 'legacy-unassigned';
+  if (initializedScopes.has(scope)) {
+    return;
+  }
+  const pending = initializingScopes.get(scope);
+  if (pending) {
+    return pending;
+  }
+  const run = (async () => {
+    await sqlite.open();
+    await localDb.createTables();
+    await localDb.runMigrations();
+    initializedScopes.add(scope);
+  })();
+  initializingScopes.set(scope, run);
+  const cleanup = () => {
+    if (initializingScopes.get(scope) === run) {
+      initializingScopes.delete(scope);
+    }
+  };
+  run.then(cleanup, cleanup);
+  return run;
+}
+
+const inFlightMutationIds = new Set<string>();
+const cacheWriteQueues = new Map<string, Promise<void>>();
+
+function escSql(val: string | null | undefined): string {
+  return (val || '').replace(/'/g, "''");
+}
+
+function parseJsonSafely<T>(raw: unknown): T | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function safeFiniteInt(raw: unknown, fallback = 0): number {
+  const num = Number(raw);
+  return Number.isFinite(num) ? Math.trunc(num) : fallback;
+}
+
+function reviewStatesLoadedMetaKey(subjectId: string): string {
+  return `review_states_loaded:${subjectId}`;
+}
+
+function subjectOverviewCacheKey(subjectId: string): string {
+  return `SUBJECT:${subjectId}:subject-v1`;
+}
+
+function sourceOverviewCacheKey(sourceId: string, revisionKey: string): string {
+  return `FILE:${sourceId}:${revisionKey}`;
+}
+
+function subjectStatsCacheKey(subjectId: string, days: 7 | 30, timeZone: string): string {
+  return `${subjectId}:${days}:${timeZone}`;
+}
+
+function safeCurrentScope(): string | null {
+  try {
+    return localDataScope.current();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Serializes derived-cache writes per scope/table and verifies scope invariance
+ * right before committing so account switches or H5 storage quota limits cannot corrupt state.
+ */
+function serializeCacheWrite(bucket: string, operation: () => Promise<void>): Promise<void> {
+  const expectedScope = safeCurrentScope();
+  if (!expectedScope) return Promise.resolve();
+  const queueKey = `${expectedScope}:${bucket}`;
+  const previous = cacheWriteQueues.get(queueKey) ?? Promise.resolve();
+  const run = previous.then(async () => {
+    const activeScope = safeCurrentScope();
+    if (!activeScope || activeScope !== expectedScope) return;
+    try {
+      await operation();
+    } catch (error) {
+      if (typeof uni === 'undefined' && typeof plus === 'undefined') return;
+      console.warn(`[SQLite Mobile] Cache persistence skipped (${bucket}):`, error);
+    }
+  });
+  const tail = run.then(() => undefined, () => undefined);
+  cacheWriteQueues.set(queueKey, tail);
+  void tail.finally(() => {
+    if (cacheWriteQueues.get(queueKey) === tail) {
+      cacheWriteQueues.delete(queueKey);
+    }
+  });
+  return run;
+}
 
 export const localDb = {
   async executeSql(sql: string, params?: any[]): Promise<any> {
@@ -352,9 +608,13 @@ export const localDb = {
 
   async init() {
     try {
-      await sqlite.open();
-      await this.createTables();
-      await this.runMigrations();
+      const scope = safeCurrentScope() || 'legacy-unassigned';
+      const inFlight = initializingScopes.get(scope);
+      if (inFlight) {
+        await inFlight;
+      }
+      initializedScopes.delete(scope);
+      await ensureInitialized();
       console.log('[SQLite Mobile] Native database and tables initialized.');
     } catch (e) {
       console.error('[SQLite Mobile] Database initialization failed:', e);
@@ -363,13 +623,13 @@ export const localDb = {
   },
 
   async createTables() {
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS sync_metadata (
         key TEXT PRIMARY KEY,
         value TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS local_mutations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         client_id TEXT,
@@ -381,7 +641,7 @@ export const localDb = {
         sync_status TEXT DEFAULT 'pending'
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS knowledge_blocks (
         id TEXT PRIMARY KEY,
         subject TEXT,
@@ -402,7 +662,7 @@ export const localDb = {
         related_block_ids TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS task_blocks (
         id TEXT PRIMARY KEY,
         name TEXT,
@@ -412,6 +672,8 @@ export const localDb = {
 
         status TEXT,
         startTime TEXT,
+        scheduled_at TEXT,
+        due_at TEXT,
         sync_status TEXT DEFAULT 'synced',
         is_deleted INTEGER DEFAULT 0,
         sync_version INTEGER DEFAULT 0,
@@ -419,17 +681,18 @@ export const localDb = {
         subject_id TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS subjects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
         icon TEXT,
+        sort_key TEXT,
         created_at INTEGER,
         version INTEGER DEFAULT 0
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS source_files (
         id TEXT PRIMARY KEY,
         subject_id TEXT,
@@ -440,10 +703,40 @@ export const localDb = {
         catalog_json TEXT,
         block_count INTEGER DEFAULT 0,
         created_at INTEGER,
-        version INTEGER DEFAULT 0
+        version INTEGER DEFAULT 0,
+        payload_json TEXT
       )
     `);
-    await sqlite.execute(`
+    await sqlite.executeRaw(`
+      CREATE TABLE IF NOT EXISTS ai_overview_cache (
+        cache_key TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        subject_id TEXT,
+        revision_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    await sqlite.executeRaw(`
+      CREATE TABLE IF NOT EXISTS review_states_cache (
+        knowledge_block_id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    await sqlite.executeRaw(`
+      CREATE TABLE IF NOT EXISTS subject_stats_cache (
+        cache_key TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        days INTEGER NOT NULL,
+        time_zone TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    await sqlite.executeRaw(`
       CREATE TABLE IF NOT EXISTS tablet_notes (
         id TEXT PRIMARY KEY,
         mode TEXT NOT NULL,
@@ -466,87 +759,108 @@ export const localDb = {
         delete currentTask.cognitiveLoad;
         delete currentTask.color;
         delete currentTask.colorOverride;
+        currentTask.position = normalizeTaskPosition(currentTask.position);
+        if (typeof currentTask.name === 'number') currentTask.name = String(currentTask.name);
+        if (typeof currentTask.subject === 'number') currentTask.subject = String(currentTask.subject);
+        if (typeof currentTask.desc === 'number') currentTask.desc = String(currentTask.desc);
         return currentTask;
       });
       h5Db.saveTable('task_blocks', tasks);
-      const mutations = h5Db.getTable('local_mutations').map((mutation: any) => {
-        if (mutation.entity_type !== 'task') return mutation
-        const result = cleanTaskMutationPayload(mutation.payload)
-        if (result.status === 'invalid') warnInvalidTaskPayload(false)
-        if (result.status === 'changed') return { ...mutation, payload: result.payload }
-        return mutation
+      const rawMutations = h5Db.getTable('local_mutations');
+      let nextMutationId = rawMutations.reduce((max, item) => Math.max(max, Number(item?.id) || 0), 0);
+      const mutations = rawMutations.map((mutation: any) => {
+        const withId = mutation?.id == null ? { ...mutation, id: ++nextMutationId } : mutation;
+        if (withId.entity_type !== 'task') return withId;
+        const result = cleanTaskMutationPayload(withId.payload);
+        if (result.status === 'invalid') warnInvalidTaskPayload(false);
+        if (result.status === 'changed') return { ...withId, payload: result.payload };
+        return withId;
       });
       h5Db.saveTable('local_mutations', mutations);
     }
 
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN position TEXT DEFAULT '0'");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN position TEXT DEFAULT '0'");
     } catch (e) {
       // Safe to ignore if already exists
     }
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN subject_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN subject_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN source_file_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN source_file_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN tags TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN tags TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN difficulty TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN difficulty TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN mastery INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN mastery INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN review_at TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN review_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN related_block_ids TEXT");
+      await sqlite.executeRaw("ALTER TABLE knowledge_blocks ADD COLUMN related_block_ids TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN scheduled_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
+      await sqlite.executeRaw("ALTER TABLE task_blocks ADD COLUMN due_at TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE subjects DROP COLUMN color");
+      await sqlite.executeRaw("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN load");
+      await sqlite.executeRaw("ALTER TABLE subjects ADD COLUMN sort_key TEXT");
     } catch (e) {}
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN loadText");
+      await sqlite.executeRaw("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
+    } catch (e) {}
+    try {
+      await sqlite.executeRaw("ALTER TABLE source_files ADD COLUMN payload_json TEXT");
+    } catch (e) {}
+    try {
+      await sqlite.executeRaw("ALTER TABLE subjects DROP COLUMN color");
+    } catch (e) {}
+    try {
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN load");
+    } catch (e) {}
+    try {
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN loadText");
     } catch (e) {}
 
     try {
-      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN color");
+      await sqlite.executeRaw("ALTER TABLE task_blocks DROP COLUMN color");
     } catch (e) {}
 
-    const taskMutations = await sqlite.select("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
-    for (const mutation of taskMutations) {
-      if (!mutation.payload) continue;
-      const result = cleanTaskMutationPayload(mutation.payload);
-      if (result.status === 'invalid') warnInvalidTaskPayload(true)
-      if (result.status === 'changed') {
-        const sanitized = result.payload.replace(/'/g, "''");
-        const esc = (value: string) => value.replace(/'/g, "''");
-        await sqlite.execute(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+    if (!isH5) {
+      const taskMutations = await sqlite.selectRaw("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
+      for (const mutation of taskMutations) {
+        if (!mutation.payload) continue;
+        const result = cleanTaskMutationPayload(mutation.payload);
+        if (result.status === 'invalid') warnInvalidTaskPayload(true)
+        if (result.status === 'changed') {
+          const sanitized = result.payload.replace(/'/g, "''");
+          const esc = (value: string) => value.replace(/'/g, "''");
+          await sqlite.executeRaw(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+        }
       }
     }
   },
@@ -595,7 +909,6 @@ export const localDb = {
       subjectId: r.subject_id || undefined,
       sourceFileId: r.source_file_id || undefined,
       tags: r.tags ? JSON.parse(r.tags) : [],
-      difficulty: r.difficulty || undefined,
       mastery: r.mastery || 0,
       reviewAt: r.review_at || undefined,
       relatedBlockIds: r.related_block_ids ? JSON.parse(r.related_block_ids) : []
@@ -611,7 +924,6 @@ export const localDb = {
     const subjectIdVal = block.subjectId || '';
     const sourceFileIdVal = block.sourceFileId || '';
     const tagsVal = block.tags ? JSON.stringify(block.tags) : '[]';
-    const difficultyVal = block.difficulty || '';
     const masteryVal = block.mastery || 0;
     const reviewAtVal = block.reviewAt || '';
     const relatedBlockIdsVal = block.relatedBlockIds ? JSON.stringify(block.relatedBlockIds) : '[]';
@@ -631,7 +943,6 @@ export const localDb = {
           subject_id = '${esc(subjectIdVal)}',
           source_file_id = '${esc(sourceFileIdVal)}',
           tags = '${esc(tagsVal)}',
-          difficulty = '${esc(difficultyVal)}',
           mastery = ${masteryVal},
           review_at = '${esc(reviewAtVal)}',
           related_block_ids = '${esc(relatedBlockIdsVal)}'
@@ -639,7 +950,7 @@ export const localDb = {
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO knowledge_blocks (id, subject, title, preview, time, source, color, sync_status, is_deleted, sync_version, subject_id, source_file_id, tags, difficulty, mastery, review_at, related_block_ids)
+        INSERT INTO knowledge_blocks (id, subject, title, preview, time, source, color, sync_status, is_deleted, sync_version, subject_id, source_file_id, tags, mastery, review_at, related_block_ids)
         VALUES (
           '${esc(block.id)}',
           '${esc(block.subject)}',
@@ -654,7 +965,6 @@ export const localDb = {
           '${esc(subjectIdVal)}',
           '${esc(sourceFileIdVal)}',
           '${esc(tagsVal)}',
-          '${esc(difficultyVal)}',
           ${masteryVal},
           '${esc(reviewAtVal)}',
           '${esc(relatedBlockIdsVal)}'
@@ -731,7 +1041,6 @@ export const localDb = {
         subjectId: block.subjectId || block.subject_id || undefined,
         sourceFileId: block.sourceFileId || block.source_file_id || undefined,
         tags: block.tags ? (typeof block.tags === 'string' ? JSON.parse(block.tags) : block.tags) : [],
-        difficulty: block.difficulty || undefined,
         mastery: block.mastery || 0,
         reviewAt: block.reviewAt || block.review_at || undefined,
         relatedBlockIds: block.relatedBlockIds ? (typeof block.relatedBlockIds === 'string' ? JSON.parse(block.relatedBlockIds) : block.relatedBlockIds) : []
@@ -743,22 +1052,25 @@ export const localDb = {
   // Task Blocks
   async getTasks(): Promise<Task[]> {
     const records = await sqlite.select('SELECT * FROM task_blocks WHERE is_deleted = 0 ORDER BY position ASC');
-    return records.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      subject: r.subject,
-      desc: r.desc || '',
-      color: r.color,
-      duration: r.duration,
-
-      status: r.status,
-      startTime: r.startTime || undefined,
-      sync_status: r.sync_status,
-      sync_version: r.sync_version || 0,
-      is_deleted: r.is_deleted === 1,
-      position: r.position || '0',
-      subjectId: r.subject_id || undefined
-    }));
+    return records.map((r: any) => {
+      const scheduledAt = r.scheduled_at || undefined;
+      return {
+        id: r.id,
+        name: r.name != null ? String(r.name) : '',
+        subject: r.subject != null ? String(r.subject) : '',
+        desc: r.desc != null ? String(r.desc) : '',
+        duration: r.duration,
+        status: r.status,
+        scheduledAt,
+        dueAt: r.due_at || undefined,
+        startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : (r.startTime || r.starttime || undefined),
+        sync_status: r.sync_status,
+        sync_version: r.sync_version || 0,
+        is_deleted: r.is_deleted === 1,
+        position: normalizeTaskPosition(r.position),
+        subjectId: r.subject_id || undefined,
+      };
+    });
   },
 
   async saveTask(task: Task, syncStatus = 'synced', syncVersion = 0) {
@@ -772,16 +1084,22 @@ export const localDb = {
     const versionVal = task.sync_version || syncVersion || 0;
     const positionVal = task.position || '0';
     const subjectIdVal = task.subjectId || '';
+    const scheduledAtSql = task.scheduledAt ? `'${esc(task.scheduledAt)}'` : 'NULL';
+    const dueAtSql = task.dueAt ? `'${esc(task.dueAt)}'` : 'NULL';
+    const durationVal = Math.max(0, safeFiniteInt(task.duration, 0));
+    const startTimeVal = task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || '');
+    const startTimeSql = startTimeVal ? `'${esc(startTimeVal)}'` : 'NULL';
     if (exists && exists.length > 0) {
       await sqlite.execute(`
         UPDATE task_blocks SET
           name = '${esc(task.name)}',
           subject = '${esc(task.subject)}',
           desc = '${esc(task.desc || '')}',
-          duration = ${task.duration},
-
+          duration = ${durationVal},
           status = '${esc(task.status)}',
-          startTime = ${task.startTime ? `'${esc(task.startTime)}'` : 'NULL'},
+          startTime = ${startTimeSql},
+          scheduled_at = ${scheduledAtSql},
+          due_at = ${dueAtSql},
           sync_status = '${syncStatus}',
           is_deleted = ${isDeletedVal},
           sync_version = ${versionVal},
@@ -791,16 +1109,17 @@ export const localDb = {
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO task_blocks (id, name, subject, desc, duration, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
+        INSERT INTO task_blocks (id, name, subject, desc, duration, status, startTime, scheduled_at, due_at, sync_status, is_deleted, sync_version, position, subject_id)
         VALUES (
           '${esc(taskId)}',
           '${esc(task.name)}',
           '${esc(task.subject)}',
           '${esc(task.desc || '')}',
-          ${task.duration},
-
+          ${durationVal},
           '${esc(task.status)}',
-          ${task.startTime ? `'${esc(task.startTime)}'` : 'NULL'},
+          ${startTimeSql},
+          ${scheduledAtSql},
+          ${dueAtSql},
           '${syncStatus}',
           ${isDeletedVal},
           ${versionVal},
@@ -873,7 +1192,9 @@ export const localDb = {
         desc: task.desc || '',
         duration: task.duration,
         status: task.status,
-        startTime: task.startTime || undefined,
+        scheduledAt: task.scheduledAt || undefined,
+        dueAt: task.dueAt || undefined,
+        startTime: task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || undefined),
         sync_version: task.syncVersion || task.sync_version || 0,
         is_deleted: false,
         position: task.position || '0',
@@ -883,13 +1204,129 @@ export const localDb = {
     }
   },
 
+  setInFlightMutationIds(ids: Array<number | string>) {
+    inFlightMutationIds.clear();
+    for (const id of ids) {
+      if (id != null) inFlightMutationIds.add(String(id));
+    }
+  },
+
+  async rebasePendingMutations(
+    entityType: string,
+    entityId: string,
+    options: { appliedMutationType: string; serverVersion: number | null; deleted: boolean }
+  ) {
+    const esc = (val: string) => (val || '').replace(/'/g, "''");
+    const rows = await sqlite.select(
+      `SELECT id, action, payload FROM local_mutations WHERE entity_type = '${esc(entityType)}' AND entity_id = '${esc(entityId)}' AND sync_status = 'pending' ORDER BY id ASC`
+    );
+    for (const row of rows) {
+      if (row.id == null) continue;
+      const currentAction = String(row.action || '').toLowerCase();
+      if (options.deleted) {
+        if (currentAction !== 'create') {
+          await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(row.id)}`);
+        }
+        continue;
+      }
+      const nextAction = currentAction === 'create' ? 'update' : currentAction;
+      let nextPayloadRaw = typeof row.payload === 'string' ? row.payload : JSON.stringify(row.payload ?? {});
+      if (options.serverVersion !== null) {
+        try {
+          const parsed = JSON.parse(nextPayloadRaw);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            parsed.version = options.serverVersion;
+            parsed.sync_version = options.serverVersion;
+            nextPayloadRaw = JSON.stringify(parsed);
+          }
+        } catch {
+          // Keep raw payload when not JSON
+        }
+      }
+      await sqlite.execute(
+        `UPDATE local_mutations SET action = '${esc(nextAction)}', payload = '${esc(nextPayloadRaw)}' WHERE id = ${Number(row.id)}`
+      );
+    }
+  },
+
   async addLocalMutation(clientId: string, entityType: string, entityId: string, action: string, payload: any) {
     const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const payloadStr = JSON.stringify(payload);
+    const normalizedAction = String(action || '').toLowerCase();
     const createdAt = Date.now();
+    const existing = await sqlite.select(
+      `SELECT id, action, payload FROM local_mutations WHERE entity_type = '${esc(entityType)}' AND entity_id = '${esc(entityId)}' AND sync_status = 'pending' ORDER BY id ASC`
+    );
+
+    const preserveFromRows = (base: any, rows: any[]) => {
+      let next = base;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        next = preserveMutationBaseVersion(next, rows[i].payload);
+      }
+      return next;
+    };
+
+    const mutableExisting = existing.filter(item => !inFlightMutationIds.has(String(item.id)));
+    const inFlightExisting = existing.filter(item => inFlightMutationIds.has(String(item.id)));
+
+    if (mutableExisting.length > 0 && normalizedAction !== 'create') {
+      const latest = mutableExisting[mutableExisting.length - 1];
+      const hasPendingCreate = mutableExisting.some(item => String(item.action).toLowerCase() === 'create');
+      const nextPayload = preserveFromRows(preserveFromRows(payload, mutableExisting), inFlightExisting);
+      const nextPayloadStr = JSON.stringify(nextPayload);
+      if (hasPendingCreate && normalizedAction === 'delete') {
+        for (const row of mutableExisting) {
+          if (row.id != null) {
+            await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(row.id)}`);
+          }
+        }
+        if (inFlightExisting.length === 0) return;
+        await sqlite.execute(
+          `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+           VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', 'delete', '${esc(nextPayloadStr)}', ${createdAt}, 'pending')`
+        );
+        return;
+      }
+      if (hasPendingCreate || normalizedAction === 'update') {
+        const coalescedAction = hasPendingCreate ? 'create' : 'update';
+        const targetId = Number(latest.id);
+        await sqlite.execute(
+          `UPDATE local_mutations SET client_id = '${esc(clientId)}', action = '${coalescedAction}', payload = '${esc(nextPayloadStr)}', created_at = ${createdAt} WHERE id = ${targetId}`
+        );
+        for (const extra of mutableExisting.slice(0, -1)) {
+          if (extra.id != null) {
+            await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(extra.id)}`);
+          }
+        }
+        return;
+      }
+      if (normalizedAction === 'delete') {
+        for (const row of mutableExisting) {
+          if (row.id != null) {
+            await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${Number(row.id)}`);
+          }
+        }
+        await sqlite.execute(
+          `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+           VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', 'delete', '${esc(nextPayloadStr)}', ${createdAt}, 'pending')`
+        );
+        return;
+      }
+    }
+
+    if (inFlightExisting.length > 0 && normalizedAction !== 'create') {
+      const nextPayload = preserveFromRows(payload, inFlightExisting);
+      const nextPayloadStr = JSON.stringify(nextPayload);
+      await sqlite.execute(
+        `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+         VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', '${esc(normalizedAction)}', '${esc(nextPayloadStr)}', ${createdAt}, 'pending')`
+      );
+      return;
+    }
+
+    const payloadStr = JSON.stringify(payload);
     await sqlite.execute(
       `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
-       VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', '${esc(action)}', '${esc(payloadStr)}', ${createdAt}, 'pending')`
+       VALUES ('${esc(clientId)}', '${esc(entityType)}', '${esc(entityId)}', '${esc(normalizedAction)}', '${esc(payloadStr)}', ${createdAt}, 'pending')`
     );
   },
 
@@ -897,8 +1334,23 @@ export const localDb = {
     return sqlite.select("SELECT * FROM local_mutations WHERE sync_status = 'pending' ORDER BY id ASC");
   },
 
-  async markMutationSynced(id: number) {
-    await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${id}`);
+  async markMutationSynced(id: number | string, clientId?: string) {
+    const esc = (val: string) => (val || '').replace(/'/g, "''");
+    const idLiteral = typeof id === 'number' || /^\d+$/.test(String(id))
+      ? Number(id)
+      : `'${esc(String(id))}'`;
+    if (clientId) {
+      await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${idLiteral} AND client_id = '${esc(clientId)}'`);
+      return;
+    }
+    await sqlite.execute(`DELETE FROM local_mutations WHERE id = ${idLiteral}`);
+  },
+
+  async discardLocalMutations(entityType: string, entityId: string) {
+    const esc = (val: string) => (val || '').replace(/'/g, "''");
+    await sqlite.execute(
+      `DELETE FROM local_mutations WHERE entity_type = '${esc(entityType)}' AND entity_id = '${esc(entityId)}'`
+    );
   },
 
   async applyRemoteMutation(mutation: any) {
@@ -909,43 +1361,29 @@ export const localDb = {
 
     if (entityType === 'block') {
       if (action === 'create' || action === 'update') {
-        const block: KnowledgeBlock = {
-          id: entityId,
-          subject: payload.subject,
-          title: payload.title,
-          preview: payload.preview,
-          time: payload.time,
-          source: payload.source,
-          color: payload.color,
-          sync_status: 'synced',
-          subjectId: payload.subjectId || payload.subject_id || undefined,
-          sourceFileId: payload.sourceFileId || payload.source_file_id || undefined,
-          tags: payload.tags ? (typeof payload.tags === 'string' ? JSON.parse(payload.tags) : payload.tags) : [],
-          difficulty: payload.difficulty || undefined,
-          mastery: payload.mastery || 0,
-          reviewAt: payload.reviewAt || payload.review_at || undefined,
-          relatedBlockIds: payload.relatedBlockIds ? (typeof payload.relatedBlockIds === 'string' ? JSON.parse(payload.relatedBlockIds) : payload.relatedBlockIds) : []
-        };
-        await this.saveBlock(block, 'synced', mutation.createdAt);
+        const block = buildSyncedBlockRecord(entityId, payload || {}, mutation.createdAt || 0);
+        await this.saveBlock(block, 'synced', block.sync_version || 0);
       } else if (action === 'delete') {
         await this.hardDeleteBlock(entityId);
       }
     } else if (entityType === 'task') {
       if (action === 'create' || action === 'update') {
+        const scheduledAt = payload.scheduledAt || undefined;
         const task: Task = {
           id: entityId,
           name: payload.name,
-          subject: payload.subject,
+          subject: payload.subject || '',
           desc: payload.desc || '',
           duration: payload.duration,
-
           status: payload.status,
-          startTime: payload.startTime || undefined,
+          scheduledAt,
+          dueAt: payload.dueAt || undefined,
+          startTime: scheduledAt ? formatLocalTimeHHmm(scheduledAt) : (payload.startTime || undefined),
           sync_status: 'synced',
           position: payload.position || '0',
           subjectId: payload.subjectId || payload.subject_id || undefined
         };
-        await this.saveTask(task, 'synced', mutation.createdAt);
+        await this.saveTask(task, 'synced', payload.sync_version || mutation.createdAt);
       } else if (action === 'delete') {
         await this.hardDeleteTask(entityId);
       }
@@ -954,29 +1392,40 @@ export const localDb = {
 
   // Subject CRUD
   async getSubjects(): Promise<any[]> {
-    return sqlite.select('SELECT id, name, description, icon, created_at, version FROM subjects ORDER BY created_at DESC');
+    const rows = await sqlite.select('SELECT id, name, description, icon, sort_key, created_at, version FROM subjects ORDER BY created_at DESC');
+    return (rows || []).map((row: any) => ({
+      ...row,
+      ...(row?.sort_key ? { sortKey: row.sort_key } : {}),
+    }));
   },
 
   async saveSubject(subject: any): Promise<void> {
     const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const exists = await sqlite.select(`SELECT id FROM subjects WHERE id = '${esc(subject.id)}'`);
+    const exists = await sqlite.select(`SELECT id, sort_key FROM subjects WHERE id = '${esc(subject.id)}'`);
+    const existingSortKey = exists && exists.length > 0 && typeof exists[0].sort_key === 'string'
+      ? exists[0].sort_key
+      : '';
+    const rawSortKey = subject.sortKey ?? subject.sort_key;
+    const sortKeyVal = typeof rawSortKey === 'string' ? rawSortKey : existingSortKey;
     if (exists && exists.length > 0) {
       await sqlite.execute(`
         UPDATE subjects SET 
           name = '${esc(subject.name)}', 
           description = '${esc(subject.description || '')}', 
           icon = '${esc(subject.icon || '')}',
+          sort_key = '${esc(sortKeyVal)}',
           version = ${Number(subject.version || 0)}
         WHERE id = '${esc(subject.id)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO subjects (id, name, description, icon, created_at, version)
+        INSERT INTO subjects (id, name, description, icon, sort_key, created_at, version)
         VALUES (
           '${esc(subject.id)}', 
           '${esc(subject.name)}', 
           '${esc(subject.description || '')}', 
           '${esc(subject.icon || '')}', 
+          '${esc(sortKeyVal)}',
           ${subject.created_at || Date.now()},
           ${Number(subject.version || 0)}
         )
@@ -985,57 +1434,436 @@ export const localDb = {
   },
 
   async deleteSubject(id: string): Promise<void> {
-    const escId = id.replace(/'/g, "''");
+    const escId = escSql(id);
+    const activeScope = safeCurrentScope();
+    const subjectSources = await sqlite.select(`SELECT id, payload_json FROM source_files WHERE subject_id = '${escId}'`);
+    for (const row of subjectSources) {
+      if (row.id) {
+        await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(String(row.id))}'`);
+      }
+      const parsed = parseJsonSafely<SourceView>(row.payload_json);
+      if (activeScope && parsed?.assetId) {
+        void deleteCachedDocument(activeScope, parsed.assetId);
+      }
+    }
     await sqlite.execute(`DELETE FROM source_files WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM ai_overview_cache WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM review_states_cache WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM subject_stats_cache WHERE subject_id = '${escId}'`);
+    await sqlite.execute(`DELETE FROM sync_metadata WHERE key = '${escSql(reviewStatesLoadedMetaKey(id))}'`);
     await sqlite.execute(`UPDATE knowledge_blocks SET subject_id = NULL WHERE subject_id = '${escId}'`);
     await sqlite.execute(`UPDATE task_blocks SET subject_id = NULL WHERE subject_id = '${escId}'`);
     await sqlite.execute(`DELETE FROM subjects WHERE id = '${escId}'`);
   },
 
-  // Source Files CRUD
+  // Source Files CRUD & SourceView Projection
   async getSourceFiles(subjectId: string): Promise<any[]> {
-    const escId = subjectId.replace(/'/g, "''");
+    const escId = escSql(subjectId);
     return sqlite.select(`SELECT * FROM source_files WHERE subject_id = '${escId}' ORDER BY created_at DESC`);
   },
 
   async saveSourceFile(file: any): Promise<void> {
-    const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const exists = await sqlite.select(`SELECT id FROM source_files WHERE id = '${esc(file.id)}'`);
-    const catalogJsonVal = file.catalog_json || '';
-    const blockCountVal = file.block_count || 0;
-    if (exists && exists.length > 0) {
+    const fileId = String(file.id || '');
+    const exists = await sqlite.select(
+      `SELECT id, subject_id, catalog_json, block_count, payload_json FROM source_files WHERE id = '${escSql(fileId)}'`,
+    );
+    const existingRow = exists && exists.length > 0 ? exists[0] : null;
+    const subjectIdVal = typeof file.subject_id === 'string' && file.subject_id
+      ? file.subject_id
+      : (typeof existingRow?.subject_id === 'string' ? existingRow.subject_id : '');
+    const catalogJsonVal = typeof file.catalog_json === 'string'
+      ? file.catalog_json
+      : (typeof existingRow?.catalog_json === 'string' ? existingRow.catalog_json : '');
+    const blockCountVal = file.block_count !== undefined && file.block_count !== null
+      ? safeFiniteInt(file.block_count, 0)
+      : safeFiniteInt(existingRow?.block_count, 0);
+    const fileSizeVal = Math.max(0, safeFiniteInt(file.file_size ?? file.assetSizeBytes, 0));
+    const createdAtVal = safeFiniteInt(file.created_at, Date.now());
+    const versionVal = safeFiniteInt(file.version, 0);
+    const existingPayload = typeof existingRow?.payload_json === 'string' ? existingRow.payload_json : '';
+    const payloadJsonVal = typeof file.payload_json === 'string' && file.payload_json.trim()
+      ? file.payload_json
+      : existingPayload;
+
+    if (existingRow) {
       await sqlite.execute(`
-        UPDATE source_files SET 
-          name = '${esc(file.name)}', 
-          file_path = '${esc(file.file_path)}', 
-          file_type = '${esc(file.file_type)}', 
-          file_size = ${file.file_size}, 
-          catalog_json = '${esc(catalogJsonVal)}', 
+        UPDATE source_files SET
+          subject_id = '${escSql(subjectIdVal)}',
+          name = '${escSql(file.name)}',
+          file_path = '${escSql(file.file_path)}',
+          file_type = '${escSql(file.file_type)}',
+          file_size = ${fileSizeVal},
+          catalog_json = '${escSql(catalogJsonVal)}',
           block_count = ${blockCountVal},
-          version = ${Number(file.version || 0)}
-        WHERE id = '${esc(file.id)}'
+          version = ${versionVal},
+          payload_json = '${escSql(payloadJsonVal)}'
+        WHERE id = '${escSql(fileId)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at, version)
+        INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at, version, payload_json)
         VALUES (
-          '${esc(file.id)}', 
-          '${esc(file.subject_id)}', 
-          '${esc(file.name)}', 
-          '${esc(file.file_path)}', 
-          '${esc(file.file_type)}', 
-          ${file.file_size}, 
-          '${esc(catalogJsonVal)}', 
-          ${blockCountVal}, 
-          ${file.created_at || Date.now()},
-          ${Number(file.version || 0)}
+          '${escSql(fileId)}',
+          '${escSql(subjectIdVal)}',
+          '${escSql(file.name)}',
+          '${escSql(file.file_path)}',
+          '${escSql(file.file_type)}',
+          ${fileSizeVal},
+          '${escSql(catalogJsonVal)}',
+          ${blockCountVal},
+          ${createdAtVal},
+          ${versionVal},
+          '${escSql(payloadJsonVal)}'
         )
       `);
     }
   },
 
   async deleteSourceFile(id: string): Promise<void> {
-    const escId = id.replace(/'/g, "''");
+    const escId = escSql(id);
+    const activeScope = safeCurrentScope();
+    const rows = await sqlite.select(`SELECT payload_json FROM source_files WHERE id = '${escId}'`) as Array<{ payload_json?: unknown }>;
+    const parsed = rows.length > 0 ? parseJsonSafely<SourceView>(rows[0]?.payload_json) : null;
+    await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escId}'`);
     await sqlite.execute(`DELETE FROM source_files WHERE id = '${escId}'`);
+    if (activeScope && parsed?.assetId) {
+      void deleteCachedDocument(activeScope, parsed.assetId);
+    }
+  },
+
+  async upsertSourceView(subjectId: string, item: SourceView): Promise<void> {
+    if (!subjectId || !item.id || item.deletedAt) return;
+    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+      const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN;
+      await this.saveSourceFile({
+        id: item.id,
+        subject_id: item.subjectId || subjectId,
+        name: item.title || '未命名资料',
+        file_path: item.originUrl || item.assetId || '',
+        file_type: item.type || 'FILE',
+        file_size: item.assetSizeBytes ?? 0,
+        created_at: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+        version: item.version ?? 0,
+        payload_json: JSON.stringify(item),
+      });
+    });
+  },
+
+  async getSourceViews(subjectId: string): Promise<SourceView[]> {
+    if (!subjectId) return [];
+    const rows = await sqlite.select(
+      `SELECT * FROM source_files WHERE subject_id = '${escSql(subjectId)}' ORDER BY created_at DESC`,
+    );
+    const result: SourceView[] = [];
+    for (const row of rows as Array<Record<string, unknown>>) {
+      const parsed = parseJsonSafely<SourceView>(row.payload_json);
+      if (parsed && parsed.id) {
+        if (!parsed.deletedAt) result.push(parsed);
+        continue;
+      }
+      if (!row.id) continue;
+      const rawType = String(row.file_type || '').toUpperCase();
+      const sourceType: SourceView['type'] = rawType === 'TEXT' || rawType === 'URL' ? rawType : 'FILE';
+      result.push({
+        id: String(row.id),
+        subjectId: String(row.subject_id || subjectId),
+        type: sourceType,
+        title: String(row.name || '未命名资料'),
+        assetSizeBytes: typeof row.file_size === 'number' && Number.isFinite(row.file_size) ? row.file_size : undefined,
+        version: safeFiniteInt(row.version, 0),
+        createdAt: typeof row.created_at === 'number' && Number.isFinite(row.created_at)
+          ? new Date(row.created_at).toISOString()
+          : undefined,
+      });
+    }
+    return result;
+  },
+
+  async replaceSubjectSources(subjectId: string, items: SourceView[]): Promise<void> {
+    if (!subjectId) return;
+    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+      const activeScope = safeCurrentScope();
+      const activeItems = items.filter((item): item is SourceView & { id: string } => Boolean(item.id && !item.deletedAt));
+      const nextIds = new Set(activeItems.map(item => item.id));
+      const existingRows = await sqlite.select(
+        `SELECT id, payload_json FROM source_files WHERE subject_id = '${escSql(subjectId)}'`,
+      ) as Array<{ id?: unknown; payload_json?: unknown }>;
+
+      for (const row of existingRows) {
+        const existingId = row.id ? String(row.id) : '';
+        if (existingId && !nextIds.has(existingId)) {
+          const parsed = parseJsonSafely<SourceView>(row.payload_json);
+          await sqlite.execute(`DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(existingId)}'`);
+          await sqlite.execute(`DELETE FROM source_files WHERE id = '${escSql(existingId)}'`);
+          if (activeScope && parsed?.assetId) {
+            void deleteCachedDocument(activeScope, parsed.assetId);
+          }
+        }
+      }
+
+      for (const item of activeItems) {
+        const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN;
+        await this.saveSourceFile({
+          id: item.id,
+          subject_id: item.subjectId || subjectId,
+          name: item.title || '未命名资料',
+          file_path: item.originUrl || item.assetId || '',
+          file_type: item.type || 'FILE',
+          file_size: item.assetSizeBytes ?? 0,
+          created_at: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+          version: item.version ?? 0,
+          payload_json: JSON.stringify(item),
+        });
+      }
+    });
+  },
+
+  // Derived AI Overview Cache (subject-v1 & ingestionRevision-scoped files)
+  async getSubjectOverviewCache(subjectId: string): Promise<OverviewResultView | null> {
+    if (!subjectId) return null;
+    const key = subjectOverviewCacheKey(subjectId);
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+    ) as Array<{ payload_json?: unknown }>;
+    return rows.length > 0 ? parseJsonSafely<OverviewResultView>(rows[0].payload_json) : null;
+  },
+
+  async saveSubjectOverviewCache(subjectId: string, view: OverviewResultView): Promise<void> {
+    if (!subjectId) return;
+    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async () => {
+      const key = subjectOverviewCacheKey(subjectId);
+      const updatedAt = view.updatedAt || new Date().toISOString();
+      const payload = JSON.stringify(view);
+      const exists = await sqlite.select(
+        `SELECT cache_key FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE ai_overview_cache SET scope_type = 'SUBJECT', scope_id = '${escSql(subjectId)}', subject_id = '${escSql(subjectId)}', revision_key = 'subject-v1', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE cache_key = '${escSql(key)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO ai_overview_cache (cache_key, scope_type, scope_id, subject_id, revision_key, payload_json, updated_at) VALUES ('${escSql(key)}', 'SUBJECT', '${escSql(subjectId)}', '${escSql(subjectId)}', 'subject-v1', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  async deleteSubjectOverviewCache(subjectId: string): Promise<void> {
+    if (!subjectId) return;
+    const key = subjectOverviewCacheKey(subjectId);
+    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async () => {
+      await sqlite.execute(`DELETE FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`);
+    });
+  },
+
+  async getSourceOverviewCache(sourceId: string, ingestionRevision?: string): Promise<OverviewResultView | null> {
+    if (!sourceId) return null;
+    const revision = ingestionRevision?.trim();
+    if (revision) {
+      const key = sourceOverviewCacheKey(sourceId, revision);
+      const rows = await sqlite.select(
+        `SELECT payload_json FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+      ) as Array<{ payload_json?: unknown }>;
+      return rows.length > 0 ? parseJsonSafely<OverviewResultView>(rows[0].payload_json) : null;
+    }
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(sourceId)}' ORDER BY updated_at DESC`,
+    ) as Array<{ payload_json?: unknown }>;
+    return rows.length > 0 ? parseJsonSafely<OverviewResultView>(rows[0].payload_json) : null;
+  },
+
+  async saveSourceOverviewCache(
+    sourceId: string,
+    subjectId: string,
+    ingestionRevision: string | undefined,
+    view: OverviewResultView,
+  ): Promise<void> {
+    if (!sourceId) return;
+    await serializeCacheWrite(`overview:FILE:${sourceId}`, async () => {
+      const revisionKey = (ingestionRevision || view.ingestionRevision || 'latest').trim() || 'latest';
+      const key = sourceOverviewCacheKey(sourceId, revisionKey);
+      const updatedAt = view.updatedAt || new Date().toISOString();
+      const payload = JSON.stringify(view);
+      // Prune stale ingestion revisions so H5 localStorage stays compact.
+      await sqlite.execute(
+        `DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(sourceId)}' AND revision_key != '${escSql(revisionKey)}'`,
+      );
+      const exists = await sqlite.select(
+        `SELECT cache_key FROM ai_overview_cache WHERE cache_key = '${escSql(key)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE ai_overview_cache SET scope_type = 'FILE', scope_id = '${escSql(sourceId)}', subject_id = '${escSql(subjectId)}', revision_key = '${escSql(revisionKey)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE cache_key = '${escSql(key)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO ai_overview_cache (cache_key, scope_type, scope_id, subject_id, revision_key, payload_json, updated_at) VALUES ('${escSql(key)}', 'FILE', '${escSql(sourceId)}', '${escSql(subjectId)}', '${escSql(revisionKey)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  async deleteSourceOverviewCache(sourceId: string): Promise<void> {
+    if (!sourceId) return;
+    await serializeCacheWrite(`overview:FILE:${sourceId}`, async () => {
+      await sqlite.execute(
+        `DELETE FROM ai_overview_cache WHERE scope_type = 'FILE' AND scope_id = '${escSql(sourceId)}'`,
+      );
+    });
+  },
+
+  // Review States Read Projection Cache
+  async getReviewStatesBySubject(subjectId: string): Promise<ReviewState[]> {
+    if (!subjectId) return [];
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM review_states_cache WHERE subject_id = '${escSql(subjectId)}'`,
+    ) as Array<{ payload_json?: unknown }>;
+    const states: ReviewState[] = [];
+    for (const row of rows) {
+      const parsed = parseJsonSafely<ReviewState>(row.payload_json);
+      if (parsed && parsed.knowledgeBlockId) {
+        states.push(parsed);
+      }
+    }
+    return states;
+  },
+
+  async hasLoadedReviewStates(subjectId: string): Promise<boolean> {
+    if (!subjectId) return false;
+    return (await this.getMetadata(reviewStatesLoadedMetaKey(subjectId))) === '1';
+  },
+
+  async replaceSubjectReviewStates(subjectId: string, states: ReviewState[]): Promise<void> {
+    if (!subjectId) return;
+    await serializeCacheWrite(`review_states:${subjectId}`, async () => {
+      await sqlite.execute(`DELETE FROM review_states_cache WHERE subject_id = '${escSql(subjectId)}'`);
+      const now = new Date().toISOString();
+      for (const state of states) {
+        if (!state.knowledgeBlockId) continue;
+        const kbId = state.knowledgeBlockId;
+        const payload = JSON.stringify(state);
+        const updatedAt = state.updatedAt || now;
+        const exists = await sqlite.select(
+          `SELECT knowledge_block_id FROM review_states_cache WHERE knowledge_block_id = '${escSql(kbId)}'`,
+        );
+        if (exists.length > 0) {
+          await sqlite.execute(
+            `UPDATE review_states_cache SET subject_id = '${escSql(subjectId)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE knowledge_block_id = '${escSql(kbId)}'`,
+          );
+        } else {
+          await sqlite.execute(
+            `INSERT INTO review_states_cache (knowledge_block_id, subject_id, payload_json, updated_at) VALUES ('${escSql(kbId)}', '${escSql(subjectId)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+          );
+        }
+      }
+      await this.setMetadata(reviewStatesLoadedMetaKey(subjectId), '1');
+    });
+  },
+
+  async upsertReviewState(subjectId: string, state: ReviewState): Promise<void> {
+    if (!subjectId || !state.knowledgeBlockId) return;
+    await serializeCacheWrite(`review_states:${subjectId}`, async () => {
+      const kbId = state.knowledgeBlockId as string;
+      const payload = JSON.stringify(state);
+      const updatedAt = state.updatedAt || new Date().toISOString();
+      const exists = await sqlite.select(
+        `SELECT knowledge_block_id FROM review_states_cache WHERE knowledge_block_id = '${escSql(kbId)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE review_states_cache SET subject_id = '${escSql(subjectId)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE knowledge_block_id = '${escSql(kbId)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO review_states_cache (knowledge_block_id, subject_id, payload_json, updated_at) VALUES ('${escSql(kbId)}', '${escSql(subjectId)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  // Subject Stats Snapshot Cache
+  async getSubjectStatsCache(subjectId: string, days: 7 | 30, timeZone: string): Promise<SubjectStats | null> {
+    if (!subjectId || !timeZone) return null;
+    const key = subjectStatsCacheKey(subjectId, days, timeZone);
+    const rows = await sqlite.select(
+      `SELECT payload_json FROM subject_stats_cache WHERE cache_key = '${escSql(key)}'`,
+    ) as Array<{ payload_json?: unknown }>;
+    if (rows.length === 0) return null;
+    const parsed = parseJsonSafely<SubjectStats>(rows[0].payload_json);
+    return parsed && (!parsed.subjectId || parsed.subjectId === subjectId) ? parsed : null;
+  },
+
+  async saveSubjectStatsCache(subjectId: string, days: 7 | 30, timeZone: string, stats: SubjectStats): Promise<void> {
+    if (!subjectId || !timeZone) return;
+    await serializeCacheWrite(`stats:${subjectId}`, async () => {
+      const key = subjectStatsCacheKey(subjectId, days, timeZone);
+      const payload = JSON.stringify(stats);
+      const updatedAt = stats.generatedAt || new Date().toISOString();
+      const exists = await sqlite.select(
+        `SELECT cache_key FROM subject_stats_cache WHERE cache_key = '${escSql(key)}'`,
+      );
+      if (exists.length > 0) {
+        await sqlite.execute(
+          `UPDATE subject_stats_cache SET subject_id = '${escSql(subjectId)}', days = ${days}, time_zone = '${escSql(timeZone)}', payload_json = '${escSql(payload)}', updated_at = '${escSql(updatedAt)}' WHERE cache_key = '${escSql(key)}'`,
+        );
+      } else {
+        await sqlite.execute(
+          `INSERT INTO subject_stats_cache (cache_key, subject_id, days, time_zone, payload_json, updated_at) VALUES ('${escSql(key)}', '${escSql(subjectId)}', ${days}, '${escSql(timeZone)}', '${escSql(payload)}', '${escSql(updatedAt)}')`,
+        );
+      }
+    });
+  },
+
+  async clearScopeStorage(scope: string): Promise<void> {
+    if (!scope) return;
+    initializedScopes.delete(scope);
+    const focusKeys = ['focus_state', 'focus_daily', 'focus_outbox'];
+    for (const key of focusKeys) {
+      try {
+        uni.removeStorageSync(`auralis:local:${scope}:${key}`);
+      } catch {
+        // Ignore storage removal errors
+      }
+    }
+    if (isH5) {
+      const tableNames = [
+        'sync_metadata',
+        'local_mutations',
+        'knowledge_blocks',
+        'task_blocks',
+        'subjects',
+        'source_files',
+        'ai_overview_cache',
+        'review_states_cache',
+        'subject_stats_cache',
+        'tablet_notes',
+      ];
+      for (const name of tableNames) {
+        try {
+          uni.removeStorageSync(`auralis:local:${scope}:${name}`);
+        } catch {
+          // Ignore storage removal errors
+        }
+      }
+      return;
+    }
+    const dbIdentity = {
+      name: `auralis_${scope}`,
+      path: `_doc/auralis_${scope}.db`,
+    };
+    try {
+      if (plus.sqlite.isOpenDatabase(dbIdentity)) {
+        await new Promise<void>((resolve) => {
+          plus.sqlite.closeDatabase({
+            ...dbIdentity,
+            success: () => resolve(),
+            fail: () => resolve(),
+          });
+        });
+      }
+    } catch {
+      // Ignore native closeDatabase errors
+    }
   }
 };

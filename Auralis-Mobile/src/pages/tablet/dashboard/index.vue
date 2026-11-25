@@ -1,503 +1,659 @@
 <template>
   <TabletLayout>
     <view class="t-dashboard">
-      <!-- Left Column: Schedule & Action (55%) -->
-      <view class="left-column">
-        <!-- Greeting Row & Quick Add Button -->
-        <view class="greeting-row">
-          <view class="greeting-text-wrap">
-            <text class="greeting-title">{{ greeting }}，{{ username }}</text>
-            <text class="greeting-sub">本周完成 {{ completedTasks }} 项任务 · 专注 {{ totalFocusHours }} 小时</text>
-          </view>
-          <view class="add-circle-btn" :class="{ 'is-active': showQuickAdd }" @click="showQuickAdd = !showQuickAdd">
-            <LineIcon :name="showQuickAdd ? 'close' : 'plus'" size="36rpx" :color="showQuickAdd ? '#FFFFFF' : '#1C1C1A'" />
-          </view>
-        </view>
-
-        <!-- 悬浮最顶层的遮罩层 -->
-        <view v-if="showQuickAdd" class="quick-add-mask" @click="showQuickAdd = false"></view>
-
-        <!-- +号触发的快速创建输入框（覆盖在最顶层） -->
-        <view v-if="showQuickAdd" class="quick-add-container">
-          <view class="quick-input-row">
-            <input 
-              class="quick-input" 
-              v-model="quickTaskName" 
-              placeholder="输入日程或待办内容，按回车添加..." 
-              confirm-type="done"
-              :focus="showQuickAdd"
-              @confirm="submitQuickAdd"
-            />
-            <view class="quick-submit-btn" :class="{ disabled: !quickTaskName.trim() }" @click="submitQuickAdd">
-              <LineIcon name="check" size="32rpx" color="#FFFFFF" />
-            </view>
-          </view>
-
-          <!-- 学科选择：带箭头的单行触发器 -->
-          <view class="quick-select-row">
-            <text class="quick-label">学科：</text>
-            <view class="subject-dropdown-btn" @click="showSubjectList = !showSubjectList">
-              <view class="sub-dot"></view>
-              <text class="dropdown-text">{{ quickSubject?.name || '选择学科...' }}</text>
-              <LineIcon :name="showSubjectList ? 'chevron-up' : 'chevron-down'" size="32rpx" color="var(--color-zen-stone)" />
-            </view>
-          </view>
-
-          <!-- 点击箭头后弹出的竖直排列学科列表 -->
-          <view v-if="showSubjectList" class="subject-vertical-popup">
-            <scroll-view scroll-y class="subject-vertical-scroll" :show-scrollbar="false">
-              <view class="subject-vertical-list">
-                <view 
-                  v-for="sub in displaySubjects" 
-                  :key="sub.id || sub.name"
-                  class="subject-vertical-item"
-                  :class="{ active: quickSubject?.name === sub.name }"
-                  @click="selectSubject(sub)"
-                >
-                  <view class="sub-dot"></view>
-                  <text class="sub-item-name">{{ sub.name }}</text>
-                  <LineIcon v-if="quickSubject?.name === sub.name" name="check" size="32rpx" color="#7D9372" />
-                </view>
-              </view>
-            </scroll-view>
-          </view>
-
-          <!-- 整半小时时长选择（0-2小时每半小时一档，四段连在一起的可拖动选择器） -->
-          <view class="quick-select-row">
-            <text class="quick-label">时长：</text>
-            <view 
-              class="segmented-track"
-              id="durTrack"
-              @touchstart="onDurTouchStart"
-              @touchmove="onDurTouchMove"
-            >
-              <!-- 滑动高亮滑块 -->
-              <view 
-                class="segmented-thumb" 
-                :style="{ transform: `translateX(${durSelectedIndex * 100}%)` }"
-              ></view>
-
-              <!-- 4个连在一起的选项 -->
-              <view 
-                v-for="item in durationOptions" 
-                :key="item.val"
-                class="segmented-item"
-                :class="{ active: quickDuration === item.val }"
-                @click="quickDuration = item.val"
-              >
-                <text>{{ item.label }}</text>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <!-- Week Strip (周视图) -->
-        <view class="week-strip">
-          <view 
-            v-for="(day, idx) in weekDays" 
-            :key="day.dateStr" 
-            class="w-day" 
-            :class="{ active: selectedDateIndex === idx, today: day.isToday }" 
-            @click="selectedDateIndex = idx"
+      <view class="left-column zen-panel">
+        <view class="greeting-header">
+          <text class="greeting-title">{{ greeting }}，{{ displayName }}</text>
+          <view
+            class="todo-fab-add-btn"
+            role="button"
+            title="新建任务"
+            aria-label="新建任务"
+            @click="openCreateModal"
           >
-            <text class="w-week">{{ day.weekdayShort }}</text>
-            <text class="w-num">{{ day.day }}</text>
-            <view v-if="day.isToday" class="today-dot"></view>
+            <LineIcon name="plus" size="16px" color="#FFFFFF" />
           </view>
         </view>
 
-        <!-- Focus Stats Capsules -->
-        <view class="focus-capsules">
-          <view class="stat-capsule">
-            <text class="sc-label">今日专注</text>
-            <text class="sc-val">{{ taskStore.totalFocusHours }} <text class="sc-unit">小时</text></text>
-          </view>
-          <view class="stat-capsule">
-            <text class="sc-label">待办任务</text>
-            <text class="sc-val">{{ pendingTasks.length }} <text class="sc-unit">项</text></text>
-          </view>
-        </view>
+        <ZenWeekStrip
+          v-model="selectedDateKey"
+          :days="weekDays"
+          :scheduled-dates="scheduledDateSet"
+          :show-header="true"
+          :frameless="true"
+        />
 
-        <!-- Section Header -->
-        <view class="section-header">
-          <text class="section-title">待办与日程</text>
-          <text class="section-count">{{ pendingTasks.length > 4 ? `显示前 4 项 · 共 ${pendingTasks.length} 项待办` : '点击左侧完成 · 右上方 + 新建' }}</text>
-        </view>
-
-        <!-- Task List (Zen Pills - Non-scrollable compact) -->
-        <view class="task-list-container">
-          <view v-if="pendingTasks.length === 0" class="empty-tasks">
-            <text class="empty-icon">🍃</text>
-            <text class="empty-text">当前无待办日程</text>
-            <text class="empty-sub">点击右上方 + 创建专注任务</text>
-          </view>
-          <view 
-            v-for="task in pendingTasks.slice(0, 4)" 
-            :key="task.id" 
-            class="zen-pill-task" 
-            :class="{ completed: task.status === 'completed' }" 
-            :style="{ borderLeftColor: 'var(--color-primary)' }"
+        <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
+          <view
+            v-if="hydrated && scheduledForDay.length === 0 && taskStore.homePendingTasks.length === 0"
+            class="clear-day-canvas zen-card"
           >
-            <view class="task-left" @click="handleToggleTask(task)">
-              <view 
-                class="task-checkbox" 
-                :class="{ checked: task.status === 'completed' }" 
-                :style="{ 
-                  borderColor: 'var(--color-primary)',
-                  backgroundColor: task.status === 'completed' ? 'var(--color-primary)' : 'transparent'
-                }"
-              >
-                <LineIcon v-if="task.status === 'completed'" name="check" size="20rpx" color="#FFFFFF" />
-              </view>
-              <view class="task-info">
-                <text class="task-name" :class="{ done: task.status === 'completed' }">{{ task.name }}</text>
-                <view class="task-meta">
-                <text class="task-subject">{{ task.subject }}</text>
-                  <text class="task-duration">· {{ task.duration }} 分钟</text>
-
-                </view>
-              </view>
+            <view class="clear-day-halo" aria-hidden="true">
+              <LineIcon name="calendar" size="22px" color="var(--color-sage-ink)" />
             </view>
-            <view class="task-actions">
-              <view class="action-btn del-btn" @click.stop="handleDeleteTask(task.id)">
-                <LineIcon name="close" size="22rpx" color="#A8A8A5" />
-              </view>
+            <text class="clear-day-title">今日无安排</text>
+            <view class="ui-btn ui-btn-secondary sm clear-day-cta" role="button" @click="openCreateModal">
+              <LineIcon name="plus" size="14px" color="var(--color-sage-ink)" />
+              <text>新建任务</text>
             </view>
           </view>
-        </view>
+
+          <template v-else-if="hydrated || scheduledForDay.length > 0 || taskStore.homePendingTasks.length > 0">
+            <view class="task-section">
+              <view class="section-header">
+                <text class="section-title">日程</text>
+                <text v-if="scheduledForDay.length > 0" class="section-count num-tabular">
+                  {{ scheduledForDay.length }}
+                </text>
+              </view>
+
+              <view v-if="scheduledForDay.length === 0" class="empty-slot zen-empty-surface">
+                <text class="empty-text">暂无日程</text>
+              </view>
+
+              <view v-else class="card-stack">
+                <ZenTaskRow
+                  v-for="item in scheduledForDay"
+                  :key="item.id"
+                  :task="item"
+                  mode="scheduled"
+                  :locked="isScheduledTaskLocked(item)"
+                  @toggle="toggleTaskItem"
+                  @unschedule="unscheduleTaskItem"
+                />
+              </view>
+            </view>
+
+            <view class="task-section">
+              <view class="section-header">
+                <text class="section-title">待办</text>
+                <text v-if="taskStore.homePendingTasks.length > 0" class="section-count num-tabular">
+                  {{ taskStore.homePendingTasks.length }}
+                </text>
+              </view>
+
+              <view v-if="taskStore.homePendingTasks.length === 0" class="empty-slot zen-empty-surface">
+                <text class="empty-text">暂无待办</text>
+              </view>
+
+              <view v-else class="card-stack">
+                <ZenTaskRow
+                  v-for="todo in taskStore.homePendingTasks"
+                  :key="todo.id"
+                  :task="todo"
+                  mode="pending"
+                  :locked="todo.id ? taskStore.updatingTaskIds.includes(todo.id) : false"
+                  @toggle="toggleTaskItem"
+                  @delete="confirmDeleteTodo"
+                />
+              </view>
+            </view>
+          </template>
+        </scroll-view>
       </view>
 
-      <!-- Right Column: Stats & Analytics (38% Full-Width Vertical Stack) -->
       <view class="right-column">
-        <view class="stats-grid-container">
-          <!-- Card 1: Hero Summary & Streak Banner (Horizontal 1-story strip) -->
-          <view class="stats-card card-hero-summary">
-            <view class="hero-strip-layout">
-              <view class="hero-streak-left">
-                <LineIcon name="fire" size="44rpx" color="#ffb800" />
-                <text class="hero-streak-num">{{ streakDays }}</text>
-                <view class="streak-text-col">
-                  <text class="hero-streak-text">天连续专注</text>
-                  <text class="hero-rate-badge">完成率 {{ taskCompletionRate }}%</text>
+        <view class="subjects-card zen-panel">
+          <view class="panel-header">
+            <text class="panel-title">学科空间</text>
+            <text v-if="subjectStore.subjects.length > 0" class="section-count num-tabular">
+              {{ subjectStore.subjects.length }}
+            </text>
+          </view>
+
+          <view v-if="hydrated && subjectStore.subjects.length === 0" class="subjects-empty">
+            <text class="empty-text">暂无学科</text>
+          </view>
+
+          <scroll-view v-else-if="subjectStore.subjects.length > 0" scroll-y :show-scrollbar="false" class="subjects-scroll">
+            <view class="subject-list">
+              <view
+                v-for="sub in subjectStore.subjects"
+                :key="sub.id"
+                class="subject-row"
+                role="button"
+                :aria-label="`进入学科 ${sub.name}`"
+                @click="openSubjectWorkspace(sub.id)"
+              >
+                <view class="subject-row-left">
+                  <view class="sub-icon-badge">
+                    <LineIcon
+                      :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
+                      size="16px"
+                      color="var(--color-sage-ink)"
+                    />
+                  </view>
+                  <text class="sub-name">{{ sub.name }}</text>
+                </view>
+                <view class="subject-row-right">
+                  <view class="subject-meta num-tabular">
+                    <LineIcon name="layers" size="12px" color="var(--text-muted)" />
+                    <text>{{ sub.blockCount || 0 }}</text>
+                  </view>
+                  <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
                 </view>
               </view>
-              <view class="hero-metrics-right">
-                <view class="hero-metric">
-                  <text class="hm-val">{{ totalFocusHours }}</text>
-                  <text class="hm-label">本周专注(h)</text>
-                </view>
-                <view class="hm-divider"></view>
-                <view class="hero-metric">
-                  <text class="hm-val">{{ totalBlocks }}</text>
-                  <text class="hm-label">知识块</text>
-                </view>
-                <view class="hm-divider"></view>
-                <view class="hero-metric">
-                  <text class="hm-val">{{ completedTasks }}</text>
-                  <text class="hm-label">已完成</text>
-                </view>
-              </view>
             </view>
-          </view>
+          </scroll-view>
+        </view>
 
-          <!-- Card 2: Weekly Focus Chart (Full width, flex: 1, min-height: 0) -->
-          <view class="stats-card card-chart-vertical">
-            <view class="card-header-compact">
-              <text class="section-title compact">本周专注趋势</text>
-              <text class="footnote-compact">日均 {{ weeklyAverage }} 分钟</text>
-            </view>
-            <view class="chart-wrapper flex-chart">
-              <WeeklyChart :data="weeklyData" />
-            </view>
-          </view>
-
-          <!-- Card 3: Subject Distribution (Full width, flex: 1, min-height: 0) -->
-          <view class="stats-card card-chart-vertical">
-            <view class="card-header-compact">
-              <text class="section-title compact">学科时间分布</text>
-              <text class="footnote-compact">共 {{ totalBlocks }} 块</text>
-            </view>
-            <view class="chart-wrapper flex-chart">
-              <SubjectPieChart :segments="subjectSegments" :total="totalBlocks" />
-            </view>
-          </view>
-
-          <!-- Card 4: Heatmap (Full width, flex-shrink: 0, compact) -->
-          <view class="stats-card card-heatmap-vertical">
-            <HeatmapChart :dataset="heatmapData" :weeks="5" />
-          </view>
+        <view class="metrics-panel zen-panel">
+          <StudyMetrics />
         </view>
       </view>
     </view>
+
+    <template #modal>
+      <view v-if="showCreateModal" class="zen-modal-mask task-modal-mask" @click="closeCreateModal">
+        <view
+          class="task-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="新建学习任务"
+          @click.stop
+        >
+          <view class="modal-header">
+            <text class="modal-title">新建学习任务</text>
+            <view
+              class="modal-close-btn"
+              :class="{ 'is-disabled': savingTask }"
+              role="button"
+              aria-label="关闭"
+              @click="closeCreateModal"
+            >
+              <LineIcon name="close" size="15px" color="var(--text-muted)" />
+            </view>
+          </view>
+
+          <view class="modal-body">
+            <!-- 任务名称 -->
+            <view class="modal-form-group">
+              <view class="modal-form-label">
+                <text>任务名称</text>
+                <text class="required">*</text>
+              </view>
+              <input
+                v-model="taskForm.name"
+                class="modal-form-input"
+                maxlength="80"
+                placeholder="请输入学习或专注任务名称..."
+                :disabled="savingTask"
+                @confirm="submitCreateTask"
+              />
+            </view>
+
+            <!-- 所属学科 -->
+            <view class="modal-form-group">
+              <view class="subject-header">
+                <view class="modal-form-label">
+                  <text>所属学科</text>
+                  <text class="required">*</text>
+                </view>
+                <text v-if="subjectStore.subjects.length > 0" class="subject-count-hint num-tabular">
+                  共 {{ subjectStore.subjects.length }} 门
+                </text>
+              </view>
+              <view v-if="subjectStore.subjects.length === 0" class="empty-hint">
+                暂无学科，请先创建学科空间
+              </view>
+              <view v-else class="subject-grid">
+                <view
+                  v-for="sub in subjectStore.subjects"
+                  :key="sub.id"
+                  class="subject-chip"
+                  :class="{ active: taskForm.subjectId === sub.id }"
+                  role="button"
+                  @click="!savingTask && (taskForm.subjectId = sub.id)"
+                >
+                  <LineIcon
+                    :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
+                    size="13px"
+                    :color="taskForm.subjectId === sub.id ? '#76855B' : 'var(--text-secondary)'"
+                  />
+                  <text class="chip-name">{{ sub.name }}</text>
+                </view>
+              </view>
+            </view>
+
+            <!-- 专注时长（PC 同源 7 档整半小时分段滑轨） -->
+            <view class="modal-form-group">
+              <view class="duration-header">
+                <text class="modal-form-label">专注时长</text>
+                <view class="duration-value-pill num-tabular">
+                  <LineIcon name="clock" size="13px" color="#76855B" />
+                  <text>{{ taskForm.duration }} 分钟（{{ (taskForm.duration / 60).toFixed(1) }} 小时）</text>
+                </view>
+              </view>
+
+              <view class="duration-segmented-track">
+                <view class="track-segments-row">
+                  <view class="active-thumb-pill" :style="durationThumbStyle">
+                    <text class="active-thumb-text num-tabular">{{ activeDurationLabel }}</text>
+                  </view>
+                  <view
+                    v-for="opt in DURATION_OPTIONS"
+                    :key="opt.minutes"
+                    class="track-segment-item"
+                    :class="{ active: taskForm.duration === opt.minutes }"
+                    role="button"
+                    @click="!savingTask && (taskForm.duration = opt.minutes)"
+                  >
+                    <text class="segment-label num-tabular">{{ opt.label }}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+
+            <!-- 日程安排（平板专属直接排程） -->
+            <view class="modal-form-group">
+              <view class="modal-form-label">
+                <text>日程安排</text>
+                <text class="optional-tag">可选</text>
+              </view>
+              <view class="schedule-row-card">
+                <text class="schedule-date-label">排入 {{ selectedDateHeading }}</text>
+                <view class="schedule-controls">
+                  <picker
+                    v-if="taskForm.scheduled"
+                    mode="time"
+                    :value="taskForm.timeHHmm"
+                    :disabled="savingTask"
+                    @change="onModalTimeChange"
+                  >
+                    <view class="time-pill num-tabular">
+                      <LineIcon name="clock" size="13px" color="#76855B" />
+                      <text>{{ taskForm.timeHHmm }}</text>
+                    </view>
+                  </picker>
+                  <switch
+                    :checked="taskForm.scheduled"
+                    :disabled="savingTask"
+                    color="#8B9A6E"
+                    style="transform: scale(0.84); transform-origin: right center;"
+                    @change="onScheduledSwitch"
+                  />
+                </view>
+              </view>
+            </view>
+
+            <!-- 截止时间 -->
+            <view class="modal-form-group">
+              <view class="due-header">
+                <view class="modal-form-label">
+                  <text>截止时间</text>
+                  <text class="optional-tag">可选</text>
+                </view>
+                <text
+                  v-if="taskForm.dueDateKey && !savingTask"
+                  class="due-clear-btn"
+                  role="button"
+                  @click="taskForm.dueDateKey = ''"
+                >清除</text>
+              </view>
+
+              <picker
+                mode="date"
+                :value="taskForm.dueDateKey || selectedDateKey"
+                :disabled="savingTask"
+                @change="onModalDueDateChange"
+              >
+                <view class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
+                  <LineIcon name="calendar" size="14px" :color="taskForm.dueDateKey ? '#76855B' : '#8B9A6E'" />
+                  <text class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</text>
+                </view>
+              </picker>
+
+              <view class="quick-date-row">
+                <view
+                  v-for="preset in dueDatePresets"
+                  :key="preset.label"
+                  class="due-preset-chip"
+                  :class="{ active: taskForm.dueDateKey === preset.key }"
+                  role="button"
+                  @click="!savingTask && toggleDuePreset(preset.key)"
+                >
+                  <text>{{ preset.label }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+
+          <view class="modal-footer">
+            <button
+              type="button"
+              class="modal-btn modal-btn-secondary"
+              :disabled="savingTask"
+              @click="closeCreateModal"
+            >取消</button>
+            <button
+              type="button"
+              class="modal-btn modal-btn-primary"
+              :disabled="!canSubmitTask"
+              @click="submitCreateTask"
+            >{{ savingTask ? '保存中…' : taskForm.scheduled ? '加入日程' : '添加到待办' }}</button>
+          </view>
+        </view>
+      </view>
+    </template>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
-import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
-import WeeklyChart from '@/components/WeeklyChart.vue'
-import SubjectPieChart from '@/components/SubjectPieChart.vue'
-import HeatmapChart from '@/components/HeatmapChart.vue'
-import { useBlockStore } from '@/store/useBlockStore'
-import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore } from '@/store/useTaskStore'
+import StudyMetrics from '@/components/StudyMetrics.vue'
+import ZenTaskRow from '@/components/ZenTaskRow.vue'
+import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
+import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { useEscapeKey } from '@/composables/useEscapeKey'
 import { useAuthStore } from '@/store/useAuthStore'
-import { statsApi } from '@/api/statsApi'
+import { useSubjectStore } from '@/store/useSubjectStore'
+import { useTaskStore, type Task } from '@/store/useTaskStore'
+import { findOverlappingScheduledTask, isScheduledCompletionLocked } from '@/utils/taskSyncMapper'
+import {
+  combineLocalDateAndTime,
+  endOfLocalDateIso,
+  formatDateHeading,
+  getWeekDays,
+  shiftDateKey,
+  toLocalDateKey,
+} from '@/utils/dateKey'
+import { isSubjectIconKey } from '@/utils/subjectIcon'
 
-const blockStore = useBlockStore()
+const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
-const authStore = useAuthStore()
-const SUBJECT_CHART_PALETTE = ['#7D9372', '#A3B19B', '#C8A97E', '#8DA9B8', '#B58A9B']
 
-const { recentBlocks } = storeToRefs(blockStore)
-const { subjects } = storeToRefs(subjectStore)
-const { pendingTasks } = storeToRefs(taskStore)
-
-const username = computed(() => authStore.username || '同学')
-
+const displayName = computed(() => authStore.user?.displayName || authStore.username || '同学')
 const greeting = computed(() => {
-  const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 9) return '早上好'
-  if (h < 12) return '上午好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  if (h < 22) return '晚上好'
-  return '夜深了'
+  const hour = new Date().getHours()
+  if (hour < 12) return '早安'
+  if (hour < 18) return '午安'
+  return '晚安'
 })
 
-// --- QUICK ADD LOGIC ---
-const showQuickAdd = ref(false)
-const quickTaskName = ref('')
-const quickSubject = ref<any>(null)
-const quickDuration = ref(30)
-const showSubjectList = ref(false)
+const nowClock = ref(new Date())
+const todayKey = ref(toLocalDateKey(nowClock.value))
+const selectedDateKey = ref(todayKey.value)
+const weekDays = computed(() => getWeekDays(todayKey.value, todayKey.value))
+const selectedDateHeading = computed(() => formatDateHeading(selectedDateKey.value))
 
-const selectSubject = (sub: any) => {
-  quickSubject.value = sub
-  showSubjectList.value = false
-}
-
-const durationOptions = [
-  { label: '0.5h', val: 30 },
-  { label: '1h', val: 60 },
-  { label: '1.5h', val: 90 },
-  { label: '2h', val: 120 }
-]
-
-const durSelectedIndex = computed(() => {
-  const idx = durationOptions.findIndex(item => item.val === quickDuration.value)
-  return idx !== -1 ? idx : 0
-})
-
-const durTrackRect = ref<any>(null)
-const getDurTrackRect = () => {
-  return new Promise((resolve) => {
-    if (durTrackRect.value) {
-      resolve(durTrackRect.value)
-      return
-    }
-    const query = uni.createSelectorQuery()
-    query.select('#durTrack').boundingClientRect((data: any) => {
-      if (data) {
-        durTrackRect.value = data
-        resolve(data)
-      }
-    }).exec()
-  })
-}
-
-const handleDurTouch = async (e: any) => {
-  const touch = e.touches && e.touches[0]
-  if (!touch) return
-  const rect: any = await getDurTrackRect()
-  if (!rect || !rect.width) return
-
-  const clientX = touch.clientX
-  let ratio = (clientX - rect.left) / rect.width
-  if (ratio < 0) ratio = 0
-  if (ratio > 0.999) ratio = 0.999
-
-  const index = Math.floor(ratio * 4)
-  if (durationOptions[index] && quickDuration.value !== durationOptions[index].val) {
-    quickDuration.value = durationOptions[index].val
+function syncClock() {
+  nowClock.value = new Date()
+  todayKey.value = toLocalDateKey(nowClock.value)
+  if (!weekDays.value.some(day => day.dateKey === selectedDateKey.value)) {
+    selectedDateKey.value = todayKey.value
   }
+  void taskStore.recoverOverdueTasks()
 }
 
-const onDurTouchStart = (e: any) => {
-  handleDurTouch(e)
-}
-const onDurTouchMove = (e: any) => {
-  handleDurTouch(e)
-}
-
-const displaySubjects = computed(() => {
-  return subjects.value || []
+const scheduledForDay = computed(() => taskStore.getScheduledTasksForDate(selectedDateKey.value))
+const scheduledDateSet = computed(() => {
+  const dates = new Set<string>()
+  for (const item of taskStore.allTasks) {
+    if (!item.is_deleted && item.status !== 'cancelled' && item.scheduledAt) {
+      const key = toLocalDateKey(item.scheduledAt)
+      if (key) dates.add(key)
+    }
+  }
+  return dates
 })
 
-const submitQuickAdd = async () => {
-  const name = quickTaskName.value.trim()
-  if (!name) return
+function isScheduledTaskLocked(task: Task): boolean {
+  return Boolean((task.id && taskStore.updatingTaskIds.includes(task.id)) || isScheduledCompletionLocked(task, nowClock.value))
+}
 
-  const selectedSub = quickSubject.value || displaySubjects.value[0]
-  if (!selectedSub) {
-    uni.showToast({ title: '请先创建学科', icon: 'none' })
+async function toggleTaskItem(id: string) {
+  if (taskStore.updatingTaskIds.includes(id)) return
+  const task = taskStore.allTasks.find(item => item.id === id)
+  if (isScheduledCompletionLocked(task, nowClock.value)) {
+    uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
     return
   }
-  const now = new Date()
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-
-  await taskStore.addTask({
-    name,
-    subject: selectedSub.name,
-    duration: quickDuration.value,
-
-    status: 'scheduled',
-    startTime: timeStr,
-    subjectId: selectedSub.id
-  })
-  quickTaskName.value = ''
-  showQuickAdd.value = false
-  uni.showToast({ title: '已添加日程', icon: 'success' })
+  const generation = authStore.getLoginGeneration()
+  try {
+    await taskStore.toggleTaskComplete(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+  }
 }
 
-// --- WEEK STRIP LOGIC ---
-const weekDays = computed(() => {
-  const days = []
-  const today = new Date()
-  const dayOfWeek = today.getDay() || 7
-  const monday = new Date(today)
-  monday.setDate(today.getDate() - (dayOfWeek - 1))
-  
-  const names = ['一', '二', '三', '四', '五', '六', '日']
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    const dateStr = d.toISOString().split('T')[0]
-    days.push({
-      day: d.getDate(),
-      weekdayShort: names[i],
-      dateStr,
-      isToday: d.toDateString() === today.toDateString()
-    })
+async function unscheduleTaskItem(id: string) {
+  const generation = authStore.getLoginGeneration()
+  try {
+    await taskStore.unscheduleTask(id)
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: '已移回待办', icon: 'none' })
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '移回失败，请重试', icon: 'none' })
   }
-  return days
-})
-const selectedDateIndex = ref((new Date().getDay() || 7) - 1)
-
-const handleToggleTask = async (task: any) => {
-  if (task.status === 'completed') {
-    task.status = 'pending'
-    uni.showToast({ title: '已恢复待办', icon: 'none' })
-  } else {
-    task.status = 'completed'
-    uni.showToast({ title: '任务已完成！', icon: 'success' })
-  }
-  await taskStore.updateTask(task)
-  await taskStore.loadLocalTasks()
 }
 
-const handleDeleteTask = async (id?: string) => {
-  if (!id) return
+function confirmDeleteTodo(id: string, title: string) {
+  const generation = authStore.getLoginGeneration()
   uni.showModal({
-    title: '确认删除',
-    content: '删除后不可恢复',
-    success: async (res) => {
-      if (res.confirm) {
-        await taskStore.removeTask(id)
-        uni.showToast({ title: '已删除', icon: 'success' })
-      }
-    }
+    title: '删除待办',
+    content: `确定删除「${title}」？`,
+    confirmColor: '#C93B3B',
+    success: (res) => {
+      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
+      void taskStore.removeTask(id).catch((err) => {
+        if (generation !== authStore.getLoginGeneration()) return
+        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
+      })
+    },
   })
 }
 
-// --- STATS LOGIC ---
-const totalFocusHours = ref(0)
-const totalBlocks = ref(0)
-const completedTasks = ref(0)
-const activeTasks = ref(0)
-const streakDays = ref(0)
+const DURATION_OPTIONS = [
+  { minutes: 30, label: '30m' },
+  { minutes: 60, label: '1h' },
+  { minutes: 90, label: '1.5h' },
+  { minutes: 120, label: '2h' },
+  { minutes: 150, label: '2.5h' },
+  { minutes: 180, label: '3h' },
+  { minutes: 240, label: '4h' },
+] as const
 
-const taskCompletionRate = computed(() => {
-  const total = activeTasks.value + completedTasks.value
-  if (total === 0) return 0
-  return Math.round((completedTasks.value / total) * 100)
+const showCreateModal = ref(false)
+const savingTask = ref(false)
+const taskForm = reactive({
+  name: '',
+  subjectId: '',
+  duration: 60,
+  scheduled: true,
+  timeHHmm: '09:00',
+  dueDateKey: '',
 })
 
-const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
-
-const weeklyAverage = computed(() => {
-  if (weeklyData.value.length === 0) return 0
-  const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
-  return Math.round(sum / weeklyData.value.length)
+const activeDurationIndex = computed(() => {
+  const idx = DURATION_OPTIONS.findIndex(opt => opt.minutes === taskForm.duration)
+  return idx !== -1 ? idx : 1
 })
 
-const subjectSegments = computed(() => {
-  const blocks = blockStore.recentBlocks
-  if (blocks.length === 0) return []
-  
-  const counts: Record<string, number> = {}
-  blocks.forEach(b => {
-    const sName = b.subject || '未分类'
-    counts[sName] = (counts[sName] || 0) + 1
-  })
-  
-  const segments = Object.keys(counts).map((subjectName, index) => {
-    return {
-      subject: subjectName,
-      percentage: Math.round((counts[subjectName] / blocks.length) * 100),
-      color: SUBJECT_CHART_PALETTE[index % SUBJECT_CHART_PALETTE.length]
+const activeDurationLabel = computed(() => (
+  DURATION_OPTIONS[activeDurationIndex.value]?.label || '1h'
+))
+
+const durationThumbStyle = computed(() => {
+  const stepPercent = 100 / DURATION_OPTIONS.length
+  return {
+    left: `${activeDurationIndex.value * stepPercent}%`,
+    width: `${stepPercent}%`,
+  }
+})
+
+const canSubmitTask = computed(() => (
+  !savingTask.value
+  && taskForm.name.trim().length > 0
+  && Boolean(taskForm.subjectId)
+))
+
+function findAvailableStartTime(dateKey: string, durationMinutes: number, preferredHHmm: string): string {
+  const preferredIso = combineLocalDateAndTime(dateKey, preferredHHmm)
+  if (!findOverlappingScheduledTask(taskStore.allTasks, { scheduledAtIso: preferredIso, durationMinutes })) {
+    return preferredHHmm
+  }
+  for (let mins = 8 * 60; mins <= 22 * 60; mins += 30) {
+    const hh = String(Math.floor(mins / 60)).padStart(2, '0')
+    const mm = String(mins % 60).padStart(2, '0')
+    const candidate = `${hh}:${mm}`
+    const candidateIso = combineLocalDateAndTime(dateKey, candidate)
+    if (!findOverlappingScheduledTask(taskStore.allTasks, { scheduledAtIso: candidateIso, durationMinutes })) {
+      return candidate
     }
-  })
-  
-  return segments.sort((a, b) => b.percentage - a.percentage)
+  }
+  return preferredHHmm
+}
+
+function openCreateModal() {
+  if (!taskForm.subjectId || !subjectStore.subjects.some(item => item.id === taskForm.subjectId)) {
+    taskForm.subjectId = subjectStore.subjects[0]?.id || ''
+  }
+  if (taskForm.scheduled) {
+    taskForm.timeHHmm = findAvailableStartTime(selectedDateKey.value, taskForm.duration, taskForm.timeHHmm)
+  }
+  showCreateModal.value = true
+}
+
+function closeCreateModal() {
+  if (savingTask.value) return
+  showCreateModal.value = false
+}
+
+useEscapeKey(() => showCreateModal.value, closeCreateModal)
+
+const dueDatePresets = computed(() => [
+  { label: '今天', key: todayKey.value },
+  { label: '明天', key: shiftDateKey(todayKey.value, 1) },
+  { label: '3天后', key: shiftDateKey(todayKey.value, 3) },
+])
+
+function toggleDuePreset(key: string) {
+  taskForm.dueDateKey = taskForm.dueDateKey === key ? '' : key
+}
+
+function onScheduledSwitch(event: Event) {
+  const detail = (event as Event & { detail?: { value?: boolean } }).detail
+  taskForm.scheduled = Boolean(detail?.value)
+}
+
+function onModalTimeChange(event: { detail?: { value?: string } }) {
+  if (event?.detail?.value) taskForm.timeHHmm = event.detail.value
+}
+
+function onModalDueDateChange(event: { detail?: { value?: string } }) {
+  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
+}
+
+async function submitCreateTask() {
+  if (savingTask.value) return
+  const title = taskForm.name.trim()
+  const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
+  if (!title) {
+    uni.showToast({ title: '请输入名称', icon: 'none' })
+    return
+  }
+  if (!subject) {
+    uni.showToast({ title: '请选择学科', icon: 'none' })
+    return
+  }
+
+  const scheduledAt = taskForm.scheduled
+    ? combineLocalDateAndTime(selectedDateKey.value, taskForm.timeHHmm)
+    : undefined
+  if (scheduledAt) {
+    const overlap = findOverlappingScheduledTask(taskStore.allTasks, {
+      scheduledAtIso: scheduledAt,
+      durationMinutes: taskForm.duration,
+    })
+    if (overlap) {
+      uni.showToast({
+        title: `与日程「${overlap.name}」时段冲突，请调整时间或关闭按时段排期`,
+        icon: 'none',
+      })
+      return
+    }
+  }
+
+  const generation = authStore.getLoginGeneration()
+  savingTask.value = true
+  try {
+    const dueAt = taskForm.dueDateKey ? endOfLocalDateIso(taskForm.dueDateKey) : undefined
+    await taskStore.addTask({
+      name: title,
+      subject: subject.name,
+      subjectId: subject.id,
+      duration: taskForm.duration,
+      status: scheduledAt ? 'scheduled' : 'pending',
+      scheduledAt,
+      dueAt,
+    })
+    if (generation !== authStore.getLoginGeneration()) return
+    taskForm.name = ''
+    taskForm.dueDateKey = ''
+    showCreateModal.value = false
+    uni.showToast({ title: scheduledAt ? '已加入日程' : '已加入待办', icon: 'none' })
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+  } finally {
+    if (generation === authStore.getLoginGeneration()) {
+      savingTask.value = false
+    }
+  }
+}
+
+function openSubjectWorkspace(subjectId: string) {
+  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${subjectId}` })
+}
+
+let clockTimer: ReturnType<typeof setInterval> | null = null
+
+onShow(() => {
+  syncClock()
+  void subjectStore.loadSubjects()
 })
 
-const heatmapData = ref<{ date: string; count: number }[]>([])
+const hydrated = ref(false)
 
-const loadServerStats = async () => {
-  const today = new Date()
-  const fromDate = new Date(today)
-  fromDate.setUTCDate(today.getUTCDate() - 6)
-  const from = fromDate.toISOString().slice(0, 10)
-  const to = today.toISOString().slice(0, 10)
-  const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
-  const days = weekly.days || []
-  const reversed = [...days].reverse()
-  const firstInactiveDay = reversed.findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0)))
-  streakDays.value = firstInactiveDay < 0 ? days.length : firstInactiveDay
-  totalBlocks.value = Number(summary.activeKnowledgeBlocks || 0)
-  activeTasks.value = Number(summary.activeTasks || 0)
-  completedTasks.value = days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0)
-  totalFocusHours.value = Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1))
-  weeklyData.value = days.map(day => ({
-    day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
-    minutes: Math.round(Number(day.studySeconds || 0) / 60),
-    isToday: day.date === to,
-  }))
-  heatmapData.value = days.map(day => ({
-    date: day.date || '',
-    count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
-  }))
+async function hydrateDashboardData() {
+  const gen = authStore.getLoginGeneration()
+  try {
+    await Promise.all([subjectStore.loadSubjects(), taskStore.fetchTasks()])
+  } finally {
+    if (gen === authStore.getLoginGeneration()) {
+      hydrated.value = true
+    }
+  }
 }
+
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
+  () => {
+    hydrated.value = false
+    showCreateModal.value = false
+    savingTask.value = false
+    taskForm.name = ''
+    taskForm.dueDateKey = ''
+    if (!authStore.isAuthenticated) return
+    void hydrateDashboardData()
+  },
+)
 
 onMounted(async () => {
-  try {
-    await Promise.all([
-      blockStore.fetchBlocks(),
-      subjectStore.loadSubjects(),
-      taskStore.fetchTasks(),
-      loadServerStats(),
-    ])
-    if (subjects.value.length > 0 && !quickSubject.value) {
-      quickSubject.value = subjects.value[0]
-    }
-  } catch (error) {
-    console.error('[TabletDashboard] Failed to load server data:', error)
-    uni.showToast({ title: '看板数据加载失败', icon: 'none' })
+  clockTimer = setInterval(syncClock, 30000)
+  if (!authStore.isAuthenticated) return
+  await hydrateDashboardData()
+})
+
+onUnmounted(() => {
+  if (clockTimer) {
+    clearInterval(clockTimer)
+    clockTimer = null
   }
 })
 </script>
@@ -505,625 +661,755 @@ onMounted(async () => {
 <style scoped>
 .t-dashboard {
   display: flex;
+  flex-direction: row;
   width: 100%;
   height: 100%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  padding: 24rpx;
+  padding: 16px;
+  gap: 14px;
+  background-color: transparent;
   box-sizing: border-box;
-  gap: 24rpx;
-}
-
-/* Left Column (62%) */
-.left-column {
-  width: 62%;
-  flex: 62;
-  height: calc(100vh - 48rpx);
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
-  background: var(--color-zen-white, #FFFFFF);
-  border-radius: 36rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  padding: 32rpx;
-  box-sizing: border-box;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02);
-  overflow: visible;
-  position: relative;
-}
-
-/* Right Column (38%) */
-.right-column {
-  width: 38%;
-  flex: 38;
-  height: calc(100vh - 48rpx);
-  display: flex;
-  flex-direction: column;
-  background: var(--color-zen-white, #FFFFFF);
-  border-radius: 36rpx;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  padding: 28rpx;
-  box-sizing: border-box;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02);
   overflow: hidden;
 }
 
-/* Greeting Row */
-.greeting-row {
+.left-column {
+  flex: 6;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 22px 24px;
+  box-sizing: border-box;
+}
+
+.right-column {
+  flex: 4;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+
+.greeting-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.greeting-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.todo-fab-add-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-gradient);
+  box-shadow: 0 3px 10px rgba(118, 135, 88, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.18s ease;
+}
+
+.todo-fab-add-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 5px 14px rgba(118, 135, 88, 0.36);
+}
+
+.todo-fab-add-btn:active {
+  transform: scale(0.92);
+}
+
+.tasks-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+.clear-day-canvas {
+  padding: 44px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border-radius: 18px;
+}
+
+.clear-day-halo {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clear-day-title {
+  font-size: 15px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.clear-day-cta {
+  border-radius: var(--radius-full);
+  padding: 0 16px;
+  color: var(--color-sage-ink);
+}
+
+.task-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.section-title {
+  font-size: 13.5px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-secondary);
+}
+
+.section-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.empty-slot {
+  height: 38px;
+}
+
+.empty-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subjects-card {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.metrics-panel {
+  padding: 16px;
+  flex-shrink: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+}
+
+.subjects-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.subjects-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+}
+
+.subject-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subject-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: 13px;
+  background-color: var(--glass-sub-bg);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-subtle);
+  cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.14s ease, box-shadow 0.16s ease;
+}
+
+.subject-row:hover {
+  border-color: var(--border-accent);
+  transform: translateX(2px);
+}
+
+.subject-row:active {
+  transform: scale(0.985);
+}
+
+.subject-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sub-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background-color: var(--color-sage-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sub-name {
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subject-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.subject-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+.task-modal-mask {
+  background-color: rgba(28, 28, 26, 0.42);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  padding: 24px;
+}
+
+.task-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 24px 64px -12px rgba(0, 0, 0, 0.13),
+    0 8px 24px -6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  animation: uiModalIn 0.22s var(--ease-out) both;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px 28px 12px;
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.4;
+}
+
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.18s ease, transform 0.2s var(--ease-out);
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+.modal-close-btn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.modal-body {
+  padding: 8px 28px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-sizing: border-box;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-form-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.modal-form-label .required {
+  color: #D14343;
+  font-weight: 700;
+}
+
+.optional-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.modal-form-input {
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04), 0 0.5px 1.5px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
+}
+
+/* #ifdef H5 */
+.modal-form-input:focus {
+  outline: none;
+  border-color: var(--color-zen-sage);
+  background: #FDFBF8;
+  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
+}
+/* #endif */
+
+.subject-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.greeting-title {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  display: block;
-}
-.greeting-sub {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-top: 6rpx;
-  display: block;
-}
-.add-circle-btn {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 50%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.add-circle-btn:hover {
-  transform: scale(1.05);
-}
-.add-circle-btn.is-active {
-  background: #7D9372;
-  border-color: #7D9372;
+
+.subject-count-hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
-/* 悬浮最顶层的半透明遮罩 */
-.quick-add-mask {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 9990;
-  background-color: rgba(0, 0, 0, 0.15);
-  animation: fadeIn 0.2s;
-}
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
 }
 
-/* +号下拉展开输入框（绝对定位覆盖在最顶层，不推挤下方元素） */
-.quick-add-container {
-  position: absolute;
-  top: 130rpx;
-  left: 32rpx;
-  right: 32rpx;
-  z-index: 9999;
-  padding: 28rpx 32rpx;
-  background-color: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-stone, #A8A8A5);
-  border-radius: 28rpx;
-  box-shadow: 0 24rpx 60rpx rgba(0, 0, 0, 0.14);
-  animation: quickSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes quickSlideDown {
-  from { opacity: 0; transform: translateY(-12rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.quick-input-row {
+.subject-grid {
   display: flex;
-  align-items: center;
-  gap: 16rpx;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 3px 3px 6px;
 }
-.quick-input {
-  flex: 1;
-  height: 72rpx;
-  font-size: 28rpx;
-  color: var(--color-zen-graphite, #1C1C1A);
-  background: #FFFFFF;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 16rpx;
-  padding: 0 24rpx;
-}
-.quick-submit-btn {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
-  background-color: #7D9372;
-  display: flex;
+
+.subject-chip {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s;
+  gap: 6px;
+  padding: 6.5px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s var(--ease-out);
+  max-width: 100%;
 }
-.quick-submit-btn:active {
-  transform: scale(0.92);
+
+.subject-chip:hover {
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1px);
 }
-.quick-submit-btn.disabled {
-  opacity: 0.3;
-}
-.quick-select-row {
-  display: flex;
-  align-items: center;
-  margin-top: 20rpx;
-  padding-top: 16rpx;
-  border-top: 1px dashed var(--color-zen-hairline, #E6E6E4);
-}
-.quick-label {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  flex-shrink: 0;
-  width: 80rpx;
+
+.subject-chip.active {
+  background: rgba(139, 154, 110, 0.14);
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
   font-weight: 600;
-}
-/* 单行选择触发器（带箭头） */
-.subject-dropdown-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  padding: 14rpx 24rpx;
-  background-color: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.subject-dropdown-btn:active {
-  background-color: var(--color-zen-surface, #EEEEEC);
-  border-color: #7D9372;
-}
-.sub-dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dropdown-text {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.16), 0 3px 10px rgba(139, 154, 110, 0.18);
 }
 
-/* 弹出的竖直排列学科列表 */
-.subject-vertical-popup {
-  margin: 12rpx 0 6rpx;
-  background-color: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 24rpx;
-  box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.08);
+.chip-name {
   overflow: hidden;
-  animation: dropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes dropdownSlide {
-  from { opacity: 0; transform: translateY(-10rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.subject-vertical-scroll {
-  width: 100%;
-  max-height: 360rpx;
-}
-.subject-vertical-list {
-  display: flex;
-  flex-direction: column;
-  padding: 12rpx;
-  gap: 8rpx;
-}
-.subject-vertical-item {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 20rpx 24rpx;
-  border-radius: 16rpx;
-  background-color: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid transparent;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.subject-vertical-item.active {
-  background-color: rgba(125, 147, 114, 0.12);
-  border-color: #7D9372;
-}
-.sub-item-name {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--color-zen-graphite, #1C1C1A);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* 连在一起的 0-2 小时可拖动分段选择器 */
-.segmented-track {
-  flex: 1;
-  height: 68rpx;
-  background-color: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
-  padding: 6rpx;
+.duration-header {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.duration-value-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-sage-dark);
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.2);
+  padding: 3px 12px;
+  border-radius: var(--radius-full);
+}
+
+.duration-segmented-track {
   position: relative;
-  overflow: hidden;
+  height: 44px;
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1.5px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1.5px 4px rgba(0, 0, 0, 0.04);
   user-select: none;
-  cursor: pointer;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
 }
-.segmented-thumb {
+
+.duration-segmented-track:hover {
+  border-color: rgba(139, 154, 110, 0.35);
+}
+
+.track-segments-row {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+.active-thumb-pill {
   position: absolute;
-  top: 6rpx;
-  left: 6rpx;
-  bottom: 6rpx;
-  width: calc((100% - 12rpx) / 4);
-  background-color: var(--color-zen-white, #FFFFFF);
-  border-radius: 999rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(125, 147, 114, 0.35);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 1;
-}
-.segmented-item {
-  flex: 1;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.36), 0 1px 2px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2;
-  font-size: 24rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone, #A8A8A5);
-  transition: color 0.2s;
-}
-.segmented-item.active {
-  color: var(--color-zen-graphite, #1C1C1A);
-  font-weight: 800;
+  pointer-events: none;
+  box-sizing: border-box;
+  transition: left 0.22s var(--ease-out);
 }
 
-/* Week Strip */
-.week-strip {
-  display: flex;
-  justify-content: space-between;
-  gap: 12rpx;
-  margin: 8rpx 0;
-}
-.w-day {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20rpx 0;
-  border-radius: 24rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
-}
-.w-day:hover {
-  background: #f0f0ee;
-}
-.w-day.active {
-  background: #7D9372;
+.active-thumb-text {
+  font-size: 12.5px;
+  font-weight: 700;
   color: #FFFFFF;
-  border-color: #7D9372;
-  box-shadow: 0 8rpx 20rpx rgba(125, 147, 114, 0.3);
-}
-.w-week {
-  font-size: 22rpx;
-  opacity: 0.8;
-  margin-bottom: 6rpx;
-}
-.w-num {
-  font-size: 32rpx;
-  font-weight: 800;
-}
-.today-dot {
-  width: 8rpx;
-  height: 8rpx;
-  border-radius: 50%;
-  background: #7D9372;
-  position: absolute;
-  bottom: 8rpx;
+  letter-spacing: -0.01em;
 }
 
-/* Focus Capsules */
-.focus-capsules {
-  display: flex;
-  gap: 20rpx;
-}
-.stat-capsule {
+.track-segment-item {
   flex: 1;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 24rpx;
-  padding: 24rpx 32rpx;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.sc-label {
-  font-size: 26rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-.sc-val {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.sc-unit {
-  font-size: 22rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone, #A8A8A5);
-  margin-left: 6rpx;
-}
-
-/* Section Header */
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 8rpx;
-}
-.section-title {
-  font-size: 30rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.section-count {
-  font-size: 24rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-weight: 600;
-}
-
-/* Task List Container (Non-scrollable) */
-.task-list-container {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.empty-tasks {
-  padding: 60rpx 0;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16rpx;
-}
-.empty-icon { font-size: 64rpx; }
-.empty-text { font-size: 28rpx; font-weight: 700; color: var(--color-zen-graphite, #1C1C1A); }
-.empty-sub { font-size: 24rpx; color: var(--color-zen-stone, #A8A8A5); }
-
-.zen-pill-task {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20rpx 24rpx;
-  background: #FFFFFF;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-left: 8rpx solid #7D9372;
-  border-radius: 20rpx;
-  margin-bottom: 12rpx;
-  transition: all 0.2s;
-  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.01);
-  cursor: pointer;
-}
-.zen-pill-task:hover {
-  transform: translateY(-2rpx);
-  box-shadow: 0 6rpx 16rpx rgba(0,0,0,0.03);
-}
-.zen-pill-task.completed {
-  opacity: 0.5;
-  background: var(--color-zen-ivory, #F9F9F7);
-}
-.task-left {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  flex: 1;
-}
-.task-checkbox {
-  width: 36rpx;
-  height: 36rpx;
-  border-radius: 50%;
-  border: 2px solid #7D9372;
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
-}
-.task-checkbox.checked {
-  background: #7D9372;
-}
-.task-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
-}
-.task-name {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: var(--color-zen-graphite, #1C1C1A);
-}
-.task-name.done {
-  text-decoration: line-through;
-  color: var(--color-zen-stone, #A8A8A5);
-}
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
-}
-.task-subject {
-  font-weight: 700;
-}
-
-.task-actions {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-.action-btn {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.action-btn:hover {
-  background: #f0f0ee;
-}
-
-/* Stats Cards Grid (Right Column 38% - Full-Width 4-Layer Vertical Stack) */
-.stats-grid-container {
-  flex: 1;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-  overflow: hidden;
+  border-radius: var(--radius-full);
+  cursor: pointer;
 }
-.stats-card {
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 24rpx;
+
+.track-segment-item.active {
+  opacity: 0;
+}
+
+.segment-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color 0.16s ease;
+}
+
+.track-segment-item:hover .segment-label {
+  color: var(--text-primary);
+}
+
+.schedule-row-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.07);
   box-sizing: border-box;
 }
 
-/* Card 1: Hero Summary Banner (Shrink to wrap text) */
-.card-hero-summary {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
-  color: #FFFFFF;
-  padding: 18rpx 28rpx;
-  flex: none;
-  flex-shrink: 0;
-  height: auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.hero-strip-layout {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-.hero-streak-left {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-.hero-streak-num {
-  font-size: 64rpx;
-  font-weight: 900;
-  color: #ffb800;
-  line-height: 1;
-}
-.streak-text-col {
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
-}
-.hero-streak-text {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: #FFFFFF;
-  line-height: 1.1;
-}
-.hero-rate-badge {
-  background: rgba(255, 255, 255, 0.22);
-  padding: 4rpx 14rpx;
-  border-radius: 999rpx;
-  font-size: 20rpx;
-  font-weight: 700;
-  color: #FFFFFF;
-  width: fit-content;
-}
-.hero-metrics-right {
-  display: flex;
-  align-items: center;
-  gap: 28rpx;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  padding: 16rpx 32rpx;
-  border-radius: 20rpx;
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
-}
-.hero-metric {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.hm-val {
-  font-size: 36rpx;
-  font-weight: 900;
-}
-.hm-label {
-  font-size: 20rpx;
-  opacity: 0.9;
-  margin-top: 4rpx;
-}
-.hm-divider {
-  width: 1px;
-  height: 44rpx;
-  background: rgba(255, 255, 255, 0.25);
+.schedule-date-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-/* Card 2 & 3: Vertical Charts */
-.card-chart-vertical {
-  flex: 1;
-  min-height: 0;
-  padding: 16rpx 24rpx;
+.schedule-controls {
   display: flex;
-  flex-direction: column;
-  background: #FFFFFF;
+  align-items: center;
+  gap: 8px;
 }
-.card-header-compact {
+
+.time-pill {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background: rgba(139, 154, 110, 0.14);
+  border: 1px solid rgba(139, 154, 110, 0.28);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-sage-dark);
+  cursor: pointer;
+}
+
+.due-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 8rpx;
-  flex-shrink: 0;
+  align-items: center;
 }
-.compact {
-  font-size: 28rpx;
-  font-weight: 800;
-  color: var(--color-zen-graphite, #1C1C1A);
-  flex-shrink: 0;
+
+.due-clear-btn {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-sage-dark);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.16s ease;
 }
-.footnote-compact {
-  font-size: 22rpx;
-  color: var(--color-zen-stone, #A8A8A5);
+
+.due-clear-btn:hover {
+  background: rgba(139, 154, 110, 0.12);
+}
+
+.due-picker-box {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.due-picker-box:hover {
+  border-color: rgba(139, 154, 110, 0.4);
+}
+
+.due-picker-box.has-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  border-color: rgba(139, 154, 110, 0.45);
+}
+
+.due-picker-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.due-preset-chip {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.due-preset-chip:hover {
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
+}
+
+.due-preset-chip.active {
+  background: rgba(139, 154, 110, 0.14);
+  border-color: var(--color-zen-sage);
+  color: var(--color-sage-dark);
   font-weight: 600;
 }
-.chart-wrapper {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
+
+.modal-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 28px 24px;
+  flex-shrink: 0;
 }
 
-/* Card 4: Vertical Heatmap */
-.card-heatmap-vertical {
-  flex: 1;
-  min-height: 0;
-  padding: 16rpx 24rpx;
-  background: #FFFFFF;
-  display: flex;
-  flex-direction: column;
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 20px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.2s var(--ease-out);
+}
+
+.modal-btn::after {
+  border: none;
+}
+
+.modal-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-btn-secondary {
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  color: var(--text-primary);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.065);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.modal-btn-primary {
+  background: var(--accent-gradient);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.32), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 900px) {
+  .t-dashboard {
+    flex-direction: column;
+    overflow-y: auto;
+    height: 100%;
+  }
+
+  .left-column,
+  .right-column {
+    flex: none;
+    height: auto;
+  }
+
+  .tasks-scroll,
+  .subjects-scroll {
+    flex: none;
+    height: auto;
+    max-height: 420px;
+  }
 }
 </style>

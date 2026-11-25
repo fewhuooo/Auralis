@@ -10,8 +10,6 @@ test('chat sessions persist across file switches and restore full history from c
   const store = await source('src/store/useChatStore.ts')
   const workspace = await source('src/views/SubjectWorkspace/index.vue')
 
-  // Chat sessions are not tied to file-level READING_SESSION lifecycle
-  assert.doesNotMatch(store, /purpose:\s*'READING_SESSION'/)
   assert.doesNotMatch(store, /startReadingSession/)
   assert.doesNotMatch(workspace, /startReadingSession/)
   assert.doesNotMatch(workspace, /endActiveSession/)

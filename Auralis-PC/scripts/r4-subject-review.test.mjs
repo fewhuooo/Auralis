@@ -334,7 +334,6 @@ function subjectModel(subjectId) {
     icon: 'BookOpen',
     iconKey: 'book',
     version: 0,
-    defaultSubject: false,
     sortKey: null,
     createdAt: '2026-10-08T00:00:00.000Z',
     updatedAt: '2026-10-08T00:00:00.000Z',
@@ -402,25 +401,9 @@ function deferred() {
 }
 
 test('Review API keeps lifecycle routes and no longer exposes legacy due, event, or history routes', () => {
-  assert.equal(typeof useReviewApi.getSubjectStates, 'function')
   for (const method of ['getDueReviews', 'getReviewQueue', 'recordEvent', 'recordReviewEvent', 'getHistory', 'getReviewHistory']) {
     assert.equal(method in useReviewApi, false, `${method} must be removed`)
   }
-})
-
-test('states API passes subject pagination and the session ticket to Axios', async () => {
-  const ticket = { key: Symbol('scope'), isCurrent: () => true }
-  let requestDetails
-  request.get = (url, config) => {
-    requestDetails = { url, config }
-    return Promise.resolve(page([]))
-  }
-
-  await useReviewApi.getSubjectStates({ subjectId: 'subject-a', cursor: null, limit: 200 }, ticket)
-
-  assert.equal(requestDetails.url, '/api/reviews/states')
-  assert.deepEqual(requestDetails.config.params, { subjectId: 'subject-a', cursor: undefined, limit: 200 })
-  assert.equal(requestDetails.config.__auralisSyncScope, ticket)
 })
 
 test('review state loading reads all local subject blocks without paging the remote states API', async () => {

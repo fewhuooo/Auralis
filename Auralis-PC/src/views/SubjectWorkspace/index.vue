@@ -56,10 +56,9 @@
       </div>
       <div class="tier1-bottom">
         <div class="subject-mini-icon" :title="activeSubject?.name">
-          <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="24">
+          <ElIcon :size="24">
             <component :is="getSubjectIconComponent(activeSubject?.icon)" />
           </ElIcon>
-          <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
         </div>
       </div>
     </nav>
@@ -336,8 +335,9 @@
             :key="'preview-' + selectedFile.id"
             ref="previewPaneWrapperRef"
             class="preview-pane-wrapper"
-            @mouseup="updateSelectionPosition"
-            @keyup="updateSelectionPosition"
+            @mouseup="updateSelectionPosition('preview')"
+            @keyup="updateSelectionPosition('preview')"
+            @scroll.passive="updateSelectionPosition('preview')"
           >
             <div v-if="selectedFile.ingestionStatus === 'FAILED'" class="file-processing-alert-banner">
               <div class="file-processing-alert-text">
@@ -365,36 +365,6 @@
               @page-change="handlePreviewPageChange"
               @text-selected="handleTextSelected"
             />
-
-            <!-- 浮动文字提示操作条：放置在选中文字旁边 -->
-            <Transition name="selection-bubble-pop">
-              <div
-                v-if="selectedText && selectionPosition"
-                class="selection-actions floating-selection-bubble"
-                :style="{
-                  top: `${selectionPosition.top}px`,
-                  left: `${selectionPosition.left}px`,
-                  transform: selectionPosition.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
-                }"
-                role="toolbar"
-                :aria-label="t(messages.selectionActions)"
-                @mousedown.stop.prevent
-              >
-                <span class="selection-summary">{{ t(messages.selectionLength, { count: selectedText.length }) }}</span>
-                <span class="selection-divider" aria-hidden="true"></span>
-                <button type="button" class="selection-btn action-quote" @click="addSelectionToChat">
-                  <IconMessageCircle :size="13" :stroke-width="2" />
-                  <span>{{ t(messages.addToQuestion) }}</span>
-                </button>
-                <button type="button" class="selection-btn action-save" @click="saveSelection">
-                  <IconNotes :size="13" :stroke-width="2" />
-                  <span>{{ t(messages.saveAsBlock) }}</span>
-                </button>
-                <button type="button" class="selection-dismiss" :aria-label="t(messages.clearSelection)" :title="t(messages.clearSelection)" @click="clearSelection">
-                  <IconX :size="13" />
-                </button>
-              </div>
-            </Transition>
 
             <footer class="preview-page-footer" :aria-label="t(messages.documentPages)">
               <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">{{ t(messages.previousPage) }}</button>
@@ -537,10 +507,9 @@
           <div v-else key="onboarding-view" class="onboarding-workspace">
             <div class="onboarding-header">
               <div class="onboarding-emoji">
-                <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="60">
+                <ElIcon :size="60">
                   <component :is="getSubjectIconComponent(activeSubject?.icon)" />
                 </ElIcon>
-                <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
               </div>
               <h2 class="onboarding-title">{{ t(messages.workspaceWelcome, { name: activeSubject?.name ?? '' }) }}</h2>
               <p class="onboarding-subtitle">{{ activeSubject?.description || t(messages.workspaceDescription) }}</p>
@@ -569,6 +538,7 @@
       <div class="ai-header">
         <button
           class="ai-model-switch ai-file-switch"
+          :class="{ 'is-locked': isScopeLocked || isAiDisplayStreaming }"
           :title="isScopeLocked ? t(messages.scopeLocked) : aiSourceSummaryTitle"
           @click="handleScopeSwitchClick"
         >
@@ -630,38 +600,31 @@
         <div
           class="ai-messages"
           ref="chatScrollRef"
+          @mouseup="updateSelectionPosition('chat')"
+          @keyup="updateSelectionPosition('chat')"
+          @scroll.passive="handleChatContainerScroll"
           @wheel="handleChatWheel"
           @touchstart.passive="handleTouchStart"
           @touchmove.passive="handleTouchMove"
         >
           <div class="ai-welcome" v-if="chatMessages.length === 0">
-            <div class="ai-brand-wrap" aria-hidden="true">
-              <div class="ai-spark-ring" style="display: none;"></div>
-              <svg class="ai-spark-svg" width="56" height="56" viewBox="0 0 28 28" fill="none">
-                <rect width="28" height="28" rx="8" fill="url(#workspace-ai-welcome-brand-grad)" />
-                <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
-                <defs>
-                  <linearGradient id="workspace-ai-welcome-brand-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#8B9A6E" />
-                    <stop offset="1" stop-color="#AAB88E" />
-                  </linearGradient>
-                </defs>
-              </svg>
-            </div>
-            <h3 class="welcome-title">{{ t(messages.chatWelcome) }}</h3>
-            <p class="welcome-desc">{{ t(messages.chatIntro, { name: aiGreetingName }) }}</p>
-
-            <div class="preset-questions">
-              <button
-                v-for="item in presetQuestions"
-                :key="item.prompt"
-                type="button"
-                class="preset-pill"
-                @click="sendPreset(item.prompt)"
-              >
-                {{ t(item.label) }}
-              </button>
+            <div class="ai-welcome-inner">
+              <div class="welcome-hero">
+                <h3 class="welcome-title">{{ t(messages.chatWelcome) }}</h3>
+                <p class="welcome-subtitle">{{ aiSourceSummaryTitle }}</p>
+              </div>
+              <div class="starter-cards">
+                <button
+                  v-for="item in presetQuestions"
+                  :key="item.prompt"
+                  type="button"
+                  class="starter-card"
+                  @click="sendPreset(item.prompt)"
+                >
+                  <span class="starter-card-title">{{ t(item.label) }}</span>
+                  <span class="starter-card-hint">{{ t(item.hint) }}</span>
+                </button>
+              </div>
             </div>
           </div>
         
@@ -678,43 +641,51 @@
                   <span class="bubble-quote-bar"></span>
                   <span class="bubble-quote-content">“{{ msg.quoteText }}”</span>
                 </div>
-                <div>{{ msg.content }}</div>
+                <div class="chat-message-text-selection">{{ msg.content }}</div>
               </div>
               <div class="chat-content ai-reply" v-else>
-                <ChatProcessArea
-                  v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0)"
-                  :reasoning="msg.reasoningText"
-                  :tools="msg.tools"
-                  :streaming="false"
-                  :has-content="true"
-                />
-                <ChatContentRenderer
-                  :parts="msg.parts"
-                  :streaming="false"
-                  :busy="!canSendWorkspaceChat && !chatStore.isLegacySession"
-                  :read-only="chatStore.isLegacySession"
-                  @submit="submitChatActivity"
-                />
-                <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
-                  <div class="citation-title">
-                    <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
-                    <span>{{ t(messages.references) }}</span>
-                    <span class="citation-count">{{ msg.citationFileNames.length }}</span>
-                  </div>
-                  <div class="citation-chips">
+                <template v-if="msg.status !== 'FAILED'">
+                  <ChatProcessArea
+                    v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0) || (msg.processTimeline && msg.processTimeline.length > 0)"
+                    :reasoning="msg.reasoningText"
+                    :tools="msg.tools"
+                    :timeline="msg.processTimeline"
+                    :streaming="false"
+                    :has-content="true"
+                  />
+                  <ChatContentRenderer
+                    class="chat-message-text-selection"
+                    :parts="msg.parts"
+                    :streaming="false"
+                    :busy="!canSendWorkspaceChat"
+                    @submit="submitChatActivity"
+                  />
+                  <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
                     <button
-                      v-for="(fileName, idx) in msg.citationFileNames"
-                      :key="fileName"
                       type="button"
-                      class="citation-chip"
-                      :title="t(messages.openSource, { name: fileName })"
-                      @click="handleCitationClick(fileName)"
+                      class="citation-collapse-pill"
+                      :aria-expanded="isCitationsExpanded(msg.id)"
+                      @click="toggleCitations(msg.id)"
                     >
-                      <span class="citation-idx">[{{ idx + 1 }}]</span>
-                      <span class="citation-name">{{ fileName }}</span>
+                      <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
+                      <span>{{ t(messages.referencedSources, { count: msg.citationFileNames.length }) }}</span>
+                      <IconChevronDown class="citation-chevron" :class="{ 'is-expanded': isCitationsExpanded(msg.id) }" :size="12" :stroke-width="2" />
                     </button>
+                    <div v-if="isCitationsExpanded(msg.id)" class="citation-chips">
+                      <button
+                        v-for="(fileName, idx) in msg.citationFileNames"
+                        :key="fileName"
+                        type="button"
+                        class="citation-chip"
+                        :title="t(messages.openSource, { name: fileName })"
+                        @click="handleCitationClick(fileName)"
+                      >
+                        <span class="citation-idx">[{{ idx + 1 }}]</span>
+                        <span class="citation-name">{{ fileName }}</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </template>
 
                 <div v-if="chatStore.recoverableTarget && chatStore.recoverableTarget.attemptId === msg.attemptId" class="chat-msg-interrupted-bar is-unknown">
                   <span class="interrupted-hint">{{ t(messages.unknownRun) }}</span>
@@ -730,6 +701,37 @@
                     <span>{{ t(messages.retryReply) }}</span>
                   </button>
                 </div>
+
+                <div
+                  v-if="!isAiDisplayStreaming && msg.content && (msg.status === 'COMPLETED' || msg.status === 'INTERRUPTED')"
+                  class="chat-msg-footer"
+                >
+                  <button
+                    type="button"
+                    class="chat-footer-btn"
+                    @click="copyAssistantReply(msg.content)"
+                  >
+                    <IconCopy :size="12" :stroke-width="1.8" />
+                    <span>{{ t(messages.copyReply) }}</span>
+                  </button>
+                  <button
+                    v-if="isLastAssistantMessage(msg.id) && canSendWorkspaceChat && !chatStore.recoverableTarget"
+                    type="button"
+                    class="chat-footer-btn"
+                    @click="handleRegenerateAssistantMessage(msg.id)"
+                  >
+                    <IconRotate :size="12" :stroke-width="1.8" />
+                    <span>{{ t(messages.regenerateReply) }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="chat-footer-btn"
+                    @click="saveAssistantReplyAsBlock(msg.content)"
+                  >
+                    <IconPlus :size="12" :stroke-width="1.8" />
+                    <span>{{ t(messages.saveReplyAsBlock) }}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -740,16 +742,31 @@
             <div class="chat-bubble">
               <div class="chat-content ai-reply">
                 <ChatProcessArea
-                  v-if="(isAiDisplayStreaming && !streamingContent && streamingParts.length === 0) || Boolean(streamingReasoning) || (streamingTools && streamingTools.length > 0)"
+                  v-if="(isAiDisplayStreaming && !streamingContent && streamingParts.length === 0) || Boolean(streamingReasoning) || (streamingTools && streamingTools.length > 0) || (streamingProcessTimeline && streamingProcessTimeline.length > 0)"
                   :reasoning="streamingReasoning"
                   :tools="streamingTools"
+                  :timeline="streamingProcessTimeline"
                   :streaming="isAiStreaming"
                   :has-content="Boolean(streamingContent || streamingParts.length > 0)"
                   @complete="handleThinkingComplete"
+                  @drain-change="handleProcessDrainChange"
+                  @progress="handleRendererProgress"
                 />
                 <template v-if="isThinkingComplete && (streamingContent || streamingParts.length > 0)">
-                  <ChatContentRenderer :parts="streamingParts" :streaming="isAiStreaming" :busy="isAiDisplayStreaming" @submit="submitChatActivity" />
-                  <span class="typing-cursor" v-if="isAiStreaming"></span>
+                  <ChatContentRenderer
+                    :parts="streamingParts"
+                    :streaming="isAiStreaming"
+                    :settling="isStreamSettling"
+                    :busy="isAiDisplayStreaming"
+                    @submit="submitChatActivity"
+                    @drain-change="handleRendererDrainChange"
+                    @text-progress="handleRendererProgress"
+                  />
+                  <span
+                    v-if="isAiStreaming && streamingParts.length > 0 && streamingParts[streamingParts.length - 1]?.kind === 'block'"
+                    class="stream-block-cursor-dot"
+                    aria-hidden="true"
+                  />
                 </template>
               </div>
             </div>
@@ -770,7 +787,7 @@
         <div v-else-if="chatStore.lastError" class="chat-error" role="alert">
           <span class="chat-error-message">{{ chatStore.lastError }}</span>
           <button
-            v-if="chatStore.lastErrorCode === 'CHAT_SCOPE_CONFLICT' || chatStore.lastErrorCode === 'CHAT_SCOPE_LEGACY'"
+            v-if="chatStore.lastErrorCode === 'CHAT_SCOPE_CONFLICT'"
             type="button"
             class="chat-error-retry"
             @click="clearChat"
@@ -785,17 +802,17 @@
         </div>
       </div>
 
-      <!-- 意图感知磁吸悬浮胶囊：向上滚动时脱离自动跟随，浮现平滑小胶囊 -->
+      <!-- 意图感知磁吸悬浮胶囊：距底 >= 50px 或主动上滑时脱离自动跟随 -->
       <Transition name="scroll-pill-fade">
         <button
-          v-if="isAiStreaming && isAutoScrollLocked"
+          v-if="isAutoScrollLocked && chatMessages.length > 0"
           type="button"
           class="chat-scroll-resume-pill"
           @click="resumeAutoScroll"
         >
-          <span class="resume-pill-pulse-dot" />
+          <span v-if="isAiDisplayStreaming" class="resume-pill-pulse-dot" />
           <span class="resume-pill-arrow">↓</span>
-          <span class="resume-pill-text">{{ t(messages.generating) }}</span>
+          <span class="resume-pill-text">{{ t(messages.backToLatest) }}</span>
         </button>
       </Transition>
 
@@ -830,8 +847,7 @@
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            :placeholder="chatStore.isLegacySession ? t(messages.legacyChatPlaceholder) : (quotedSelection ? t(messages.quotedChatPlaceholder) : t(messages.chatPlaceholder))"
-            :disabled="chatStore.isLegacySession"
+            :placeholder="quotedSelection ? t(messages.quotedChatPlaceholder) : t(messages.chatPlaceholder)"
             rows="1"
             @keydown.enter.exact="handleChatKeydown"
             @compositionstart="handleCompositionStart"
@@ -840,13 +856,13 @@
           ></textarea>
           <button
             class="ai-send-btn"
-            :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
-            :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
+            :class="{ 'is-ready': !isAiStreaming && (chatInput.trim() || quotedSelection), 'is-stopping': isAiStreaming }"
+            :disabled="!canUseWorkspaceChat || Boolean(chatStore.recoverableTarget) || (!isAiStreaming && (!canSendWorkspaceChat || (!chatInput.trim() && !quotedSelection)))"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
-            :title="chatStore.isLegacySession ? t(messages.legacyChatDisabled) : (chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage)))"
-            :aria-label="chatStore.isLegacySession ? t(messages.legacyChatDisabled) : (chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage)))"
+            :title="chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage))"
+            :aria-label="chatStore.recoverableTarget ? t(messages.recoverBeforeSending) : (isAiStreaming ? t(messages.stopGeneration) : t(messages.sendMessage))"
           >
-            <IconX v-if="isAiStreaming" :size="16" :stroke-width="2" />
+            <span v-if="isAiStreaming" class="ai-stop-square" aria-hidden="true" />
             <IconArrowUp v-else :size="16" :stroke-width="2" />
           </button>
         </div>
@@ -876,6 +892,37 @@
       @cancel="showKnowledgeEditor = false"
       @save="saveKnowledgeBlock"
     />
+
+    <Teleport to="body">
+      <Transition name="selection-bubble-pop">
+        <div
+          v-if="selectedText && selectionPosition"
+          class="selection-actions floating-selection-bubble"
+          :style="{
+            top: `${selectionPosition.top}px`,
+            left: `${selectionPosition.left}px`,
+            transform: selectionPosition.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+          }"
+          role="toolbar"
+          :aria-label="t(messages.selectionActions)"
+          @mousedown.stop.prevent
+        >
+          <span class="selection-summary">{{ t(messages.selectionLength, { count: selectedText.length }) }}</span>
+          <span class="selection-divider" aria-hidden="true"></span>
+          <button type="button" class="selection-btn action-quote" @click="addSelectionToChat">
+            <IconMessageCircle :size="13" :stroke-width="2" />
+            <span>{{ t(selectionScope === 'chat' ? messages.addToNextQuestion : messages.addToQuestion) }}</span>
+          </button>
+          <button type="button" class="selection-btn action-save" @click="saveSelection">
+            <IconNotes :size="13" :stroke-width="2" />
+            <span>{{ t(messages.saveAsBlock) }}</span>
+          </button>
+          <button type="button" class="selection-dismiss" :aria-label="t(messages.clearSelection)" :title="t(messages.clearSelection)" @click="clearSelection">
+            <IconX :size="13" />
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Register File Modal -->
     <FileRegisterDialog
@@ -968,6 +1015,9 @@ import 'element-plus/theme-chalk/el-option.css'
 import FilePreview from '@/components/FilePreview.vue'
 import ChatContentRenderer from '@/components/chat/ChatContentRenderer.vue'
 import ChatProcessArea from '@/components/chat/ChatProcessArea.vue'
+import type { ChatProcessTimelineItem, ChatToolActivity } from '@/services/aiStreamReducer'
+import { canFinishStreamSettling } from '@/utils/chatProcessFormat'
+import { evaluatePcScrollEvent, isPcNearBottom, shouldPcAutoScroll } from '@/utils/chatSmartScroll'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
@@ -1002,7 +1052,7 @@ import { autoSyncEnabled } from '@/services/desktopPreferences'
 import type { FileOverviewRecord, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import { shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
 import type { KnowledgeBlockModel, SourceFileModel } from '@/services/domainMappers'
-import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import { getSubjectIconComponent } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
 
 const route = useRoute()
@@ -1024,10 +1074,11 @@ const {
   streamingReasoning: storedStreamingReasoning,
   streamingParts: storedStreamingParts,
   streamingTools: storedStreamingTools,
+  streamingProcessTimeline: storedStreamingProcessTimeline,
   pendingMessage: storedPendingMessage,
 } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
-const isScopeLocked = computed(() => Boolean(chatStore.isBoundSession || chatStore.isLegacySession))
+const isScopeLocked = computed(() => Boolean(chatStore.isBoundSession))
 const boundScope = computed(() => {
   if (isScopeLocked.value && chatStore.activeSession?.chatScope) {
     return chatStore.activeSession.chatScope
@@ -1177,6 +1228,7 @@ const selectedFileId = ref<string | null>(null)
 const selectedText = ref('')
 const quotedSelection = ref('')
 const previewPaneWrapperRef = ref<HTMLElement | null>(null)
+const selectionScope = ref<'preview' | 'chat' | null>(null)
 const selectionPosition = ref<{ top: number; left: number; showBelow: boolean } | null>(null)
 const showNotReadyDialog = ref(false)
 const showKnowledgeEditor = ref(false)
@@ -1208,6 +1260,7 @@ watch(selectedFileId, () => {
   previewZoomLabel.value = '100%'
   previewRotation.value = 0
   selectedText.value = ''
+  selectionScope.value = null
   selectionPosition.value = null
   quotedSelection.value = ''
 })
@@ -2046,10 +2099,10 @@ const handleAddTask = async (taskData: { name: string; duration: number; due?: s
   if (!taskData.name.trim() || !activeSubject.value) return
   const s = activeSubject.value
   await taskStore.addTask({
-    name: taskData.name.trim(),
+    title: taskData.name.trim(),
     subject: s.name,
-    desc: '从学科工作区',
-    duration: taskData.duration,
+    description: '从学科工作区',
+    durationMinutes: taskData.duration,
     status: 'pending',
     subjectId: s.id,
     dueAt: taskData.dueAt,
@@ -2280,13 +2333,14 @@ const handleDeleteBlockCard = (id: string, version: number) => {
 }
 interface PresetQuestionItem {
   label: Message
+  hint: Message
   prompt: string
 }
 
 const presetQuestions: PresetQuestionItem[] = [
-  { label: messages.presetKeyPoints, prompt: '总结当前文件的核心要点与关键脉络' },
-  { label: messages.presetConcepts, prompt: '查找并梳理本章的核心概念与权威解释' },
-  { label: messages.presetQuiz, prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
+  { label: messages.presetKeyPoints, hint: messages.presetKeyPointsHint, prompt: '总结当前文件的核心要点与关键脉络' },
+  { label: messages.presetConcepts, hint: messages.presetConceptsHint, prompt: '查找并梳理本章的核心概念与权威解释' },
+  { label: messages.presetQuiz, hint: messages.presetQuizHint, prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
 ]
 
 const sendPreset = (q: string) => {
@@ -2305,16 +2359,70 @@ interface ChatMsg {
   content: string
   parts: import('@/types/chatContent').ChatContentPart[]
   reasoningText?: string
-  tools?: readonly import('@/services/aiStreamReducer').ChatToolActivity[]
+  tools?: readonly ChatToolActivity[]
+  processTimeline?: readonly ChatProcessTimelineItem[]
   quoteText?: string
   citationFileNames?: string[]
   runId?: string
   attemptId?: string
 }
 const isStreamSettling = ref(false)
+const isActiveProcessDraining = ref(false)
+const isActiveRendererDraining = ref(false)
+let settleTimerDone = true
 let streamSettleTimer: ReturnType<typeof setTimeout> | null = null
+let thinkingFallbackTimer: ReturnType<typeof setTimeout> | null = null
 const isAiStreaming = computed(() => storedChatStreaming.value)
 const isAiDisplayStreaming = computed(() => storedChatStreaming.value || isStreamSettling.value)
+
+function clearThinkingFallbackTimer() {
+  if (thinkingFallbackTimer) {
+    clearTimeout(thinkingFallbackTimer)
+    thinkingFallbackTimer = null
+  }
+}
+
+function restartSettleTimer(delayMs = 450) {
+  settleTimerDone = false
+  if (streamSettleTimer) {
+    clearTimeout(streamSettleTimer)
+  }
+  streamSettleTimer = setTimeout(() => {
+    settleTimerDone = true
+    streamSettleTimer = null
+    maybeFinishStreamSettling()
+  }, delayMs)
+}
+
+function maybeFinishStreamSettling() {
+  if (canFinishStreamSettling({
+    streaming: isAiStreaming.value,
+    settleTimerDone,
+    processDraining: isActiveProcessDraining.value,
+    rendererDraining: isActiveRendererDraining.value,
+  })) {
+    isStreamSettling.value = false
+  }
+}
+
+function handleProcessDrainChange(draining: boolean) {
+  isActiveProcessDraining.value = draining
+  if (!draining) {
+    if (!isAiStreaming.value && isStreamSettling.value) {
+      // 思考尾段在流结束后才排空收起，重新给收起动效留出 450ms，避免气泡骤然切换到历史态
+      restartSettleTimer(450)
+      return
+    }
+    maybeFinishStreamSettling()
+  }
+}
+
+function handleRendererDrainChange(draining: boolean) {
+  isActiveRendererDraining.value = draining
+  if (!draining) {
+    maybeFinishStreamSettling()
+  }
+}
 
 const chatMessages = computed<ChatMsg[]>(() => {
   let list = storedChatMessages.value.filter(
@@ -2335,6 +2443,7 @@ const chatMessages = computed<ChatMsg[]>(() => {
     parts: message.parts,
     reasoningText: message.reasoningText,
     tools: message.tools,
+    processTimeline: message.processTimeline,
     quoteText: message.requestOptions?.selectionText,
     citationFileNames: [],
     runId: message.runId,
@@ -2378,15 +2487,26 @@ const streamingTools = computed(() => {
   }
   return []
 })
+const streamingProcessTimeline = computed(() => {
+  if (!isAiDisplayStreaming.value) return []
+  if (storedStreamingProcessTimeline.value && storedStreamingProcessTimeline.value.length > 0) {
+    return storedStreamingProcessTimeline.value
+  }
+  if (isStreamSettling.value && !isAiStreaming.value) {
+    const target = [...storedChatMessages.value].reverse().find((m) => m.role === 'ASSISTANT')
+    return target?.processTimeline || []
+  }
+  return []
+})
 const isThinkingComplete = ref(true)
 
 function handleThinkingComplete() {
+  clearThinkingFallbackTimer()
   isThinkingComplete.value = true
 }
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const showProcessingRequired = computed(() => {
-  if (chatStore.isLegacySession) return false
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   const sourceIds = bound
     ? (bound.retrievalMode === 'AUTO'
@@ -2418,6 +2538,9 @@ const notifyScopeLocked = () => {
 }
 
 const handleScopeSwitchClick = () => {
+  if (isAiDisplayStreaming.value) {
+    return
+  }
   if (isScopeLocked.value) {
     notifyScopeLocked()
     return
@@ -2425,8 +2548,8 @@ const handleScopeSwitchClick = () => {
   showModelMenu.value = !showModelMenu.value
 }
 
-watch(isScopeLocked, (locked) => {
-  if (locked) {
+watch([isScopeLocked, isAiDisplayStreaming], ([locked, streaming]) => {
+  if (locked || streaming) {
     showModelMenu.value = false
   }
 })
@@ -2491,7 +2614,6 @@ watch(
 )
 
 const isAllAiSourcesSelected = computed(() => {
-  if (chatStore.isLegacySession) return false
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     return bound.retrievalMode === 'SUBJECT'
@@ -2500,7 +2622,6 @@ const isAllAiSourcesSelected = computed(() => {
 })
 
 const isAiSourceSelected = (id: string) => {
-  if (chatStore.isLegacySession) return false
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2521,7 +2642,6 @@ const isAiSourceSelected = (id: string) => {
 }
 
 const aiSourceSelectedCount = computed(() => {
-  if (chatStore.isLegacySession) return 0
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2629,9 +2749,6 @@ const selectAllAiSources = () => {
 }
 
 const aiChatReferenceOptions = () => {
-  if (chatStore.isLegacySession) {
-    return { subjectId: subjectId.value, retrievalMode: 'SUBJECT' as const }
-  }
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2679,7 +2796,6 @@ const aiChatReferenceOptions = () => {
 }
 
 const aiSourceSummaryText = computed(() => {
-  if (chatStore.isLegacySession) return t(messages.noReferences)
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') return t(messages.allMaterials)
@@ -2706,7 +2822,6 @@ const aiSourceSummaryText = computed(() => {
 })
 
 const aiSourceSummaryTitle = computed(() => {
-  if (chatStore.isLegacySession) return t(messages.legacyChatDisabled)
   const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
   if (bound) {
     if (bound.retrievalMode === 'SUBJECT') {
@@ -2747,8 +2862,6 @@ const aiSourceSummaryTitle = computed(() => {
     .join(locale.value === 'en' ? ', ' : '、')
   return t(messages.currentReferenceList, { count, names })
 })
-
-const aiGreetingName = computed(() => authStore.username || t(messages.greetingName))
 
 const isChatComposing = ref(false)
 let lastChatCompositionEndTime = 0
@@ -2795,85 +2908,267 @@ watch(chatInput, (val) => {
 
 const isAutoScrollLocked = ref(false)
 let touchStartY = 0
+let prevChatScrollTop = 0
+let isProgrammaticScroll = false
+let userScrolledUpIntent = false
+let programmaticScrollFrame: number | null = null
+
+const cancelProgrammaticScrollFrame = () => {
+  if (programmaticScrollFrame !== null && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(programmaticScrollFrame)
+    programmaticScrollFrame = null
+  }
+  isProgrammaticScroll = false
+}
 
 const handleTouchStart = (e: TouchEvent) => {
   if (e.touches[0]) {
     touchStartY = e.touches[0].clientY
+    userScrolledUpIntent = false
   }
 }
 
 const handleTouchMove = (e: TouchEvent) => {
   if (e.touches[0] && e.touches[0].clientY > touchStartY + 12) {
+    userScrolledUpIntent = true
+    cancelProgrammaticScrollFrame()
     isAutoScrollLocked.value = true
   }
 }
 
 const handleChatWheel = (e: WheelEvent) => {
   if (e.deltaY < 0) {
-    // 物理滚轮向上：意图查阅上方内容，立即断开自动跟随
+    // 物理滚轮向上：意图查阅上方内容，立即解除编程式滚动护栏并保持锁定
+    userScrolledUpIntent = true
+    cancelProgrammaticScrollFrame()
     isAutoScrollLocked.value = true
-  } else if (e.deltaY > 0 && isNearBottom()) {
-    // 滚轮滑至底部：恢复自动跟随
-    isAutoScrollLocked.value = false
+  } else if (e.deltaY > 0) {
+    userScrolledUpIntent = false
+    if (isNearBottom()) {
+      isAutoScrollLocked.value = false
+    }
   }
 }
 
+const handleChatScroll = () => {
+  const el = chatScrollRef.value
+  if (!el) return
+  const nextState = evaluatePcScrollEvent(
+    { locked: isAutoScrollLocked.value, prevScrollTop: prevChatScrollTop },
+    {
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      userPullUpActive: userScrolledUpIntent,
+    },
+    isProgrammaticScroll,
+  )
+  isAutoScrollLocked.value = nextState.locked
+  prevChatScrollTop = nextState.prevScrollTop
+  if (!nextState.locked) {
+    userScrolledUpIntent = false
+  }
+}
+
+const handleChatContainerScroll = () => {
+  handleChatScroll()
+  updateSelectionPosition('chat')
+}
+
 const resumeAutoScroll = () => {
+  userScrolledUpIntent = false
   isAutoScrollLocked.value = false
   scrollChatToBottom()
 }
 
 const scrollChatToBottom = () => {
-  nextTick(() => { if (chatScrollRef.value) chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight })
+  nextTick(() => {
+    const el = chatScrollRef.value
+    if (!el) return
+    if (programmaticScrollFrame !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(programmaticScrollFrame)
+      programmaticScrollFrame = null
+    }
+    isProgrammaticScroll = true
+    el.scrollTop = el.scrollHeight
+    prevChatScrollTop = el.scrollTop
+    if (typeof requestAnimationFrame === 'function') {
+      programmaticScrollFrame = requestAnimationFrame(() => {
+        programmaticScrollFrame = null
+        isProgrammaticScroll = false
+      })
+    } else {
+      setTimeout(() => {
+        isProgrammaticScroll = false
+      }, 0)
+    }
+  })
 }
 
 const isNearBottom = () => {
   if (!chatScrollRef.value) return true
   const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.value
-  return scrollHeight - (scrollTop + clientHeight) < 140
+  return isPcNearBottom({ scrollTop, scrollHeight, clientHeight })
 }
 
 const autoScrollChatIfNeeded = () => {
-  if (!isAutoScrollLocked.value && isNearBottom()) {
+  if (shouldPcAutoScroll(isAutoScrollLocked.value)) {
     scrollChatToBottom()
   }
 }
 
+const handleRendererProgress = () => {
+  if (isAiDisplayStreaming.value) {
+    autoScrollChatIfNeeded()
+  }
+}
+
 watch([streamingContent, streamingReasoning, () => streamingParts.value.length], () => {
-  if (isAiStreaming.value && !isAutoScrollLocked.value) {
+  if (isAiStreaming.value && shouldPcAutoScroll(isAutoScrollLocked.value)) {
     autoScrollChatIfNeeded()
   }
 })
 
+function scheduleThinkingFallback() {
+  if (thinkingFallbackTimer || isThinkingComplete.value) return
+  thinkingFallbackTimer = setTimeout(() => {
+    thinkingFallbackTimer = null
+    isThinkingComplete.value = true
+  }, 1500)
+}
+
 watch(isAiStreaming, (streaming, oldVal) => {
   if (oldVal && !streaming) {
-    // 正文输出完，流式结束：启动 450ms 收起动效缓冲期，让展开的思考链平滑执行收起动效
+    // 正文输出完，流式结束：等待收起动效、思考尾段排空与文本蓄洪池完全排空，保留用户主动上滑锁定态
     isStreamSettling.value = true
-    if (streamSettleTimer) clearTimeout(streamSettleTimer)
-    streamSettleTimer = setTimeout(() => {
-      isStreamSettling.value = false
-      streamSettleTimer = null
-    }, 450)
-    isAutoScrollLocked.value = false
-    isThinkingComplete.value = true
+    restartSettleTimer(450)
+    if (!isActiveProcessDraining.value) {
+      handleThinkingComplete()
+    } else {
+      scheduleThinkingFallback()
+    }
   } else if (streaming) {
     if (streamSettleTimer) {
       clearTimeout(streamSettleTimer)
       streamSettleTimer = null
     }
+    clearThinkingFallbackTimer()
+    settleTimerDone = true
+    isActiveProcessDraining.value = false
+    isActiveRendererDraining.value = false
     isStreamSettling.value = false
     isThinkingComplete.value = false
   }
 })
 
 watch([streamingReasoning, streamingTools, streamingContent, () => streamingParts.value.length], ([_reasoning, _tools, content, partsLen]) => {
-  if (isAiStreaming.value && !isThinkingComplete.value) {
-    // 只要有正文内容或结构化块到达，思考阶段已经结束，立即放行正文渲染，杜绝被延时或竞争卡死
-    if (content || partsLen > 0) {
-      isThinkingComplete.value = true
+  if (isAiStreaming.value && !isThinkingComplete.value && (content || partsLen > 0)) {
+    // 只要思考蓄洪池不再排空即放行正文；仍在平滑排空时让思考区优雅吐完末尾数帧（上限 1.5s）
+    if (!isActiveProcessDraining.value) {
+      handleThinkingComplete()
+    } else {
+      scheduleThinkingFallback()
     }
   }
 })
+
+const expandedCitationsMap = ref<Record<string, boolean>>({})
+
+watch(() => chatStore.activeSession?.id, () => {
+  expandedCitationsMap.value = {}
+  if (streamSettleTimer) {
+    clearTimeout(streamSettleTimer)
+    streamSettleTimer = null
+  }
+  clearThinkingFallbackTimer()
+  cancelProgrammaticScrollFrame()
+  settleTimerDone = true
+  isActiveProcessDraining.value = false
+  isActiveRendererDraining.value = false
+  isStreamSettling.value = false
+  isAutoScrollLocked.value = false
+  userScrolledUpIntent = false
+})
+
+const isCitationsExpanded = (msgId: string) => Boolean(expandedCitationsMap.value[msgId])
+
+const toggleCitations = (msgId: string) => {
+  expandedCitationsMap.value = {
+    ...expandedCitationsMap.value,
+    [msgId]: !expandedCitationsMap.value[msgId],
+  }
+}
+
+const isLastAssistantMessage = (msgId: string) => {
+  for (let i = chatMessages.value.length - 1; i >= 0; i -= 1) {
+    if (chatMessages.value[i].role === 'assistant') {
+      return chatMessages.value[i].id === msgId
+    }
+  }
+  return false
+}
+
+const copyTextSafely = async (text: string): Promise<boolean> => {
+  if (!text) return false
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fallback for non-HTTPS LAN origins
+    }
+  }
+  if (typeof document === 'undefined') return false
+  const prevFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const selection = typeof window !== 'undefined' ? window.getSelection() : null
+  const savedRanges: Range[] = []
+  if (selection && selection.rangeCount > 0) {
+    for (let i = 0; i < selection.rangeCount; i += 1) {
+      savedRanges.push(selection.getRangeAt(i).cloneRange())
+    }
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '-9999px'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  let copied = false
+  try {
+    copied = document.execCommand('copy')
+  } catch {
+    copied = false
+  } finally {
+    document.body.removeChild(textarea)
+    if (selection) {
+      selection.removeAllRanges()
+      for (const range of savedRanges) {
+        selection.addRange(range)
+      }
+    }
+    prevFocused?.focus?.()
+  }
+  return copied
+}
+
+const copyAssistantReply = async (content: string) => {
+  const ok = await copyTextSafely(content)
+  if (ok) {
+    ElMessage.success(t(messages.copied))
+    return
+  }
+  ElNotification({ title: '复制失败', message: '当前环境不支持自动复制，请手动选择文本。', type: 'warning', position: 'top-right' })
+}
+
+const saveAssistantReplyAsBlock = (content: string) => {
+  if (!content.trim()) return
+  selectedText.value = content.slice(0, 4000)
+  selectionScope.value = 'chat'
+  selectionPosition.value = null
+  showKnowledgeEditor.value = true
+}
 
 const sendChat = async () => {
   if (!canSendWorkspaceChat.value) return
@@ -2937,6 +3232,39 @@ const handleRetryAssistantMessage = (msgId: string) => {
   }
 }
 
+const handleRegenerateAssistantMessage = async (msgId: string) => {
+  if (!canSendWorkspaceChat.value || isAiDisplayStreaming.value) return
+  const idx = chatMessages.value.findIndex((m) => m.id === msgId)
+  if (idx < 0) return
+  const target = chatMessages.value[idx]
+  if (target.status === 'FAILED' || target.status === 'INTERRUPTED') {
+    handleRetryAssistantMessage(msgId)
+    return
+  }
+  let promptMsg: ChatMsg | undefined
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (chatMessages.value[i].role === 'user') {
+      promptMsg = chatMessages.value[i]
+      break
+    }
+  }
+  if (!promptMsg || !promptMsg.content.trim()) return
+  isAutoScrollLocked.value = false
+  scrollChatToBottom()
+  try {
+    await chatStore.sendMessage(promptMsg.content, {
+      ...aiChatReferenceOptions(),
+      selectionText: promptMsg.quoteText,
+    })
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      const safe = classifyClientError(error, 'CHAT')
+      logClientError('[SubjectWorkspace] regenerate failed', error, safe)
+      ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
+    }
+  }
+}
+
 const handleRecoverUnknown = async () => {
   if (!canUseWorkspaceChat.value) return
   try {
@@ -2957,6 +3285,7 @@ const handleRecoverUnknown = async () => {
 }
 
 const clearChat = () => {
+  isAutoScrollLocked.value = false
   if (!chatSessionInitialization) void startFreshChatSession('学科对话', true)
 }
 
@@ -2983,12 +3312,13 @@ const handleCitationClick = (fileName: string) => {
   }
 }
 
-const updateSelectionPosition = () => {
+const updateSelectionPosition = (scope: 'preview' | 'chat') => {
   nextTick(() => {
     const selection = typeof window !== 'undefined' ? window.getSelection() : null
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
       if (!showKnowledgeEditor.value) {
         selectedText.value = ''
+        selectionScope.value = null
         selectionPosition.value = null
       }
       return
@@ -2997,38 +3327,33 @@ const updateSelectionPosition = () => {
     if (!text) {
       if (!showKnowledgeEditor.value) {
         selectedText.value = ''
+        selectionScope.value = null
         selectionPosition.value = null
       }
       return
     }
-    selectedText.value = text
-
     const range = selection.getRangeAt(0)
+    const anchor = range.commonAncestorContainer
+    const anchorElement = anchor.nodeType === Node.ELEMENT_NODE ? anchor as Element : anchor.parentElement
+    const chatSelection = anchorElement?.closest('.chat-message-text-selection')
+    const wrapper = scope === 'chat' ? chatScrollRef.value : previewPaneWrapperRef.value
+    if (!wrapper || (scope === 'chat' && !chatSelection) || (scope === 'preview' && chatSelection)) {
+      selectionScope.value = null
+      selectionPosition.value = null
+      return
+    }
     const rangeRect = range.getBoundingClientRect()
     if (!rangeRect || (rangeRect.width === 0 && rangeRect.height === 0)) {
       selectionPosition.value = null
       return
     }
-
-    const wrapper = previewPaneWrapperRef.value
-    if (!wrapper) return
-    const wrapperRect = wrapper.getBoundingClientRect()
-
-    if (rangeRect.bottom < wrapperRect.top || rangeRect.top > wrapperRect.bottom) {
-      selectionPosition.value = null
-      return
-    }
-
-    const relativeTop = rangeRect.top - wrapperRect.top
-    const relativeBottom = rangeRect.bottom - wrapperRect.top
-    const relativeLeft = (rangeRect.left - wrapperRect.left) + (rangeRect.width / 2)
-
-    const showBelow = relativeTop < 48
+    selectedText.value = text
+    selectionScope.value = scope
+    const showBelow = rangeRect.top < 56
     const top = showBelow
-      ? Math.min(relativeBottom + 8, wrapperRect.height - 44)
-      : Math.max(8, relativeTop - 8)
-
-    const clampedLeft = Math.max(140, Math.min(relativeLeft, wrapperRect.width - 140))
+      ? Math.min(rangeRect.bottom + 8, window.innerHeight - 44)
+      : Math.max(8, rangeRect.top - 8)
+    const clampedLeft = Math.max(140, Math.min(rangeRect.left + rangeRect.width / 2, window.innerWidth - 140))
 
     selectionPosition.value = {
       top,
@@ -3040,11 +3365,12 @@ const updateSelectionPosition = () => {
 
 const handleTextSelected = (text: string) => {
   selectedText.value = text.slice(0, 4000)
-  updateSelectionPosition()
+  updateSelectionPosition('preview')
 }
 
 const clearSelection = () => {
   selectedText.value = ''
+  selectionScope.value = null
   selectionPosition.value = null
   if (typeof window !== 'undefined') {
     window.getSelection()?.removeAllRanges()
@@ -3053,7 +3379,7 @@ const clearSelection = () => {
 
 const addSelectionToChat = () => {
   if (!selectedText.value) return
-  quotedSelection.value = selectedText.value
+  quotedSelection.value = [quotedSelection.value, selectedText.value].filter(Boolean).join('\n\n').slice(0, 4000)
   clearSelection()
   nextTick(() => {
     chatInputRef.value?.focus()
@@ -3087,10 +3413,15 @@ const askSelection = () => {
 }
 void explainSelection
 void askSelection
-const saveSelection = () => { showKnowledgeEditor.value = true }
+const saveSelection = () => {
+  selectionPosition.value = null
+  showKnowledgeEditor.value = true
+}
 const saveKnowledgeBlock = async (value: { title: string; content: string }) => {
   if (!showKnowledgeEditor.value || !activeSubject.value) return
-  const validSourceFileId = activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
+  const isPreviewSelection = selectionScope.value === 'preview'
+  const validSourceFileId = isPreviewSelection
+    && activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
     ? (selectedFileId.value || undefined)
     : undefined
   const newId = await createKnowledgeBlock({
@@ -3099,7 +3430,7 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
     subject: activeSubject.value.name,
     title: value.title,
     content: value.content,
-    source: selectedFile.value?.name || '选中文本',
+    source: isPreviewSelection ? selectedFile.value?.name || '选中文本' : t(messages.chatSelectionSource),
   })
   if (!newId) return
   showKnowledgeEditor.value = false
@@ -3138,7 +3469,7 @@ const canUseWorkspaceChat = computed(() => workspaceChatSession.value !== null
   && workspaceChatSession.value.subjectId === subjectId.value
   && workspaceChatSession.value.sessionId === chatStore.activeSession?.id)
 const canSendWorkspaceChat = computed(() => canUseWorkspaceChat.value
-  && !chatStore.isLegacySession && !isAiStreaming.value && !chatStore.activeRun?.executionActive && !chatStore.isRecovering)
+  && !isAiStreaming.value && !chatStore.activeRun?.executionActive && !chatStore.isRecovering)
 
 const startFreshChatSession = (fallbackTitle = '学科对话', createNew = false) => {
   const id = subjectId.value
@@ -3190,6 +3521,7 @@ const handleDocSelectionChange = () => {
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
     if (!showKnowledgeEditor.value) {
       selectedText.value = ''
+      selectionScope.value = null
       selectionPosition.value = null
     }
   }
@@ -3227,12 +3559,13 @@ onMounted(async () => {
   const id = subjectId.value
   if (id) {
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    subjectStore.setActiveSubject(id)
+    subjectStore.setActiveSubject(id, { skipSourceLoad: true })
+    const blocksPromise = blockStore.fetchBlocks(undefined, id).catch((error) => {
+      console.warn('[SubjectWorkspace] blocks load deferred', error)
+    })
     await subjectStore.loadSourceFiles(id)
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    await ensureOverviewRuntime()
-    if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    await blockStore.fetchBlocks(undefined, id)
+    await Promise.all([ensureOverviewRuntime(), blocksPromise])
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     if (route.query.view === 'review' || route.query.view === 'stats') {
       centerView.value = route.query.view
@@ -3288,18 +3621,18 @@ watch(subjectId, async (newId) => {
     subjectOverviewGenerating.value = false
     generatingFileIds.value = new Set()
 
-    subjectStore.setActiveSubject(newId)
+    subjectStore.setActiveSubject(newId, { skipSourceLoad: true })
 
     const chatInitialization = startFreshChatSession()
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
 
+    const blocksPromise = blockStore.fetchBlocks(undefined, newId).catch((error) => {
+      console.warn('[SubjectWorkspace] blocks load deferred', error)
+    })
     await subjectStore.loadSourceFiles(newId)
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
 
-    await ensureOverviewRuntime()
-    if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
-
-    await blockStore.fetchBlocks(undefined, newId)
+    await Promise.all([ensureOverviewRuntime(), blocksPromise])
     if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
     if (route.query.view === 'review' || route.query.view === 'stats') {
       centerView.value = route.query.view
@@ -3364,6 +3697,8 @@ onUnmounted(() => {
     clearTimeout(streamSettleTimer)
     streamSettleTimer = null
   }
+  clearThinkingFallbackTimer()
+  cancelProgrammaticScrollFrame()
   if (typeof window !== 'undefined') {
     document.removeEventListener('selectionchange', handleDocSelectionChange)
   }
@@ -3378,7 +3713,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.chat-tool-capsule{display:inline-flex;align-items:center;margin:8px 8px 0 0;padding:5px 9px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--color-bg-card);color:var(--text-muted);font-size:11px;line-height:1.3}.chat-tool-capsule[data-status="RUNNING"]{border-color:color-mix(in srgb,var(--color-zen-sage) 50%,var(--border-subtle));color:var(--color-sage-dark)}.chat-tool-capsule[data-status="FAILED"]{color:var(--color-warning)}
 /* ===== File Processing Alert Banner ===== */
 .file-processing-alert-banner {
   display: flex;
@@ -3729,7 +4063,7 @@ html.dark .drawer-item:hover {
 }
 
 .selection-actions.floating-selection-bubble {
-  position: absolute;
+  position: fixed;
   z-index: 100;
   display: inline-flex;
   align-items: center;
@@ -5185,7 +5519,7 @@ html.dark .chat-recover-banner {
 }
 
 
-/* 意图感知磁吸悬浮胶囊：向上滚动时脱离自动跟随，浮现平滑小胶囊 */
+/* 意图感知磁吸悬浮胶囊：纯白细描边极简样式 */
 .chat-scroll-resume-pill {
   position: absolute;
   bottom: 84px;
@@ -5194,35 +5528,38 @@ html.dark .chat-recover-banner {
   z-index: 25;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   height: 32px;
-  padding: 0 14px 0 10px;
+  padding: 0 13px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-card, #ffffff) 90%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 45%, var(--border-default, #dcd8d0));
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+  border: 1px solid #eae6dd;
+  box-shadow: 0 6px 18px rgba(72, 62, 46, 0.11), 0 2px 5px rgba(72, 62, 46, 0.05);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 550;
   cursor: pointer;
   user-select: none;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .chat-scroll-resume-pill:hover {
-  background: var(--color-bg-card, #ffffff);
-  border-color: var(--color-zen-sage, #8b9a6e);
-  box-shadow: 0 6px 22px color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 24%, transparent);
+  border-color: rgba(110, 127, 80, 0.45);
+  box-shadow: 0 8px 22px rgba(72, 62, 46, 0.14);
   transform: translateX(-50%) translateY(-2px);
+}
+
+html.dark .chat-scroll-resume-pill {
+  background: var(--color-bg-card, #232220);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
 }
 
 .resume-pill-pulse-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-zen-sage, #8b9a6e);
+  background: var(--color-sage-ink, #556b3d);
   animation: resume-dot-pulse 1.4s infinite ease-in-out;
 }
 
@@ -5238,7 +5575,7 @@ html.dark .chat-recover-banner {
 }
 
 .resume-pill-arrow {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--color-sage-dark, #5c6b44);
   font-weight: 700;
 }
@@ -5293,20 +5630,19 @@ html.dark .chat-recover-banner {
 .ai-reply :deep(code) { background: rgba(0, 0, 0, 0.05); padding: 2px 5px; border-radius: 4px; font-size: 12px; font-family: var(--font-family-mono); }
 .ai-reply :deep(pre) { background: var(--color-bg-card, #ffffff); color: var(--text-primary); border: 1px solid var(--border-subtle, #e0deda); padding: 12px 14px; border-radius: 10px; overflow-x: auto; margin: 10px 0; font-size: 12.5px; line-height: 1.55; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); }
 .ai-reply :deep(pre code) { background: transparent; padding: 0; color: inherit; font-size: inherit; font-family: inherit; }
-.ai-reply :deep(ul), .ai-reply :deep(ol) { padding-left: 20px; margin: 8px 0; }
-.ai-reply :deep(li) { margin-bottom: 4px; }
+.ai-reply :deep(ul), .ai-reply :deep(ol) { padding-left: 1.55em; margin: 10px 0 12px; list-style-position: outside; }
+.ai-reply :deep(li) { margin-bottom: 11px; line-height: 1.75; }
+.ai-reply :deep(li:last-child) { margin-bottom: 0; }
 
-.typing-cursor {
+.stream-block-cursor-dot {
   display: inline-block;
-  width: 2px;
-  height: 14px;
-  background: var(--text-secondary);
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: blink 0.8s step-end infinite;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background-color: rgba(110, 127, 80, 0.78);
+  animation: resume-dot-pulse 1.2s ease-in-out infinite;
 }
-
-@keyframes blink { 50% { opacity: 0; } }
 
 /* Input Area */
 .ai-input-area {
@@ -5379,6 +5715,21 @@ html.dark .ai-input-wrapper {
   transform: scale(1.06);
   background: #76855B;
   box-shadow: 0 4px 14px rgba(139, 154, 110, 0.55);
+}
+.ai-send-btn.is-stopping {
+  background: #556b3d;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(85, 107, 61, 0.28);
+}
+.ai-send-btn.is-stopping:hover {
+  transform: scale(1.04);
+  background: #485c33;
+}
+.ai-stop-square {
+  width: 10px;
+  height: 10px;
+  border-radius: 2.5px;
+  background-color: #ffffff;
 }
 .ai-send-btn:disabled {
   cursor: not-allowed;
@@ -5845,310 +6196,6 @@ html.dark .ai-input-wrapper {
   opacity: 0.55;
   cursor: wait;
 }
-.composer-chapter-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 4px 0 2px;
-  padding: 2px 2px 4px;
-  list-style: none;
-}
-.composer-chapter-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: relative;
-}
-.composer-chapter-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 4px;
-  color: var(--text-primary);
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  user-select: none;
-  position: relative;
-}
-.composer-chapter-header::before {
-  content: "";
-  display: inline-block;
-  width: 3px;
-  height: 11px;
-  border-radius: 999px;
-  background: var(--color-primary-accent);
-  opacity: 0.75;
-  flex-shrink: 0;
-  margin-right: 2px;
-}
-.composer-drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  cursor: grab;
-  opacity: 0.22;
-  transition: opacity 0.15s ease;
-  flex-shrink: 0;
-}
-.composer-chapter-header:hover .composer-drag-handle,
-.composer-section-item:hover .composer-drag-handle {
-  opacity: 0.8;
-}
-.composer-inline-title {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  padding: 1.5px 4px;
-  outline: none;
-  transition: all 0.15s ease;
-}
-.composer-inline-title:hover {
-  background: var(--bg-modifier-hover);
-}
-.composer-inline-title:focus {
-  background: var(--bg-card);
-  border-color: var(--color-primary-accent);
-  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.15);
-}
-.composer-del-btn {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.15s ease;
-}
-.composer-chapter-header:hover .composer-del-btn {
-  opacity: 0.7;
-}
-.composer-del-btn:hover {
-  opacity: 1 !important;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-.composer-sections-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.composer-section-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3.5px 6px 3.5px 8px;
-  margin: 1px 0 1px 4px;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.45;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.composer-section-item::before {
-  content: "";
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  opacity: 0.4;
-  flex-shrink: 0;
-  transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
-}
-.composer-section-item:hover {
-  background: var(--bg-modifier-hover);
-  color: var(--text-primary);
-}
-.composer-section-item:hover::before {
-  background: var(--color-primary-accent);
-  opacity: 1;
-  transform: scale(1.25);
-}
-.composer-section-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.composer-inline-section {
-  flex: 1;
-  min-width: 0;
-  border: 0.5px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
-  padding: 1px 4px;
-  outline: none;
-  transition: all 0.15s ease;
-}
-.composer-inline-section:hover {
-  background: rgba(0, 0, 0, 0.03);
-  color: var(--text-primary);
-}
-.composer-inline-section:focus {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  border-color: var(--color-primary-accent);
-  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.12);
-}
-.composer-file-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3.5px;
-  max-width: 130px;
-  padding: 1.5px 7px;
-  border-radius: 999px;
-  background: rgba(125, 147, 114, 0.12);
-  border: 0.5px solid rgba(125, 147, 114, 0.28);
-  color: var(--color-primary-accent);
-  font-size: 12px;
-  font-weight: 550;
-  flex-shrink: 0;
-  line-height: 1.2;
-  transition: all 0.15s ease;
-}
-.composer-file-tag:hover {
-  background: rgba(125, 147, 114, 0.18);
-  border-color: rgba(125, 147, 114, 0.4);
-}
-.composer-file-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-unlink-icon {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.6;
-  display: flex;
-}
-.composer-unlink-icon:hover {
-  opacity: 1;
-  color: #ef4444;
-}
-.composer-item-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-.composer-section-item:hover .composer-item-actions {
-  opacity: 1;
-}
-.composer-action-btn {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.composer-action-btn:hover {
-  background: var(--bg-modifier-hover);
-  color: var(--text-primary);
-}
-.composer-add-section-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 2px 0 2px 14px;
-  padding: 2px 6px;
-}
-.composer-add-dot {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1;
-  opacity: 0.45;
-}
-.composer-add-input {
-  flex: 1;
-  border: 0.5px dashed transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  padding: 2px 6px;
-  outline: none;
-  transition: all 0.15s ease;
-}
-.composer-add-input:hover {
-  border-color: var(--border-default);
-  background: var(--bg-modifier-hover);
-}
-.composer-add-input:focus {
-  border-style: solid;
-  border-color: var(--color-primary-accent);
-  background: var(--bg-card);
-  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.12);
-}
-.composer-add-chapter-row {
-  margin: 8px 4px 4px;
-  padding: 2px 0;
-}
-.composer-add-chapter-input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 0.5px dashed var(--border-default);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  text-align: center;
-  padding: 6px 12px;
-  outline: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.composer-add-chapter-input:hover {
-  border-color: var(--color-primary-accent);
-  color: var(--color-primary-accent);
-  background: rgba(125, 147, 114, 0.05);
-}
-.composer-add-chapter-input:focus {
-  border-style: solid;
-  border-color: var(--color-primary-accent);
-  background: var(--bg-card);
-  text-align: left;
-  cursor: text;
-  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.12);
-}
-
-.outline-overview-chapter { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
-.outline-overview-chapter strong { position: relative; color: var(--text-primary); font-size: 13.5px; font-weight: 700; padding: 0 0 8px 12px; margin-bottom: 4px; border-bottom: 0.5px solid rgba(0,0,0,0.04); display: flex; align-items: center; }
-.outline-overview-chapter strong::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 12px; border-radius: 4px; background: var(--color-primary-accent, #8B9A6E); }
-.outline-section-container { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.outline-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); padding-left: 12px; position: relative; display: flex; align-items: center; }
-.outline-section-title::before { content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 4px; height: 4px; border-radius: 50%; background: rgba(0,0,0,0.15); }
-.outline-file-link { margin-left: 12px; padding: 10px 12px; border: 0.5px solid transparent; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: rgba(0,0,0,0.02); color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; }
-.outline-file-link:hover { background: rgba(139,154,110,0.1); border-color: rgba(139,154,110,0.22); transform: translateX(2px); color: var(--color-primary-accent, #8B9A6E); }
-.outline-file-link-icon { opacity: 0.7; }
-.outline-file-link-file { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 .summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
 .summary-markdown :deep(h1), .summary-markdown :deep(h2), .summary-markdown :deep(h3), .summary-markdown :deep(h4) { color: var(--text-primary); font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; }
 .summary-markdown :deep(h1) { font-size: 1.5em; border-bottom: 0.5px solid var(--border-default); padding-bottom: 0.3em; }
@@ -6203,16 +6250,17 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .ai-clear svg { stroke: currentColor; }
 .ai-clear:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.4); color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 4px 12px rgba(139, 154, 110, 0.2); transform: rotate(-30deg); }
 
-.ai-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px 24px 28px; animation: ai-fade-in 0.4s ease-out; width: 100%; max-width: 320px; margin: 0 auto; box-sizing: border-box; }
-.ai-spark-wrap, .ai-brand-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 16px; filter: drop-shadow(0 8px 20px rgba(139, 154, 110, 0.24)); transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-.ai-brand-wrap:hover { transform: translateY(-2px) scale(1.03); }
-.ai-spark-svg, .ai-brand-svg { width: 56px; height: 56px; display: block; border-radius: 16px; }
-.welcome-title { font-size: calc(22.5px + var(--ui-font-size-adjustment)); font-weight: 650; color: var(--text-primary); margin: 0 0 8px; letter-spacing: -0.3px; line-height: 1.3; }
-.welcome-desc { font-size: calc(12.5px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); margin: 0 0 26px; line-height: 1.55; max-width: 260px; }
-.preset-questions { display: flex; flex-direction: column; align-items: center; gap: 9px; width: 100%; max-width: 260px; box-sizing: border-box; }
-.preset-pill { width: 100%; padding: 9px 20px; border-radius: 999px; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; font-weight: 550; letter-spacing: 0.8px; text-align: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02); user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
-.preset-pill:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); font-weight: 600; transform: translateY(-1.5px); box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.22), 0 2px 4px rgba(0, 0, 0, 0.03); }
-.preset-pill:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); }
+.ai-welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: stretch; padding: 20px 20px 24px; animation: ai-fade-in 0.4s ease-out; width: 100%; box-sizing: border-box; }
+.ai-welcome-inner { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 18px; }
+.welcome-hero { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 6px; }
+.welcome-title { font-size: calc(22px + var(--ui-font-size-adjustment)); font-weight: 700; color: var(--text-primary); margin: 0; letter-spacing: -0.025em; line-height: 1.25; }
+.welcome-subtitle { font-size: calc(12.5px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); margin: 0; line-height: 1.45; word-break: break-word; }
+.starter-cards { display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box; }
+.starter-card { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 4px; width: 100%; padding: 13px 15px; border-radius: 15px; background: #FFFFFF; border: 1px solid #EAE6DD; box-shadow: 0 1px 2px rgba(72, 62, 46, 0.03); cursor: pointer; transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.16s ease, box-shadow 0.16s ease; box-sizing: border-box; }
+.starter-card:hover { border-color: #D7D0C2; box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06); transform: translateY(-1px); }
+.starter-card:active { transform: scale(0.988); }
+.starter-card-title { font-size: calc(14px + var(--ui-font-size-adjustment)); font-weight: 700; color: var(--text-primary); line-height: 1.38; letter-spacing: -0.015em; }
+.starter-card-hint { font-size: calc(12px + var(--ui-font-size-adjustment)); font-weight: 400; color: var(--text-muted); line-height: 1.45; }
 
 .assistant-spark-avatar { width: 34px; height: 34px; border: 0.5px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .assistant-spark-avatar svg { width: 20px; height: 20px; }
@@ -6238,9 +6286,8 @@ html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html
 html.dark .chat-msg-row.user .chat-bubble { background: var(--color-bg-secondary, #232220) !important; color: var(--text-primary, #e6e4df) !important; border-color: rgba(255,255,255,0.08) !important; }
 html.dark .chat-msg-row.assistant .chat-bubble { background: transparent !important; border: none !important; }
 html.dark .ai-reply :deep(pre) { background: #232220; border-color: rgba(255, 255, 255, 0.08); color: #e6e4df; }
-html.dark .preset-pill { background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.07); color: var(--text-secondary); box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.35); }
-html.dark .preset-pill:hover { background: rgba(125, 147, 114, 0.12); border-color: rgba(125, 147, 114, 0.4); color: #A3B899; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
-html.dark .ai-brand-wrap { filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45)); }
+html.dark .starter-card { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32); }
+html.dark .starter-card:hover { background: rgba(125, 147, 114, 0.12); border-color: rgba(125, 147, 114, 0.4); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38); }
 html.dark .welcome-title { color: #FFFFFF; }
 
 html.dark .outline-overview-chapter strong { border-color: rgba(255,255,255,0.04); }
@@ -6367,42 +6414,54 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
 }
 .chat-msg-citations {
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 22%, var(--border-subtle, #E0DEDA));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   font-size: 12px;
 }
-.chat-msg-citations .citation-title {
+
+.citation-collapse-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-weight: 650;
-  color: var(--color-sage-dark, #5C6B44);
-  margin-bottom: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #eae6dd;
+  background: #ffffff;
+  color: var(--color-sage-dark, #5c6b44);
   font-size: 11.5px;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
 }
+
+.citation-collapse-pill:hover {
+  border-color: rgba(110, 127, 80, 0.45);
+  background: #faf7f2;
+}
+
+.citation-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.citation-chevron.is-expanded {
+  transform: rotate(180deg);
+}
+
 .chat-msg-citations .citation-title-icon {
-  color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #8b9a6e);
   flex-shrink: 0;
 }
-.chat-msg-citations .citation-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 14%, var(--color-bg-card, #FFFFFF));
-  color: var(--color-sage-dark, #5C6B44);
-  font-size: 10px;
-  font-weight: 700;
-}
+
 .chat-msg-citations .citation-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .chat-msg-citations .citation-chip {
   display: inline-flex;
   align-items: center;
@@ -6410,8 +6469,8 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   max-width: 100%;
   padding: 4px 9px;
   border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 22%, var(--border-subtle, #E0DEDA));
-  background: color-mix(in srgb, var(--color-bg-card, #FFFFFF) 85%, var(--color-bg-primary, #F5F1EB));
+  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 22%, var(--border-subtle, #e0deda));
+  background: color-mix(in srgb, var(--color-bg-card, #ffffff) 85%, var(--color-bg-primary, #f5f1eb));
   color: var(--text-primary);
   font-size: 11.5px;
   line-height: 1.4;
@@ -6420,20 +6479,23 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   transition: all 0.16s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
+
 .chat-msg-citations .citation-chip:hover {
-  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 12%, var(--color-bg-card, #FFFFFF));
-  border-color: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 45%, var(--border-subtle, #E0DEDA));
-  color: var(--color-sage-dark, #5C6B44);
+  background: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 12%, var(--color-bg-card, #ffffff));
+  border-color: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 45%, var(--border-subtle, #e0deda));
+  color: var(--color-sage-dark, #5c6b44);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 10%, transparent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 10%, transparent);
 }
+
 .chat-msg-citations .citation-idx {
   font-family: var(--font-mono, monospace);
   font-weight: 700;
   font-size: 10.5px;
-  color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #8b9a6e);
   flex-shrink: 0;
 }
+
 .chat-msg-citations .citation-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6441,8 +6503,60 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   max-width: 220px;
   color: var(--text-secondary);
 }
+
 .chat-msg-citations .citation-chip:hover .citation-name {
-  color: var(--color-sage-dark, #5C6B44);
+  color: var(--color-sage-dark, #5c6b44);
+}
+
+.chat-msg-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  animation: chat-footer-fade-in 0.22s ease both;
+}
+
+@keyframes chat-footer-fade-in {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.chat-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid #eae6dd;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.chat-footer-btn:hover {
+  color: var(--color-sage-dark, #5c6b44);
+  border-color: rgba(110, 127, 80, 0.35);
+  background: rgba(139, 154, 110, 0.08);
+}
+
+.ai-model-switch.is-locked {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+html.dark .citation-collapse-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #a3b899;
+}
+
+html.dark .chat-footer-btn {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .chat-msg-interrupted-bar {

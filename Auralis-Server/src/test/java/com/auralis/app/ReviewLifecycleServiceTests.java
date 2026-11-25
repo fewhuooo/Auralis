@@ -315,24 +315,24 @@ class ReviewLifecycleServiceTests {
     }
 
     @Test
-    void explicitCommandTimeParticipatesInReceiptFingerprintButLegacyShapeStaysStable() throws Exception {
+    void optionalCommandFieldsShareOneFingerprintAndPreserveIdempotentReplay() throws Exception {
         Owner owner = owner("offline-time-idempotency");
         UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand(
                 "Idempotency subject", null, null, "001")).id();
-        var legacyBlock = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
-                subjectId, null, "Legacy request block", "body", null));
-        UUID legacyCommandId = UUID.randomUUID();
-        var legacyRequest = learningCompletion(legacyCommandId, legacyBlock.id(), legacyBlock.version(),
-                0, legacyBlock.content(), null);
-        JsonNode legacyResponse = postCommand(owner, "/api/reviews/lifecycle/learning-completions", legacyRequest);
-        assertThat(postCommand(owner, "/api/reviews/lifecycle/learning-completions", legacyRequest))
-                .isEqualTo(legacyResponse);
-        String storedLegacyFingerprint = jdbcTemplate.queryForObject("select request_payload from "
+        var onlineBlock = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
+                subjectId, null, "Online request block", "body", null));
+        UUID onlineCommandId = UUID.randomUUID();
+        var onlineRequest = learningCompletion(onlineCommandId, onlineBlock.id(), onlineBlock.version(),
+                0, onlineBlock.content(), null);
+        JsonNode onlineResponse = postCommand(owner, "/api/reviews/lifecycle/learning-completions", onlineRequest);
+        assertThat(postCommand(owner, "/api/reviews/lifecycle/learning-completions", onlineRequest))
+                .isEqualTo(onlineResponse);
+        String storedOnlineFingerprint = jdbcTemplate.queryForObject("select request_payload from "
                         + "review_lifecycle_commands where user_id = ? and client_command_id = ?",
-                String.class, owner.userId(), legacyCommandId);
-        JsonNode legacyFingerprint = objectMapper.readTree(storedLegacyFingerprint);
-        assertThat(legacyFingerprint.has("occurredAt")).isFalse();
-        assertThat(legacyFingerprint.has("expectedStateAbsent")).isFalse();
+                String.class, owner.userId(), onlineCommandId);
+        JsonNode onlineFingerprint = objectMapper.readTree(storedOnlineFingerprint);
+        assertThat(onlineFingerprint.get("occurredAt").isNull()).isTrue();
+        assertThat(onlineFingerprint.get("expectedStateAbsent").isNull()).isTrue();
 
         var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
                 subjectId, null, "Explicit request block", "body", null));

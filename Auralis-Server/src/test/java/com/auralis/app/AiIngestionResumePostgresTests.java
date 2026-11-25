@@ -182,7 +182,7 @@ class AiIngestionResumePostgresTests {
 
         clock.set(WINDOW_START.plusSeconds(300));
         AiUsageGuard.TaskLease blockerTask = usageGuard.beginTask(
-                new AiTaskContext(owner.user().id(), AiFeature.CHAT, "synthetic-chat-blocker-" + suffix));
+                new AiTaskContext(owner.user().id(), AiFeature.CHAT, "synthetic-chat-blocker-" + suffix, java.util.UUID.randomUUID()));
         AiUsageGuard.CallReservation blockerCall = usageGuard.reserve(blockerTask, AiStage.CHAT_COMPLETION,
                 AiProviderType.DEEPSEEK, "synthetic-chat-model", AiCredentialSource.PLATFORM,
                 AiOutputRole.GENERAL, 1, 0);

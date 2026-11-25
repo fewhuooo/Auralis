@@ -32,8 +32,9 @@ public class StatsController {
     @GetMapping("/weekly")
     public WeeklyStatsView weekly(@AuthenticationPrincipal AuthenticatedUser user,
                                   @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-                                  @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return statsService.weekly(user.userId(), from, to);
+                                  @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                                  @RequestParam(required = false) String timeZone) {
+        return statsService.weekly(user.userId(), from, to, timeZone);
     }
 
     @GetMapping("/subjects/{subjectId}")

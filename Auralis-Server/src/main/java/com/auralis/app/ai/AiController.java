@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -39,7 +38,6 @@ public class AiController {
     private final ConversationService conversationService;
     private final SuggestionService suggestionService;
     private final OverviewGenerationService overviewGenerationService;
-    private final ObjectMapper objectMapper;
     private final AiUsageQueryService usageQueryService;
     private final OverviewSseAdapter overviewSseAdapter;
 
@@ -49,7 +47,6 @@ public class AiController {
             ConversationService conversationService,
             SuggestionService suggestionService,
             OverviewGenerationService overviewGenerationService,
-            ObjectMapper objectMapper,
             AiUsageQueryService usageQueryService,
             OverviewSseAdapter overviewSseAdapter) {
         this.settingsService = settingsService;
@@ -57,7 +54,6 @@ public class AiController {
         this.conversationService = conversationService;
         this.suggestionService = suggestionService;
         this.overviewGenerationService = overviewGenerationService;
-        this.objectMapper = objectMapper;
         this.usageQueryService = usageQueryService;
         this.overviewSseAdapter = overviewSseAdapter;
     }

@@ -161,30 +161,12 @@ test('SQLite schema reserves durable timer and focus outbox tables', async () =>
   assert.match(schema, /PRIMARY KEY \(user_id, device_id, client_session_id\)/)
 })
 
-test('SQLite schema upgrade preserves Overview cache and supports the durable focus outbox', async () => {
+test('current SQLite schema supports durable focus finalization, reopening and acknowledgement', async () => {
   assert.ok(localSchemaModule, 'versioned local schema must be loadable')
   assert.ok(repositoryModule, 'focus-session repository must be implemented')
   const sqlite = new TemporarySqlite()
   try {
-    await sqlite.execute('CREATE TABLE local_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
-    await sqlite.execute('INSERT INTO local_schema_migrations (version, applied_at) VALUES ($1, $2)', [9, '2026-09-30T00:00:00.000Z'])
-    const overviewSql = localSchemaModule.VERSIONED_LOCAL_SCHEMA_SQL.find((sql) => sql.includes('CREATE TABLE IF NOT EXISTS ai_overview_cache'))
-    assert.ok(overviewSql, 'existing Overview cache schema must be present')
-    await sqlite.execute(overviewSql)
-    await sqlite.execute(`INSERT INTO ai_overview_cache
-      (user_id,device_id,scope_type,scope_id,revision_key,schema_version,title,summary_json,status,updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    ['user-a','device-a','FILE','source-a','revision-a',1,'Existing overview','{"summary":"keep"}','READY','2026-09-30T00:00:00.000Z'])
-
     await localSchemaModule.createVersionedLocalSchema(sqlite)
-    assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pomodoro_timer_state'").get())
-    assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pomodoro_focus_sessions'").get())
-    const preservedOverview = sqlite.database.prepare('SELECT title, summary_json FROM ai_overview_cache WHERE scope_id = ?').get('source-a')
-    assert.equal(preservedOverview.title, 'Existing overview')
-    assert.equal(preservedOverview.summary_json, '{"summary":"keep"}')
-    const migrationVersions = sqlite.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map((row) => row.version)
-    assert.ok(migrationVersions.includes(9))
-    assert.ok(migrationVersions.includes(localSchemaModule.LOCAL_SCHEMA_VERSION))
 
     const { FocusSessionRepository } = repositoryModule
     const repository = new FocusSessionRepository('user-a', 'device-a', { sql: sqlite, schemaReady: Promise.resolve() })

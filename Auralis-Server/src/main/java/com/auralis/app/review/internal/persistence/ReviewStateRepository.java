@@ -1,5 +1,6 @@
 package com.auralis.app.review.internal.persistence;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -19,10 +20,6 @@ public interface ReviewStateRepository extends JpaRepository<ReviewStateEntity, 
             + "and state.knowledgeBlockId = :knowledgeBlockId")
     Optional<ReviewStateEntity> findForUpdateByUserIdAndKnowledgeBlockId(
             @Param("userId") UUID userId, @Param("knowledgeBlockId") UUID knowledgeBlockId);
-    List<ReviewStateEntity> findTop200ByUserIdAndDueAtLessThanEqualOrderByDueAtAscIdAsc(UUID userId, Instant at);
-    List<ReviewStateEntity> findTop200ByUserIdAndNeedsLearningFalseAndMasteredFalseAndDueAtLessThanEqualOrderByDueAtAscIdAsc(
-            UUID userId, Instant at);
-    long countByUserIdAndDueAtLessThanEqual(UUID userId, Instant at);
 
     @Query(value = "select rs.* from review_states rs "
             + "join knowledge_blocks kb on kb.id = rs.knowledge_block_id and kb.user_id = rs.user_id "
@@ -36,4 +33,26 @@ public interface ReviewStateRepository extends JpaRepository<ReviewStateEntity, 
                                                        @Param("subjectId") UUID subjectId,
                                                        @Param("afterKnowledgeBlockId") UUID afterKnowledgeBlockId,
                                                        @Param("limit") int limit);
+
+    @Query("""
+            select rs as state, kb.version as knowledgeBlockVersion
+            from ReviewStateEntity rs
+            join KnowledgeBlockEntity kb on kb.id = rs.knowledgeBlockId and kb.userId = rs.userId
+            join SubjectEntity s on s.id = kb.subjectId and s.userId = kb.userId
+            where rs.userId = :userId and kb.subjectId = coalesce(:subjectId, kb.subjectId)
+              and kb.deletedAt is null and s.deletedAt is null
+              and rs.needsLearning = false and rs.mastered = false and rs.dueAt <= :at
+              and (:firstPage = true or rs.dueAt > :afterDueAt
+                   or (rs.dueAt = :afterDueAt and rs.knowledgeBlockId > :afterId))
+            order by rs.dueAt, rs.knowledgeBlockId
+            """)
+    List<QueueRow> findDueQueue(@Param("userId") UUID userId, @Param("subjectId") UUID subjectId,
+                                @Param("at") Instant at, @Param("firstPage") boolean firstPage,
+                                @Param("afterDueAt") Instant afterDueAt, @Param("afterId") UUID afterId,
+                                Pageable pageable);
+
+    interface QueueRow {
+        ReviewStateEntity getState();
+        long getKnowledgeBlockVersion();
+    }
 }

@@ -75,12 +75,22 @@
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue'
 import { t, type Message } from '@/i18n'
+import { validateNewPassword } from '@/utils/passwordPolicy'
 import { IconKey, IconAlertCircle } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 
 const messages = {
   title: { 'zh-CN': '修改登录密码', en: 'Change password', ja: 'パスワードを変更' },
-  lengthRule: { 'zh-CN': '新密码至少 12 位', en: 'Use at least 12 characters', ja: '新しいパスワードは12文字以上' },
+  lengthRule: {
+    'zh-CN': '新密码至少 8 位，包含大写字母、小写字母和符号',
+    en: 'Use at least 8 characters with an uppercase letter, a lowercase letter, and a symbol',
+    ja: '新しいパスワードは8文字以上で、大文字・小文字・記号を含めてください',
+  },
+  passwordRequirements: {
+    'zh-CN': '新密码至少 8 位，且包含大写字母、小写字母和符号',
+    en: 'Use at least 8 characters with an uppercase letter, a lowercase letter, and a symbol',
+    ja: '新しいパスワードは8文字以上で、大文字・小文字・記号を含めてください',
+  },
   passwordTooLong: { 'zh-CN': '密码太长，请缩短后重试。', en: 'Your password is too long. Shorten it and try again.', ja: 'パスワードが長すぎます。短くしてもう一度お試しください。' },
   currentPassword: { 'zh-CN': '原密码', en: 'Current password', ja: '現在のパスワード' },
   currentPlaceholder: { 'zh-CN': '请输入当前正在使用的密码', en: 'Enter your current password', ja: '現在のパスワードを入力' },
@@ -157,11 +167,12 @@ const handleSubmit = () => {
     localError.value = messages.currentRequired
     return
   }
-  if (form.newPassword.length < 12) {
-    localError.value = messages.lengthRule
+  const passwordError = validateNewPassword(form.newPassword)
+  if (passwordError === 'requirements') {
+    localError.value = messages.passwordRequirements
     return
   }
-  if (new TextEncoder().encode(form.newPassword).byteLength > 72) {
+  if (passwordError === 'tooLong') {
     localError.value = messages.passwordTooLong
     return
   }

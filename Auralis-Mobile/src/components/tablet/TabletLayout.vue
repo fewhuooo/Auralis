@@ -1,56 +1,69 @@
 <template>
   <view class="tablet-layout">
-    <!-- Left Navigation Column: locks sidebar and AI button in exact vertical center alignment -->
-    <view class="left-nav-column">
-      <!-- Floating Zen Capsule Sidebar -->
-      <view class="sidebar">
-        <view class="logo-area" @click="navigate('/pages/tablet/dashboard/index')">
-          <text class="logo-text">SC</text>
-        </view>
-        
-        <view class="nav-menu">
-          <!-- 弹性滑动胶囊背景 (垂直方向滑动) -->
-          <view 
-            class="active-capsule-indicator" 
-            :style="{ 
-              transform: `translateY(${displayIndex >= 0 ? displayIndex * 120 : 0}rpx)`,
-              opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0
-            }"
-          >
-            <view class="capsule-inner"></view>
-          </view>
+    <view class="bg-glow bg-glow--1" aria-hidden="true"></view>
+    <view class="bg-glow bg-glow--2" aria-hidden="true"></view>
 
-          <view 
-            v-for="(item, index) in navItems" 
-            :key="item.path"
-            class="nav-item"
-            @click="navigate(item.path)"
-          >
-            <view class="icon-wrap">
-              <LineIcon :name="item.icon" size="38rpx" :color="displayIndex === index ? 'var(--color-zen-graphite, #1C1C1A)' : 'var(--color-zen-stone, #A8A8A5)'" />
-            </view>
-            <text class="nav-label" :class="{ 'label-active': displayIndex === index }">{{ item.label }}</text>
-          </view>
+    <view class="sidebar" role="navigation" aria-label="工作台导航">
+      <view class="logo-area" title="回到首页" aria-label="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
+        <BrandLogo size="28px" />
+      </view>
+
+      <view class="nav-menu">
+        <view
+          class="active-capsule-indicator"
+          :style="{
+            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * 52 : 0}px)`,
+            opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
+          }"
+        >
+          <view class="nav-active-bar"></view>
+          <view class="capsule-inner"></view>
         </view>
-        
-        <view class="nav-bottom">
-          <!-- Profile moved to main nav -->
+
+        <view
+          v-for="(item, index) in navItems"
+          :key="item.path"
+          class="nav-item"
+          :title="item.label"
+          :aria-label="item.label"
+          :aria-current="displayIndex === index ? 'page' : undefined"
+          @click="navigate(item.path)"
+        >
+          <LineIcon
+            :name="item.icon"
+            size="20px"
+            :color="displayIndex === index ? '#556B3D' : '#7A7A75'"
+          />
         </view>
       </view>
 
-      <!-- 左下角独立 AI 悬浮按钮 (跟侧栏胶囊在同一 flex 列中严格竖直居中对齐) -->
-      <view 
-        class="tablet-ai-float" 
-        :class="{ 'is-active': displayIndex === -1 }"
-        @click="navigate('/pages/tablet/ai-search/index')"
-        title="Auralis AI 助手"
-      >
-        <LineIcon name="ai" size="52rpx" color="#ffffff" />
+      <view class="sidebar-footer">
+        <view
+          class="sidebar-avatar-entry"
+          :class="{ 'is-active': displayIndex === -1 }"
+          role="button"
+          title="个人中心"
+          aria-label="个人中心"
+          @click="navigate('/pages/tablet/profile/index')"
+        >
+          <view class="sidebar-avatar">
+            <text>{{ userInitial }}</text>
+          </view>
+          <view
+            class="avatar-sync-badge"
+            :class="syncBadgeClass"
+            role="button"
+            title="点击立即同步"
+            aria-label="同步状态"
+            @click.stop="syncStore.syncNow()"
+          >
+            <view class="avatar-sync-dot"></view>
+          </view>
+        </view>
       </view>
     </view>
 
-    <!-- Main Content -->
-    <view 
+    <view
       class="main-content"
       :class="{
         'is-entering-down': isEntering && slideDir === 'down',
@@ -59,30 +72,36 @@
         'is-entering-left': isEntering && slideDir === 'left',
         'is-exiting-down': isExiting && exitDir === 'down',
         'is-exiting-up': isExiting && exitDir === 'up',
-        'is-returning': isReturning
+        'is-returning': isReturning,
       }"
     >
       <slot></slot>
     </view>
 
-    <!-- Modal Slot (outside main-content for fixed positioning) -->
     <slot name="modal"></slot>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
-import { useLayoutStore } from '@/store/useLayoutStore'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
+import { useAuthStore } from '@/store/useAuthStore'
+import { useLayoutStore } from '@/store/useLayoutStore'
+import { useSyncStore } from '@/store/useSyncStore'
+import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 
+const authStore = useAuthStore()
 const layoutStore = useLayoutStore()
+const syncStore = useSyncStore()
+
 const getIndexByUrl = (path: string) => {
   if (path.includes('subject-hall') || path.includes('workspace')) return 1
   if (path.includes('pomodoro')) return 2
   if (path.includes('handwriting')) return tabletHandwritingNotesEnabled ? 3 : -2
-  if (path.includes('profile')) return tabletHandwritingNotesEnabled ? 4 : 3
-  if (path.includes('ai-search')) return -1
+  if (path.includes('ai-search')) return tabletHandwritingNotesEnabled ? 4 : 3
+  if (path.includes('profile')) return -1
   return 0
 }
 
@@ -93,7 +112,9 @@ const getInitialRouteInfo = () => {
       const route = '/' + (pages[pages.length - 1].route || '')
       return { path: route, idx: getIndexByUrl(route) }
     }
-  } catch (e) {}
+  } catch {
+    // Ignore route lookup error
+  }
   return { path: '', idx: 0 }
 }
 
@@ -125,38 +146,71 @@ const exitDir = ref<'up' | 'down' | 'left' | 'right'>('down')
 const slideDir = ref<'right' | 'left' | 'up' | 'down'>(layoutStore.getSlideDirection())
 const isReturning = computed(() => layoutStore.isReturning)
 
+const userInitial = computed(() => {
+  const name = (authStore.user?.displayName || authStore.username || 'U').trim()
+  return name.charAt(0).toUpperCase() || 'U'
+})
+
+const syncBadgeClass = computed(() => {
+  if (syncStore.isSyncing) return 'status-syncing'
+  if (syncStore.lastError) return 'status-error'
+  return 'status-connected'
+})
+
 const navItems = [
-  { path: '/pages/tablet/dashboard/index', icon: 'home', label: '仪表盘' },
-  { path: '/pages/tablet/subject-hall/index', icon: 'menu', label: '学科' },
+  { path: '/pages/tablet/dashboard/index', icon: 'home', label: '首页' },
+  { path: '/pages/tablet/subject-hall/index', icon: 'book', label: '学科' },
   { path: '/pages/tablet/pomodoro/index', icon: 'clock', label: '专注' },
   ...(tabletHandwritingNotesEnabled
-    ? [{ path: '/pages/tablet/handwriting/index', icon: 'edit', label: '随手记' }]
+    ? [{ path: '/pages/tablet/handwriting/index', icon: 'edit', label: '手写' }]
     : []),
-  { path: '/pages/tablet/profile/index', icon: 'settings', label: '设置' },
+  { path: '/pages/tablet/ai-search/index', icon: 'sparkles', label: 'AI 助手' },
 ]
+
+let stopSiblingPreload: (() => void) | null = null
+let redirectTimer: ReturnType<typeof setTimeout> | null = null
+let exitResetTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
   const pages = getCurrentPages()
   const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+  if (!nowRoute.includes('/login') && !authStore.isAuthenticated) {
+    uni.reLaunch({ url: '/pages/tablet/login/index' })
+    return
+  }
   const targetIdx = getIndexByUrl(nowRoute)
   currentPath.value = nowRoute
   layoutStore.setActiveNav(targetIdx, nowRoute)
-
-  // 胶囊直接稳定定位在当前页的目标位置，彻底废除 prevIdx 回弹闪回！
   displayIndex.value = targetIdx
 
   if (layoutStore.isInitialRender) {
-    // 首次进入应用或冷启动直接静默渲染，不触发任何进场透明度与位移动画，彻底消除首屏白屏闪烁！
     isEntering.value = false
     layoutStore.isInitialRender = false
   } else {
-    // 页面切换跟随动效收尾 (延迟 650ms 等待 CSS GPU 动画彻底播放完毕后再移除 class)
     setTimeout(() => {
       isEntering.value = false
-    }, 650)
+    }, 360)
   }
+
+  stopSiblingPreload = scheduleSiblingPreload(
+    [...navItems.map(item => item.path), '/pages/tablet/profile/index'],
+    nowRoute,
+  )
+})
+
+onUnmounted(() => {
+  if (redirectTimer) {
+    clearTimeout(redirectTimer)
+    redirectTimer = null
+  }
+  if (exitResetTimer) {
+    clearTimeout(exitResetTimer)
+    exitResetTimer = null
+  }
+  stopSiblingPreload?.()
+  stopSiblingPreload = null
 })
 
 const navigate = (path: string) => {
@@ -167,21 +221,28 @@ const navigate = (path: string) => {
   const targetIndex = getIndexByUrl(path)
   const currentIdx = getIndexByUrl(nowRoute || currentPath.value)
 
-  // 垂直上下切换方向
   const dir = targetIndex > currentIdx ? 'down' : 'up'
   layoutStore.setSlideDirection(dir)
   exitDir.value = dir
   isExiting.value = true
 
-  // 侧栏胶囊立刻平滑滑动
   displayIndex.value = targetIndex
   currentPath.value = path
   layoutStore.setActiveNav(targetIndex, path)
 
-  // 延迟 160ms 等待当前页面优雅淡出离场，再执行路由重载
-  setTimeout(() => {
-    uni.redirectTo({ url: path })
-  }, 160)
+  if (redirectTimer) clearTimeout(redirectTimer)
+  if (exitResetTimer) clearTimeout(exitResetTimer)
+  void preloadRoute(path)
+  redirectTimer = setTimeout(() => { uni.redirectTo({ url: path }) }, 160)
+  exitResetTimer = setTimeout(() => {
+    exitResetTimer = null
+    isExiting.value = false
+    if (nowRoute) {
+      currentPath.value = nowRoute
+      displayIndex.value = currentIdx
+      layoutStore.setActiveNav(currentIdx, nowRoute)
+    }
+  }, 600)
 }
 </script>
 
@@ -190,69 +251,60 @@ const navigate = (path: string) => {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background: var(--color-zen-ivory, #F9F9F7);
-  overflow: visible;
+  background:
+    radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
+    radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
+    linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
+  overflow: hidden;
   position: relative;
 }
 
-.left-nav-column {
-  width: var(--tablet-sidebar-width, 136rpx);
-  height: calc(100vh - 48rpx);
-  margin: 24rpx 16rpx 24rpx 24rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  z-index: 100;
-}
-
 .sidebar {
-  width: 100%;
-  flex: 1;
-  background: var(--color-zen-white, #FFFFFF);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  border-radius: 999rpx;
+  width: 68px;
+  height: 100%;
+  background-color: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: 1px 0 0 rgba(45, 55, 40, 0.055), inset -1px 0 0 rgba(255, 255, 255, 0.65);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 36rpx 0;
-  margin-bottom: 24rpx;
-  box-shadow: 0 12rpx 36rpx rgba(0, 0, 0, 0.04);
-  transform: translateZ(0);
-  will-change: transform;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  user-select: none;
+  box-sizing: border-box;
 }
 
 .logo-area {
-  width: 72rpx;
-  height: 72rpx;
-  background: var(--color-zen-graphite, #1C1C1A);
-  border-radius: 50%;
+  width: 100%;
+  padding: 20px 0 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 40rpx;
-  box-shadow: 0 6rpx 18rpx rgba(0, 0, 0, 0.12);
-  transition: transform 0.2s;
+  border-bottom: 1px solid rgba(45, 55, 40, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
+  margin-bottom: 14px;
   cursor: pointer;
+  transition: transform 0.2s var(--ease-out);
 }
+
+.logo-area:hover {
+  transform: scale(1.06);
+}
+
 .logo-area:active {
-  transform: scale(0.92);
-}
-.logo-text {
-  color: var(--color-zen-white, #FFFFFF);
-  font-weight: 800;
-  font-size: 28rpx;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  transform: scale(0.94);
 }
 
 .nav-menu {
   flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
-  width: 100%;
   align-items: center;
+  gap: 8px;
   position: relative;
 }
 
@@ -261,167 +313,233 @@ const navigate = (path: string) => {
   top: 0;
   left: 0;
   right: 0;
-  height: 104rpx;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
   z-index: 1;
-  transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
-  transform: translateZ(0);
-  will-change: transform;
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-active-bar {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 3.5px;
+  height: 20px;
+  background: var(--accent-gradient);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.55);
 }
 
 .capsule-inner {
-  width: 104rpx;
-  height: 104rpx;
-  border-radius: 40rpx;
-  background: var(--color-zen-ivory, #F9F9F7);
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.03);
-}
-
-.nav-bottom {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  width: 100%;
-  align-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background-color: rgba(139, 154, 110, 0.16);
 }
 
 .nav-item {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+  transition: background-color 0.18s ease, transform 0.16s var(--ease-out);
+}
+
+.nav-item:hover {
+  background-color: rgba(139, 154, 110, 0.12);
+}
+
+.nav-item:active {
+  transform: scale(0.94);
+}
+
+.sidebar-footer {
+  width: 100%;
+  padding: 14px 0 18px;
+  border-top: 1px solid rgba(45, 55, 40, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6rpx;
-  cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.2s ease;
-  width: 104rpx;
-  height: 104rpx;
-  border-radius: 40rpx;
-  position: relative;
-  z-index: 2;
-}
-.nav-item:hover {
-  background: rgba(163, 177, 155, 0.12);
-}
-.nav-item:active {
-  transform: scale(0.88);
+  flex-shrink: 0;
 }
 
-.icon-wrap {
+.sidebar-avatar-entry {
+  position: relative;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.nav-label {
-  font-size: 20rpx;
-  font-weight: 600;
-  color: var(--color-zen-stone, #A8A8A5);
-  font-family: "Plus Jakarta Sans", -apple-system, sans-serif;
-  transition: color 0.2s;
-}
-.nav-label.label-active {
-  color: var(--color-zen-graphite, #1C1C1A);
+.sidebar-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13.5px;
   font-weight: 700;
+  color: #FFFFFF;
+  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s ease;
+}
+
+.sidebar-avatar-entry:hover .sidebar-avatar,
+.sidebar-avatar-entry.is-active .sidebar-avatar {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.28);
+}
+
+.avatar-sync-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.avatar-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #8B9A6E;
+}
+
+.avatar-sync-badge.status-syncing .avatar-sync-dot {
+  background-color: #C89B6D;
+  animation: syncPulse 1.4s ease-in-out infinite;
+}
+
+.avatar-sync-badge.status-error .avatar-sync-dot {
+  background-color: var(--color-danger);
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
 }
 
 .main-content {
   flex: 1;
   display: flex;
   min-width: 0;
-  margin-left: 8rpx;
+  height: 100%;
   position: relative;
   z-index: 1;
-  height: 100%;
-  background: transparent;
+  background-color: transparent;
+  overflow: hidden;
   opacity: 1;
-  transform: translateY(0) translateX(0) scale(1);
+  transform: none;
 }
 
-/* 进场动画：改用 GPU 帧动画与 animation-fill-mode: both，在 DOM 渲染首帧直接锁定 opacity: 0！彻底消除 JS 响应延迟与过渡切换带来的闪烁！ */
 .main-content.is-entering-down {
-  animation: tabletEnterDown 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterDown 0.34s var(--ease-out) both;
 }
+
 .main-content.is-entering-up {
-  animation: tabletEnterUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterUp 0.34s var(--ease-out) both;
 }
+
 .main-content.is-entering-right {
-  animation: tabletEnterRight 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterRight 0.34s var(--ease-out) both;
 }
+
 .main-content.is-entering-left {
-  animation: tabletEnterLeft 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tabletEnterLeft 0.34s var(--ease-out) both;
 }
+
 .main-content.is-exiting-down {
   animation: tabletExitDown 0.16s cubic-bezier(0.4, 0, 1, 1) both;
 }
+
 .main-content.is-exiting-up {
   animation: tabletExitUp 0.16s cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 @keyframes tabletEnterDown {
-  0% { opacity: 0; transform: translateY(48rpx) scale(0.985); }
+  0% { opacity: 0; transform: translateY(14px) scale(0.994); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+
 @keyframes tabletEnterUp {
-  0% { opacity: 0; transform: translateY(-48rpx) scale(0.985); }
+  0% { opacity: 0; transform: translateY(-14px) scale(0.994); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+
 @keyframes tabletEnterRight {
-  0% { opacity: 0; transform: translateX(-32rpx) scale(0.985); }
-  100% { opacity: 1; transform: translateX(0) scale(1); }
-}
-@keyframes tabletEnterLeft {
-  0% { opacity: 0; transform: translateX(32rpx) scale(0.985); }
+  0% { opacity: 0; transform: translateX(-14px) scale(0.994); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-/* 返回时的柔和呼吸动效 */
-.main-content.is-returning {
-  animation: returnBreathe 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+@keyframes tabletEnterLeft {
+  0% { opacity: 0; transform: translateX(14px) scale(0.994); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
 }
+
+.main-content.is-returning {
+  animation: returnBreathe 0.34s var(--ease-out);
+}
+
 @keyframes returnBreathe {
-  0% { opacity: 0; transform: scale(0.985); }
+  0% { opacity: 0; transform: scale(0.994); }
   100% { opacity: 1; transform: scale(1); }
 }
+
 @keyframes tabletExitDown {
   0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-32rpx) scale(0.985); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.994); }
 }
+
 @keyframes tabletExitUp {
   0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(32rpx) scale(0.985); }
+  100% { opacity: 0; transform: translateY(10px) scale(0.994); }
 }
 
-/* 左下角独立 AI 悬浮按钮 (跟侧栏胶囊在同一 flex 列中严格竖直居中对齐) */
-.tablet-ai-float {
-  width: 136rpx;
-  height: 136rpx;
-  background-color: #A3B19B;
+.bg-glow {
+  position: fixed;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 12rpx 36rpx rgba(163, 177, 155, 0.35), 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: blur(110px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.3;
 }
 
-.tablet-ai-float:hover {
-  transform: translateY(-4rpx) scale(1.04);
-  box-shadow: 0 16rpx 44rpx rgba(163, 177, 155, 0.45), 0 6rpx 16rpx rgba(0, 0, 0, 0.08);
+.bg-glow--1 {
+  width: 480px;
+  height: 480px;
+  background: rgba(139, 154, 110, 0.18);
+  top: -180px;
+  right: -80px;
 }
 
-.tablet-ai-float:active {
-  transform: scale(0.92);
+.bg-glow--2 {
+  width: 340px;
+  height: 340px;
+  background: rgba(139, 154, 110, 0.12);
+  bottom: -100px;
+  left: 16%;
 }
 
-.tablet-ai-float.is-active {
-  background-color: var(--color-zen-graphite, #1C1C1A);
-  box-shadow: 0 16rpx 48rpx rgba(28, 28, 26, 0.35);
+/* #ifdef H5 */
+.tablet-layout {
+  height: 100dvh;
 }
+/* #endif */
 </style>

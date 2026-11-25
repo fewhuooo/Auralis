@@ -4,6 +4,10 @@ import { defaultApiCallClient, type ApiCallClient } from './apiCallClient.ts'
 type RegisterRequest = components['schemas']['RegisterRequest']
 type LoginRequest = components['schemas']['LoginRequest']
 type RefreshRequest = components['schemas']['RefreshRequest']
+type ProfileUpdateRequest = components['schemas']['ProfileUpdateRequest']
+type PasswordChangeRequest = components['schemas']['PasswordChangeRequest']
+type AccountDeletionRequest = components['schemas']['AccountDeletionRequest']
+type AccountDeletionResponse = components['schemas']['AccountDeletionResponse']
 type AuthResult = components['schemas']['AuthResult']
 type UserView = components['schemas']['UserView']
 type SessionListResponse = components['schemas']['SessionListResponse']
@@ -34,6 +38,15 @@ export function createAuthApi(client: ApiCallClient = defaultApiCallClient) {
     ) as Promise<AuthResult>,
     logout: () => client.request('/api/auth/logout', 'post') as Promise<void>,
     me: () => client.request('/api/auth/me', 'get') as Promise<UserView>,
+    updateProfile: (body: ProfileUpdateRequest) => client.request(
+      '/api/auth/me', 'put', { body },
+    ) as Promise<UserView>,
+    deleteAccount: (body: AccountDeletionRequest) => client.request(
+      '/api/auth/me', 'delete', { body },
+    ) as Promise<AccountDeletionResponse>,
+    changePassword: (body: PasswordChangeRequest) => client.request(
+      '/api/auth/password', 'put', { body },
+    ) as Promise<void>,
     sessions: () => client.request('/api/auth/sessions', 'get') as Promise<SessionListResponse>,
     revokeSession: (sessionId: string) => client.request(
       '/api/auth/sessions/{sessionId}', 'delete', { pathParams: { sessionId } },

@@ -13,7 +13,6 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.subject.SubjectView;
-import com.auralis.app.subject.internal.persistence.SubjectEntity;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.task.TaskCommand;
@@ -101,7 +100,7 @@ class CoreDomainServiceTests {
     }
 
     @Test
-    void registrationDoesNotCreateDefaultSubject() {
+    void registrationStartsWithNoSubjects() {
         var result = register("default");
 
         assertThat(subjectService.list(result.user().id())).isEmpty();
@@ -797,17 +796,6 @@ class CoreDomainServiceTests {
 
     private TaskCommand scheduledTask(UUID subjectId, String title, Instant scheduledAt, Integer durationMinutes) {
         return new TaskCommand(subjectId, title, null, TaskStatus.TODO, scheduledAt, null, durationMinutes, title);
-    }
-
-    @Test
-    void legacyDefaultSubjectCanBeDeleted() {
-        var result = register("protected");
-        SubjectView defaultSubject = subjectService.get(result.user().id(), subjectRepository.save(new SubjectEntity(
-                java.util.UUID.randomUUID(), result.user().id(), "未分类", null, null, "0000", true)).getId());
-
-        subjectService.delete(result.user().id(), defaultSubject.id(), defaultSubject.version());
-
-        assertThat(subjectService.list(result.user().id())).isEmpty();
     }
 
     @Test

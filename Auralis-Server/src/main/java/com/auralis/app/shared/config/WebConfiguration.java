@@ -91,7 +91,7 @@ public class WebConfiguration implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins(Arrays.stream(properties.api().allowedOrigins().split(","))
+                .allowedOriginPatterns(Arrays.stream(properties.api().allowedOrigins().split(","))
                         .map(String::trim)
                         .filter(origin -> !origin.isBlank())
                         .toArray(String[]::new))

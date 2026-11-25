@@ -68,12 +68,6 @@ public class KnowledgeBlockService {
     }
 
     @Transactional(readOnly = true)
-    public List<KnowledgeBlockView> list(UUID userId) {
-        return knowledgeBlockRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
-                .stream().map(this::view).toList();
-    }
-
-    @Transactional(readOnly = true)
     public CursorPage<KnowledgeBlockView> list(UUID userId, String encodedCursor, int requestedLimit) {
         int limit = pageLimit(requestedLimit);
         CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
@@ -223,11 +217,6 @@ public class KnowledgeBlockService {
 
     private KnowledgeBlockEntity activeForUpdate(UUID userId, UUID id) {
         return knowledgeBlockRepository.findActiveForUpdate(id, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
-    }
-
-    private KnowledgeBlockEntity mutable(UUID userId, UUID id) {
-        return knowledgeBlockRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
     }
 

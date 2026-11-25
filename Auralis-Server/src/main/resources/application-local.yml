@@ -4,7 +4,6 @@ spring:
       on-profile: local
 
 auralis:
-  environment: local
   ai:
     # Local-only placeholder; production must provide AURALIS_AI_ENCRYPTION_KEY.
     encryption-key: auralis-local-dev-key-32-bytes!!

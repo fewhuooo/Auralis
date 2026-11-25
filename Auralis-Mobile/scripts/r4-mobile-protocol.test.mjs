@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { registerHooks } from 'node:module'
+import { access, readFile } from 'node:fs/promises'
+import { createPinia, setActivePinia } from 'pinia'
 
 import { resolveRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts'
 import {
@@ -16,9 +18,20 @@ import { createAuthApi } from '../src/api/useAuthApi.ts'
 import { createRealtimeApi } from '../src/api/realtimeApi.ts'
 import { createAiApi } from '../src/api/aiApi.ts'
 import { createSyncApi } from '../src/api/useSyncApi.ts'
+import { createOverviewApi } from '../src/api/overviewApi.ts'
+import { createSourceApi } from '../src/api/sourceApi.ts'
+import { createStatsApi } from '../src/api/statsApi.ts'
+import { buildWorkspaceReadingContext } from '../src/utils/workspaceChatScope.ts'
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
 import { createSseDecoder } from '../src/api/sse.ts'
+import { createRoutePreloader } from '../src/utils/pagePreload.ts'
+import { useLayoutStore } from '../src/store/useLayoutStore.ts'
+import {
+  buildPreviewFileName,
+  isCoreFileViewerKind,
+  resolveTabletPreviewKind,
+} from '../src/utils/tabletFilePreview.ts'
 
 test('resolves H5 and mini-program service addresses only from environment values', () => {
   const h5 = resolveRuntimeConfig({
@@ -61,11 +74,23 @@ test('parses RFC Problem Details and preserves field errors', () => {
     detail: 'Request validation failed',
     code: 'VALIDATION_FAILED',
     traceId: 'trace-1',
-    fieldErrors: [{ field: 'password', message: 'size must be between 12 and 200' }],
+    fieldErrors: [{ field: 'password', message: 'password does not meet the new-password policy' }],
   })
   assert.equal(problem.status, 400)
   assert.equal(problem.code, 'VALIDATION_FAILED')
   assert.equal(problem.fieldErrors[0].field, 'password')
+})
+
+test('mobile and tablet registration/reset apply the shared new-password requirements', async () => {
+  const source = await readFile(new URL('../src/composables/useAuthForm.ts', import.meta.url), 'utf8')
+  const loginValidation = source.slice(source.indexOf("if (mode.value === 'login' &&"), source.indexOf("if (mode.value === 'register'"))
+  assert.match(source, /password\.length\s*<\s*8/)
+  assert.match(source, /\\p\{Lu\}/)
+  assert.match(source, /\\p\{Ll\}/)
+  assert.match(source, /\\p\{P\}\\p\{S\}/)
+  assert.match(source, /utf8Length\(password\)\s*>\s*72/)
+  assert.doesNotMatch(loginValidation, /\\p\{(?:Lu|Ll|P|S)\}/, 'Login does not apply the new-password composition rules')
+  assert.match(source, /mode\.value === 'login'\)\s*await auth\.login/)
 })
 
 test('accepts direct DTOs and rejects the legacy Result wrapper', () => {
@@ -159,6 +184,8 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
   assert.deepEqual(calls[1].options.body, { email })
   assert.equal(calls[2].options.body.emailCode, emailCode)
   assert.deepEqual(calls[4].options.body, { email, emailCode, newPassword: 'a-new-long-password' })
+  await auth.deleteAccount({ password: 'a-new-long-password' })
+  assert.deepEqual(calls[5].options.body, { password: 'a-new-long-password' })
   await auth.logout()
   await realtime.issueTicket()
 
@@ -168,6 +195,7 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
     'post /api/auth/register',
     'post /api/auth/password/reset/email-code',
     'post /api/auth/password/reset',
+    'delete /api/auth/me',
     'post /api/auth/logout',
     'post /api/realtime/ticket',
   ])
@@ -188,11 +216,17 @@ test('AI conversation wrapper uses list/detail/delete routes with versioned dele
   await ai.listConversations()
   await ai.getConversation('conversation-1')
   await ai.deleteConversation('conversation-1', 2)
+  await ai.getRunStatus('conversation-1', 'run-1')
+  await ai.recoverRunAttempt('conversation-1', 'run-1', 'attempt-1')
+  await ai.cancelRun('conversation-1', 'run-1')
   assert.deepEqual(calls, [
     { path: '/api/ai/conversations', method: 'post', options: { body: { title: 'New chat', baseVersion: 0, clientRequestId: 'client-request-1' } } },
     { path: '/api/ai/conversations', method: 'get', options: undefined },
     { path: '/api/ai/conversations/{conversationId}', method: 'get', options: { pathParams: { conversationId: 'conversation-1' } } },
     { path: '/api/ai/conversations/{conversationId}', method: 'delete', options: { pathParams: { conversationId: 'conversation-1' }, query: { baseVersion: 2 } } },
+    { path: '/api/ai/conversations/{conversationId}/runs/{runId}', method: 'get', options: { pathParams: { conversationId: 'conversation-1', runId: 'run-1' } } },
+    { path: '/api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover', method: 'post', options: { pathParams: { conversationId: 'conversation-1', runId: 'run-1', attemptId: 'attempt-1' } } },
+    { path: '/api/ai/conversations/{conversationId}/runs/{runId}/cancel', method: 'post', options: { pathParams: { conversationId: 'conversation-1', runId: 'run-1' } } },
   ])
 })
 
@@ -234,14 +268,15 @@ test('local data scope isolates users without deleting the legacy namespace', ()
   assert.equal(values.has('h5_db_subjects'), false)
 })
 
-test('pomodoro counts use the active local data scope', async () => {
-  const source = await readFile(new URL('../src/store/useTaskStore.ts', import.meta.url), 'utf8')
+test('focus store scopes persisted state and outbox by active local data scope', async () => {
+  const source = await readFile(new URL('../src/store/useFocusStore.ts', import.meta.url), 'utf8')
+  const controllerSource = await readFile(new URL('../src/services/focusController.ts', import.meta.url), 'utf8')
   const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(source, /localDataScope/)
-  assert.doesNotMatch(source, /getStorageSync\(['"]pomodoro_counts['"]\)/)
-  assert.doesNotMatch(source, /setStorageSync\(['"]pomodoro_counts['"]\)/)
-  assert.match(source, /auralis:local:\$\{localDataScope\.current\(\)\}:pomodoro_counts/)
-  assert.match(appSource, /loadPomodoroCount/)
+  assert.match(controllerSource, /auralis:local:\$\{scope\}:focus_state/)
+  assert.match(controllerSource, /auralis:local:\$\{scope\}:focus_daily/)
+  assert.match(controllerSource, /auralis:local:\$\{scope\}:focus_outbox/)
+  assert.match(appSource, /reconcileNow/)
 })
 
 test('mobile home and profile do not inject demo task or profile metrics', async () => {
@@ -254,16 +289,172 @@ test('mobile home and profile do not inject demo task or profile metrics', async
   assert.doesNotMatch(profileSource, /joinedDays\s*=\s*ref\(42\)/)
 })
 
-test('mobile handwriting does not fabricate OCR or knowledge extraction', async () => {
-  const source = await readFile(new URL('../src/pages/mobile/handwriting/index.vue', import.meta.url), 'utf8')
-  assert.doesNotMatch(source, /Mock handwriting|Mock AI|识别内容：|已为您建立结构化关系/)
-  assert.match(source, /识别服务尚未接通/)
+test('retired orphan mobile and tablet routes are removed', async () => {
+  const retired = [
+    '../src/pages/mobile/handwriting/index.vue',
+    '../src/pages/mobile/settings/index.vue',
+    '../src/pages/mobile/timeline/index.vue',
+    '../src/pages/mobile/asset/index.vue',
+    '../src/pages/mobile/stats/index.vue',
+    '../src/pages/tablet/review/index.vue',
+  ]
+  for (const relPath of retired) {
+    await assert.rejects(access(new URL(relPath, import.meta.url)), { code: 'ENOENT' })
+  }
 })
 
-test('tablet workspace summary uses the AI stream instead of fixed demo text', async () => {
-  const source = await readFile(new URL('../src/pages/tablet/workspace/index.vue', import.meta.url), 'utf8')
-  assert.match(source, /chatWithAI/)
-  assert.doesNotMatch(source, /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/)
+test('tablet workspace uses formal overview API and AI stream without fixed demo text', async () => {
+  const workspaceSource = await readFile(new URL('../src/pages/tablet/workspace/index.vue', import.meta.url), 'utf8')
+  const readerSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceCenterReader.vue', import.meta.url), 'utf8')
+  const overviewSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceOverviewPane.vue', import.meta.url), 'utf8')
+  const aiPanelSource = await readFile(new URL('../src/components/tablet/workspace/WorkspaceAiPanel.vue', import.meta.url), 'utf8')
+  assert.match(workspaceSource, /overviewApi/)
+  assert.match(readerSource, /WorkspaceOverviewPane/)
+  assert.match(overviewSource, /outlineMarkdown/)
+  assert.match(overviewSource, /summaryMarkdown/)
+  assert.match(aiPanelSource, /chatWithAI/)
+  assert.doesNotMatch(
+    `${workspaceSource}\n${readerSource}\n${overviewSource}\n${aiPanelSource}`,
+    /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/,
+  )
+})
+
+test('overview API returns null on 404, checks subject status before GET, and preserves source revision query', async () => {
+  const calls = []
+  let subjectStatusResponse = 'AVAILABLE'
+  let serverStatusMeta = {
+    version: 2,
+    outlineVersion: 2,
+    summaryVersion: 2,
+    updatedAt: '2026-11-25T02:00:00Z',
+  }
+  const api = createOverviewApi({
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      if (path === '/api/overview-results/subjects/statuses') {
+        const subjectIds = options?.body?.subjectIds || []
+        return {
+          items: subjectIds.map(id => ({
+            subjectId: id,
+            status: subjectStatusResponse,
+            ...(subjectStatusResponse === 'AVAILABLE' ? serverStatusMeta : {}),
+          })),
+        }
+      }
+      if (options?.pathParams?.subjectId === 'missing') {
+        throw new ApiProblemError({ title: 'Not Found', status: 404, detail: 'Missing', fieldErrors: [] })
+      }
+      if (options?.pathParams?.subjectId === 'err') {
+        throw new ApiProblemError({ title: 'Server Error', status: 500, detail: 'Boom', fieldErrors: [] })
+      }
+      return {
+        outlineMarkdown: '# Outline',
+        summaryMarkdown: 'Summary',
+        ...serverStatusMeta,
+      }
+    },
+  })
+  assert.equal(await api.getSubject('missing'), null)
+  await assert.rejects(() => api.getSubject('err'), /Boom/)
+
+  subjectStatusResponse = 'MISSING'
+  const callCountBeforeMissing = calls.length
+  assert.equal(await api.fetchSubjectOverviewIfAvailable('sub-empty'), null)
+  assert.equal(calls.length - callCountBeforeMissing, 1)
+  assert.equal(calls.at(-1)?.path, '/api/overview-results/subjects/statuses')
+
+  subjectStatusResponse = 'UNAVAILABLE'
+  assert.equal(await api.fetchSubjectOverviewIfAvailable('sub-unavail'), null)
+
+  subjectStatusResponse = 'AVAILABLE'
+  const cachedCurrent = {
+    outlineMarkdown: '# Cached Outline',
+    summaryMarkdown: 'Cached Summary',
+    ...serverStatusMeta,
+  }
+  const callCountBeforeCached = calls.length
+  assert.equal(await api.fetchSubjectOverviewIfAvailable('sub-1', { cached: cachedCurrent }), cachedCurrent)
+  assert.equal(calls.length - callCountBeforeCached, 1)
+
+  const staleCached = { ...cachedCurrent, version: 1 }
+  const refreshed = await api.fetchSubjectOverviewIfAvailable('sub-1', { cached: staleCached })
+  assert.equal(refreshed?.summaryMarkdown, 'Summary')
+  assert.equal(calls.at(-1)?.path, '/api/overview-results/subjects/{subjectId}')
+
+  const forced = await api.fetchSubjectOverviewIfAvailable('sub-1', { cached: cachedCurrent, forceRefresh: true })
+  assert.equal(forced?.summaryMarkdown, 'Summary')
+  assert.equal(calls.at(-1)?.path, '/api/overview-results/subjects/{subjectId}')
+
+  const srcOverview = await api.getSource('src-1', 'rev-9')
+  assert.equal(srcOverview?.outlineMarkdown, '# Outline')
+  assert.deepEqual(calls.at(-1), {
+    path: '/api/overview-results/sources/{sourceId}',
+    method: 'get',
+    options: { pathParams: { sourceId: 'src-1' }, query: { ingestionRevision: 'rev-9' } },
+  })
+})
+
+test('source API paginates all subject sources, filters deletedAt, and passes delete baseVersion', async () => {
+  const calls = []
+  const api = createSourceApi({
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      if (method === 'get') {
+        const cursor = options?.query?.cursor
+        if (!cursor) {
+          return {
+            items: [{ id: 'src-1', subjectId: 'sub-1', title: 'Ch1' }],
+            hasMore: true,
+            nextCursor: 'cursor-2',
+          }
+        }
+        return {
+          items: [
+            { id: 'src-2', subjectId: 'sub-1', title: 'Ch2' },
+            { id: 'src-deleted', subjectId: 'sub-1', title: 'Old', deletedAt: '2026-11-16T00:00:00Z' },
+          ],
+          hasMore: false,
+        }
+      }
+      return undefined
+    },
+  })
+
+  const active = await api.listAllBySubject('sub-1')
+  assert.deepEqual(active.map(item => item.id), ['src-1', 'src-2'])
+  assert.equal(calls[1].options.query.cursor, 'cursor-2')
+
+  await api.delete('src-2', 4)
+  assert.deepEqual(calls.at(-1), {
+    path: '/api/sources/{id}',
+    method: 'delete',
+    options: { pathParams: { id: 'src-2' }, body: { baseVersion: 4 } },
+  })
+})
+
+test('workspace AI scope omits currentSourceId/sourceIds in SUBJECT mode and matches full 4-field chatScope', () => {
+  const subjectCtx = buildWorkspaceReadingContext('sub-1', null)
+  assert.deepEqual(subjectCtx, { subjectId: 'sub-1', retrievalMode: 'SUBJECT' })
+  assert.equal('currentSourceId' in subjectCtx, false)
+  assert.equal('sourceIds' in subjectCtx, false)
+
+  const pendingSourceCtx = buildWorkspaceReadingContext('sub-1', {
+    id: 'src-pending',
+    subjectId: 'sub-1',
+    type: 'FILE',
+    title: 'Pending.pdf',
+    ingestionStatus: 'PARSING',
+  })
+  assert.deepEqual(pendingSourceCtx, { subjectId: 'sub-1', retrievalMode: 'SUBJECT' })
+
+  const readyCtx = buildWorkspaceReadingContext('sub-1', {
+    id: 'src-ready',
+    subjectId: 'sub-1',
+    type: 'FILE',
+    title: 'Ready.pdf',
+    ingestionStatus: 'READY',
+  })
+  assert.deepEqual(readyCtx, { subjectId: 'sub-1', retrievalMode: 'AUTO', currentSourceId: 'src-ready' })
 })
 
 test('SSE decoder preserves event boundaries across transport chunks', () => {
@@ -404,11 +595,10 @@ test('Task color removal assertions (Mobile)', async () => {
   assert.doesNotMatch(syncStoreTaskBranch, /colorOverride\s*:/)
 
   const mobileHome = await readFile(new URL('pages/mobile/home/index.vue', root), 'utf8')
-  const mobileTimeline = await readFile(new URL('pages/mobile/timeline/index.vue', root), 'utf8')
   const tabletDashboard = await readFile(new URL('pages/tablet/dashboard/index.vue', root), 'utf8')
   const taskSelectSheet = await readFile(new URL('components/TaskSelectSheet.vue', root), 'utf8')
 
-  for (const page of [mobileHome, mobileTimeline, tabletDashboard, taskSelectSheet]) {
+  for (const page of [mobileHome, tabletDashboard, taskSelectSheet]) {
     assert.doesNotMatch(page, /task\.color\b/)
   }
 })
@@ -434,4 +624,269 @@ test('task color migration quotes native string ids and bounds invalid warnings 
   assert.match(source, /if \(nativeInvalidTaskPayloadWarningEmitted\) return/)
   assert.match(source, /if \(h5InvalidTaskPayloadWarningEmitted\) return/)
   assert.match(source, /if \(result\.status === 'changed'\)/)
+})
+
+test('connectRealtimeSync passes complete callback for SocketTask and handles disconnect during in-flight ticket without deadlock', async (context) => {
+  const loginGen = Symbol('gen')
+  let triggerSyncCalls = 0
+  let socketOptions = []
+  let ticketResolvers = []
+
+  globalThis.__syncTestAuth = {
+    isAuthenticated: true,
+    user: { id: 'user-1' },
+    serverDeviceId: 'dev-1',
+    getLoginGeneration: () => loginGen,
+  }
+  globalThis.__syncTestSyncStore = {
+    triggerSync: async () => { triggerSyncCalls += 1 },
+  }
+  globalThis.__syncTestRealtimeApi = {
+    issueTicket: () => new Promise((resolve) => {
+      ticketResolvers.push(resolve)
+    }),
+  }
+  globalThis.uni = {
+    connectSocket(opts) {
+      socketOptions.push(opts)
+      let openCb = null
+      return {
+        onOpen(cb) { openCb = cb },
+        onMessage() {},
+        onClose() {},
+        onError() {},
+        close() {},
+        _emitOpen() { openCb?.() },
+      }
+    },
+  }
+
+  const mocks = new Map([
+    ['./realtimeApi', 'export const realtimeApi = globalThis.__syncTestRealtimeApi;'],
+    ['@/config/runtime', 'export const getRuntimeConfig = () => ({ apiBaseUrl: "https://api.auralis.test", websocketBaseUrl: "wss://ws.auralis.test", platform: "h5" }); export const resolveWebsocketUrl = (p, c) => c.websocketBaseUrl + p;'],
+    ['@/store/useAuthStore', 'export const useAuthStore = () => globalThis.__syncTestAuth;'],
+    ['@/store/useSyncStore', 'export const useSyncStore = () => globalThis.__syncTestSyncStore;'],
+  ])
+
+  const loader = registerHooks({
+    resolve(specifier, ctx, nextResolve) {
+      if (mocks.has(specifier)) {
+        return { url: `data:text/javascript,${encodeURIComponent(mocks.get(specifier))}`, shortCircuit: true }
+      }
+      if (ctx.parentURL?.includes('/Auralis-Mobile/src/') && (specifier.startsWith('./') || specifier.startsWith('../')) && !/\.[a-z0-9]+$/i.test(specifier)) {
+        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
+      }
+      return nextResolve(specifier, ctx)
+    },
+  })
+
+  context.after(() => {
+    loader.deregister()
+    delete globalThis.__syncTestAuth
+    delete globalThis.__syncTestSyncStore
+    delete globalThis.__syncTestRealtimeApi
+    delete globalThis.uni
+  })
+
+  const { connectRealtimeSync, disconnectRealtimeSync } = await import('../src/api/sync.ts?realtime-race-test')
+
+  // Disconnect while first issueTicket is still pending, then immediately reconnect
+  const firstAttempt = connectRealtimeSync()
+  assert.equal(ticketResolvers.length, 1)
+  disconnectRealtimeSync()
+  const secondAttempt = connectRealtimeSync()
+  assert.equal(ticketResolvers.length, 2)
+
+  // Stale first ticket resolves after disconnect — must NOT open a socket
+  ticketResolvers[0]({ ticket: 'stale-ticket', websocketUrl: '/ws/events?ticket=stale' })
+  await firstAttempt
+  assert.equal(socketOptions.length, 0)
+
+  // Fresh second ticket resolves — must open socket with complete callback & trigger sync on open
+  const origConnectSocket = globalThis.uni.connectSocket
+  let createdTask = null
+  globalThis.uni.connectSocket = (opts) => {
+    createdTask = origConnectSocket(opts)
+    return createdTask
+  }
+  ticketResolvers[1]({ ticket: 'fresh-ticket', websocketUrl: '/ws/events?ticket=fresh' })
+  await secondAttempt
+  assert.equal(socketOptions.length, 1)
+  assert.equal(typeof socketOptions[0].complete, 'function')
+  assert.equal(socketOptions[0].url, 'wss://ws.auralis.test/ws/events?ticket=fresh')
+
+  createdTask._emitOpen()
+  assert.equal(triggerSyncCalls, 1)
+  disconnectRealtimeSync()
+})
+
+test('createRoutePreloader deduplicates routes, retries after failure, tolerates missing bridge, and cancels sibling preload', async () => {
+  const noBridge = createRoutePreloader(() => undefined)
+  await noBridge.preloadRoute('/pages/mobile/review/index')
+  assert.equal(noBridge.isPreloaded('/pages/mobile/review/index'), true)
+
+  const calls = []
+  let failFirstReview = true
+  const preloader = createRoutePreloader(() => ({
+    preloadPage(options) {
+      calls.push(options.url)
+      if (options.url === '/pages/mobile/review/index' && failFirstReview) {
+        failFirstReview = false
+        options.fail?.()
+        options.complete?.()
+        return
+      }
+      if (options.url === '/pages/mobile/hung/index') {
+        return
+      }
+      setTimeout(() => options.complete?.(), 5)
+    },
+  }))
+
+  // First failure allows subsequent retry, whereas concurrent calls share inFlight
+  await preloader.preloadRoute('/pages/mobile/review/index?tab=1')
+  assert.equal(preloader.isPreloaded('/pages/mobile/review/index'), false)
+  await Promise.all([
+    preloader.preloadRoute('/pages/mobile/review/index'),
+    preloader.preloadRoute('pages/mobile/review/index?tab=2'),
+  ])
+  assert.equal(preloader.isPreloaded('/pages/mobile/review/index'), true)
+  assert.deepEqual(calls, ['/pages/mobile/review/index', '/pages/mobile/review/index'])
+
+  // Already preloaded route does not invoke bridge again
+  await preloader.preloadRoute('/pages/mobile/review/index')
+  assert.equal(calls.length, 2)
+
+  // Hung preload settles cleanly within maxWaitMs
+  await preloader.preloadRoute('/pages/mobile/hung/index', 20)
+  assert.equal(preloader.isPreloaded('/pages/mobile/hung/index'), false)
+
+  // scheduleSiblingPreload skips currentUrl and respects cancellation
+  const stopCancelled = preloader.scheduleSiblingPreload(
+    ['/pages/mobile/home/index', '/pages/mobile/pomodoro/index'],
+    '/pages/mobile/home/index',
+    30,
+  )
+  stopCancelled()
+  await new Promise(resolve => setTimeout(resolve, 45))
+  assert.equal(preloader.isPreloaded('/pages/mobile/pomodoro/index'), false)
+
+  const stopActive = preloader.scheduleSiblingPreload(
+    ['/pages/mobile/home/index', '/pages/mobile/pomodoro/index', '/pages/mobile/profile/index'],
+    '/pages/mobile/home/index',
+    10,
+  )
+  await new Promise(resolve => setTimeout(resolve, 60))
+  stopActive()
+  assert.equal(preloader.isPreloaded('/pages/mobile/pomodoro/index'), true)
+  assert.equal(preloader.isPreloaded('/pages/mobile/profile/index'), true)
+})
+
+test('useLayoutStore holds exit lock across preload window, cancels stale timers on clearExit, and renews returnTimer', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  setActivePinia(createPinia())
+  const store = useLayoutStore()
+
+  store.startExit('right', 140, '/pages/mobile/home/index')
+  assert.equal(store.isExiting, true)
+  assert.equal(store.exitDirection, 'right')
+  assert.equal(store.exitingRoute, '/pages/mobile/home/index')
+
+  // Must not snap back at the old 190ms threshold while route chunk preloads
+  t.mock.timers.tick(500)
+  assert.equal(store.isExiting, true)
+
+  // Renewing startExit cancels the earlier fallback timer
+  store.startExit('left', 200, '/pages/mobile/review/index')
+  t.mock.timers.tick(500)
+  assert.equal(store.isExiting, true)
+  assert.equal(store.exitingRoute, '/pages/mobile/review/index')
+
+  // clearExit immediately releases lock and cancels pending fallback timer
+  store.clearExit()
+  assert.equal(store.isExiting, false)
+  assert.equal(store.exitingRoute, '')
+
+  store.startExit('right', 140, '/pages/mobile/pomodoro/index')
+  t.mock.timers.tick(939)
+  assert.equal(store.isExiting, true)
+  t.mock.timers.tick(1)
+  assert.equal(store.isExiting, false)
+  assert.equal(store.exitingRoute, '')
+
+  // triggerReturn renews timer on repeated invocations
+  store.triggerReturn(550)
+  t.mock.timers.tick(400)
+  assert.equal(store.isReturning, true)
+  store.triggerReturn(550)
+  t.mock.timers.tick(400)
+  assert.equal(store.isReturning, true)
+  t.mock.timers.tick(150)
+  assert.equal(store.isReturning, false)
+})
+
+test('statsApi.subject requests /api/stats/subjects/{subjectId} with subjectId, days, and timeZone', async () => {
+  const calls = []
+  const api = createStatsApi({
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      return {
+        subjectId: 'sub-1',
+        timeZone: 'Asia/Shanghai',
+        from: '2026-11-14',
+        to: '2026-11-20',
+        daily: [],
+      }
+    },
+  })
+  const res = await api.subject('sub-1', 'Asia/Shanghai', 7)
+  assert.equal(res.subjectId, 'sub-1')
+  assert.deepEqual(calls, [{
+    path: '/api/stats/subjects/{subjectId}',
+    method: 'get',
+    options: {
+      pathParams: { subjectId: 'sub-1' },
+      query: { days: 7, timeZone: 'Asia/Shanghai' },
+    },
+  }])
+})
+
+test('tabletFilePreview resolves pdf, word, presentation, image, MIME fallback, and safe file names', () => {
+  assert.equal(resolveTabletPreviewKind('学生操作手册2026.pdf'), 'pdf')
+  assert.equal(resolveTabletPreviewKind('计划书_V24.5.docx'), 'word')
+  assert.equal(resolveTabletPreviewKind('lecture.DOC'), 'word')
+  assert.equal(resolveTabletPreviewKind('notes.rtf'), 'word')
+  assert.equal(resolveTabletPreviewKind('intro.odt'), 'word')
+  assert.equal(resolveTabletPreviewKind('slides.pptx'), 'presentation')
+  assert.equal(resolveTabletPreviewKind('slides.ppt'), 'presentation')
+  assert.equal(resolveTabletPreviewKind('diagram.PNG'), 'image')
+  assert.equal(resolveTabletPreviewKind('raw-blob', 'application/pdf'), 'pdf')
+  assert.equal(
+    resolveTabletPreviewKind('raw-blob', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+    'word',
+  )
+  assert.equal(
+    resolveTabletPreviewKind('raw-blob', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+    'presentation',
+  )
+  assert.equal(resolveTabletPreviewKind('archive.zip', 'application/zip'), 'unsupported')
+
+  assert.equal(isCoreFileViewerKind('pdf'), true)
+  assert.equal(isCoreFileViewerKind('word'), true)
+  assert.equal(isCoreFileViewerKind('presentation'), true)
+  assert.equal(isCoreFileViewerKind('image'), false)
+  assert.equal(isCoreFileViewerKind('unsupported'), false)
+
+  assert.equal(
+    buildPreviewFileName('e8ab6e14-7013-43aa', '学生操作手册2026.pdf', 'application/pdf'),
+    '学生操作手册2026.pdf',
+  )
+  assert.equal(
+    buildPreviewFileName('download-file', '未命名资料', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+    'download-file.docx',
+  )
+  assert.equal(
+    buildPreviewFileName('课件_V1.pptx', '课件', ''),
+    '课件_V1.pptx',
+  )
 })

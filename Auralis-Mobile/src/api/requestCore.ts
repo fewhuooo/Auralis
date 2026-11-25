@@ -36,6 +36,26 @@ function queryString(params?: Record<string, unknown>): string {
   return entries.length > 0 ? `?${entries.join('&')}` : ''
 }
 
+function normalizeAuthPath(url: string): string {
+  return url.split('?', 1)[0].replace(/^https?:\/\/[^/]+/i, '')
+}
+
+export function isPasswordConfirmationFailure(
+  url: string,
+  method: string | undefined,
+  responseData: unknown,
+): boolean {
+  const path = normalizeAuthPath(url)
+  const verb = (method || 'GET').toUpperCase()
+  const confirmsPassword = (verb === 'DELETE' && path === '/api/auth/me')
+    || (verb === 'PUT' && path === '/api/auth/password')
+  if (!confirmsPassword || !responseData || typeof responseData !== 'object') {
+    return false
+  }
+  const problem = responseData as { code?: unknown; detail?: unknown }
+  return problem.code === 'UNAUTHENTICATED' && problem.detail === 'Invalid credentials'
+}
+
 const publicAuthRoutes = new Set([
   '/api/auth/login',
   '/api/auth/register',
@@ -51,7 +71,8 @@ export function createRequestExecutor(dependencies: RequestExecutorDependencies)
     retried = false,
     generation = dependencies.getLoginGeneration?.(),
   ): Promise<T> => new Promise((resolve, reject) => {
-    const publicAuth = publicAuthRoutes.has(options.url)
+    const path = normalizeAuthPath(options.url)
+    const publicAuth = publicAuthRoutes.has(path)
     const isCurrent = () => publicAuth || generation === dependencies.getLoginGeneration?.()
     const token = publicAuth ? null : dependencies.getAccessToken()
     const header: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -68,7 +89,10 @@ export function createRequestExecutor(dependencies: RequestExecutorDependencies)
           reject(new Error('登录状态已变化，请重试。'))
           return
         }
-        if (response.statusCode === 401 && !retried && !options.skipAuthRefresh && !publicAuth) {
+        const skipUnauthorizedHandling = publicAuth
+          || path === '/api/auth/logout'
+          || isPasswordConfirmationFailure(options.url, options.method, response.data)
+        if (response.statusCode === 401 && !retried && !options.skipAuthRefresh && !skipUnauthorizedHandling) {
           try {
             const refreshed = await dependencies.refreshAccessToken()
             if (!isCurrent()) throw new Error('登录状态已变化，请重试。')

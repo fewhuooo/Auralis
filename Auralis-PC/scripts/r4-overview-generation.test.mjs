@@ -1091,7 +1091,6 @@ test('runtime and SourceStore trigger file generation after READY and retry on r
   assertGeneratorCallsiteLiteral(store, "if (status === 'READY' && current?.ingestionRevision", 'MANUAL_RETRY')
   assert.match(store, /status === ['"]READY['"]/)
   assert.match(store, /\.catch\(/)
-  assert.match(store, /ingestionRevision:\s*file\.ingestionRevision/)
   assert.match(store, /hydrateSources\(\)\s*\.catch/)
   assert.match(runtime, /lifecycleGeneration/)
   assert.match(runtime, /this\.snapshot\.overviewGeneration\.cancelAll\(\)/)

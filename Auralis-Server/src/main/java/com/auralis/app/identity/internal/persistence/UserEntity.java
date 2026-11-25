@@ -39,9 +39,6 @@ public class UserEntity {
     @Column(name = "display_name", length = 120)
     private String displayName;
 
-    @Column(name = "avatar_url", length = 2048)
-    private String avatarUrl;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private UserStatus status;
@@ -65,14 +62,12 @@ public class UserEntity {
             String normalizedUsername,
             String passwordHash,
             String displayName,
-            String avatarUrl,
             UserStatus status) {
         this.id = id;
         this.username = username;
         this.normalizedUsername = normalizedUsername;
         this.passwordHash = passwordHash;
         this.displayName = displayName;
-        this.avatarUrl = avatarUrl;
         this.status = status;
     }
 
@@ -132,10 +127,6 @@ public class UserEntity {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
-    }
-
-    public String getAvatarUrl() {
-        return avatarUrl;
     }
 
     public UserStatus getStatus() {

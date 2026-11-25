@@ -133,7 +133,6 @@ public class IdentityService {
                 normalizedUsername,
                 passwordEncoder.encode(password),
                 trimmedUsername,
-                null,
                 UserStatus.ACTIVE);
         user.setVerifiedEmail(normalizedEmail);
         UserEntity saved;

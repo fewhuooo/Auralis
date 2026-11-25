@@ -17,14 +17,12 @@ import java.util.Objects;
 @Validated
 @ConfigurationProperties(prefix = "auralis")
 public record AuralisProperties(
-        @NotBlank String environment,
         @Valid Api api,
         @Valid Upload upload,
         @Valid Identity identity,
         @Valid Ai ai
 ) {
     public record Api(
-            @NotBlank String publicBaseUrl,
             @NotBlank String allowedOrigins) {
     }
 
@@ -65,7 +63,6 @@ public record AuralisProperties(
             @Min(60_000) long overviewResponseTimeoutMillis,
             @Min(0) long overviewTaskTimeoutMillis,
             @Positive int maxPromptChars,
-            @Positive int maxRetrievedChunks,
             @Positive long ingestionMaxBytes,
             @Positive int ingestionEmbeddingBatchMaxItems,
             @Positive long ingestionEmbeddingBatchMaxUtf8Bytes,
@@ -101,7 +98,7 @@ public record AuralisProperties(
         public Ai(boolean enabled, String encryptionKey, GenerationEndpoint generation, ModelEndpoint embedding,
                   long providerConnectTimeoutMillis, long requestTimeoutMillis,
                   long overviewResponseTimeoutMillis, long overviewTaskTimeoutMillis,
-                  int maxPromptChars, int maxRetrievedChunks, long ingestionMaxBytes,
+                  int maxPromptChars, long ingestionMaxBytes,
                   int ingestionEmbeddingBatchMaxItems, long ingestionEmbeddingBatchMaxUtf8Bytes,
                   long urlConnectTimeoutMillis, long urlReadTimeoutMillis, int urlMaxRedirects,
                   long providerMaxResponseBytes, List<String> allowedProviderHosts,
@@ -109,7 +106,7 @@ public record AuralisProperties(
                   long ingestionLeaseMillis, int ingestionMaxAttempts, Limits limits) {
             this(enabled, encryptionKey, generation, embedding, providerConnectTimeoutMillis,
                     requestTimeoutMillis, overviewResponseTimeoutMillis, overviewTaskTimeoutMillis,
-                    maxPromptChars, maxRetrievedChunks, ingestionMaxBytes, ingestionEmbeddingBatchMaxItems,
+                    maxPromptChars, ingestionMaxBytes, ingestionEmbeddingBatchMaxItems,
                     ingestionEmbeddingBatchMaxUtf8Bytes, urlConnectTimeoutMillis, urlReadTimeoutMillis,
                     urlMaxRedirects, providerMaxResponseBytes, allowedProviderHosts, ingestionWorkerEnabled,
                     ingestionPollDelayMillis, ingestionLeaseMillis, ingestionMaxAttempts, limits,
@@ -120,7 +117,7 @@ public record AuralisProperties(
         public Ai(boolean enabled, String encryptionKey, GenerationEndpoint generation, ModelEndpoint embedding,
                   long providerConnectTimeoutMillis, long requestTimeoutMillis,
                   long overviewResponseTimeoutMillis, long overviewTaskTimeoutMillis,
-                  int maxPromptChars, int maxRetrievedChunks, long ingestionMaxBytes,
+                  int maxPromptChars, long ingestionMaxBytes,
                   int ingestionEmbeddingBatchMaxItems, long ingestionEmbeddingBatchMaxUtf8Bytes,
                   long urlConnectTimeoutMillis, long urlReadTimeoutMillis, int urlMaxRedirects,
                   long providerMaxResponseBytes, List<String> allowedProviderHosts,
@@ -129,7 +126,7 @@ public record AuralisProperties(
                   boolean shadowTokenEstimateEnabled) {
             this(enabled, encryptionKey, generation, embedding, providerConnectTimeoutMillis,
                     requestTimeoutMillis, overviewResponseTimeoutMillis, overviewTaskTimeoutMillis,
-                    maxPromptChars, maxRetrievedChunks, ingestionMaxBytes, ingestionEmbeddingBatchMaxItems,
+                    maxPromptChars, ingestionMaxBytes, ingestionEmbeddingBatchMaxItems,
                     ingestionEmbeddingBatchMaxUtf8Bytes, urlConnectTimeoutMillis, urlReadTimeoutMillis,
                     urlMaxRedirects, providerMaxResponseBytes, allowedProviderHosts, ingestionWorkerEnabled,
                     ingestionPollDelayMillis, ingestionLeaseMillis, ingestionMaxAttempts, limits,
@@ -168,12 +165,11 @@ public record AuralisProperties(
             @Min(0) long maxResultChars,
             @Min(0) long maxInputSnapshotChars,
             @Min(0) long maxSourceManifestChars,
-            @Min(0) long maxJobRequestChars,
             @Min(0) int maxSources,
             @Min(0) int maxTitleChars) {
 
         public static OverviewLimits withoutAdditionalCaps() {
-            return new OverviewLimits(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new OverviewLimits(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 
@@ -186,7 +182,6 @@ public record AuralisProperties(
             @Min(60_000) @Max(3_600_000) long reservationLeaseMillis,
             @Min(1_000) @Max(300_000) long heartbeatMillis,
             @Min(1) @Max(16_384) int chatMaxOutputTokens,
-            @Min(1) @Max(100) int chatMaxCalls,
             @Positive long chatTaskTokens,
             @Min(0) int overviewMaxCalls,
             @Positive long overviewTaskTokens,
