@@ -109,7 +109,7 @@
         @toggle-tier2="handleToggleTier2Collapse"
         @upload="openUploadModal"
         @retry-preview="loadSourcePreview(true)"
-        @refresh-subject-overview="loadSubjectOverview"
+        @refresh-subject-overview="handleRefreshSubjectOverview"
         @refresh-file-overview="refreshFileOverview"
         @ensure-file-overview="ensureFileOverview"
         @view-block="openBlockDetail"
@@ -357,6 +357,7 @@ const previewError = ref('')
 const subjectOverview = ref<OverviewResultView | null>(null)
 const subjectOverviewLoading = ref(false)
 const subjectOverviewError = ref('')
+const subjectOverviewCheckedSubjectId = ref('')
 const fileOverviews = ref<Record<string, OverviewResultView | null>>({})
 const fileOverviewLoading = ref<Record<string, boolean>>({})
 const fileOverviewErrors = ref<Record<string, string>>({})
@@ -386,7 +387,16 @@ let subjectOverviewReqToken = 0
 let fileOverviewReqSeq = 0
 let userChangedTier2 = false
 let userChangedCenterView = false
+let lastCheckedReadySourcesSignature = ''
 const fileOverviewTokens: Record<string, number> = {}
+
+function computeReadySourcesSignature(list: ReadonlyArray<SourceView>): string {
+  return list
+    .filter(item => item.id && item.ingestionStatus === 'READY')
+    .map(item => `${item.id}:${item.ingestionRevision || ''}`)
+    .sort()
+    .join('|')
+}
 
 let dragStartClientX = 0
 let dragStartClientY = 0
@@ -512,7 +522,9 @@ function openCenterSection(view: 'blocks' | 'review' | 'stats') {
 function openSubjectOverview() {
   userChangedCenterView = true
   centerView.value = 'subject-overview'
-  if (!subjectOverview.value && !subjectOverviewLoading.value) {
+  const readySig = computeReadySourcesSignature(sources.value)
+  const needsCheck = subjectOverviewCheckedSubjectId.value !== subjectId.value || readySig !== lastCheckedReadySourcesSignature
+  if (!subjectOverviewLoading.value && !subjectOverview.value && needsCheck) {
     void loadSubjectOverview()
   }
 }
@@ -628,15 +640,27 @@ async function loadSourcePreview(bypassCache = false) {
   }
 }
 
-async function loadSubjectOverview() {
+async function loadSubjectOverview(forceRefresh = false) {
   if (!subjectId.value) return
   const token = ++subjectOverviewReqToken
   const fence = captureFence()
+  const readySig = computeReadySourcesSignature(sources.value)
+  if (!loadingSources.value && !readySig) {
+    subjectOverview.value = null
+    subjectOverviewError.value = ''
+    subjectOverviewLoading.value = false
+    subjectOverviewCheckedSubjectId.value = fence.subjectId
+    lastCheckedReadySourcesSignature = ''
+    void localDb.deleteSubjectOverviewCache(fence.subjectId).catch(() => {})
+    return
+  }
+
   subjectOverviewLoading.value = true
   subjectOverviewError.value = ''
   try {
+    let cached: OverviewResultView | null = null
     try {
-      const cached = await localDb.getSubjectOverviewCache(fence.subjectId)
+      cached = await localDb.getSubjectOverviewCache(fence.subjectId)
       if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
       if (cached && !subjectOverview.value) {
         subjectOverview.value = cached
@@ -645,9 +669,14 @@ async function loadSubjectOverview() {
       // Ignore local overview cache failure and fall back to remote request.
     }
 
-    const result = await overviewApi.getSubject(fence.subjectId)
+    const result = await overviewApi.fetchSubjectOverviewIfAvailable(fence.subjectId, {
+      cached,
+      forceRefresh,
+    })
     if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
     subjectOverview.value = result
+    subjectOverviewCheckedSubjectId.value = fence.subjectId
+    lastCheckedReadySourcesSignature = computeReadySourcesSignature(sources.value)
     if (result) {
       void localDb.saveSubjectOverviewCache(fence.subjectId, result).catch(() => {})
     } else {
@@ -659,6 +688,16 @@ async function loadSubjectOverview() {
   } finally {
     if (token === subjectOverviewReqToken) subjectOverviewLoading.value = false
   }
+}
+
+async function handleRefreshSubjectOverview() {
+  if (!subjectId.value) return
+  const fence = captureFence()
+  if (!sources.value.some(item => item.ingestionStatus === 'READY')) {
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+  }
+  await loadSubjectOverview(true)
 }
 
 async function loadFileOverview(source: SourceView) {
@@ -1206,7 +1245,13 @@ onMounted(async () => {
   stopOverviewRealtime = subscribeOverviewUpdated((event) => {
     if (!authStore.isAuthenticated || !subjectId.value) return
     if (event.resourceType === 'SUBJECT' && (!event.resourceId || event.resourceId === subjectId.value)) {
-      void loadSubjectOverview()
+      if (!sources.value.some(item => item.ingestionStatus === 'READY')) {
+        void loadSources().then(() => {
+          void loadSubjectOverview(true)
+        })
+        return
+      }
+      void loadSubjectOverview(true)
       return
     }
     if (event.resourceType === 'SOURCE' && event.resourceId) {
@@ -1272,6 +1317,8 @@ watch(
     selectedSourceId.value = null
     subjectOverview.value = null
     subjectOverviewError.value = ''
+    subjectOverviewCheckedSubjectId.value = ''
+    lastCheckedReadySourcesSignature = ''
     fileOverviews.value = {}
     fileOverviewErrors.value = {}
     clearPreview()
@@ -1298,10 +1345,13 @@ watch(
 
 watch(
   () => syncStore.lastSyncedAt,
-  (next) => {
+  async (next) => {
     if (!next || !authStore.isAuthenticated || !subjectId.value) return
-    void loadSources()
-    if (centerView.value === 'subject-overview') {
+    const fence = captureFence()
+    const prevSig = computeReadySourcesSignature(sources.value)
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+    if (computeReadySourcesSignature(sources.value) !== prevSig) {
       void loadSubjectOverview()
     }
   },
