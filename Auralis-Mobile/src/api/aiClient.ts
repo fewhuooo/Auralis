@@ -3,6 +3,9 @@ import type { components } from './generated/schema'
 import { aiApi, type AiSettingsView } from './aiApi'
 import { createSseDecoder, decodeStreamChunk } from './sse'
 import { ApiProblemError, parseProblemDetails } from './protocol'
+// #ifdef APP-PLUS
+import { runIncrementalXhrSse, type PlusXhrLike } from './plusStreamTransport'
+// #endif
 import mobileRequest from './request'
 import { getRuntimeConfig } from '@/config/runtime'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -431,6 +434,122 @@ async function streamMessageViaFetch(
 }
 /* #endif */
 
+/* #ifdef APP-PLUS */
+interface PlusStreamNamespace {
+  net?: {
+    XMLHttpRequest?: new () => PlusXhrLike
+  }
+}
+
+declare const plus: PlusStreamNamespace | undefined
+
+async function streamMessageViaPlusXhr(
+  PlusXhr: new () => PlusXhrLike,
+  endpointPath: string,
+  conversationId: string,
+  body: Protocol1MessageCommand | { requestId: string },
+  onMessage: (content: string) => void,
+  retried: boolean,
+  expectedGeneration: symbol | undefined,
+  options: ChatWithAiOptions | undefined,
+): Promise<string> {
+  const auth = useAuthStore()
+  const generation = expectedGeneration ?? auth.getLoginGeneration()
+  const isCurrent = () => auth.getLoginGeneration() === generation
+  if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+
+  const runtime = getRuntimeConfig()
+  let manuallyAborted = false
+  let streamFailure: ApiProblemError | null = null
+  let abortTransport: (() => void) | null = null
+  let rawChunkText = ''
+  const appendRawChunk = (chunkText: string) => {
+    if (!chunkText || rawChunkText.length >= 65_536) return
+    rawChunkText += chunkText.slice(0, 65_536 - rawChunkText.length)
+  }
+
+  const { sse, getContent } = createChatStreamSession(
+    conversationId,
+    isCurrent,
+    () => manuallyAborted,
+    onMessage,
+    options,
+    (err) => {
+      if (!streamFailure) {
+        streamFailure = err
+        abortTransport?.()
+      }
+    },
+  )
+
+  options?.onAbortReady?.(() => {
+    manuallyAborted = true
+    abortTransport?.()
+  })
+
+  try {
+    const result = await runIncrementalXhrSse({
+      createXhr: () => new PlusXhr(),
+      url: `${runtime.apiBaseUrl.replace(/\/+$/, '')}${endpointPath}`,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'Accept-Encoding': 'identity',
+        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      timeoutMs: 330_000,
+      isCurrent,
+      isManuallyAborted: () => manuallyAborted,
+      onChunk(delta) {
+        appendRawChunk(delta)
+        sse.push(delta)
+      },
+      onAbortReady(abortFn) {
+        abortTransport = abortFn
+        if (manuallyAborted || streamFailure) {
+          abortFn()
+        }
+      },
+    })
+
+    if (streamFailure) throw streamFailure
+    if (manuallyAborted || result.aborted) return getContent()
+    if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+
+    if (result.statusCode === 401 && !retried) {
+      const refreshed = await auth.refreshAccessToken()
+      if (manuallyAborted) return getContent()
+      if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
+      if (refreshed) {
+        return streamMessageViaPlusXhr(PlusXhr, endpointPath, conversationId, body, onMessage, true, generation, options)
+      }
+      auth.expireSession(generation)
+    }
+
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw buildAiStreamError(
+        resolveErrorPayload(result.fullText, rawChunkText),
+        result.statusCode,
+        result.retryAfterHeader,
+      )
+    }
+
+    if (result.remainingText) {
+      appendRawChunk(result.remainingText)
+      sse.push(result.remainingText)
+    }
+    sse.finish()
+    if (streamFailure) throw streamFailure
+    return getContent()
+  } catch (error) {
+    if (streamFailure) throw streamFailure
+    if (manuallyAborted) return getContent()
+    throw error
+  }
+}
+/* #endif */
+
 async function streamMessage(
   endpointPath: string,
   conversationId: string,
@@ -443,6 +562,13 @@ async function streamMessage(
   /* #ifdef H5 */
   if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof fetch === 'function') {
     return streamMessageViaFetch(endpointPath, conversationId, body, onMessage, retried, expectedGeneration, options)
+  }
+  /* #endif */
+
+  /* #ifdef APP-PLUS */
+  const PlusXhr = typeof plus !== 'undefined' ? plus?.net?.XMLHttpRequest : undefined
+  if (PlusXhr) {
+    return streamMessageViaPlusXhr(PlusXhr, endpointPath, conversationId, body, onMessage, retried, expectedGeneration, options)
   }
   /* #endif */
 
