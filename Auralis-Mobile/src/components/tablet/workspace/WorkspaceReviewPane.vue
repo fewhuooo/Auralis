@@ -3,6 +3,11 @@
     <view class="review-pane">
       <!-- 1. 规划总览态 -->
       <template v-if="!inRound">
+        <view class="review-header">
+          <text class="review-header-title">学科复习</text>
+          <text class="review-header-desc">通过回忆、核对和必要时的重新学习，逐步巩固本学科知识。</text>
+        </view>
+
         <view v-if="statesError" class="pane-notice is-error" role="alert">
           <text class="notice-text">{{ statesError }}</text>
           <button
@@ -12,173 +17,180 @@
           >重试</button>
         </view>
 
-        <view v-if="statesLoading && !statesLoaded" class="plan-card zen-card">
-          <view class="plan-skeleton-hero ui-shimmer"></view>
-          <view class="plan-skeleton-row ui-shimmer"></view>
-        </view>
-
-        <view v-else class="plan-card zen-card">
-          <view class="plan-top">
-            <view class="plan-meta">
-              <view class="plan-badge">
-                <text>学科记忆规划</text>
-              </view>
-              <text class="plan-title">{{ subjectName || '当前学科' }}</text>
-              <text class="plan-subtitle num-tabular">共 {{ summary.blockCount }} 个知识块</text>
-
-              <view class="segment-wrap">
-                <view class="segment-header">
-                  <text class="segment-title">知识块掌握分布</text>
-                  <view class="segment-legend num-tabular">
-                    <view class="legend-item">
-                      <view class="legend-dot is-learning"></view>
-                      <text>待学习 {{ summary.pendingLearningCount }}</text>
-                    </view>
-                    <view class="legend-item">
-                      <view class="legend-dot is-reviewing"></view>
-                      <text>待复习 {{ summary.reviewingCount }}</text>
-                    </view>
-                    <view class="legend-item">
-                      <view class="legend-dot is-mastered"></view>
-                      <text>已掌握 {{ summary.masteredCount }}</text>
-                    </view>
-                  </view>
-                </view>
-
-                <view
-                  class="progress-track"
-                  role="progressbar"
-                  :aria-valuenow="summary.masteryPercent"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                >
-                  <template v-if="summary.blockCount > 0">
-                    <view
-                      v-if="summary.pendingLearningCount > 0"
-                      class="progress-fill is-learning"
-                      :style="{ width: `${summary.distributionPercents.learning}%` }"
-                    ></view>
-                    <view
-                      v-if="summary.reviewingCount > 0"
-                      class="progress-fill is-reviewing"
-                      :style="{ width: `${summary.distributionPercents.reviewing}%` }"
-                    ></view>
-                    <view
-                      v-if="summary.masteredCount > 0"
-                      class="progress-fill is-mastered"
-                      :style="{ width: `${summary.distributionPercents.mastered}%` }"
-                    ></view>
-                  </template>
-                </view>
-              </view>
-            </view>
-
-            <view class="mastery-ring-box">
-              <view class="mastery-ring">
-                <!-- #ifdef H5 -->
-                <svg class="ring-svg" viewBox="0 0 100 100" aria-hidden="true">
-                  <circle cx="50" cy="50" :r="ringRadius" fill="none" class="ring-track" />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    :r="ringRadius"
-                    fill="none"
-                    class="ring-progress"
-                    :stroke-dasharray="ringCircumference"
-                    :stroke-dashoffset="ringDashOffset"
-                  />
-                </svg>
-                <!-- #endif -->
-                <!-- #ifndef H5 -->
-                <view class="ring-conic-track" :style="{ background: ringConicBackground }"></view>
-                <!-- #endif -->
-                <view class="ring-inner">
-                  <text class="ring-percent num-tabular">{{ summary.masteryPercent }}%</text>
-                  <view class="ring-pill">
-                    <view class="ring-pill-dot"></view>
-                    <text class="ring-pill-text num-tabular">{{ summary.masteredCount }}/{{ summary.blockCount }}</text>
-                  </view>
-                </view>
-              </view>
-            </view>
+        <view class="dashboard-wrap">
+          <view v-if="statesLoading && !statesLoaded" class="plan-card zen-card">
+            <view class="plan-skeleton-hero ui-shimmer"></view>
+            <view class="plan-skeleton-row ui-shimmer"></view>
           </view>
 
-          <view class="panels-container">
-            <view class="panels-toolbar">
-              <view class="group-size-wrap" role="group" aria-label="每组数量">
-                <text class="group-size-label">每组</text>
-                <view
-                  class="group-size-btn num-tabular"
-                  :class="{ active: groupSize === 5 }"
-                  role="button"
-                  @click="groupSize = 5"
-                >
-                  <text>5 个</text>
+          <view v-else class="plan-card zen-card">
+            <view class="plan-top">
+              <view class="plan-meta">
+                <view class="plan-badge">
+                  <text>学科记忆规划</text>
                 </view>
-                <view
-                  class="group-size-btn num-tabular"
-                  :class="{ active: groupSize === 10 }"
-                  role="button"
-                  @click="groupSize = 10"
-                >
-                  <text>10 个</text>
+                <text class="plan-title">{{ subjectName || '当前学科' }}</text>
+                <text class="plan-subtitle num-tabular">共 {{ summary.blockCount }} 个知识块</text>
+
+                <view class="segment-wrap">
+                  <view class="segment-header">
+                    <text class="segment-title">知识块掌握分布</text>
+                    <view class="segment-legend num-tabular">
+                      <view class="legend-item">
+                        <view class="legend-dot is-learning"></view>
+                        <text>待学习 {{ summary.pendingLearningCount }}</text>
+                      </view>
+                      <view class="legend-item">
+                        <view class="legend-dot is-reviewing"></view>
+                        <text>待复习 {{ summary.reviewingCount }}</text>
+                      </view>
+                      <view class="legend-item">
+                        <view class="legend-dot is-mastered"></view>
+                        <text>已掌握 {{ summary.masteredCount }}</text>
+                      </view>
+                    </view>
+                  </view>
+
+                  <view
+                    class="progress-track"
+                    role="progressbar"
+                    :aria-valuenow="summary.masteryPercent"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                  >
+                    <template v-if="summary.blockCount > 0">
+                      <view
+                        v-if="summary.pendingLearningCount > 0"
+                        class="progress-fill is-learning"
+                        :style="{ width: `${summary.distributionPercents.learning}%` }"
+                      ></view>
+                      <view
+                        v-if="summary.reviewingCount > 0"
+                        class="progress-fill is-reviewing"
+                        :style="{ width: `${summary.distributionPercents.reviewing}%` }"
+                      ></view>
+                      <view
+                        v-if="summary.masteredCount > 0"
+                        class="progress-fill is-mastered"
+                        :style="{ width: `${summary.distributionPercents.mastered}%` }"
+                      ></view>
+                    </template>
+                  </view>
                 </view>
               </view>
 
-              <button
-                class="voluntary-btn"
-                :class="{ 'is-disabled': !canStartSelfTest }"
-                :disabled="!canStartSelfTest"
-                @click="enterRound('self-test')"
-              >
-                <LineIcon name="rotate" size="13px" :color="canStartSelfTest ? 'var(--color-sage-ink)' : 'var(--text-muted)'" />
-                <text>自测复习</text>
-              </button>
+              <view class="mastery-ring-box">
+                <view class="mastery-ring">
+                  <!-- #ifdef H5 -->
+                  <svg class="ring-svg" viewBox="0 0 100 100" aria-hidden="true">
+                    <circle cx="50" cy="50" :r="ringRadius" fill="none" class="ring-track" />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      :r="ringRadius"
+                      fill="none"
+                      class="ring-progress"
+                      :stroke-dasharray="ringCircumference"
+                      :stroke-dashoffset="ringDashOffset"
+                    />
+                  </svg>
+                  <!-- #endif -->
+                  <!-- #ifndef H5 -->
+                  <view class="ring-conic-track" :style="{ background: ringConicBackground }"></view>
+                  <!-- #endif -->
+                  <view class="ring-inner">
+                    <text class="ring-percent num-tabular">{{ summary.masteryPercent }}%</text>
+                    <view class="ring-pill">
+                      <view class="ring-pill-dot"></view>
+                      <text class="ring-pill-text num-tabular">{{ summary.masteredCount }}/{{ summary.blockCount }}</text>
+                    </view>
+                  </view>
+                </view>
+              </view>
             </view>
 
-            <view class="panels-grid">
-              <view
-                class="action-panel is-learn"
-                :class="{ 'is-disabled': !canStartLearning }"
-                role="button"
-                aria-label="进入学习"
-                @click="canStartLearning && enterRound('learn')"
-              >
-                <view class="action-panel-head">
-                  <view class="action-title-group">
-                    <view class="action-icon-wrap is-learn">
-                      <LineIcon name="book" size="16px" color="var(--color-sage-ink)" />
-                    </view>
-                    <text class="action-name num-tabular">待学习 · {{ statesLoaded ? summary.pendingLearningCount : '—' }} 个</text>
+            <view class="panels-container">
+              <view class="panels-toolbar">
+                <view class="group-size-wrap" role="group" aria-label="每组数量">
+                  <text class="group-size-label">每组</text>
+                  <view
+                    class="group-size-btn num-tabular"
+                    :class="{ active: groupSize === 5 }"
+                    role="button"
+                    @click="groupSize = 5"
+                  >
+                    <text>5 个</text>
                   </view>
-                  <view class="action-cta is-learn">
-                    <text>进入学习</text>
-                    <LineIcon name="chevron-right" size="12px" color="#FFFFFF" />
+                  <view
+                    class="group-size-btn num-tabular"
+                    :class="{ active: groupSize === 10 }"
+                    role="button"
+                    @click="groupSize = 10"
+                  >
+                    <text>10 个</text>
                   </view>
                 </view>
-                <text class="action-hint num-tabular">{{ learnPanelHint }}</text>
+
+                <button
+                  class="voluntary-btn"
+                  :class="{ 'is-disabled': !canStartSelfTest }"
+                  :disabled="!canStartSelfTest"
+                  @click="enterRound('self-test')"
+                >
+                  <text>自测复习</text>
+                </button>
               </view>
 
-              <view
-                class="action-panel is-review"
-                :class="{ 'is-disabled': !canStartReview }"
-                role="button"
-                aria-label="进入复习"
-                @click="canStartReview && enterRound('review')"
-              >
-                <view class="action-panel-head">
-                  <view class="action-title-group">
-                    <view class="action-icon-wrap is-review">
-                      <LineIcon name="rotate" size="16px" color="var(--color-warning-ink)" />
+              <view class="panels-grid">
+                <view
+                  class="action-panel is-learn"
+                  :class="{ 'is-disabled': !canStartLearning }"
+                  role="button"
+                  aria-label="进入学习"
+                  @click="canStartLearning && enterRound('learn')"
+                >
+                  <view class="action-panel-head">
+                    <view class="action-title-group">
+                      <view class="action-icon-wrap is-learn">
+                        <LineIcon name="book" size="18px" color="var(--text-muted)" />
+                      </view>
+                      <view class="action-name-row">
+                        <text class="action-name">待学习</text>
+                        <text class="action-count num-tabular">· {{ statesLoaded ? summary.pendingLearningCount : '—' }} 个</text>
+                      </view>
                     </view>
-                    <text class="action-name num-tabular">待复习 · {{ statesLoaded ? summary.dueReviewCount : '—' }} 个</text>
+                    <view class="action-cta">
+                      <text>进入学习</text>
+                      <LineIcon name="chevron-right" size="11px" color="var(--text-primary)" />
+                    </view>
                   </view>
-                  <view class="action-cta is-review">
-                    <text>进入复习</text>
-                    <LineIcon name="chevron-right" size="12px" color="#FFFFFF" />
-                  </view>
+                  <text class="action-hint num-tabular">{{ learnPanelHint }}</text>
                 </view>
-                <text class="action-hint num-tabular">{{ reviewPanelHint }}</text>
+
+                <view
+                  class="action-panel is-review"
+                  :class="{ 'is-disabled': !canStartReview }"
+                  role="button"
+                  aria-label="进入复习"
+                  @click="canStartReview && enterRound('review')"
+                >
+                  <view class="action-panel-head">
+                    <view class="action-title-group">
+                      <view class="action-icon-wrap is-review">
+                        <LineIcon name="rotate" size="18px" color="#728258" />
+                      </view>
+                      <view class="action-name-row">
+                        <text class="action-name">待复习</text>
+                        <text class="action-count num-tabular">· {{ statesLoaded ? summary.dueReviewCount : '—' }} 个</text>
+                      </view>
+                    </view>
+                    <view class="action-cta">
+                      <text>进入复习</text>
+                      <LineIcon name="chevron-right" size="11px" color="var(--text-primary)" />
+                    </view>
+                  </view>
+                  <text class="action-hint num-tabular">{{ reviewPanelHint }}</text>
+                </view>
               </view>
             </view>
           </view>
@@ -190,7 +202,7 @@
         <view class="round-nav">
           <view class="round-nav-left">
             <button class="nav-back-btn" :disabled="submitting" @click="exitRound">
-              <LineIcon name="chevron-left" size="14px" color="var(--text-primary)" />
+              <LineIcon name="chevron-left" size="14px" color="var(--text-secondary)" />
               <text>返回</text>
             </button>
             <text v-if="progressTotal > 0" class="round-progress-pill num-tabular">
@@ -229,7 +241,7 @@
         <view v-if="activeBlock && !roundNeedsRestart" class="study-card zen-card">
           <view class="study-card-head">
             <view class="study-head-left">
-              <text class="mode-badge" :class="`tone-${modeBadgeTone}`">{{ modeBadgeLabel }}</text>
+              <text class="mode-badge">{{ modeBadgeLabel }}</text>
               <text class="study-title">{{ activeBlock.title || '未命名知识块' }}</text>
             </view>
             <text class="study-pos num-tabular">{{ cardPositionText }}</text>
@@ -239,105 +251,103 @@
             <view class="frosted-canvas">
               <text class="frosted-blurred-text" aria-hidden="true">{{ blurredPreview }}</text>
               <view class="frosted-veil" aria-hidden="true"></view>
-              <view class="recall-overlay">
-                <view class="recall-halo">
-                  <LineIcon
-                    :name="phase === 'LEARNING_RECALL' ? 'eye-off' : 'book'"
-                    size="20px"
-                    color="var(--color-sage-ink)"
-                  />
-                </view>
-                <text class="recall-title">{{ recallPromptTitle }}</text>
-                <text class="recall-desc">{{ recallPromptSubtitle }}</text>
-              </view>
             </view>
 
-            <view v-if="isMasteredCard && phase === 'REVIEW_RECALL' && !hasPendingCommand" class="reopen-row">
-              <button class="reopen-btn" :disabled="submitting" @click="reopenMasteredBlock">
-                <LineIcon name="rotate" size="12px" color="var(--text-muted)" />
-                <text>重新学习这块</text>
-              </button>
+            <view v-if="phase === 'REVIEW_RECALL'" class="recall-hint">
+              <view class="recall-hint-dot"></view>
+              <text class="recall-hint-text">请在脑海中主动回忆该知识块的核心概念与要点，并依据提取的清晰度与完整性进行客观评估：</text>
             </view>
           </view>
 
           <view v-else-if="isContentVisible" class="content-zone">
-            <view v-if="phase === 'REVIEW_CHECK'" class="check-guide-bar">
-              <text class="check-guide-tag">核对中</text>
-              <text class="check-guide-text">请对照正文检查回忆，无误点「下一个」，记错点「记错了」</text>
-            </view>
-
             <scroll-view scroll-y :show-scrollbar="false" class="content-scroll">
-              <view class="content-paper">
+              <view class="content-body">
                 <MarkdownText :content="activeBlock.content || '该知识块暂无正文内容'" />
               </view>
             </scroll-view>
           </view>
 
+          <view v-if="phase === 'REVIEW_CHECK'" class="check-guide-bar">
+            <text class="check-guide-tag">核对中</text>
+            <text class="check-guide-text">请对照正文核对你的回忆：确认无误点击「下一个」，若回忆有误请点击「记错了」</text>
+          </view>
+
           <view v-if="!hasPendingCommand" class="study-actions">
-            <button
-              v-if="phase === 'LEARNING_READ'"
-              class="ui-btn ui-btn-primary study-btn-wide"
-              :disabled="submitting"
-              @click="beginLearningRecall"
-            >
-              <text>去回忆</text>
-              <LineIcon name="chevron-right" size="14px" color="#FFFFFF" />
-            </button>
-
-            <button
-              v-else-if="phase === 'LEARNING_RECALL'"
-              class="ui-btn ui-btn-primary study-btn-wide"
-              :disabled="submitting"
-              @click="revealAnswer"
-            >
-              <LineIcon name="eye" size="14px" color="#FFFFFF" />
-              <text>查看答案</text>
-            </button>
-
-            <view v-else-if="phase === 'LEARNING_CHECK'" class="study-actions-row">
-              <button class="ui-btn ui-btn-secondary study-btn" :disabled="submitting" @click="failLearning">没记住，再看一次</button>
-              <button class="ui-btn ui-btn-primary study-btn" :disabled="submitting" @click="completeLearning">
-                <LineIcon name="check" size="14px" color="#FFFFFF" />
-                <text>{{ submitting ? '提交中…' : '记住了' }}</text>
+            <view v-if="phase === 'LEARNING_READ'" class="ratings-row">
+              <button
+                class="reveal-btn"
+                :disabled="submitting"
+                @click="beginLearningRecall"
+              >
+                <text>开始回忆</text>
+                <LineIcon name="chevron-right" size="14px" color="var(--text-primary)" />
               </button>
             </view>
 
-            <view v-else-if="phase === 'REVIEW_RECALL'" class="study-actions-row">
-              <button class="rate-pill is-again" :disabled="submitting" @click="selectRating('AGAIN')">
-                <view class="rate-dot is-again"></view>
-                <text>忘记</text>
+            <view v-else-if="phase === 'LEARNING_RECALL'" class="ratings-row">
+              <button
+                class="reveal-btn"
+                :disabled="submitting"
+                @click="revealAnswer"
+              >
+                <text>展开核对</text>
+                <LineIcon name="chevron-right" size="14px" color="var(--text-primary)" />
               </button>
-              <button class="rate-pill is-hard" :disabled="submitting" @click="selectRating('HARD')">
+            </view>
+
+            <view v-else-if="phase === 'LEARNING_CHECK'" class="ratings-row">
+              <button class="rate-btn is-good" :disabled="submitting" @click="completeLearning">
+                <view class="rate-dot is-good"></view>
+                <text>完成学习</text>
+              </button>
+              <button class="rate-btn is-again" :disabled="submitting" @click="failLearning">
+                <view class="rate-dot is-again"></view>
+                <text>继续学习</text>
+              </button>
+            </view>
+
+            <view v-else-if="phase === 'REVIEW_RECALL'" class="ratings-row is-tiled">
+              <button class="rate-btn is-good" :disabled="submitting" @click="selectRating('GOOD')">
+                <view class="rate-dot is-good"></view>
+                <text>认识</text>
+              </button>
+              <button class="rate-btn is-hard" :disabled="submitting" @click="selectRating('HARD')">
                 <view class="rate-dot is-hard"></view>
                 <text>模糊</text>
               </button>
-              <button class="rate-pill is-good" :disabled="submitting" @click="selectRating('GOOD')">
+              <button class="rate-btn is-again" :disabled="submitting" @click="selectRating('AGAIN')">
+                <view class="rate-dot is-again"></view>
+                <text>忘记了</text>
+              </button>
+            </view>
+
+            <view v-else-if="phase === 'FUZZY_RECALL'" class="ratings-row">
+              <button class="reveal-btn" :disabled="submitting" @click="revealAnswer">
+                <LineIcon name="eye" size="15px" color="var(--text-primary)" />
+                <text>展开核对</text>
+              </button>
+              <button class="rate-btn is-again" :disabled="submitting" @click="correctReview">
+                <view class="rate-dot is-again"></view>
+                <text>忘记了</text>
+              </button>
+            </view>
+
+            <view v-else-if="phase === 'REVIEW_CHECK' || phase === 'FUZZY_CHECK'" class="ratings-row">
+              <button class="rate-btn is-good" :disabled="submitting" @click="confirmReview">
                 <view class="rate-dot is-good"></view>
-                <text>{{ submitting ? '保存中…' : '认识' }}</text>
+                <text>下一个</text>
               </button>
-            </view>
-
-            <view v-else-if="phase === 'FUZZY_RECALL'" class="study-actions-row">
-              <button class="rate-pill is-again" :disabled="submitting" @click="correctReview">
+              <button class="rate-btn is-again" :disabled="submitting" @click="correctReview">
                 <view class="rate-dot is-again"></view>
-                <text>{{ submitting ? '处理中…' : '没想起来' }}</text>
-              </button>
-              <button class="ui-btn ui-btn-primary study-btn" :disabled="submitting" @click="revealAnswer">
-                <LineIcon name="eye" size="14px" color="#FFFFFF" />
-                <text>想起来了</text>
+                <text>记错了</text>
               </button>
             </view>
+          </view>
 
-            <view v-else-if="phase === 'REVIEW_CHECK' || phase === 'FUZZY_CHECK'" class="study-actions-row">
-              <button class="rate-pill is-again" :disabled="submitting" @click="correctReview">
-                <view class="rate-dot is-again"></view>
-                <text>{{ submitting ? '处理中…' : '记错了' }}</text>
-              </button>
-              <button class="ui-btn ui-btn-primary study-btn" :disabled="submitting" @click="confirmReview">
-                <text>{{ submitting ? '确认中…' : phase === 'FUZZY_CHECK' ? '通过巩固' : '下一个' }}</text>
-                <LineIcon name="chevron-right" size="14px" color="#FFFFFF" />
-              </button>
-            </view>
+          <view v-if="isMasteredCard && phase === 'REVIEW_RECALL' && !hasPendingCommand" class="reopen-row">
+            <button class="reopen-btn" :disabled="submitting" @click="reopenMasteredBlock">
+              <text>重新学习这块</text>
+            </button>
           </view>
         </view>
 
@@ -345,8 +355,8 @@
           <view class="milestone-halo">
             <LineIcon
               :name="loading ? 'refresh' : (loadError || hasPendingCommand) ? 'alert' : 'check'"
-              size="24px"
-              color="var(--color-sage-ink)"
+              size="28px"
+              color="var(--color-zen-sage)"
             />
           </view>
           <text class="milestone-title">{{ milestoneTitle }}</text>
@@ -360,29 +370,26 @@
           </text>
 
           <view v-if="!loading" class="milestone-actions">
-            <button v-if="phase === 'GROUP_COMPLETE'" class="ui-btn ui-btn-primary" @click="continueNextGroup">
+            <button v-if="phase === 'GROUP_COMPLETE'" class="milestone-primary-btn" @click="continueNextGroup">
               <text>继续下一组（{{ nextGroupCount }} 个）</text>
-              <LineIcon name="chevron-right" size="14px" color="#FFFFFF" />
+              <LineIcon name="chevron-right" size="15px" color="#FFFFFF" />
             </button>
 
-            <button v-if="loadError" class="ui-btn ui-btn-primary" @click="reloadCurrentRound">
-              <LineIcon name="refresh" size="14px" color="#FFFFFF" />
+            <button v-if="loadError" class="milestone-primary-btn" @click="reloadCurrentRound">
+              <LineIcon name="refresh" size="15px" color="#FFFFFF" />
               <text>重试</text>
             </button>
 
             <button
               v-if="phase === 'ROUND_COMPLETE' && selfTestCount > 0"
-              class="ui-btn ui-btn-secondary"
+              class="milestone-primary-btn"
               @click="startSelfTestRound(groupSize)"
             >
               <text>再来一组自测</text>
+              <LineIcon name="chevron-right" size="15px" color="#FFFFFF" />
             </button>
 
-            <button
-              class="ui-btn"
-              :class="phase === 'ROUND_COMPLETE' ? 'ui-btn-primary' : 'ui-btn-secondary'"
-              @click="exitRound"
-            >
+            <button class="nav-end-btn" @click="exitRound">
               <text>返回规划</text>
             </button>
           </view>
@@ -517,7 +524,7 @@ const reviewPanelHint = computed(() => {
     return `今日到期 ${summary.value.dueReviewCount} · 未掌握 ${unfinished}`
   }
   if (summary.value.selfTestCount > 0) {
-    return `今日无到期知识块 · 可点击上方“自测复习”随机抽查（共 ${summary.value.selfTestCount} 个）`
+    return `今日无到期知识块 · 可通过上方“自测复习”随机抽查自测（共 ${summary.value.selfTestCount} 个）`
   }
   return '暂无复习内容'
 })
@@ -653,26 +660,9 @@ const modeBadgeLabel = computed(() => {
   return '复习自测'
 })
 
-const modeBadgeTone = computed<'warning' | 'sage'>(() => {
-  if (phase.value.startsWith('LEARNING') || currentMode.value === 'FUZZY') return 'warning'
-  return 'sage'
-})
-
 const blurredPreview = computed(() => (
   plainMarkdownExcerpt(activeBlock.value?.content || '') || '该知识块核心要点与定义内容'
 ))
-
-const recallPromptTitle = computed(() => {
-  if (phase.value === 'LEARNING_RECALL') return '合上正文，主动回忆'
-  if (phase.value === 'FUZZY_RECALL') return '再回想刚才标为「模糊」的要点'
-  return '在脑海中回忆该知识块要点'
-})
-
-const recallPromptSubtitle = computed(() => {
-  if (phase.value === 'LEARNING_RECALL') return '回忆核心定义与关键结论，再展开核对正文'
-  if (phase.value === 'FUZZY_RECALL') return '巩固记忆提取后点击下方「想起来了」核对确认'
-  return '请依据提取的清晰度客观评估：认识 / 模糊 / 忘记'
-})
 
 const totalFeedbackCount = computed(() => (
   firstFeedbackCounts.value.GOOD + firstFeedbackCounts.value.HARD + firstFeedbackCounts.value.AGAIN
@@ -734,14 +724,43 @@ const milestoneSubtitle = computed(() => {
 
 .review-pane {
   width: 100%;
-  max-width: 1040px;
+  max-width: 1240px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 28px 36px 88px;
+  padding: 24px 32px 48px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 18px;
+  justify-content: flex-start;
+  gap: 20px;
+  box-sizing: border-box;
+}
+
+.review-header {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.review-header-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.review-header-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.dashboard-wrap {
+  width: min(92%, 1120px);
+  margin: 8px auto 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   box-sizing: border-box;
 }
 
@@ -750,10 +769,11 @@ const milestoneSubtitle = computed(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 11px 16px;
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-card, #FFFFFF);
+  box-sizing: border-box;
 }
 
 .pane-notice.is-error {
@@ -776,38 +796,41 @@ const milestoneSubtitle = computed(() => {
 }
 
 .pane-notice .ui-btn,
-.milestone-actions .ui-btn,
 .voluntary-btn,
 .nav-back-btn,
 .nav-end-btn,
 .reopen-btn,
-.rate-pill,
-.study-btn-wide,
-.study-btn {
+.rate-btn,
+.reveal-btn,
+.milestone-primary-btn {
   margin: 0;
   line-height: 1;
 }
 
 .pane-notice .ui-btn::after,
-.milestone-actions .ui-btn::after,
 .voluntary-btn::after,
 .nav-back-btn::after,
 .nav-end-btn::after,
 .reopen-btn::after,
-.rate-pill::after,
-.study-btn-wide::after,
-.study-btn::after {
+.rate-btn::after,
+.reveal-btn::after,
+.milestone-primary-btn::after {
   border: none;
 }
 
 .plan-card {
   min-height: clamp(440px, 56vh, 580px);
-  padding: 40px 48px;
-  border-radius: 26px;
+  padding: 44px 52px;
+  border-radius: 28px;
+  background: var(--color-bg-card, #FFFFFF);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 32px -12px rgba(28, 28, 26, 0.06);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 28px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .plan-skeleton-hero {
@@ -825,6 +848,7 @@ const milestoneSubtitle = computed(() => {
   align-items: center;
   justify-content: space-between;
   gap: 48px;
+  width: 100%;
 }
 
 .plan-meta {
@@ -833,6 +857,7 @@ const milestoneSubtitle = computed(() => {
   max-width: 600px;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -840,31 +865,32 @@ const milestoneSubtitle = computed(() => {
   align-self: flex-start;
   padding: 4px 12px;
   border-radius: var(--radius-full);
-  background: var(--color-sage-bg);
-  color: var(--color-sage-ink);
-  font-size: 12px;
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--text-primary);
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 4px;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
 }
 
 .plan-title {
-  font-size: 34px;
+  font-size: 36px;
   font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-  margin-top: 2px;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
 }
 
 .plan-subtitle {
-  font-size: 15px;
+  font-size: 15.5px;
   color: var(--text-muted);
+  letter-spacing: 0.01em;
 }
 
 .segment-wrap {
-  margin-top: 22px;
+  margin-top: 20px;
   width: 100%;
-  max-width: 520px;
+  max-width: 540px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -879,7 +905,7 @@ const milestoneSubtitle = computed(() => {
 }
 
 .segment-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -887,7 +913,7 @@ const milestoneSubtitle = computed(() => {
 .segment-legend {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
@@ -903,44 +929,47 @@ const milestoneSubtitle = computed(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .legend-dot.is-learning {
-  background: #C89B6D;
+  background: #88929E;
 }
 
 .legend-dot.is-reviewing {
-  background: var(--color-zen-sage);
+  background: #C49A6C;
 }
 
 .legend-dot.is-mastered {
-  background: var(--color-sage-ink);
+  background: var(--color-zen-sage, #8B9A6E);
 }
 
 .progress-track {
   height: 8px;
   width: 100%;
   border-radius: var(--radius-full);
-  background: rgba(45, 55, 40, 0.08);
+  background: rgba(139, 154, 110, 0.08);
+  border: 1px solid rgba(139, 154, 110, 0.2);
   overflow: hidden;
   display: flex;
+  box-sizing: border-box;
 }
 
 .progress-fill {
   height: 100%;
-  transition: width 0.24s var(--ease-out);
+  transition: width 0.35s var(--ease-out);
 }
 
 .progress-fill.is-learning {
-  background: #C89B6D;
+  background: #88929E;
 }
 
 .progress-fill.is-reviewing {
-  background: var(--color-zen-sage);
+  background: #C49A6C;
 }
 
 .progress-fill.is-mastered {
-  background: var(--color-sage-ink);
+  background: var(--color-zen-sage, #8B9A6E);
 }
 
 .mastery-ring-box {
@@ -952,8 +981,8 @@ const milestoneSubtitle = computed(() => {
 
 .mastery-ring {
   position: relative;
-  width: 172px;
-  height: 172px;
+  width: 188px;
+  height: 188px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -967,11 +996,11 @@ const milestoneSubtitle = computed(() => {
 
 .ring-track {
   stroke: rgba(139, 154, 110, 0.16);
-  stroke-width: 6;
+  stroke-width: 5.6;
 }
 
 .ring-progress {
-  stroke: var(--color-zen-sage);
+  stroke: var(--color-zen-sage, #8B9A6E);
   stroke-width: 6.4;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.35s var(--ease-out);
@@ -981,8 +1010,8 @@ const milestoneSubtitle = computed(() => {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  -webkit-mask: radial-gradient(circle, transparent 64px, #000 65px);
-  mask: radial-gradient(circle, transparent 64px, #000 65px);
+  -webkit-mask: radial-gradient(circle, transparent 70px, #000 71px);
+  mask: radial-gradient(circle, transparent 70px, #000 71px);
 }
 
 .ring-inner {
@@ -992,47 +1021,47 @@ const milestoneSubtitle = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ring-percent {
-  font-size: 36px;
+  font-size: 40px;
   font-weight: 800;
   color: var(--text-primary);
-  line-height: 1.1;
+  line-height: 1;
+  letter-spacing: -0.01em;
 }
 
 .ring-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 11px;
+  gap: 6px;
+  padding: 4px 12px;
   border-radius: var(--radius-full);
-  background: var(--color-sage-bg);
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-secondary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .ring-pill-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--color-zen-sage);
+  background: var(--color-zen-sage, #8B9A6E);
 }
 
 .ring-pill-text {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--color-sage-ink);
+  color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .panels-container {
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 8px;
+  width: 100%;
+  gap: 12px;
 }
 
 .panels-toolbar {
@@ -1046,109 +1075,139 @@ const milestoneSubtitle = computed(() => {
 .group-size-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 32px;
-  padding: 3px 4px 3px 11px;
-  border-radius: 10px;
-  background: var(--color-bg-elevated);
+  gap: 3px;
+  height: 28px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 8px;
+  background: #FFFFFF;
   border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 3px 10px -2px rgba(0, 0, 0, 0.04);
+  user-select: none;
+  box-sizing: border-box;
 }
 
 .group-size-label {
-  font-size: var(--text-xs);
+  font-size: 11.5px;
   color: var(--text-muted);
+  font-weight: 500;
   margin-right: 2px;
 }
 
 .group-size-btn {
-  padding: 3px 10px;
-  border-radius: 7px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .group-size-btn.active {
-  background: var(--color-sage-bg);
-  border-color: var(--border-accent);
-  color: var(--color-sage-ink);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .voluntary-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 13px;
-  border-radius: 10px;
-  border: 1px solid var(--border-accent);
-  background: var(--color-sage-bg);
-  color: var(--color-sage-ink);
-  font-size: var(--text-xs);
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  color: #4A5E30;
+  font-size: 11.5px;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 3px 10px -2px rgba(0, 0, 0, 0.04);
   cursor: pointer;
   flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
-.voluntary-btn.is-disabled {
-  opacity: 0.45;
-  border-color: var(--border-subtle);
-  background: var(--glass-sub-bg);
-  color: var(--text-muted);
+/* #ifdef H5 */
+.voluntary-btn:hover:not(:disabled) {
+  background: rgba(139, 154, 110, 0.12);
+  border-color: rgba(139, 154, 110, 0.35);
+  color: #384A22;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.18);
+}
+/* #endif */
+
+.voluntary-btn.is-disabled,
+.voluntary-btn:disabled {
+  opacity: 0.42;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .panels-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 24px;
 }
 
 .action-panel {
-  padding: 22px 24px;
+  padding: 22px 26px;
   min-height: 112px;
   border-radius: 16px;
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1.5px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 4px 16px -3px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   cursor: pointer;
-  transition: border-color 0.16s ease, transform 0.14s var(--ease-out);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
+/* #ifdef H5 */
 .action-panel:hover:not(.is-disabled) {
-  border-color: var(--border-accent);
-  transform: translateY(-1px);
+  border-color: rgba(139, 154, 110, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04), 0 10px 24px -4px rgba(0, 0, 0, 0.09), 0 3px 8px -1px rgba(139, 154, 110, 0.15);
+  transform: translateY(-2px);
 }
+/* #endif */
 
 .action-panel.is-disabled {
-  opacity: 0.52;
+  opacity: 0.65;
   cursor: not-allowed;
+}
+
+.action-panel.is-disabled .action-cta {
+  opacity: 0.45;
+  box-shadow: none;
 }
 
 .action-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .action-title-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .action-icon-wrap {
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1156,120 +1215,174 @@ const milestoneSubtitle = computed(() => {
 }
 
 .action-icon-wrap.is-learn {
-  background: var(--color-sage-bg);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .action-icon-wrap.is-review {
-  background: var(--color-warning-bg);
+  background: rgba(139, 154, 110, 0.16);
+}
+
+.action-name-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
 }
 
 .action-name {
-  font-size: 15.5px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.action-count {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .action-cta {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 13px;
+  gap: 6px;
   height: 29px;
-  border-radius: var(--radius-full);
+  padding: 0 14px;
+  border-radius: 9999px;
+  background: #FFFFFF;
+  border: 1.5px solid rgba(0, 0, 0, 0.1);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
-  color: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
-.action-cta.is-learn {
-  background: var(--accent-gradient);
+/* #ifdef H5 */
+.action-panel:not(.is-disabled):hover .action-cta {
+  border-color: var(--border-default);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
 }
-
-.action-cta.is-review {
-  background: linear-gradient(135deg, #C89B6D 0%, #B08254 100%);
-}
+/* #endif */
 
 .action-hint {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.45;
 }
 
 .round-stage {
+  width: min(92%, 1120px);
+  margin: 8px auto 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
+  flex: 1;
+  box-sizing: border-box;
 }
 
 .round-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  padding: 0 4px;
 }
 
 .round-nav-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.nav-back-btn,
-.nav-end-btn {
+.nav-back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-tertiary);
-  color: var(--text-primary);
-  font-size: var(--text-xs);
+  gap: 7px;
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background: var(--color-bg-card, #FFFFFF);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.16s ease;
 }
 
-.nav-end-btn {
-  color: var(--text-secondary);
+.nav-end-btn,
+.reopen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.16s ease;
 }
+
+/* #ifdef H5 */
+.nav-back-btn:hover:not(:disabled) {
+  background: var(--color-bg-secondary);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.nav-end-btn:hover:not(:disabled),
+.reopen-btn:hover:not(:disabled) {
+  background: var(--color-bg-secondary);
+  color: var(--text-primary);
+}
+/* #endif */
 
 .round-progress-pill {
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  background: var(--color-sage-bg);
-  color: var(--color-sage-ink);
-  font-size: var(--text-xs);
+  padding: 7px 16px;
+  border-radius: 9999px;
+  background: var(--color-bg-card, #FFFFFF);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 14px;
   font-weight: 600;
 }
 
 .round-tag {
-  padding: 3px 9px;
-  border-radius: var(--radius-full);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-ink);
-  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: rgba(139, 154, 110, 0.16);
+  color: var(--text-primary);
+  font-size: 12.5px;
   font-weight: 600;
 }
 
 .study-card {
-  padding: 36px 44px 32px;
-  border-radius: 26px;
-  min-height: clamp(460px, 58vh, 620px);
+  padding: 44px 52px 36px;
+  border-radius: 28px;
+  min-height: clamp(460px, 58vh, 640px);
+  background: var(--color-bg-card, #FFFFFF);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 36px -10px rgba(28, 28, 26, 0.06);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 22px;
+  gap: 24px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .study-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 12px;
+  gap: 20px;
+  padding-bottom: 20px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -1278,283 +1391,361 @@ const milestoneSubtitle = computed(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .mode-badge {
   align-self: flex-start;
-  padding: 2px 9px;
-  border-radius: var(--radius-full);
-  font-size: 11px;
+  padding: 5px 14px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 13px;
   font-weight: 600;
-}
-
-.mode-badge.tone-sage {
-  background: var(--color-sage-bg);
-  color: var(--color-sage-ink);
-}
-
-.mode-badge.tone-warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-ink);
+  letter-spacing: 0.04em;
 }
 
 .study-title {
-  font-size: 28px;
+  font-size: 36px;
   font-weight: 800;
   color: var(--text-primary);
-  line-height: 1.35;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
 }
 
 .study-pos {
-  font-size: var(--text-xs);
+  padding: 6px 16px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
   color: var(--text-muted);
+  font-size: 14.5px;
+  font-weight: 600;
   flex-shrink: 0;
 }
 
 .recall-zone {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   flex: 1;
-  gap: 10px;
+  gap: 18px;
+  padding-top: 6px;
+  text-align: left;
+  width: 100%;
 }
 
 .frosted-canvas {
   position: relative;
+  width: 100%;
   min-height: 260px;
+  max-height: 360px;
   flex: 1;
-  padding: 22px;
-  border-radius: 14px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  padding: 24px 32px;
+  border-radius: 20px;
+  background: var(--color-bg-secondary);
+  border: 1.5px solid var(--border-subtle);
+  box-shadow: 0 10px 32px -6px rgba(0, 0, 0, 0.08), 0 2px 8px -2px rgba(0, 0, 0, 0.04);
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  user-select: none;
+  box-sizing: border-box;
 }
 
 .frosted-blurred-text {
-  font-size: var(--text-sm);
-  line-height: 1.75;
+  display: block;
+  font-size: 15px;
+  line-height: 1.85;
   color: var(--text-secondary);
-  filter: blur(8px);
-  opacity: 0.45;
+  filter: blur(7.5px);
+  opacity: 0.5;
   user-select: none;
   pointer-events: none;
+  text-align: left;
 }
 
 .frosted-veil {
   position: absolute;
   inset: 0;
-  background: rgba(247, 242, 235, 0.72);
+  background: rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
 }
 
-.recall-overlay {
-  position: relative;
-  z-index: 2;
+.recall-hint {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 8px;
-  max-width: 420px;
+  gap: 9px;
+  padding: 4px 4px 2px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
-.recall-halo {
-  width: 44px;
-  height: 44px;
+.recall-hint-dot {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: var(--color-sage-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--text-muted);
+  opacity: 0.5;
+  flex-shrink: 0;
 }
 
-.recall-title {
-  font-size: var(--text-md);
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.recall-desc {
-  font-size: var(--text-xs);
+.recall-hint-text {
+  font-size: 13.5px;
   color: var(--text-muted);
   line-height: 1.5;
-}
-
-.reopen-row {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.reopen-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border-radius: var(--radius-full);
-  background: var(--glass-sub-bg);
-  border: 1px solid var(--border-subtle);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  cursor: pointer;
 }
 
 .content-zone {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.content-scroll {
+  max-height: 46vh;
+}
+
+.content-body {
+  padding: 12px 6px;
 }
 
 .check-guide-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--color-sage-bg);
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--color-bg-card, #FFFFFF);
+  border: 1px solid rgba(139, 154, 110, 0.24);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.04);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .check-guide-tag {
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--color-zen-sage);
-  color: #FFFFFF;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
+  color: var(--color-zen-sage, #8B9A6E);
+  background: rgba(139, 154, 110, 0.1);
+  border: 1px solid rgba(139, 154, 110, 0.24);
+  padding: 2.5px 9px;
+  border-radius: 9999px;
   flex-shrink: 0;
 }
 
 .check-guide-text {
-  font-size: var(--text-xs);
-  color: var(--color-sage-ink);
-}
-
-.content-scroll {
-  max-height: 360px;
-}
-
-.content-paper {
-  padding: 16px 18px;
-  border-radius: 14px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .study-actions {
+  display: flex;
+  width: 100%;
   padding-top: 4px;
+}
+
+.ratings-row {
   display: flex;
-}
-
-.study-btn-wide {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
   width: 100%;
-  height: 44px;
 }
 
-.study-actions-row {
-  width: 100%;
-  display: flex;
-  gap: 10px;
+.ratings-row.is-tiled {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
 }
 
-.study-btn {
-  flex: 1;
-  height: 44px;
-}
-
-.rate-pill {
-  flex: 1;
-  height: 44px;
-  border-radius: 12px;
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-tertiary);
+.rate-btn,
+.reveal-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  gap: 8px;
+  height: 48px;
+  padding: 0 36px;
+  border-radius: 9999px;
+  background: #FFFFFF;
+  border: 1.5px solid rgba(0, 0, 0, 0.1);
   color: var(--text-primary);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
-.rate-pill:disabled {
-  opacity: 0.5;
+.ratings-row.is-tiled .rate-btn {
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  font-size: 16px;
+}
+
+/* #ifdef H5 */
+.reveal-btn:hover:not(:disabled) {
+  border-color: var(--border-default);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px -3px rgba(0, 0, 0, 0.12), 0 3px 8px -1px rgba(0, 0, 0, 0.06);
+}
+
+.rate-btn.is-good:hover:not(:disabled) {
+  border-color: rgba(139, 154, 110, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px -3px rgba(139, 154, 110, 0.22), 0 3px 8px -1px rgba(0, 0, 0, 0.06);
+}
+
+.rate-btn.is-hard:hover:not(:disabled) {
+  border-color: rgba(230, 162, 60, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px -3px rgba(230, 162, 60, 0.22), 0 3px 8px -1px rgba(0, 0, 0, 0.06);
+}
+
+.rate-btn.is-again:hover:not(:disabled) {
+  border-color: rgba(229, 115, 115, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px -3px rgba(229, 115, 115, 0.22), 0 3px 8px -1px rgba(0, 0, 0, 0.06);
+}
+/* #endif */
+
+.rate-btn:active:not(:disabled),
+.reveal-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.rate-btn:disabled,
+.reveal-btn:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .rate-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .rate-dot.is-again {
-  background: var(--color-danger);
+  background: var(--color-danger, #E57373);
 }
 
 .rate-dot.is-hard {
-  background: var(--color-warning);
+  background: var(--color-warning, #E6A23C);
 }
 
 .rate-dot.is-good {
-  background: var(--color-zen-sage);
+  background: var(--color-zen-sage, #8B9A6E);
+}
+
+.reopen-row {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
 }
 
 .milestone-card {
-  min-height: 360px;
-  padding: 44px 32px;
-  border-radius: 26px;
+  margin: auto;
+  width: min(90%, 580px);
+  max-width: 580px;
+  padding: 52px 40px 46px;
+  border-radius: 28px;
+  background: var(--color-bg-card, #FFFFFF);
+  border: 1px solid rgba(139, 154, 110, 0.35);
+  box-shadow: 0 16px 48px -12px rgba(139, 154, 110, 0.22), 0 4px 16px -2px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 12px;
+  gap: 16px;
+  box-sizing: border-box;
 }
 
 .milestone-halo {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--color-sage-bg);
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  background: rgba(139, 154, 110, 0.12);
+  border: 1.5px solid rgba(139, 154, 110, 0.4);
+  box-shadow: 0 4px 16px -2px rgba(139, 154, 110, 0.24);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 4px;
 }
 
 .milestone-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
+  line-height: 1.35;
 }
 
 .milestone-subtitle,
 .feedback-summary {
-  font-size: var(--text-sm);
+  font-size: 13.5px;
   color: var(--text-muted);
   max-width: 440px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .milestone-actions {
   margin-top: 6px;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.milestone-primary-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  height: 48px;
+  padding: 0 36px;
+  border-radius: 9999px;
+  background: var(--color-zen-sage, #8B9A6E);
+  color: #FFFFFF;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 16px -2px rgba(139, 154, 110, 0.45), 0 2px 6px -1px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* #ifdef H5 */
+.milestone-primary-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+}
+/* #endif */
 
 @media (max-width: 960px) {
   .review-pane {
-    padding: 20px 22px 84px;
+    padding: 20px 22px 48px;
+  }
+
+  .dashboard-wrap,
+  .round-stage {
+    width: 100%;
   }
 
   .plan-card {
-    padding: 28px 28px;
+    padding: 30px 28px;
     min-height: 0;
   }
 
@@ -1563,7 +1754,7 @@ const milestoneSubtitle = computed(() => {
   }
 
   .plan-title {
-    font-size: 28px;
+    font-size: 30px;
   }
 
   .mastery-ring {
@@ -1581,15 +1772,18 @@ const milestoneSubtitle = computed(() => {
   }
 
   .study-card {
-    padding: 24px 24px;
+    padding: 28px 28px;
     min-height: 0;
+  }
+
+  .study-title {
+    font-size: 28px;
   }
 }
 
 @media (max-width: 720px) {
   .review-pane {
-    padding: 16px 16px 84px;
-    justify-content: flex-start;
+    padding: 16px 16px 48px;
   }
 
   .plan-top {
@@ -1598,6 +1792,10 @@ const milestoneSubtitle = computed(() => {
   }
 
   .panels-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ratings-row.is-tiled {
     grid-template-columns: 1fr;
   }
 }
