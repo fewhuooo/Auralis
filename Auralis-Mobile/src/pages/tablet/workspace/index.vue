@@ -129,7 +129,7 @@
         aria-label="打开 AI 伴读浮窗"
         @click="openAiFloating"
       >
-        <LineIcon name="sparkles" size="16px" color="#FFFFFF" />
+        <LineIcon name="sparkles" size="14px" color="var(--color-sage-ink)" />
         <text class="ai-fab-label">AI 伴读</text>
         <view v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></view>
       </view>
@@ -1303,42 +1303,48 @@ watch(
 
 .ai-fab-pill {
   position: fixed;
-  right: 22px;
-  bottom: 22px;
+  right: 20px;
+  bottom: 20px;
   z-index: 1050;
-  height: 44px;
-  padding: 0 18px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: var(--radius-full);
-  background: var(--accent-gradient);
-  color: #FFFFFF;
+  background: rgba(252, 251, 249, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(45, 55, 40, 0.12);
+  color: var(--text-primary);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  box-shadow: 0 8px 24px rgba(118, 135, 88, 0.36);
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(28, 28, 26, 0.08);
   cursor: pointer;
-  transition: transform 0.18s var(--ease-out), box-shadow 0.18s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s var(--ease-out), box-shadow 0.16s ease;
 }
 
 .ai-fab-pill:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(118, 135, 88, 0.44);
+  background: #FFFFFF;
+  border-color: rgba(139, 154, 110, 0.48);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(45, 55, 40, 0.11);
 }
 
 .ai-fab-pill:active {
-  transform: scale(0.94);
+  transform: scale(0.96);
 }
 
 .ai-fab-label {
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: #FFFFFF;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
 }
 
 .ai-fab-live-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: var(--color-zen-sage, #8B9A6E);
   animation: fabPulse 1.1s ease-in-out infinite;
 }
 
