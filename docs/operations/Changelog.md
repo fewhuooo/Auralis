@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### 2026-11-25 Mobile / Tablet `APP-PLUS` 分端打包与原生能力适配
+
+- **手机 / 平板原生端分包隔离**：在 `Auralis-Mobile` 中拆分 `app-phone`（`Auralis`，仅含 `launch` + `pages/mobile/*`、竖屏、无阅读器资产）与 `app-tablet`（`Auralis HD`，仅含 `launch` + `pages/tablet/*`、四向旋转），启用 `SQLite` 原生模块并精简 Android 权限；强化 `resolveDeviceType`（优先识别 `deviceType === 'pad'`）及 `launch` / `useAuthStore.currentLoginRoute()` 分端路由守卫。
+- **原生选文件直传与增量流式**：新增 `NativeFileUploadBridge` + `nativeUploadView.renderjs.js`（配合 `plus.io`/`plus.net.XMLHttpRequest` 本地路径回退）打通 `APP-PLUS` 选文件与 MinIO 直传 PUT；新增 `plusStreamTransport.ts` 通过 `plus.net.XMLHttpRequest` `readyState === 3` 增量读取实现原生端 AI 流式对话。
+- **平板原生内嵌阅读器与分端发布脚本**：抽离 `documentViewerEngine.ts` 供 H5 与原生平板共用，仅在 `app-tablet` 构建时预打包 `auralis-viewer-runtime.iife.js` 与 `vendor/` 资源至输出 `static/file-viewer/`（`app-phone` 与 `mp-weixin` 零增量），新增 `WorkspaceDocumentViewerApp.vue` + 按作用域串行化淘汰的 `nativeDocumentCache.ts`，并新增 `scripts/build-mobile-release.ps1` 覆盖 `.env.local` 校验分端产物；通过自动化测试（`142/142`）、全目标打包（`mp-weixin` `704.14 KB`）与只读审查收口（真机验证边界见 [当前状态](../current/Status.md)）。
+
 ### 2026-11-25 平板端本地持久化、端到端 UX 与 PC 工作区对齐收口
 
 - **平板本地持久化与端到端链路修复**：完成平板工作区 `@file-viewer/core` 原地文档预览与 H5 IndexedDB 二进制缓存（`localDocumentCache`），`source_files`、`ai_overview_cache`、`review_states_cache` 与 `subject_stats_cache` 均按作用域先读后刷并支持跨账号切换清理与离线创建/编辑保真；修复后端 AI `test-connection` 0ms 超时、SiliconFlow Provider 与跨 BYOK 槽位按更新序解析、CORS 通配符匹配，以及前端排期防覆盖、Focus Outbox 404 延后重试、WebSocket `OVERVIEW_UPDATED` 实时刷新、错误提示中文化、登录路由守卫、AI 409 版本刷新与冷启动防闪烁。

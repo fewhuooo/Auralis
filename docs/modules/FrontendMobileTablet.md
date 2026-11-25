@@ -68,6 +68,8 @@ Auralis-Mobile/src/
 
 ### 启动与手机页面
 
+（`pages/mobile/*` 由 `// #ifndef APP-TABLET` 排除在平板独立原生包外；`pages/launch/index` 全端保留并由 `app-phone` / `app-tablet` / `mp-weixin` / `h5` 决定默认落页。）
+
 | 页面 | 路径 |
 | --- | --- |
 | 启动分流 | `pages/launch/index` |
@@ -109,7 +111,7 @@ Auralis-Mobile/src/
 
 ### Tablet 页面组数据边界
 
-Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
+Tablet 页面由 `#ifndef MP-WEIXIN || APP-PHONE` 同时排除在微信小程序与手机独立原生包（`app-phone`）外。
 
 | 页面组 | 当前数据边界 | 剩余缺口 |
 | --- | --- | --- |
@@ -155,7 +157,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
 ### API
 
 - `api/request.ts`、`requestCore.ts`：环境基址、Bearer、Problem Details 和共享单次 refresh。
-- `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation、`/api/ai/messages/stream`、`getRunStatus`/`recoverRunAttempt`、`decodeStreamChunk`（兼容 `Uint8Array`/`ArrayBuffer`/字符串流式 UTF-8 解码）、H5 `#ifdef H5` `fetch` `ReadableStream` 真流式 SSE（共享 `createChatStreamSession`/`buildAiStreamError` 与 401 单次刷新及 `AbortController`）与 `uni.request` 微信小程序回退；`mobileAiChat.ts` 提供 `isConversationProtocolSupported` 拦截旧协议会话写入。
+- `api/aiClient.ts`、`api/plusStreamTransport.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation、`/api/ai/messages/stream`、`getRunStatus`/`recoverRunAttempt`、`decodeStreamChunk`（兼容 `Uint8Array`/`ArrayBuffer`/字符串流式 UTF-8 解码）、H5 `#ifdef H5` `fetch` `ReadableStream` 真流式 SSE、原生 App `#ifdef APP-PLUS` 基于 `plus.net.XMLHttpRequest` `readyState === 3` 增量的 `runIncrementalXhrSse` 真流式传输，以及 `uni.request` 微信小程序回退；`mobileAiChat.ts` 提供 `isConversationProtocolSupported` 拦截旧协议会话写入。
 - `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset、`/ws/events` 一次性 ticket，`uni.connectSocket` 传入 `complete` 回调以返回 `SocketTask`，并以 `connectSeq` + `activeConnectFlight` + `activeSocketIdentity` 围栏隔离直切账号建连/断开与登录世代切换。
 - `api/assetApi.ts`、`sourceApi.ts`、`overviewApi.ts`、`focusApi.ts`、`reviewApi.ts`、`statsApi.ts`：预签名上传与下载链接、学科资料分页与删除、正式结构大纲/精炼总结读取、幂等专注记录上传、到期复习与强类型本地时区统计（含 `/api/stats/subjects/{subjectId}` 单学科统计）。
 - `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。
@@ -172,7 +174,9 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。
 | 服务 | 职责 |
 | --- | --- |
 | `localDb.ts` | 端侧 SQLite / H5 `localStorage` 表与访问入口（按 `userId/serverDeviceId` 隔离）：承载 `subjects`、`knowledge_blocks`、`task_blocks`、`local_mutations`、`sync_metadata`、`source_files`（含完整 `SourceView` `payload_json` 先读后刷与过期 prune）、`ai_overview_cache`（按 `ingestionRevision` 隔离学科/文件总结大纲与 stale-while-revalidate）、`review_states_cache`（复习规划/抽卡读投影与回写）、`subject_stats_cache`（按 `days + timeZone` 隔离学科统计快照）与 `tablet_notes`；原生/H5 迁移清洗 TASK 颜色键、保留 KnowledgeBlock 颜色与无效 JSON 原文；H5 `parseSqlValues` 保持 SQL 字符串字面量类型并修复缓存数字字段 |
-| `localDocumentCache.ts` | H5 专属 IndexedDB（`auralis_doc_cache_v1`）文档原文二进制缓存（`#ifdef H5` 与 `mp-weixin` 物理隔离）；按 `localDataScope` 分域，单文件上限 50MB、同域总上限 160MB / 20 个、LRU 自动淘汰与读取 `.slice(0)` 防 Worker 分离，在 `resetOfflineData` / `resetRequired` / 删除资料及解码损坏时自动清理 |
+| `localDocumentCache.ts` / `nativeDocumentCache.ts` / `documentCacheEviction.ts` | H5 IndexedDB（`auralis_doc_cache_v1`）与 `app-tablet` 原生持久化文件缓存（`uni.saveFile` + 按作用域串行化索引）：共用 `selectEvictableCacheKeys`（单文件上限 50MB、同域总上限 160MB / 20 个 LRU 淘汰），并在 `resetOfflineData` / `resetRequired` / 删除资料及解码损坏时同步清理 |
+| `nativeUploadBridge.ts` / `NativeFileUploadBridge.vue` / `nativeUploadView.renderjs.js` | `APP-PLUS` 原生文件选择与直传 PUT 桥接（`<input type="file">` + `renderjs` `XMLHttpRequest` 进度回传，配合 `plus.io` / `plus.net.XMLHttpRequest` 本地路径回退），仅在 `#ifdef APP-PLUS` 挂载，不进入 H5 与微信小程序 |
+| `documentViewerEngine.ts` / `WorkspaceDocumentViewerApp.vue` / `viewer-runtime/entry.ts` | 抽离与 Vue 解耦的 `@file-viewer/core` 会话控制引擎供 H5 与 `app-tablet` 共用；`app-tablet` 在 `uni build -p app-tablet` 时将运行时与 `vendor/` 资源预打包输出至 `dist/build/app-tablet/static/file-viewer/` 并通过 `appDocViewer.renderjs.js` 加载渲染，不进入 `src/static/`（`app-phone` 与 `mp-weixin` 零增量体积） |
 | `localDataScope.ts` | 按 userId/serverDeviceId 选择独立 H5/SQLite namespace |
 | `legacyDataPurge.ts` | 用户授权后一次性删除旧全局 `h5_db_*`/`auralis.db` 业务表 |
 | `assetUpload.ts` | upload-intent、预签名 PUT、complete |
@@ -222,11 +226,22 @@ cd Auralis-Mobile
 npm install
 npm.cmd run build:h5
 npm.cmd run build:mp-weixin
+npm.cmd run build:app-phone
+npm.cmd run build:app-tablet
+npm.cmd run build:app
 npm run type-check
 npm run check:r4-mobile
 npm run test:r4-mobile
 npm run test:tablet
 node scripts\check-tablet-sidebar-transition.mjs
+```
+
+仓库根目录分端发布构建（覆盖 `.env.local` 并校生产包约束与无本机地址泄露）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-mobile-release.ps1 -Target app-phone -ApiBaseUrl https://api.example.com -WsBaseUrl wss://api.example.com
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-mobile-release.ps1 -Target app-tablet -ApiBaseUrl https://api.example.com -WsBaseUrl wss://api.example.com
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-mobile-release.ps1 -Target mp-weixin -ApiBaseUrl https://api.example.com -WsBaseUrl wss://api.example.com
 ```
 
 仓库根目录本地纯前端动态数据预览（基于外部 JSON `scripts/fixtures/mobile-preview-data.json` 与 `Auralis-Mobile/.env.local`）：
