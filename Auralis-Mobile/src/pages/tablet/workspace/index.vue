@@ -121,16 +121,16 @@
     </view>
 
     <template #modal>
-      <!-- 右下角 AI 伴读悬浮启动胶囊 -->
+      <!-- 右下角 AI 伴读悬浮图标按钮 -->
       <view
         v-if="!aiPanelVisible"
-        class="ai-fab-pill"
+        class="ai-fab-btn"
         role="button"
+        title="AI 伴读"
         aria-label="打开 AI 伴读浮窗"
         @click="openAiFloating"
       >
-        <LineIcon name="sparkles" size="14px" color="var(--color-sage-ink)" />
-        <text class="ai-fab-label">AI 伴读</text>
+        <LineIcon name="auralis-mark" size="21px" color="var(--color-sage-ink)" />
         <view v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></view>
       </view>
 
@@ -1301,50 +1301,47 @@ watch(
   box-shadow: 0 4px 12px rgba(118, 135, 88, 0.28);
 }
 
-.ai-fab-pill {
+.ai-fab-btn {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: 22px;
+  bottom: 22px;
   z-index: 1050;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--radius-full);
-  background: rgba(252, 251, 249, 0.92);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(252, 251, 249, 0.94);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(45, 55, 40, 0.12);
-  color: var(--text-primary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  box-shadow: 0 4px 14px rgba(28, 28, 26, 0.08);
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(28, 28, 26, 0.09);
   cursor: pointer;
   transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s var(--ease-out), box-shadow 0.16s ease;
 }
 
-.ai-fab-pill:hover {
+.ai-fab-btn:hover {
   background: #FFFFFF;
-  border-color: rgba(139, 154, 110, 0.48);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(45, 55, 40, 0.11);
+  border-color: rgba(139, 154, 110, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(45, 55, 40, 0.12);
 }
 
-.ai-fab-pill:active {
-  transform: scale(0.96);
-}
-
-.ai-fab-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.01em;
+.ai-fab-btn:active {
+  transform: scale(0.94);
 }
 
 .ai-fab-live-dot {
-  width: 6px;
-  height: 6px;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--color-zen-sage, #8B9A6E);
+  border: 2px solid #FCFBF9;
+  box-sizing: border-box;
   animation: fabPulse 1.1s ease-in-out infinite;
 }
 
