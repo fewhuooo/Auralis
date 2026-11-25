@@ -1,5 +1,8 @@
 import { sourceApi, type SourceView } from '@/api/sourceApi'
 import { uploadAsset, type LocalUploadFile, type UploadProgressCallback } from '@/services/assetUpload'
+// #ifdef APP-PLUS
+import { hasNativeUploadHost, requestNativeFilePick } from '@/services/nativeUploadBridge'
+// #endif
 import {
   MAX_UPLOAD_FILE_SIZE_BYTES,
   MAX_UPLOAD_FILE_SIZE_MB,
@@ -79,6 +82,20 @@ export function pickLocalDocument(): Promise<LocalUploadFile | null> {
   // #endif
 
   // #ifndef MP-WEIXIN
+  // #ifdef APP-PLUS
+  if (hasNativeUploadHost()) {
+    return requestNativeFilePick(SUPPORTED_UPLOAD_EXTENSIONS.join(',')).then((picked) => {
+      if (!picked) return null
+      return {
+        path: '',
+        bridgeFileId: picked.bridgeFileId,
+        name: picked.name,
+        size: picked.size,
+        mimeType: inferUploadMimeType(picked.name, picked.type),
+      }
+    })
+  }
+  // #endif
   return new Promise((resolve, reject) => {
     const chooseFile = (uni as unknown as {
       chooseFile?: (options: {

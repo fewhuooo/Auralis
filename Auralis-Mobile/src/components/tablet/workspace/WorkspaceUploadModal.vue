@@ -69,6 +69,9 @@
           <text class="drop-hint">{{ selectedFileHint }}</text>
         </view>
         <!-- #endif -->
+        <!-- #ifdef APP-PLUS -->
+        <NativeFileUploadBridge />
+        <!-- #endif -->
 
         <view v-if="uploading" class="upload-progress">
           <view class="progress-header">
@@ -138,6 +141,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+// #ifdef APP-PLUS
+import NativeFileUploadBridge from '@/components/NativeFileUploadBridge.vue'
+import { releaseNativeBridgeFile } from '@/services/nativeUploadBridge'
+// #endif
 import type { LocalUploadFile } from '@/services/assetUpload'
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
@@ -207,6 +214,11 @@ function resolveInitialSubjectId(): string {
 }
 
 function resetForm() {
+  // #ifdef APP-PLUS
+  if (selectedFile.value?.bridgeFileId) {
+    releaseNativeBridgeFile(selectedFile.value.bridgeFileId)
+  }
+  // #endif
   selectedFile.value = null
   fileName.value = ''
   isDragover.value = false
@@ -243,7 +255,13 @@ function applyChosenFile(candidate: LocalUploadFile) {
     return
   }
 
-  const prevName = selectedFile.value?.name
+  const prevFile = selectedFile.value
+  // #ifdef APP-PLUS
+  if (prevFile?.bridgeFileId && prevFile.bridgeFileId !== candidate.bridgeFileId) {
+    releaseNativeBridgeFile(prevFile.bridgeFileId)
+  }
+  // #endif
+  const prevName = prevFile?.name
   selectedFile.value = candidate
   if (!fileName.value.trim() || fileName.value === prevName) {
     fileName.value = candidate.name

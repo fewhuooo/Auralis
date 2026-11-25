@@ -291,6 +291,9 @@
                       {{ formatBytes(uploadForm.file.size) }}
                     </text>
                   </view>
+                  <!-- #ifdef APP-PLUS -->
+                  <NativeFileUploadBridge />
+                  <!-- #endif -->
                 </view>
 
                 <view class="modal-field-group">
@@ -339,6 +342,10 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
+// #ifdef APP-PLUS
+import NativeFileUploadBridge from '@/components/NativeFileUploadBridge.vue'
+import { releaseNativeBridgeFile } from '@/services/nativeUploadBridge'
+// #endif
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
@@ -713,8 +720,18 @@ async function chooseFileToUpload() {
   const generation = authStore.getLoginGeneration()
   try {
     const file = await pickLocalDocument()
-    if (!file || generation !== authStore.getLoginGeneration()) return
+    if (!file || generation !== authStore.getLoginGeneration()) {
+      // #ifdef APP-PLUS
+      if (file?.bridgeFileId) releaseNativeBridgeFile(file.bridgeFileId)
+      // #endif
+      return
+    }
     validateUploadFile(file)
+    // #ifdef APP-PLUS
+    if (uploadForm.file?.bridgeFileId && uploadForm.file.bridgeFileId !== file.bridgeFileId) {
+      releaseNativeBridgeFile(uploadForm.file.bridgeFileId)
+    }
+    // #endif
     uploadForm.file = file
     if (!uploadForm.title.trim()) uploadForm.title = file.name
   } catch (err) {
