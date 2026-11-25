@@ -2,38 +2,36 @@
   <view class="ai-panel zen-panel" :class="{ 'is-floating': floating }">
     <view
       class="ai-header"
-      :class="{ 'is-draggable': floating && !expanded }"
+      :class="{ 'is-draggable': floating }"
       @mousedown="onHeaderMouseDown"
       @touchstart="onHeaderTouchStart"
     >
-      <view class="ai-title-row">
-        <LineIcon name="sparkles" size="15px" color="var(--color-sage-ink)" />
-        <text class="ai-title">AI 伴读</text>
-        <text v-if="isSourceScoped && selectedSource?.title" class="ui-tag sage scope-pill">
-          {{ selectedSource.title }}
+      <view class="ai-scope-pill" :title="isSourceScoped ? (selectedSource?.title || '当前资料') : '全学科资料'">
+        <LineIcon
+          :name="isSourceScoped ? 'file-text' : 'sparkles'"
+          size="14px"
+          color="var(--color-zen-sage)"
+        />
+        <text class="ai-scope-text">
+          {{ isSourceScoped ? (selectedSource?.title || '当前资料') : '全学科资料' }}
         </text>
       </view>
       <view class="ai-header-actions" @mousedown.stop @touchstart.stop>
-        <view class="ui-icon-btn sm" role="button" aria-label="历史对话" @click="toggleHistory">
-          <LineIcon name="history" size="14px" color="var(--text-secondary)" />
-        </view>
-        <view class="ui-icon-btn sm" role="button" aria-label="新对话" @click="resetConversation">
-          <LineIcon name="plus" size="14px" color="var(--text-secondary)" />
-        </view>
         <view
-          v-if="floating"
-          class="ui-icon-btn sm"
+          class="ai-header-btn"
           role="button"
-          :aria-label="expanded ? '还原浮窗' : '放大浮窗'"
-          @click="emit('toggle-expand')"
+          title="开启新对话"
+          aria-label="刷新对话"
+          @click="resetConversation"
         >
-          <LineIcon :name="expanded ? 'minimize' : 'maximize'" size="14px" color="var(--text-secondary)" />
+          <LineIcon name="rotate" size="14px" color="var(--text-secondary)" />
         </view>
         <view
           v-if="floating"
-          class="ui-icon-btn sm"
+          class="ai-header-btn"
           role="button"
-          aria-label="收起 AI 伴读"
+          title="收起"
+          aria-label="收起 AI 浮窗"
           @click="emit('close')"
         >
           <LineIcon name="close" size="14px" color="var(--text-secondary)" />
@@ -41,60 +39,25 @@
       </view>
     </view>
 
-    <view v-if="showHistory" class="history-drawer">
-      <view class="history-head">
-        <text class="history-head-title">历史对话</text>
-        <view class="ui-icon-btn sm" role="button" aria-label="关闭历史" @click="showHistory = false">
-          <LineIcon name="close" size="13px" color="var(--text-muted)" />
-        </view>
+    <view v-if="messages.length === 0" class="chat-welcome">
+      <view class="ai-brand-wrap" aria-hidden="true">
+        <LineIcon name="auralis-mark" size="26px" color="#FFFFFF" />
       </view>
-
-      <scroll-view scroll-y :show-scrollbar="false" class="history-list">
-        <view v-if="loadingSessions" class="history-empty">加载中…</view>
-        <view v-else-if="scopedConversations.length === 0" class="history-empty">暂无历史对话</view>
-
-        <view
-          v-for="item in scopedConversations"
-          :key="item.id"
-          class="history-row"
-          :class="{ active: item.id === currentConversationId }"
-          role="button"
-          @click="item.id && selectConversation(item.id)"
-        >
-          <view class="history-row-main">
-            <text class="history-row-title">{{ item.title || '新对话' }}</text>
-            <text class="history-row-time num-tabular">{{ formatShortDateTime(item.updatedAt || item.createdAt) }}</text>
-          </view>
-          <view
-            v-if="item.id"
-            class="history-row-del"
-            role="button"
-            aria-label="删除对话"
-            @click.stop="deleteScopedConversation(item.id, item.version ?? 0)"
-          >
-            <LineIcon name="trash" size="13px" color="var(--text-muted)" />
-          </view>
-        </view>
-      </scroll-view>
-    </view>
-
-    <view v-else-if="messages.length === 0" class="chat-welcome">
-      <view class="welcome-emblem">
-        <LineIcon name="sparkles" size="20px" color="var(--color-sage-ink)" />
-      </view>
+      <text class="welcome-title">今天想探索点什么？</text>
+      <text class="welcome-desc">结合当前参考资料，随时为你梳理重点、解释概念或生成练习。</text>
       <view v-if="preSendError" class="pre-send-error" role="alert">
         <LineIcon name="alert" size="13px" color="var(--color-danger)" />
         <text class="pre-send-error-text">{{ preSendError }}</text>
       </view>
-      <view class="quick-prompts">
+      <view class="preset-questions">
         <view
-          v-for="prompt in quickPrompts"
-          :key="prompt"
-          class="prompt-pill zen-card"
+          v-for="item in presetQuestions"
+          :key="item.label"
+          class="preset-pill"
           role="button"
-          @click="submitStarterPrompt(prompt)"
+          @click="submitStarterPrompt(item.prompt)"
         >
-          <text>{{ prompt }}</text>
+          <text class="preset-pill-text">{{ item.label }}</text>
         </view>
       </view>
     </view>
@@ -111,21 +74,17 @@
       @touchmove="handleChatTouchMove"
     >
       <view class="chat-messages">
-        <view v-if="isConversationUnsupported" class="unsupported-banner">
-          <text class="unsupported-banner-text">旧版对话仅供查看，请点击右上角开启新对话</text>
-        </view>
-
         <view
           v-for="(msg, index) in messages"
           :key="msg.id"
           class="msg-row"
           :class="msg.role"
         >
-          <view v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
+          <view v-if="msg.role === 'user'" class="user-bubble">
             <text class="user-text">{{ msg.content }}</text>
           </view>
 
-          <view v-else class="assistant-bubble zen-chat-assistant-bubble">
+          <view v-else class="assistant-bubble">
             <MobileChatProcessArea
               :reasoning="msg.reasoningText"
               :tools="msg.tools"
@@ -145,7 +104,6 @@
               :streaming="msg.status === 'streaming'"
               :settling="Boolean(msg.animateOnMount && msg.status === 'completed')"
               :busy="isTyping || isStopping"
-              :read-only="isConversationUnsupported"
               @submit="handleSubmitActivity"
               @drain-change="(draining) => setMessageDraining(msg.id, draining)"
               @text-progress="handleStreamingTextProgress"
@@ -178,7 +136,7 @@
                 <text class="footer-action-label">复制</text>
               </view>
               <view
-                v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && !isConversationUnsupported && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
+                v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
                 class="footer-action-chip"
                 role="button"
                 :aria-label="msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成'"
@@ -208,7 +166,7 @@
 
     <view class="composer-box">
       <view
-        v-if="autoScrollLocked && messages.length > 0 && !showHistory"
+        v-if="autoScrollLocked && messages.length > 0"
         class="scroll-resume-pill"
         role="button"
         aria-label="回到最新"
@@ -224,8 +182,7 @@
           class="composer-input"
           :maxlength="2000"
           auto-height
-          :disabled="isConversationUnsupported"
-          :placeholder="composerPlaceholder"
+          placeholder="问问 Auralis AI..."
           @input="onQueryInput"
           @confirm="sendMessage"
         />
@@ -242,12 +199,16 @@
         <view
           v-else
           class="send-btn"
-          :class="{ disabled: !query.trim() || !subjectId || isConversationUnsupported }"
+          :class="{ 'is-ready': Boolean(query.trim() && subjectId) }"
           role="button"
           aria-label="发送"
           @click="sendMessage"
         >
-          <LineIcon name="arrow-up" size="15px" color="#FFFFFF" />
+          <LineIcon
+            name="arrow-up"
+            size="15px"
+            :color="query.trim() && subjectId ? '#FFFFFF' : 'var(--color-zen-sage)'"
+          />
         </view>
       </view>
     </view>
@@ -259,7 +220,7 @@ import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, watch } f
 import LineIcon from '@/components/LineIcon.vue'
 import MobileChatPartList from '@/components/MobileChatPartList.vue'
 import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
-import { aiApi, type ConversationView } from '@/api/aiApi'
+import { aiApi } from '@/api/aiApi'
 import {
   chatWithAI,
   retryChatRun,
@@ -280,8 +241,6 @@ import {
   createAssistantPlaceholder,
   deriveKnowledgeBlockTitle,
   evaluateSmartScroll,
-  isConversationProtocolSupported,
-  restoreConversationMessages,
   type MobileChatMessage,
 } from '@/utils/mobileAiChat'
 import {
@@ -290,24 +249,18 @@ import {
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
-import { formatShortDateTime } from '@/utils/sourceFormat'
 import { uuidv7 } from '@/utils/uuid'
-import {
-  buildWorkspaceReadingContext,
-  doesConversationMatchWorkspaceScope,
-} from '@/utils/workspaceChatScope'
+import { buildWorkspaceReadingContext } from '@/utils/workspaceChatScope'
 
 const props = defineProps<{
   subjectId: string
   subjectName: string
   selectedSource: SourceView | null
   floating?: boolean
-  expanded?: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'close'): void
-  (event: 'toggle-expand'): void
   (event: 'header-pointerdown', value: unknown): void
   (event: 'header-touchstart', value: unknown): void
   (event: 'typing-change', value: boolean): void
@@ -315,13 +268,13 @@ const emit = defineEmits<{
 }>()
 
 function onHeaderMouseDown(event: unknown) {
-  if (props.floating && !props.expanded) {
+  if (props.floating) {
     emit('header-pointerdown', event)
   }
 }
 
 function onHeaderTouchStart(event: unknown) {
-  if (props.floating && !props.expanded) {
+  if (props.floating) {
     emit('header-touchstart', event)
   }
 }
@@ -329,9 +282,6 @@ function onHeaderTouchStart(event: unknown) {
 const authStore = useAuthStore()
 const instanceProxy = getCurrentInstance()?.proxy
 
-const conversations = ref<ConversationView[]>([])
-const loadingSessions = ref(false)
-const showHistory = ref(false)
 const currentConversationId = ref('')
 const messages = ref<MobileChatMessage[]>([])
 const query = ref('')
@@ -345,7 +295,6 @@ watch(
 )
 const activeRunId = ref('')
 const activeAttemptId = ref('')
-const isConversationUnsupported = ref(false)
 const preSendError = ref('')
 const scrollTargetId = ref('')
 const anchorId = 'workspace-ai-bottom'
@@ -374,20 +323,20 @@ const scopeKey = computed(() => {
   return `${ctx.subjectId}:${ctx.retrievalMode}:${ctx.currentSourceId || ''}`
 })
 
-const scopedConversations = computed(() => {
-  const ctx = readingContext.value
-  return conversations.value.filter(item => doesConversationMatchWorkspaceScope(item, ctx))
-})
-
-const quickPrompts = computed(() => (
-  isSourceScoped.value
-    ? ['提炼核心框架', '列出关键概念与易错点', '生成 3 道自测练习题']
-    : [`梳理《${props.subjectName}》重点脉络`, '整理高频复习考点', '对比关键概念异同']
-))
-
-const composerPlaceholder = computed(() => (
-  isConversationUnsupported.value ? '旧版对话仅供查看，请开启新对话' : '提问…'
-))
+const presetQuestions = computed(() => [
+  {
+    label: '提炼当前核心要点',
+    prompt: isSourceScoped.value ? '总结当前文件的核心要点与关键脉络' : '总结当前学科的核心要点与关键脉络',
+  },
+  {
+    label: '梳理本章关键概念',
+    prompt: '查找并梳理本章的核心概念与权威解释',
+  },
+  {
+    label: '生成三道自测考题',
+    prompt: '针对当前内容生成 3 道自测题以巩固记忆',
+  },
+])
 
 function clearMapKeys(map: Record<string, string> | Record<string, number>) {
   for (const key of Object.keys(map)) {
@@ -549,23 +498,6 @@ function toggleProcess(index: number) {
   }
 }
 
-async function loadScopedHistory() {
-  const generation = authStore.getLoginGeneration()
-  const capturedScope = scopeKey.value
-  loadingSessions.value = true
-  try {
-    const list = await aiApi.listConversations()
-    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
-    conversations.value = list.filter(item => !item.deletedAt)
-  } catch {
-    // Keep silent if offline
-  } finally {
-    if (generation === authStore.getLoginGeneration() && capturedScope === scopeKey.value) {
-      loadingSessions.value = false
-    }
-  }
-}
-
 function resetConversation() {
   activeStreamToken += 1
   activeViewToken += 1
@@ -579,42 +511,25 @@ function resetConversation() {
   messages.value = []
   activeRunId.value = ''
   activeAttemptId.value = ''
-  isConversationUnsupported.value = false
   preSendError.value = ''
   autoScrollLocked.value = false
   drainingMessageIds.value = {}
   prevScrollTop = 0
   touchPullUpDetected = false
-  showHistory.value = false
   clearMapKeys(pendingSubmissionIds)
   clearMapKeys(activityVersions)
 }
 
 watch(scopeKey, () => {
   resetConversation()
-  if (props.subjectId && authStore.isAuthenticated) {
-    void loadScopedHistory()
-  }
-}, { immediate: true })
+})
 
 watch(
   () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId, authStore.sessionId],
   () => {
     resetConversation()
-    conversations.value = []
-    loadingSessions.value = false
-    if (authStore.isAuthenticated && props.subjectId) {
-      void loadScopedHistory()
-    }
   },
 )
-
-function toggleHistory() {
-  showHistory.value = !showHistory.value
-  if (showHistory.value) {
-    void loadScopedHistory()
-  }
-}
 
 async function recoverUnknownRun(
   conversationId: string,
@@ -722,122 +637,6 @@ function scheduleRunPolling(
   }, delayMs)
 }
 
-async function selectConversation(conversationId: string) {
-  if (isTyping.value || isStopping.value) {
-    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
-    return
-  }
-  const generation = authStore.getLoginGeneration()
-  const capturedScope = scopeKey.value
-  const viewToken = ++activeViewToken
-  try {
-    const detail = await aiApi.getConversation(conversationId)
-    if (
-      generation !== authStore.getLoginGeneration()
-      || capturedScope !== scopeKey.value
-      || viewToken !== activeViewToken
-      || isTyping.value
-      || isStopping.value
-    ) return
-
-    activeStreamToken += 1
-    stopRunPolling()
-    isTyping.value = false
-    activeRunId.value = ''
-    activeAttemptId.value = ''
-    const abortFn = abortLocalStream
-    abortLocalStream = null
-    abortFn?.()
-    drainingMessageIds.value = {}
-    clearMapKeys(pendingSubmissionIds)
-    clearMapKeys(activityVersions)
-
-    currentConversationId.value = detail.id || conversationId
-    isConversationUnsupported.value = !isConversationProtocolSupported(detail)
-    preSendError.value = isConversationUnsupported.value ? '旧版对话仅供查看，请开启新对话' : ''
-    messages.value = restoreConversationMessages(detail)
-    showHistory.value = false
-
-    if (detail.activeRun?.executionActive && detail.activeRun.runId) {
-      if (detail.activeRun.status === 'UNKNOWN' && detail.activeRun.currentAttemptId) {
-        void recoverUnknownRun(
-          currentConversationId.value,
-          detail.activeRun.runId,
-          detail.activeRun.currentAttemptId,
-          viewToken,
-          generation,
-          capturedScope,
-        )
-      } else {
-        activeRunId.value = detail.activeRun.runId
-        activeAttemptId.value = detail.activeRun.currentAttemptId || ''
-        isTyping.value = true
-        scheduleRunPolling(currentConversationId.value, detail.activeRun.runId, viewToken, generation, capturedScope)
-      }
-    }
-    scrollToBottom(true)
-  } catch {
-    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value || viewToken !== activeViewToken) return
-    uni.showToast({ title: '加载对话失败', icon: 'none' })
-  }
-}
-
-async function syncConversationMeta(conversationId: string, generation: symbol, capturedScope: string) {
-  try {
-    const detail = await aiApi.getConversation(conversationId)
-    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
-    const idx = conversations.value.findIndex(item => item.id === conversationId)
-    const nextItem: ConversationView = {
-      id: detail.id ?? conversationId,
-      title: detail.title,
-      version: detail.version,
-      chatScopeState: detail.chatScopeState,
-      chatScope: detail.chatScope,
-      updatedAt: detail.updatedAt,
-      createdAt: detail.createdAt,
-    }
-    if (idx >= 0) {
-      conversations.value = conversations.value.map(item => (
-        item.id === conversationId ? { ...item, ...nextItem } : item
-      ))
-    } else {
-      conversations.value = [nextItem, ...conversations.value]
-    }
-  } catch {
-    // Keep existing conversation list item when offline
-  }
-}
-
-async function deleteScopedConversation(conversationId: string, baseVersion: number) {
-  if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) {
-    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
-    return
-  }
-  const generation = authStore.getLoginGeneration()
-  const capturedScope = scopeKey.value
-  try {
-    try {
-      await aiApi.deleteConversation(conversationId, baseVersion)
-    } catch (error) {
-      if (error instanceof ApiProblemError && error.status === 409) {
-        const latest = await aiApi.getConversation(conversationId)
-        if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
-        await aiApi.deleteConversation(conversationId, Number(latest.version ?? baseVersion))
-      } else {
-        throw error
-      }
-    }
-    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
-    conversations.value = conversations.value.filter(item => item.id !== conversationId)
-    if (currentConversationId.value === conversationId) {
-      resetConversation()
-    }
-  } catch {
-    if (generation !== authStore.getLoginGeneration() || capturedScope !== scopeKey.value) return
-    uni.showToast({ title: '删除失败，请刷新重试', icon: 'none' })
-  }
-}
-
 async function copyText(text: string) {
   const ok = await copyTextWithFallback(text)
   uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
@@ -867,7 +666,7 @@ function openSaveBlockModal(msg: MobileChatMessage) {
 }
 
 function submitStarterPrompt(prompt: string) {
-  if (isTyping.value || isStopping.value || isConversationUnsupported.value) return
+  if (isTyping.value || isStopping.value) return
   query.value = prompt
   void sendMessage()
 }
@@ -920,7 +719,6 @@ async function ensureConversation(seedTitle: string, generation: symbol, capture
   }
   if (!created.id) throw new Error('创建对话失败')
   currentConversationId.value = created.id
-  conversations.value = [created, ...conversations.value.filter(item => item.id !== created.id)]
   return created.id
 }
 
@@ -1074,7 +872,7 @@ async function runStreamIntoSlot(params: {
       messages.value[aiIndex] = applyTerminalState(
         messages.value[aiIndex],
         'failed',
-        '连接中断，请在历史记录中重新打开查看结果',
+        '连接中断，请重试或在 AI 助手页查看结果',
       )
       return
     }
@@ -1123,19 +921,12 @@ async function runStreamIntoSlot(params: {
         activeRunId.value = ''
         activeAttemptId.value = ''
       }
-      if (admittedTurn && currentConversationId.value) {
-        void syncConversationMeta(currentConversationId.value, generation, capturedScope)
-      }
       scrollToBottom(false)
     }
   }
 }
 
 async function sendMessage() {
-  if (isConversationUnsupported.value) {
-    uni.showToast({ title: '旧版对话仅供查看，请开启新对话', icon: 'none' })
-    return
-  }
   const text = query.value.trim()
   if (!text || isTyping.value || isStopping.value || !props.subjectId) return
 
@@ -1149,7 +940,6 @@ async function sendMessage() {
 
   preSendError.value = ''
   query.value = ''
-  showHistory.value = false
   messages.value.push({
     id: `user-${uuidv7()}`,
     role: 'user',
@@ -1183,7 +973,7 @@ async function sendMessage() {
 }
 
 async function regenerateAssistantMessage(msgId: string) {
-  if (isTyping.value || isStopping.value || isConversationUnsupported.value) return
+  if (isTyping.value || isStopping.value) return
   const msgIndex = messages.value.findIndex(m => m.id === msgId)
   if (msgIndex < 0) return
   const target = messages.value[msgIndex]
@@ -1259,7 +1049,7 @@ async function regenerateAssistantMessage(msgId: string) {
 }
 
 async function handleSubmitActivity(questionId: string, answer: MobileChatActivityAnswer) {
-  if (isTyping.value || isStopping.value || isConversationUnsupported.value || !currentConversationId.value) return
+  if (isTyping.value || isStopping.value || !currentConversationId.value) return
   stopRunPolling()
   const convId = currentConversationId.value
   const submissionId = pendingSubmissionIds[questionId] ?? (pendingSubmissionIds[questionId] = uuidv7())
@@ -1272,7 +1062,6 @@ async function handleSubmitActivity(questionId: string, answer: MobileChatActivi
   const streamToken = ++activeStreamToken
 
   preSendError.value = ''
-  showHistory.value = false
   messages.value.push(createAssistantPlaceholder(`assistant-${uuidv7()}`, 'activity_submission'))
   const aiIndex = messages.value.length - 1
   isTyping.value = true
@@ -1324,15 +1113,15 @@ onBeforeUnmount(() => {
 .ai-panel.is-floating {
   width: 100%;
   height: 100%;
-  border-radius: 20px;
+  border-radius: 18px;
   border: 1px solid var(--glass-border);
   box-shadow: none;
 }
 
 .ai-header {
-  height: 54px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 14px 16px 6px;
+  background: transparent;
+  border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1350,28 +1139,27 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-.ai-title-row {
-  flex: 1;
-  min-width: 0;
-  display: flex;
+.ai-scope-pill {
+  display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  max-width: 220px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 0.5px solid var(--border-subtle);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
 }
 
-.ai-title {
-  font-size: var(--text-base);
-  font-weight: 700;
+.ai-scope-text {
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text-primary);
-  flex-shrink: 0;
-}
-
-.scope-pill {
-  display: inline-block;
-  max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
 }
 
 .ai-header-actions {
@@ -1381,131 +1169,85 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.history-drawer {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.history-head {
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-
-.history-head-title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.history-list {
-  flex: 1;
-  height: 0;
-  min-height: 0;
-  padding: 0 10px 10px;
-  box-sizing: border-box;
-}
-
-.history-empty {
-  padding: 36px 12px;
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.history-row {
-  padding: 10px 11px;
-  border-radius: 12px;
-  background: var(--color-bg-tertiary);
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: background-color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
-}
-
-.history-row.active {
-  background: var(--color-sage-bg);
-  border-color: var(--border-accent);
-}
-
-.history-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.history-row-title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-row-time {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-
-.history-row-del {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
+.ai-header-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 0.5px solid var(--border-subtle);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  opacity: 0.72;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s var(--ease-out);
 }
 
-.history-row-del:hover {
-  opacity: 1;
-  background: var(--color-danger-bg);
+.ai-header-btn:hover {
+  background: rgba(139, 154, 110, 0.12);
+  border-color: rgba(139, 154, 110, 0.36);
+}
+
+.ai-header-btn:active {
+  transform: scale(0.92);
 }
 
 .chat-welcome {
   flex: 1;
   min-height: 0;
-  padding: 20px 16px;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  padding: 16px 16px 24px;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
-  gap: 18px;
+  text-align: center;
   box-sizing: border-box;
 }
 
-.welcome-emblem {
-  width: 44px;
-  height: 44px;
+.ai-brand-wrap {
+  width: 48px;
+  height: 48px;
   border-radius: 14px;
-  background-color: var(--color-sage-bg);
-  border: 1px solid var(--border-accent);
+  background: linear-gradient(135deg, #8B9A6E 0%, #AAB88E 100%);
+  box-shadow: 0 8px 20px rgba(139, 154, 110, 0.24);
   display: flex;
   align-items: center;
   justify-content: center;
-  align-self: center;
+  margin-bottom: 14px;
+}
+
+.welcome-title {
+  font-size: 19px;
+  font-weight: 650;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+
+.welcome-desc {
+  max-width: 244px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin-bottom: 22px;
 }
 
 .pre-send-error {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
+  margin-bottom: 12px;
   border-radius: 10px;
   background-color: var(--color-danger-bg);
   border: 1px solid rgba(201, 59, 59, 0.22);
+  text-align: left;
+  box-sizing: border-box;
 }
 
 .pre-send-error-text {
@@ -1513,26 +1255,48 @@ onBeforeUnmount(() => {
   color: var(--color-danger);
 }
 
-.quick-prompts {
+.preset-questions {
+  width: 100%;
+  max-width: 240px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
+  box-sizing: border-box;
 }
 
-.prompt-pill {
-  padding: 11px 14px;
-  border-radius: 12px;
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--text-secondary);
+.preset-pill {
+  width: 100%;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 0.5px solid var(--border-subtle);
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+  text-align: center;
   cursor: pointer;
-  transition: border-color 0.14s var(--ease-out), color 0.14s var(--ease-out), transform 0.14s var(--ease-out);
+  box-sizing: border-box;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s var(--ease-out), box-shadow 0.16s ease;
 }
 
-.prompt-pill:hover {
-  border-color: var(--border-accent);
-  color: var(--text-primary);
+.preset-pill:hover {
+  background: rgba(139, 154, 110, 0.14);
+  border-color: rgba(139, 154, 110, 0.45);
   transform: translateY(-1px);
+  box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.2), 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+.preset-pill-text {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-pill:hover .preset-pill-text {
+  color: var(--color-sage-ink);
+  font-weight: 600;
 }
 
 .chat-scroll {
@@ -1542,21 +1306,10 @@ onBeforeUnmount(() => {
 }
 
 .chat-messages {
-  padding: 14px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.unsupported-banner {
-  padding: 8px 10px;
-  border-radius: 10px;
-  background-color: var(--color-warning-bg, rgba(217, 130, 43, 0.12));
-}
-
-.unsupported-banner-text {
-  font-size: 11.5px;
-  color: var(--color-warning-ink, #9A5513);
 }
 
 .msg-row {
@@ -1574,18 +1327,28 @@ onBeforeUnmount(() => {
 
 .user-bubble {
   max-width: 86%;
+  padding: 9px 14px;
+  border-radius: 18px 18px 5px 18px;
+  background: #FFFFFF;
+  border: 1px solid rgba(45, 55, 40, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   font-size: var(--text-sm);
+  box-sizing: border-box;
 }
 
 .user-text {
-  color: var(--text-primary, #262522);
-  line-height: 1.5;
+  color: var(--text-primary);
+  line-height: 1.55;
   word-break: break-word;
 }
 
 .assistant-bubble {
   width: 100%;
-  padding: 12px 14px;
+  padding: 2px 0 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   font-size: var(--text-sm);
   display: flex;
   flex-direction: column;
@@ -1645,8 +1408,8 @@ onBeforeUnmount(() => {
 
 .composer-box {
   position: relative;
-  padding: 10px 12px 12px;
-  background: var(--color-bg-primary);
+  padding: 8px 16px 16px;
+  background: transparent;
   flex-shrink: 0;
 }
 
@@ -1684,21 +1447,21 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 6px 6px 6px 14px;
-  border-radius: 20px;
-  background: var(--glass-surface-strong);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-subtle);
-  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+  min-height: 46px;
+  padding: 5px 6px 5px 16px;
+  border-radius: 24px;
+  background: #FFFFFF;
+  border: 1px solid var(--border-default);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.02);
+  box-sizing: border-box;
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
 }
 
 /* #ifdef H5 */
 .input-capsule:focus-within {
   border-color: var(--color-zen-sage);
   background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0, 0, 0, 0.05);
 }
 /* #endif */
 
@@ -1727,11 +1490,23 @@ onBeforeUnmount(() => {
   margin: 0;
   flex-shrink: 0;
   cursor: pointer;
-  transition: transform 0.14s var(--ease-out), opacity 0.14s var(--ease-out);
+  transition: transform 0.16s var(--ease-out), background 0.16s ease, box-shadow 0.16s ease;
 }
 
 .send-btn {
-  background: var(--accent-gradient);
+  background: #FFFFFF;
+  border: 0.5px solid var(--border-subtle);
+}
+
+.send-btn.is-ready {
+  background: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4);
+}
+
+.send-btn.is-ready:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.5);
 }
 
 .stop-btn {
@@ -1750,7 +1525,6 @@ onBeforeUnmount(() => {
   transform: scale(0.92);
 }
 
-.send-btn.disabled,
 .stop-btn.disabled {
   opacity: 0.4;
 }

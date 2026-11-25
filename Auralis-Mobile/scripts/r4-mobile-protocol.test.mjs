@@ -21,10 +21,7 @@ import { createSyncApi } from '../src/api/useSyncApi.ts'
 import { createOverviewApi } from '../src/api/overviewApi.ts'
 import { createSourceApi } from '../src/api/sourceApi.ts'
 import { createStatsApi } from '../src/api/statsApi.ts'
-import {
-  buildWorkspaceReadingContext,
-  doesConversationMatchWorkspaceScope,
-} from '../src/utils/workspaceChatScope.ts'
+import { buildWorkspaceReadingContext } from '../src/utils/workspaceChatScope.ts'
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
 import { createSseDecoder } from '../src/api/sse.ts'
@@ -458,30 +455,6 @@ test('workspace AI scope omits currentSourceId/sourceIds in SUBJECT mode and mat
     ingestionStatus: 'READY',
   })
   assert.deepEqual(readyCtx, { subjectId: 'sub-1', retrievalMode: 'AUTO', currentSourceId: 'src-ready' })
-
-  assert.equal(doesConversationMatchWorkspaceScope({
-    id: 'c-1',
-    chatScopeState: 'BOUND',
-    chatScope: { subjectId: 'sub-1', currentSourceId: null, retrievalMode: 'SUBJECT', sourceIds: [] },
-  }, subjectCtx), true)
-
-  assert.equal(doesConversationMatchWorkspaceScope({
-    id: 'c-2',
-    chatScopeState: 'BOUND',
-    chatScope: { subjectId: 'sub-1', currentSourceId: null, retrievalMode: 'SELECTED_SOURCES', sourceIds: ['src-ready'] },
-  }, subjectCtx), false)
-
-  assert.equal(doesConversationMatchWorkspaceScope({
-    id: 'c-3',
-    chatScopeState: 'BOUND',
-    chatScope: { subjectId: 'sub-1', currentSourceId: null, retrievalMode: 'AUTO', sourceIds: [] },
-  }, subjectCtx), false)
-
-  assert.equal(doesConversationMatchWorkspaceScope({
-    id: 'c-4',
-    chatScopeState: 'BOUND',
-    chatScope: { subjectId: 'sub-1', currentSourceId: 'src-ready', retrievalMode: 'AUTO', sourceIds: [] },
-  }, readyCtx), true)
 })
 
 test('SSE decoder preserves event boundaries across transport chunks', () => {
