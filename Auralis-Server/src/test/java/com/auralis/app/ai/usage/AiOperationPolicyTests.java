@@ -21,7 +21,7 @@ class AiOperationPolicyTests {
 
     @Test
     void platformPoliciesKeepConfiguredQuotaAndFeatureMapping() {
-        assertThat(POLICIES.resolve(AiOperationKind.CHAT_AGENT_TURN).platformTaskTokens()).isEqualTo(524_288);
+        assertThat(POLICIES.resolve(AiOperationKind.CHAT_AGENT_TURN).platformTaskTokens()).isEqualTo(655_360);
         assertThat(POLICIES.resolve(AiOperationKind.INGESTION_EMBEDDING).platformMaxCalls()).isEqualTo(512);
         assertThat(POLICIES.resolve(AiOperationKind.SOURCE_OVERVIEW).feature()).isEqualTo(AiFeature.SOURCE_OVERVIEW);
         assertThat(POLICIES.resolve(AiOperationKind.SUBJECT_OVERVIEW).feature()).isEqualTo(AiFeature.SUBJECT_OVERVIEW);
@@ -33,7 +33,7 @@ class AiOperationPolicyTests {
         assertThat(agent.feature()).isEqualTo(AiFeature.CHAT);
         assertThat(agent.platformMaxCalls()).isZero();
         assertThat(agent.allOriginMaxCalls()).isZero();
-        assertThat(agent.platformTaskTokens()).isEqualTo(524_288);
+        assertThat(agent.platformTaskTokens()).isEqualTo(655_360);
         assertThat(agent.stages().get(AiStage.CHAT_COMPLETION).allOriginMaxCalls()).isNull();
         assertThat(agent.stages().get(AiStage.RETRIEVAL_EMBEDDING).allOriginMaxCalls()).isNull();
 
@@ -69,11 +69,14 @@ class AiOperationPolicyTests {
     }
 
     @Test
-    void chatIterationAndToolBoundsAllowTwelveAndTwentyButRejectLargerValues() {
-        assertThat(new ChatAgentProperties(0, 0, 12, 20, 65_536, 524_288, 300).maxIterations()).isEqualTo(12);
-        assertThatThrownBy(() -> new ChatAgentProperties(0, 0, 13, 20, 65_536, 524_288, 300))
+    void chatIterationAndToolBoundsAllowExpandedDefaultsAndRejectValuesAboveHardCap() {
+        assertThat(ChatAgentProperties.defaults().maxIterations()).isEqualTo(20);
+        assertThat(ChatAgentProperties.defaults().maxToolCalls()).isEqualTo(40);
+        assertThat(new ChatAgentProperties(0, 0, 30, 60, 65_536, 524_288, 300).maxIterations()).isEqualTo(30);
+        assertThat(new ChatAgentProperties(0, 0, 30, 60, 65_536, 524_288, 300).maxToolCalls()).isEqualTo(60);
+        assertThatThrownBy(() -> new ChatAgentProperties(0, 0, 31, 20, 65_536, 524_288, 300))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ChatAgentProperties(0, 0, 12, 21, 65_536, 524_288, 300))
+        assertThatThrownBy(() -> new ChatAgentProperties(0, 0, 12, 61, 65_536, 524_288, 300))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -136,7 +139,7 @@ class AiOperationPolicyTests {
 
     static com.auralis.app.shared.config.AuralisProperties.Limits limits(int overviewMaxCalls) {
         return new com.auralis.app.shared.config.AuralisProperties.Limits(4, 2, 1_000_000, 2_000_000,
-                2_000_000, 300_000, 10_000, 4096, 524_288, overviewMaxCalls, 524_288,
+                2_000_000, 300_000, 10_000, 4096, 655_360, overviewMaxCalls, 524_288,
                 512, 16_777_216);
     }
 }

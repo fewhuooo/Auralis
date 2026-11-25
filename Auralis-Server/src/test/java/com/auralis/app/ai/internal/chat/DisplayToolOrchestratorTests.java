@@ -157,7 +157,7 @@ class DisplayToolOrchestratorTests {
 
     @Test
     void elevenToolIterationsLeaveTheTwelfthForSummary() throws Exception {
-        Fixture fixture = new Fixture();
+        Fixture fixture = new Fixture(null, "", new ChatAgentProperties(0, 0, 12, 20, 65_536, 524_288, 300));
         configureCatalogTool(fixture);
         fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
             assertThat(callNo).isLessThanOrEqualTo(12);
@@ -184,9 +184,9 @@ class DisplayToolOrchestratorTests {
     }
 
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 3, 12})
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 3, 12, 20})
     void finalIterationRejectsDataAndActivityCallsWithoutAnotherModelRequest(int maxIterations) throws Exception {
-        Fixture fixture = new Fixture(null, "", new ChatAgentProperties(0, 0, maxIterations, 20,
+        Fixture fixture = new Fixture(null, "", new ChatAgentProperties(0, 0, maxIterations, 40,
                 65_536, 524_288, 300));
         configureCatalogTool(fixture);
         fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
@@ -211,7 +211,7 @@ class DisplayToolOrchestratorTests {
 
     @Test
     void toolAllowanceCountsEveryCallInOneBatchAndStopsAfterTwenty() throws Exception {
-        Fixture fixture = new Fixture();
+        Fixture fixture = new Fixture(null, "", new ChatAgentProperties(0, 0, 12, 20, 65_536, 524_288, 300));
         configureCatalogTool(fixture);
         fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
             assertThat(callNo).isLessThanOrEqualTo(2);
@@ -232,6 +232,33 @@ class DisplayToolOrchestratorTests {
 
         assertThat(fixture.providerCallCount.get()).isEqualTo(2);
         verify(fixture.tools, times(20)).execute(any(), any(), eq(ChatReadTools.LIST_SOURCES), eq("{}"));
+        assertThat(fixture.terminal.get().status()).isEqualTo("COMPLETED");
+        assertThat(fixture.terminal.get().markdown()).contains("Tool allowance summary.", "本轮可用工具调用次数已用完");
+    }
+
+    @Test
+    void defaultToolAllowanceExecutesBeyondTwentyAndStopsAtForty() throws Exception {
+        Fixture fixture = new Fixture();
+        configureCatalogTool(fixture);
+        fixture.scriptProvider((callNo, request, chunks, cancellation) -> {
+            assertThat(callNo).isLessThanOrEqualTo(2);
+            if (callNo == 2) {
+                assertThat(request.messages().stream().filter(message -> message.role() == AiMessageRole.TOOL)
+                        .filter(message -> !message.content().contains("not_executed"))).hasSize(40);
+                chunks.accept(textChunk("Tool allowance summary."));
+                sendCall(chunks, "over-limit", 0, "catalog-40", ChatReadTools.LIST_SOURCES, "{}", false);
+                chunks.accept(terminal("over-limit", "tool_calls"));
+                return;
+            }
+            java.util.stream.IntStream.range(0, 40).forEach(index -> sendCall(chunks, "batch", index,
+                    "catalog-" + index, ChatReadTools.LIST_SOURCES, "{}", false));
+            chunks.accept(terminal("batch", "tool_calls"));
+        });
+
+        fixture.execute();
+
+        assertThat(fixture.providerCallCount.get()).isEqualTo(2);
+        verify(fixture.tools, times(40)).execute(any(), any(), eq(ChatReadTools.LIST_SOURCES), eq("{}"));
         assertThat(fixture.terminal.get().status()).isEqualTo("COMPLETED");
         assertThat(fixture.terminal.get().markdown()).contains("Tool allowance summary.", "本轮可用工具调用次数已用完");
     }
@@ -850,7 +877,7 @@ class DisplayToolOrchestratorTests {
             when(taskScope.usage()).thenReturn(new AiProviderUsage(1, 1, 1L, 1L, 2, true));
             when(adapterFactory.create(any(), eq(taskScope), any())).thenAnswer(invocation ->
                     new ChatAgentModelAdapter(invocation.getArgument(0), invocation.getArgument(1),
-                            new AiChatRequestMapper(mapper), ChatAgentProperties.defaults(), 4096, 10_000,
+                            new AiChatRequestMapper(mapper), this.chatProperties, 4096, 10_000,
                             true, invocation.getArgument(2)));
             when(conversations.get(userId, conversationId)).thenReturn(new ConversationView(conversationId, "Chat",
                     List.<MessageView>of(), Instant.now(), Instant.now(), null, 0L, (short) 1, true, null, com.auralis.app.ai.ChatConversationScopeState.UNBOUND, null));

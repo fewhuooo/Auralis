@@ -115,7 +115,7 @@ auralis:
       reservation-lease-millis: ${AURALIS_AI_LIMITS_RESERVATION_LEASE_MILLIS:300000}
       heartbeat-millis: ${AURALIS_AI_LIMITS_HEARTBEAT_MILLIS:10000}
       chat-max-output-tokens: ${AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS:4096}
-      chat-task-tokens: ${AURALIS_AI_LIMITS_CHAT_TASK_TOKENS:32000}
+      chat-task-tokens: ${AURALIS_AI_LIMITS_CHAT_TASK_TOKENS:655360}
       # 0 disables the separate Overview call-count cap; token quotas remain enforced.
       overview-max-calls: ${AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS:0}
       overview-task-tokens: ${AURALIS_AI_LIMITS_OVERVIEW_TASK_TOKENS:524288}
@@ -126,8 +126,8 @@ auralis:
       raw-content-capture-directory: ${AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_DIR:/tmp/auralis-chat-diagnostics}
       max-model-calls: ${AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS:0}
       max-embedding-calls: ${AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS:0}
-      max-iterations: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:12}
-      max-tool-calls: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:20}
+      max-iterations: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:20}
+      max-tool-calls: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:40}
       max-tool-result-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES:65536}
       max-serialized-request-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_SERIALIZED_REQUEST_UTF8_BYTES:524288}
       attempt-deadline-seconds: ${AURALIS_AI_CHAT_AGENT_ATTEMPT_DEADLINE_SECONDS:300}
