@@ -109,7 +109,7 @@
         @toggle-tier2="handleToggleTier2Collapse"
         @upload="openUploadModal"
         @retry-preview="loadSourcePreview(true)"
-        @refresh-subject-overview="loadSubjectOverview"
+        @refresh-subject-overview="handleRefreshSubjectOverview"
         @refresh-file-overview="refreshFileOverview"
         @ensure-file-overview="ensureFileOverview"
         @view-block="openBlockDetail"
@@ -181,113 +181,19 @@
         @clear-error="uploadError = ''"
       />
 
-      <!-- 知识块详情阅读弹窗 -->
-      <view v-if="viewingBlock" class="zen-modal-mask" @click="closeBlockDetail">
-        <view
-          class="zen-modal-body block-detail-modal"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="viewingBlock.title"
-          @click.stop
-        >
-          <view class="modal-header">
-            <view class="detail-head-meta">
-              <text class="modal-title">{{ viewingBlock.title }}</text>
-              <text class="detail-sub-meta num-tabular">
-                {{ resolveBlockSourceLabel(viewingBlock, sources) }} · {{ formatShortDateTime(viewingBlock.time) }}
-              </text>
-            </view>
-            <view class="ui-icon-btn sm" role="button" aria-label="关闭" @click="closeBlockDetail">
-              <LineIcon name="close" size="14px" color="var(--text-muted)" />
-            </view>
-          </view>
-
-          <scroll-view scroll-y :show-scrollbar="false" class="detail-body-scroll">
-            <view class="detail-markdown-box">
-              <MarkdownText :content="viewingBlock.preview || '暂无正文内容'" />
-            </view>
-          </scroll-view>
-
-          <view class="modal-footer detail-footer">
-            <button class="ui-btn ui-btn-danger sm" @click="handleDeleteBlock(viewingBlock)">删除</button>
-            <view class="detail-footer-right">
-              <button class="ui-btn ui-btn-secondary sm" @click="copyViewingBlock">复制</button>
-              <button class="ui-btn ui-btn-primary sm" @click="editViewingBlock">编辑</button>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <!-- 新建 / 编辑知识块弹窗 -->
-      <view v-if="showBlockModal" class="zen-modal-mask" @click="closeBlockModal">
-        <view class="zen-modal-body block-modal-card" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">{{ editingBlockId ? '编辑知识块' : '新建知识块' }}</text>
-            <view class="ui-icon-btn sm" role="button" aria-label="关闭" @click="closeBlockModal">
-              <LineIcon name="close" size="14px" color="var(--text-muted)" />
-            </view>
-          </view>
-
-          <view class="modal-body">
-            <view class="field-group">
-              <text class="zen-field-label">标题</text>
-              <input
-                v-model="blockDraft.title"
-                class="ui-input"
-                maxlength="80"
-                placeholder="例如：拉格朗日中值定理的辅助函数构造"
-              />
-            </view>
-
-            <view class="field-group">
-              <text class="zen-field-label">关联资料</text>
-              <input
-                v-model="blockDraft.source"
-                class="ui-input"
-                maxlength="80"
-                placeholder="自主整理或关联资料名称"
-              />
-              <view v-if="sources.length > 0" class="source-chip-row">
-                <view
-                  class="chip-item sm"
-                  :class="{ active: blockDraft.source === '自主整理' }"
-                  role="button"
-                  @click="blockDraft.source = '自主整理'"
-                >
-                  <text>自主整理</text>
-                </view>
-                <view
-                  v-for="src in sources"
-                  :key="src.id"
-                  class="chip-item sm"
-                  :class="{ active: blockDraft.source === (src.title || '') }"
-                  role="button"
-                  @click="blockDraft.source = src.title || ''"
-                >
-                  <text class="source-chip-text">{{ src.title || '未命名资料' }}</text>
-                </view>
-              </view>
-            </view>
-
-            <view class="field-group">
-              <text class="zen-field-label">正文</text>
-              <textarea
-                v-model="blockDraft.preview"
-                class="ui-textarea"
-                :maxlength="4000"
-                placeholder="Markdown 正文（支持 $...$ 公式）"
-              />
-            </view>
-          </view>
-
-          <view class="modal-footer">
-            <button class="ui-btn ui-btn-ghost" :disabled="submittingBlock" @click="closeBlockModal">取消</button>
-            <button class="ui-btn ui-btn-primary" :disabled="submittingBlock" @click="submitBlockModal">
-              {{ submittingBlock ? '保存中…' : '保存' }}
-            </button>
-          </view>
-        </view>
-      </view>
+      <!-- PC 同源知识块详情 / 新建 / 编辑弹窗 -->
+      <WorkspaceKnowledgeBlockModal
+        :visible="blockDialogVisible"
+        :mode="blockDialogMode"
+        :block="activeBlock"
+        :active-subject-name="subjectName"
+        :sources="sources"
+        :saving="submittingBlock"
+        @close="closeBlockDialog"
+        @update:mode="blockDialogMode = $event"
+        @save="handleSaveBlockModal"
+        @delete="handleDeleteBlock"
+      />
     </template>
   </TabletLayout>
 </template>
@@ -297,13 +203,13 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
-import MarkdownText from '@/components/MarkdownText.vue'
 import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import WorkspaceSourceRail from '@/components/tablet/workspace/WorkspaceSourceRail.vue'
 import WorkspaceCenterReader, {
   type WorkspaceCenterView,
 } from '@/components/tablet/workspace/WorkspaceCenterReader.vue'
 import WorkspaceAiPanel from '@/components/tablet/workspace/WorkspaceAiPanel.vue'
+import WorkspaceKnowledgeBlockModal from '@/components/tablet/workspace/WorkspaceKnowledgeBlockModal.vue'
 import WorkspaceUploadModal from '@/components/tablet/workspace/WorkspaceUploadModal.vue'
 import { assetApi } from '@/api/assetApi'
 import { overviewApi, type OverviewResultView } from '@/api/overviewApi'
@@ -321,9 +227,7 @@ import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { uploadSubjectFile, validateUploadFile } from '@/utils/filePicker'
-import { resolveBlockSourceLabel, resolveEditedBlockSourceLink } from '@/utils/blockSyncMapper'
-import { copyTextWithFallback } from '@/utils/mobileLearning'
-import { formatShortDateTime } from '@/utils/sourceFormat'
+import { resolveWorkspaceCreatedBlockSource } from '@/utils/blockSyncMapper'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
 
 const authStore = useAuthStore()
@@ -357,16 +261,15 @@ const previewError = ref('')
 const subjectOverview = ref<OverviewResultView | null>(null)
 const subjectOverviewLoading = ref(false)
 const subjectOverviewError = ref('')
+const subjectOverviewCheckedSubjectId = ref('')
 const fileOverviews = ref<Record<string, OverviewResultView | null>>({})
 const fileOverviewLoading = ref<Record<string, boolean>>({})
 const fileOverviewErrors = ref<Record<string, string>>({})
 
-const viewingBlockId = ref('')
-const showBlockModal = ref(false)
-const editingBlockId = ref<string | null>(null)
-const editingInitialSourceLabel = ref('')
+const blockDialogVisible = ref(false)
+const blockDialogMode = ref<'view' | 'edit' | 'create'>('view')
+const activeBlockId = ref('')
 const submittingBlock = ref(false)
-const blockDraft = ref({ title: '', source: '', preview: '' })
 const subjectsHydrated = ref(false)
 
 const aiPanelMounted = ref(false)
@@ -386,7 +289,16 @@ let subjectOverviewReqToken = 0
 let fileOverviewReqSeq = 0
 let userChangedTier2 = false
 let userChangedCenterView = false
+let lastCheckedReadySourcesSignature = ''
 const fileOverviewTokens: Record<string, number> = {}
+
+function computeReadySourcesSignature(list: ReadonlyArray<SourceView>): string {
+  return list
+    .filter(item => item.id && item.ingestionStatus === 'READY')
+    .map(item => `${item.id}:${item.ingestionRevision || ''}`)
+    .sort()
+    .join('|')
+}
 
 let dragStartClientX = 0
 let dragStartClientY = 0
@@ -417,9 +329,9 @@ const subjectBlocks = computed(() => blockStore.recentBlocks.filter((item) => {
   return item.subject === subjectName.value
 }))
 
-const viewingBlock = computed(() => (
-  viewingBlockId.value
-    ? subjectBlocks.value.find(item => item.id === viewingBlockId.value) || null
+const activeBlock = computed(() => (
+  activeBlockId.value
+    ? subjectBlocks.value.find(item => item.id === activeBlockId.value) || null
     : null
 ))
 
@@ -512,7 +424,9 @@ function openCenterSection(view: 'blocks' | 'review' | 'stats') {
 function openSubjectOverview() {
   userChangedCenterView = true
   centerView.value = 'subject-overview'
-  if (!subjectOverview.value && !subjectOverviewLoading.value) {
+  const readySig = computeReadySourcesSignature(sources.value)
+  const needsCheck = subjectOverviewCheckedSubjectId.value !== subjectId.value || readySig !== lastCheckedReadySourcesSignature
+  if (!subjectOverviewLoading.value && !subjectOverview.value && needsCheck) {
     void loadSubjectOverview()
   }
 }
@@ -628,15 +542,27 @@ async function loadSourcePreview(bypassCache = false) {
   }
 }
 
-async function loadSubjectOverview() {
+async function loadSubjectOverview(forceRefresh = false) {
   if (!subjectId.value) return
   const token = ++subjectOverviewReqToken
   const fence = captureFence()
+  const readySig = computeReadySourcesSignature(sources.value)
+  if (!loadingSources.value && !readySig) {
+    subjectOverview.value = null
+    subjectOverviewError.value = ''
+    subjectOverviewLoading.value = false
+    subjectOverviewCheckedSubjectId.value = fence.subjectId
+    lastCheckedReadySourcesSignature = ''
+    void localDb.deleteSubjectOverviewCache(fence.subjectId).catch(() => {})
+    return
+  }
+
   subjectOverviewLoading.value = true
   subjectOverviewError.value = ''
   try {
+    let cached: OverviewResultView | null = null
     try {
-      const cached = await localDb.getSubjectOverviewCache(fence.subjectId)
+      cached = await localDb.getSubjectOverviewCache(fence.subjectId)
       if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
       if (cached && !subjectOverview.value) {
         subjectOverview.value = cached
@@ -645,9 +571,14 @@ async function loadSubjectOverview() {
       // Ignore local overview cache failure and fall back to remote request.
     }
 
-    const result = await overviewApi.getSubject(fence.subjectId)
+    const result = await overviewApi.fetchSubjectOverviewIfAvailable(fence.subjectId, {
+      cached,
+      forceRefresh,
+    })
     if (token !== subjectOverviewReqToken || !isFenceValid(fence, false)) return
     subjectOverview.value = result
+    subjectOverviewCheckedSubjectId.value = fence.subjectId
+    lastCheckedReadySourcesSignature = computeReadySourcesSignature(sources.value)
     if (result) {
       void localDb.saveSubjectOverviewCache(fence.subjectId, result).catch(() => {})
     } else {
@@ -659,6 +590,16 @@ async function loadSubjectOverview() {
   } finally {
     if (token === subjectOverviewReqToken) subjectOverviewLoading.value = false
   }
+}
+
+async function handleRefreshSubjectOverview() {
+  if (!subjectId.value) return
+  const fence = captureFence()
+  if (!sources.value.some(item => item.ingestionStatus === 'READY')) {
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+  }
+  await loadSubjectOverview(true)
 }
 
 async function loadFileOverview(source: SourceView) {
@@ -867,118 +808,68 @@ function handleDeleteSource(source: SourceView) {
 }
 
 function openBlockDetail(block: KnowledgeBlock) {
-  viewingBlockId.value = block.id
-}
-
-function closeBlockDetail() {
-  viewingBlockId.value = ''
-}
-
-async function copyViewingBlock() {
-  if (!viewingBlock.value) return
-  const text = viewingBlock.value.preview?.trim()
-    ? `${viewingBlock.value.title}\n\n${viewingBlock.value.preview}`
-    : viewingBlock.value.title
-  const ok = await copyTextWithFallback(text)
-  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
-}
-
-function editViewingBlock() {
-  const block = viewingBlock.value
-  if (!block) return
-  viewingBlockId.value = ''
-  openEditBlockModal(block)
+  activeBlockId.value = block.id
+  blockDialogMode.value = 'view'
+  blockDialogVisible.value = true
 }
 
 function openCreateBlockModal() {
-  editingBlockId.value = null
-  editingInitialSourceLabel.value = ''
-  blockDraft.value = {
-    title: '',
-    source: selectedSource.value?.title || '自主整理',
-    preview: '',
-  }
-  showBlockModal.value = true
+  activeBlockId.value = ''
+  blockDialogMode.value = 'create'
+  blockDialogVisible.value = true
 }
 
-function openEditBlockModal(block: KnowledgeBlock) {
-  editingBlockId.value = block.id
-  const resolvedLabel = resolveBlockSourceLabel(block, sources.value)
-  editingInitialSourceLabel.value = resolvedLabel
-  blockDraft.value = {
-    title: block.title,
-    source: resolvedLabel,
-    preview: block.preview,
-  }
-  showBlockModal.value = true
-}
-
-function closeBlockModal() {
+function closeBlockDialog() {
   if (submittingBlock.value) return
-  showBlockModal.value = false
-  editingInitialSourceLabel.value = ''
+  blockDialogVisible.value = false
+  blockDialogMode.value = 'view'
 }
 
-async function submitBlockModal() {
+async function handleSaveBlockModal(payload: { title: string; color: string; preview: string }) {
   if (submittingBlock.value || !subjectId.value) return
-  const title = blockDraft.value.title.trim()
-  const preview = blockDraft.value.preview.trim()
-  if (!title) {
-    uni.showToast({ title: '请输入知识块标题', icon: 'none' })
-    return
-  }
-  if (!preview) {
-    uni.showToast({ title: '请输入知识块内容', icon: 'none' })
+  const title = payload.title.trim()
+  const preview = payload.preview.trim()
+  if (!title || !preview) {
+    uni.showToast({ title: '请填写标题与正文内容', icon: 'none' })
     return
   }
 
   const fence = captureFence()
   submittingBlock.value = true
   try {
-    if (editingBlockId.value) {
-      const existing = subjectBlocks.value.find(item => item.id === editingBlockId.value)
+    if (blockDialogMode.value === 'edit') {
+      const existing = activeBlock.value
       if (!existing) throw new Error('未找到待更新的知识块')
-      const resolvedLink = resolveEditedBlockSourceLink({
-        draftSource: blockDraft.value.source,
-        initialSourceLabel: editingInitialSourceLabel.value,
-        existingSource: existing.source,
-        existingSourceFileId: existing.sourceFileId,
-        sources: sources.value,
-      })
       await blockStore.updateBlock({
         ...existing,
         title,
-        source: resolvedLink.source,
         preview,
+        color: payload.color,
         subject: subjectName.value,
         subjectId: fence.subjectId,
-        sourceFileId: resolvedLink.sourceFileId,
       })
       if (!isFenceValid(fence, false)) return
+      blockDialogVisible.value = false
+      blockDialogMode.value = 'view'
       uni.showToast({ title: '知识块已更新', icon: 'none' })
-    } else {
-      const resolvedLink = resolveEditedBlockSourceLink({
-        draftSource: blockDraft.value.source,
-        initialSourceLabel: '',
-        sources: sources.value,
-      })
-      await blockStore.addBlock({
-        title,
-        source: resolvedLink.source,
-        preview,
-        subject: subjectName.value,
-        subjectId: fence.subjectId,
-        sourceFileId: resolvedLink.sourceFileId,
-        color: '#8B9A6E',
-      })
-      if (!isFenceValid(fence, false)) return
-      uni.showToast({ title: '已创建知识块', icon: 'none' })
+      return
     }
-    showBlockModal.value = false
-    editingBlockId.value = null
-    editingInitialSourceLabel.value = ''
-    blockDraft.value = { title: '', source: '', preview: '' }
+
+    const link = resolveWorkspaceCreatedBlockSource(selectedSource.value)
+    await blockStore.addBlock({
+      title,
+      source: link.source,
+      preview,
+      subject: subjectName.value,
+      subjectId: fence.subjectId,
+      sourceFileId: link.sourceFileId,
+      color: payload.color,
+    })
+    if (!isFenceValid(fence, false)) return
+    blockDialogVisible.value = false
+    blockDialogMode.value = 'view'
     centerView.value = 'blocks'
+    uni.showToast({ title: '已创建知识块', icon: 'none' })
   } catch (error) {
     if (!isFenceValid(fence, false)) return
     const msg = error instanceof Error && error.message ? error.message : '保存知识块失败'
@@ -989,6 +880,12 @@ async function submitBlockModal() {
     }
   }
 }
+
+watch([activeBlock, blockDialogMode], ([block, mode]) => {
+  if (blockDialogVisible.value && mode === 'view' && !block) {
+    closeBlockDialog()
+  }
+})
 
 function handleDeleteBlock(block: KnowledgeBlock) {
   const fence = captureFence()
@@ -1001,7 +898,11 @@ function handleDeleteBlock(block: KnowledgeBlock) {
       try {
         await blockStore.removeBlock(block.id)
         if (!isFenceValid(fence, false)) return
-        if (viewingBlockId.value === block.id) viewingBlockId.value = ''
+        if (activeBlockId.value === block.id) {
+          activeBlockId.value = ''
+          blockDialogVisible.value = false
+          blockDialogMode.value = 'view'
+        }
         uni.showToast({ title: '已删除知识块', icon: 'none' })
       } catch (error) {
         if (!isFenceValid(fence, false)) return
@@ -1114,13 +1015,12 @@ function handleRequestSaveBlock(payload: { title: string; preview: string }) {
 }
 
 useEscapeKey(() => showUploadModal.value && !uploading.value, closeUploadModal)
-useEscapeKey(() => showBlockModal.value && !showSaveAiBlockModal.value && !showUploadModal.value, closeBlockModal)
 useEscapeKey(
-  () => Boolean(viewingBlock.value) && !showBlockModal.value && !showSaveAiBlockModal.value && !showUploadModal.value,
-  closeBlockDetail,
+  () => blockDialogVisible.value && !submittingBlock.value && !showSaveAiBlockModal.value && !showUploadModal.value,
+  closeBlockDialog,
 )
 useEscapeKey(
-  () => aiPanelVisible.value && !showBlockModal.value && !viewingBlock.value && !showSaveAiBlockModal.value && !showUploadModal.value,
+  () => aiPanelVisible.value && !blockDialogVisible.value && !showSaveAiBlockModal.value && !showUploadModal.value,
   () => { aiPanelVisible.value = false },
 )
 
@@ -1206,7 +1106,13 @@ onMounted(async () => {
   stopOverviewRealtime = subscribeOverviewUpdated((event) => {
     if (!authStore.isAuthenticated || !subjectId.value) return
     if (event.resourceType === 'SUBJECT' && (!event.resourceId || event.resourceId === subjectId.value)) {
-      void loadSubjectOverview()
+      if (!sources.value.some(item => item.ingestionStatus === 'READY')) {
+        void loadSources().then(() => {
+          void loadSubjectOverview(true)
+        })
+        return
+      }
+      void loadSubjectOverview(true)
       return
     }
     if (event.resourceType === 'SOURCE' && event.resourceId) {
@@ -1256,22 +1162,23 @@ onBeforeUnmount(() => {
 watch(
   () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
   () => {
-    showBlockModal.value = false
+    blockDialogVisible.value = false
+    blockDialogMode.value = 'view'
+    activeBlockId.value = ''
     showUploadModal.value = false
     showSaveAiBlockModal.value = false
     aiPanelVisible.value = false
     aiTyping.value = false
-    editingBlockId.value = null
-    editingInitialSourceLabel.value = ''
     submittingBlock.value = false
     uploading.value = false
-    viewingBlockId.value = ''
     subjectsHydrated.value = false
     sources.value = []
     sourcesError.value = ''
     selectedSourceId.value = null
     subjectOverview.value = null
     subjectOverviewError.value = ''
+    subjectOverviewCheckedSubjectId.value = ''
+    lastCheckedReadySourcesSignature = ''
     fileOverviews.value = {}
     fileOverviewErrors.value = {}
     clearPreview()
@@ -1298,10 +1205,13 @@ watch(
 
 watch(
   () => syncStore.lastSyncedAt,
-  (next) => {
+  async (next) => {
     if (!next || !authStore.isAuthenticated || !subjectId.value) return
-    void loadSources()
-    if (centerView.value === 'subject-overview') {
+    const fence = captureFence()
+    const prevSig = computeReadySourcesSignature(sources.value)
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+    if (computeReadySourcesSignature(sources.value) !== prevSig) {
       void loadSubjectOverview()
     }
   },
@@ -1460,128 +1370,6 @@ watch(
   bottom: 18px;
   width: min(520px, calc(100vw - 96px));
   height: calc(100vh - 36px);
-}
-
-.block-detail-modal {
-  max-width: 640px;
-  max-height: 82vh;
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.detail-head-meta {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.detail-sub-meta {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.detail-body-scroll {
-  flex: 1;
-  min-height: 120px;
-  max-height: 54vh;
-}
-
-.detail-markdown-box {
-  padding: 16px 18px;
-  border-radius: 14px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-}
-
-.detail-footer {
-  justify-content: space-between;
-}
-
-.detail-footer-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.block-modal-card {
-  max-width: 480px;
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.modal-title {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  color: var(--text-primary);
-}
-
-.modal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.field-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.source-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.chip-item.sm {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  background-color: var(--glass-sub-bg);
-  backdrop-filter: var(--glass-blur-soft);
-  -webkit-backdrop-filter: var(--glass-blur-soft);
-  border: 1px solid var(--glass-border-subtle);
-  box-shadow: var(--glass-shadow-subtle);
-  display: inline-flex;
-  align-items: center;
-  max-width: 180px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.chip-item.sm.active {
-  background-color: rgba(139, 154, 110, 0.16);
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.74);
-  color: var(--color-sage-ink);
-  font-weight: var(--font-weight-semibold);
-}
-
-.source-chip-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 @media (max-width: 720px) {

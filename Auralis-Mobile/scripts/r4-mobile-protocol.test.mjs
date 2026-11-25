@@ -322,22 +322,72 @@ test('tablet workspace uses formal overview API and AI stream without fixed demo
   )
 })
 
-test('overview API returns null on 404 and preserves source revision query', async () => {
+test('overview API returns null on 404, checks subject status before GET, and preserves source revision query', async () => {
   const calls = []
+  let subjectStatusResponse = 'AVAILABLE'
+  let serverStatusMeta = {
+    version: 2,
+    outlineVersion: 2,
+    summaryVersion: 2,
+    updatedAt: '2026-11-25T02:00:00Z',
+  }
   const api = createOverviewApi({
     async request(path, method, options) {
       calls.push({ path, method, options })
+      if (path === '/api/overview-results/subjects/statuses') {
+        const subjectIds = options?.body?.subjectIds || []
+        return {
+          items: subjectIds.map(id => ({
+            subjectId: id,
+            status: subjectStatusResponse,
+            ...(subjectStatusResponse === 'AVAILABLE' ? serverStatusMeta : {}),
+          })),
+        }
+      }
       if (options?.pathParams?.subjectId === 'missing') {
         throw new ApiProblemError({ title: 'Not Found', status: 404, detail: 'Missing', fieldErrors: [] })
       }
       if (options?.pathParams?.subjectId === 'err') {
         throw new ApiProblemError({ title: 'Server Error', status: 500, detail: 'Boom', fieldErrors: [] })
       }
-      return { outlineMarkdown: '# Outline', summaryMarkdown: 'Summary' }
+      return {
+        outlineMarkdown: '# Outline',
+        summaryMarkdown: 'Summary',
+        ...serverStatusMeta,
+      }
     },
   })
   assert.equal(await api.getSubject('missing'), null)
   await assert.rejects(() => api.getSubject('err'), /Boom/)
+
+  subjectStatusResponse = 'MISSING'
+  const callCountBeforeMissing = calls.length
+  assert.equal(await api.fetchSubjectOverviewIfAvailable('sub-empty'), null)
+  assert.equal(calls.length - callCountBeforeMissing, 1)
+  assert.equal(calls.at(-1)?.path, '/api/overview-results/subjects/statuses')
+
+  subjectStatusResponse = 'UNAVAILABLE'
+  assert.equal(await api.fetchSubjectOverviewIfAvailable('sub-unavail'), null)
+
+  subjectStatusResponse = 'AVAILABLE'
+  const cachedCurrent = {
+    outlineMarkdown: '# Cached Outline',
+    summaryMarkdown: 'Cached Summary',
+    ...serverStatusMeta,
+  }
+  const callCountBeforeCached = calls.length
+  assert.equal(await api.fetchSubjectOverviewIfAvailable('sub-1', { cached: cachedCurrent }), cachedCurrent)
+  assert.equal(calls.length - callCountBeforeCached, 1)
+
+  const staleCached = { ...cachedCurrent, version: 1 }
+  const refreshed = await api.fetchSubjectOverviewIfAvailable('sub-1', { cached: staleCached })
+  assert.equal(refreshed?.summaryMarkdown, 'Summary')
+  assert.equal(calls.at(-1)?.path, '/api/overview-results/subjects/{subjectId}')
+
+  const forced = await api.fetchSubjectOverviewIfAvailable('sub-1', { cached: cachedCurrent, forceRefresh: true })
+  assert.equal(forced?.summaryMarkdown, 'Summary')
+  assert.equal(calls.at(-1)?.path, '/api/overview-results/subjects/{subjectId}')
+
   const srcOverview = await api.getSource('src-1', 'rev-9')
   assert.equal(srcOverview?.outlineMarkdown, '# Outline')
   assert.deepEqual(calls.at(-1), {

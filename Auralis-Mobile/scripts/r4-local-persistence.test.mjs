@@ -4,7 +4,13 @@ import test from 'node:test'
 
 import { createSyncController } from '../src/services/syncController.ts'
 import { selectEvictableCacheKeys } from '../src/services/localDocumentCache.ts'
-import { resolveBlockSourceLabel, resolveEditedBlockSourceLink } from '../src/utils/blockSyncMapper.ts'
+import {
+  BLOCK_THEME_COLORS,
+  DEFAULT_BLOCK_THEME_COLOR,
+  normalizeBlockThemeColor,
+  resolveBlockSourceLabel,
+  resolveWorkspaceCreatedBlockSource,
+} from '../src/utils/blockSyncMapper.ts'
 import { MAX_UPLOAD_FILE_SIZE_BYTES, validateUploadFile } from '../src/utils/uploadValidation.ts'
 
 function setupLocalDbTestEnv(context, options = {}) {
@@ -524,75 +530,32 @@ test('localDb preserves subjects.sortKey, updates source_files.subject_id, sanit
   assert.equal(storage.has(`auralis:local:${scope}:focus_state`), false)
 })
 
-test('resolveBlockSourceLabel and resolveEditedBlockSourceLink preserve synced sourceFileId across edits', () => {
+test('resolveBlockSourceLabel, normalizeBlockThemeColor, and resolveWorkspaceCreatedBlockSource align with PC workspace', () => {
   const sources = [
     { id: 'src-1', title: '第三章_特征工程.pdf' },
     { id: 'src-2', title: '期末复习提纲.docx' },
   ]
 
-  // Synced block arrives with empty source text and valid sourceFileId
-  const syncedBlock = { source: '', sourceFileId: 'src-1' }
-  const initialLabel = resolveBlockSourceLabel(syncedBlock, sources)
-  assert.equal(initialLabel, '第三章_特征工程.pdf')
+  // Synced block resolves source title from sourceFileId, falling back gracefully
+  assert.equal(resolveBlockSourceLabel({ source: '', sourceFileId: 'src-1' }, sources), '第三章_特征工程.pdf')
+  assert.equal(resolveBlockSourceLabel({ source: '手动创建', sourceFileId: 'src-missing' }, sources), '手动创建')
+  assert.equal(resolveBlockSourceLabel({ source: '', sourceFileId: 'src-1' }, []), '自主整理')
 
-  // Editing title/preview without touching source preserves sourceFileId and resolves label
-  assert.deepEqual(
-    resolveEditedBlockSourceLink({
-      draftSource: initialLabel,
-      initialSourceLabel: initialLabel,
-      existingSource: '',
-      existingSourceFileId: 'src-1',
-      sources,
-    }),
-    { source: '第三章_特征工程.pdf', sourceFileId: 'src-1' },
-  )
+  // Theme color normalization maps empty and legacy #8B9A6E to PC default green preset and keeps chosen presets
+  assert.equal(BLOCK_THEME_COLORS.length, 5)
+  assert.equal(normalizeBlockThemeColor(''), DEFAULT_BLOCK_THEME_COLOR)
+  assert.equal(normalizeBlockThemeColor(null), DEFAULT_BLOCK_THEME_COLOR)
+  assert.equal(normalizeBlockThemeColor('#8B9A6E'), DEFAULT_BLOCK_THEME_COLOR)
+  assert.equal(normalizeBlockThemeColor('rgba(179,192,207,0.4)'), 'rgba(179,192,207,0.4)')
 
-  // Editing while sources list has not loaded yet preserves sourceFileId without coercing to manual
-  const unloadedLabel = resolveBlockSourceLabel(syncedBlock, [])
-  assert.equal(unloadedLabel, '自主整理')
+  // Workspace creation binds active selected source when present, otherwise '手动创建'
   assert.deepEqual(
-    resolveEditedBlockSourceLink({
-      draftSource: unloadedLabel,
-      initialSourceLabel: unloadedLabel,
-      existingSource: '',
-      existingSourceFileId: 'src-1',
-      sources: [],
-    }),
-    { source: '', sourceFileId: 'src-1' },
-  )
-
-  // Switching to another matched source updates sourceFileId
-  assert.deepEqual(
-    resolveEditedBlockSourceLink({
-      draftSource: '期末复习提纲.docx',
-      initialSourceLabel: initialLabel,
-      existingSource: '',
-      existingSourceFileId: 'src-1',
-      sources,
-    }),
+    resolveWorkspaceCreatedBlockSource({ id: 'src-2', title: '期末复习提纲.docx' }),
     { source: '期末复习提纲.docx', sourceFileId: 'src-2' },
   )
-
-  // Explicitly changing source to 自主整理 unlinks sourceFileId
   assert.deepEqual(
-    resolveEditedBlockSourceLink({
-      draftSource: '自主整理',
-      initialSourceLabel: initialLabel,
-      existingSource: '',
-      existingSourceFileId: 'src-1',
-      sources,
-    }),
-    { source: '自主整理', sourceFileId: undefined },
-  )
-
-  // Creating a new block matches exact source title when present
-  assert.deepEqual(
-    resolveEditedBlockSourceLink({
-      draftSource: '第三章_特征工程.pdf',
-      initialSourceLabel: '',
-      sources,
-    }),
-    { source: '第三章_特征工程.pdf', sourceFileId: 'src-1' },
+    resolveWorkspaceCreatedBlockSource(null),
+    { source: '手动创建', sourceFileId: undefined },
   )
 })
 
