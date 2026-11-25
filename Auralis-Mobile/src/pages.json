@@ -6,7 +6,9 @@
 				"navigationBarTitleText": "Auralis",
 				"navigationStyle": "custom"
 			}
-		},
+		}
+		// #ifndef APP-TABLET
+		,
 		{
 			"path": "pages/mobile/home/index",
 			"style": {
@@ -57,7 +59,8 @@
 				"navigationStyle": "custom"
 			}
 		}
-		// #ifndef MP-WEIXIN
+		// #endif
+		// #ifndef MP-WEIXIN || APP-PHONE
 		,
 		{
 			"path": "pages/tablet/dashboard/index",

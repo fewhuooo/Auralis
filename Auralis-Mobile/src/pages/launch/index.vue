@@ -24,13 +24,17 @@ onMounted(async () => {
   }
 
   let isTablet = false
-  // #ifndef MP-WEIXIN
+  // #ifdef APP-TABLET
+  isTablet = true
+  // #endif
+  // #ifndef MP-WEIXIN || APP-PHONE || APP-TABLET
   isTablet = deviceStore.isTablet
   // #endif
 
-  const target = authed
-    ? (isTablet ? '/pages/tablet/dashboard/index' : '/pages/mobile/home/index')
-    : (isTablet ? '/pages/tablet/login/index' : '/pages/mobile/login/index')
+  let target = isTablet ? '/pages/tablet/login/index' : '/pages/mobile/login/index'
+  if (authed) {
+    target = isTablet ? '/pages/tablet/dashboard/index' : '/pages/mobile/home/index'
+  }
 
   uni.reLaunch({ url: target })
 })

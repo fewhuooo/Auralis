@@ -15,6 +15,8 @@
     "dev:mp-harmony": "uni -p mp-harmony",
     "dev:mp-weixin": "uni -p mp-weixin",
     "dev:mp-xhs": "uni -p mp-xhs",
+    "dev:app-phone": "uni -p app-phone --outDir dist/dev/app-phone",
+    "dev:app-tablet": "uni -p app-tablet --outDir dist/dev/app-tablet",
     "dev:quickapp-webview": "uni -p quickapp-webview",
     "dev:quickapp-webview-huawei": "uni -p quickapp-webview-huawei",
     "dev:quickapp-webview-union": "uni -p quickapp-webview-union",
@@ -31,13 +33,40 @@
     "build:mp-harmony": "uni build -p mp-harmony",
     "build:mp-weixin": "uni build -p mp-weixin",
     "build:mp-xhs": "uni build -p mp-xhs",
+    "build:app-phone": "uni build -p app-phone --outDir dist/build/app-phone",
+    "build:app-tablet": "uni build -p app-tablet --outDir dist/build/app-tablet",
+    "build:app": "npm run build:app-phone && npm run build:app-tablet",
     "build:quickapp-webview": "uni build -p quickapp-webview",
     "build:quickapp-webview-huawei": "uni build -p quickapp-webview-huawei",
     "build:quickapp-webview-union": "uni build -p quickapp-webview-union",
     "type-check": "vue-tsc --noEmit",
     "check:r4-mobile": "node scripts/check-r4-mobile.mjs",
-    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs scripts/r4-device-id-naming.test.mjs scripts/r4-due-review.test.mjs scripts/r4-task-focus.test.mjs scripts/r4-mobile-focus-page.test.mjs scripts/r4-mobile-profile.test.mjs scripts/r4-markdown-math.test.mjs scripts/r4-mobile-ai.test.mjs scripts/r4-local-persistence.test.mjs scripts/r4-tablet-upload-subject.test.mjs",
+    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs scripts/r4-device-id-naming.test.mjs scripts/r4-device-detect.test.mjs scripts/r4-due-review.test.mjs scripts/r4-task-focus.test.mjs scripts/r4-mobile-focus-page.test.mjs scripts/r4-mobile-profile.test.mjs scripts/r4-markdown-math.test.mjs scripts/r4-mobile-ai.test.mjs scripts/r4-local-persistence.test.mjs scripts/r4-tablet-upload-subject.test.mjs",
     "test:tablet": "node --experimental-strip-types scripts/tablet-feature-flags.test.ts && node --experimental-strip-types scripts/tablet-note-model.test.ts && node --experimental-strip-types scripts/tablet-note-repository-core.test.ts"
+  },
+  "uni-app": {
+    "scripts": {
+      "app-phone": {
+        "title": "Auralis 手机端 App",
+        "env": {
+          "UNI_PLATFORM": "app",
+          "VITE_APP_TARGET": "phone"
+        },
+        "define": {
+          "APP-PHONE": true
+        }
+      },
+      "app-tablet": {
+        "title": "Auralis 平板端 App",
+        "env": {
+          "UNI_PLATFORM": "app",
+          "VITE_APP_TARGET": "tablet"
+        },
+        "define": {
+          "APP-TABLET": true
+        }
+      }
+    }
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-4080420251103001",
