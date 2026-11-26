@@ -1,6 +1,6 @@
 # Agent 编码前协议与检查清单
 
-更新时间：2026-11-16
+更新时间：2026-11-26
 
 文档状态：现行
 
@@ -37,7 +37,7 @@
 | 任务领域 | 额外必读 |
 | --- | --- |
 | PC | `modules/FrontendPC.md`、`project/FrontendDesign.md` |
-| Mobile / Tablet | `modules/FrontendMobileTablet.md`、`project/FrontendDesign.md` |
+| Mobile / Tablet | `modules/FrontendMobileTablet.md`、`project/FrontendDesign.md`；迁移期间另读 `current/MobileTauriMigration.md` |
 | 后端 | `modules/Backend.md`、`contracts/API.md`（涉 Chat 流式/工具协议时读 `contracts/chat-runtime-api.md`） |
 | 数据与同步 | `contracts/Database.md`、`modules/Backend.md` |
 | 基础设施与发布 | `modules/Infrastructure.md`、`operations/Deployment.md`、`operations/Runbook.md` |
