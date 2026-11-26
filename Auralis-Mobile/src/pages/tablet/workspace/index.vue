@@ -995,9 +995,9 @@ function handleRequestSaveBlock(payload: { title: string; preview: string }) {
   showSaveAiBlockModal.value = true
 }
 
-useEscapeKey(() => showUploadModal.value && !uploading.value, closeUploadModal)
+useEscapeKey(() => showUploadModal.value, closeUploadModal)
 useEscapeKey(
-  () => blockDialogVisible.value && !submittingBlock.value && !showSaveAiBlockModal.value && !showUploadModal.value,
+  () => blockDialogVisible.value && !showSaveAiBlockModal.value && !showUploadModal.value,
   closeBlockDialog,
 )
 useEscapeKey(

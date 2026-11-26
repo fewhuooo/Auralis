@@ -195,7 +195,7 @@ function handleClose() {
   emit('close')
 }
 
-useEscapeKey(() => props.visible && !saving.value, handleClose)
+useEscapeKey(() => props.visible, handleClose)
 
 async function createQuickSubject() {
   if (creatingSubject.value || saving.value) return

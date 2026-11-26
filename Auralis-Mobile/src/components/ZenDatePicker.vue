@@ -74,7 +74,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { registerBackHandler } from '@/platform/backButton'
 import { toLocalDateKey } from '@/utils/dateKey'
 import { buildCalendarCells, parseDateKeyParts, shiftMonth } from '@/utils/pickerHelpers'
 
@@ -132,12 +133,28 @@ function selectDate(nextKey: string) {
   isOpen.value = false
 }
 
+let unregisterBack: (() => void) | null = null
+
 function handleEscapeCapture(event: KeyboardEvent) {
   if (!isOpen.value || event.key !== 'Escape') return
   event.preventDefault()
   event.stopImmediatePropagation()
   closePicker()
 }
+
+watch(isOpen, (open) => {
+  if (open) {
+    unregisterBack?.()
+    unregisterBack = registerBackHandler(() => {
+      if (!isOpen.value) return false
+      closePicker()
+      return true
+    })
+    return
+  }
+  unregisterBack?.()
+  unregisterBack = null
+})
 
 onMounted(() => {
   if (typeof window !== 'undefined') {
@@ -146,6 +163,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unregisterBack?.()
+  unregisterBack = null
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', handleEscapeCapture, true)
   }

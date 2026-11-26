@@ -67,7 +67,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { registerBackHandler } from '@/platform/backButton'
 import { formatTimeHHmm, parseTimeHHmm } from '@/utils/pickerHelpers'
 
 const HOURS = Array.from({ length: 24 }, (_, idx) => idx)
@@ -122,12 +123,28 @@ function confirmSelection() {
   isOpen.value = false
 }
 
+let unregisterBack: (() => void) | null = null
+
 function handleEscapeCapture(event: KeyboardEvent) {
   if (!isOpen.value || event.key !== 'Escape') return
   event.preventDefault()
   event.stopImmediatePropagation()
   closePicker()
 }
+
+watch(isOpen, (open) => {
+  if (open) {
+    unregisterBack?.()
+    unregisterBack = registerBackHandler(() => {
+      if (!isOpen.value) return false
+      closePicker()
+      return true
+    })
+    return
+  }
+  unregisterBack?.()
+  unregisterBack = null
+})
 
 onMounted(() => {
   if (typeof window !== 'undefined') {
@@ -136,6 +153,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unregisterBack?.()
+  unregisterBack = null
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', handleEscapeCapture, true)
   }

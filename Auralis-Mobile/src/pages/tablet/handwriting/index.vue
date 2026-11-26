@@ -141,7 +141,11 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (saveTimeout) clearTimeout(saveTimeout)
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+    void NotebookStorage.saveNoteDocument(notebook.value)
+  }
 })
 
 const onPointerDown = (e: PointerEvent) => {
@@ -256,6 +260,10 @@ const triggerAutoSave = () => {
 }
 
 const save = async () => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+  }
   saveStatus.value = '保存中...'
   const success = await NotebookStorage.saveNoteDocument(notebook.value)
   saveStatus.value = success ? '已保存' : '保存失败'

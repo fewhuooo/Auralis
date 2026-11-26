@@ -68,7 +68,6 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onPause() {
-    super.onPause()
     hasPaused = true
     if (!isFinishing && !isDestroyed) {
       appWebView?.evaluateJavascript(
@@ -76,6 +75,7 @@ class MainActivity : TauriActivity() {
         null,
       )
     }
+    super.onPause()
   }
 
   override fun onResume() {
