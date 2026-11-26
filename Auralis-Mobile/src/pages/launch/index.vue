@@ -23,10 +23,7 @@ onMounted(async () => {
     authed = await authStore.restoreSession()
   }
 
-  let isTablet = false
-  // #ifndef MP-WEIXIN
-  isTablet = deviceStore.isTablet
-  // #endif
+  const isTablet = deviceStore.isTablet
 
   const target = authed
     ? (isTablet ? '/pages/tablet/dashboard/index' : '/pages/mobile/home/index')

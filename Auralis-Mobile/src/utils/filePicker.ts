@@ -16,34 +16,6 @@ export {
   validateUploadFile,
 }
 
-interface ChosenFileItem {
-  path?: string
-  name?: string
-  size?: number
-  type?: string
-}
-
-declare const wx: {
-  chooseMessageFile?: (options: {
-    count: number
-    type: 'file' | 'all' | 'image' | 'video'
-    success: (res: { tempFiles?: ChosenFileItem[] }) => void
-    fail: (err: unknown) => void
-  }) => void
-} | undefined
-
-function normalizeChosenFile(item: ChosenFileItem | undefined): LocalUploadFile | null {
-  if (!item?.path) return null
-  const name = item.name || item.path.split(/[\\/]/).pop() || `file-${Date.now()}`
-  return {
-    path: item.path,
-    name,
-    size: Number(item.size || 0),
-    mimeType: inferUploadMimeType(name, item.type),
-  }
-}
-
-// #ifdef H5
 export function normalizeBrowserFile(file: File): LocalUploadFile {
   return {
     path: '',
@@ -53,63 +25,62 @@ export function normalizeBrowserFile(file: File): LocalUploadFile {
     file,
   }
 }
-// #endif
 
 export function pickLocalDocument(): Promise<LocalUploadFile | null> {
-  // #ifdef MP-WEIXIN
-  return new Promise((resolve, reject) => {
-    if (!wx?.chooseMessageFile) {
-      reject(new Error('当前微信版本不支持选择聊天文件'))
-      return
-    }
-    wx.chooseMessageFile({
-      count: 1,
-      type: 'file',
-      success: (res) => resolve(normalizeChosenFile(res.tempFiles?.[0])),
-      fail: (err) => {
-        const msg = typeof err === 'object' && err && 'errMsg' in err ? String((err as { errMsg: unknown }).errMsg) : ''
-        if (msg.includes('cancel')) {
-          resolve(null)
-          return
-        }
-        reject(new Error(msg || '选择文件失败'))
-      },
-    })
-  })
-  // #endif
+  if (typeof document === 'undefined') {
+    return Promise.reject(new Error('当前环境暂不支持文件选择'))
+  }
 
-  // #ifndef MP-WEIXIN
-  return new Promise((resolve, reject) => {
-    const chooseFile = (uni as unknown as {
-      chooseFile?: (options: {
-        count: number
-        success: (res: { tempFiles?: ChosenFileItem[]; tempFilePaths?: string[] }) => void
-        fail: (err: unknown) => void
-      }) => void
-    }).chooseFile
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = SUPPORTED_UPLOAD_EXTENSIONS.join(',')
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+    input.style.top = '-9999px'
 
-    if (chooseFile) {
-      chooseFile({
-        count: 1,
-        success: (res) => {
-          const item = res.tempFiles?.[0] || (res.tempFilePaths?.[0] ? { path: res.tempFilePaths[0] } : undefined)
-          resolve(normalizeChosenFile(item))
-        },
-        fail: (err) => {
-          const msg = typeof err === 'object' && err && 'errMsg' in err ? String((err as { errMsg: unknown }).errMsg) : ''
-          if (msg.includes('cancel')) {
-            resolve(null)
-            return
-          }
-          reject(new Error(msg || '选择文件失败'))
-        },
-      })
-      return
+    let settled = false
+    let cancelTimer: ReturnType<typeof setTimeout> | null = null
+
+    const cleanup = () => {
+      if (cancelTimer) {
+        clearTimeout(cancelTimer)
+        cancelTimer = null
+      }
+      input.removeEventListener('change', handleChange)
+      input.removeEventListener('cancel', handleCancel)
+      window.removeEventListener('focus', handleWindowFocus)
+      input.remove()
     }
 
-    reject(new Error('当前环境暂不支持文件选择'))
+    const settle = (result: LocalUploadFile | null) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+
+    const handleChange = () => {
+      const selected = input.files?.[0]
+      settle(selected ? normalizeBrowserFile(selected) : null)
+    }
+
+    const handleCancel = () => {
+      settle(null)
+    }
+
+    const handleWindowFocus = () => {
+      cancelTimer = setTimeout(() => {
+        if (!settled) settle(null)
+      }, 350)
+    }
+
+    input.addEventListener('change', handleChange)
+    input.addEventListener('cancel', handleCancel)
+    window.addEventListener('focus', handleWindowFocus, { once: true })
+    document.body.appendChild(input)
+    input.click()
   })
-  // #endif
 }
 
 export async function uploadSubjectFile(options: {

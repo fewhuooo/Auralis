@@ -1,6 +1,6 @@
 /* ==========================================================================
    Design System - Auralis Zen Minimalist (Aligned with Auralis-PC)
-   Deterministic logical px + clamp() scale across H5, Tablet & MP-Weixin
+   Deterministic logical px + clamp() scale across Phone & Tablet
    3-Tier Surface Hierarchy:
    1. Canvas Shell (#EEEEEE) -> 2. Primary Linen Panel (#F7F2EB) -> 3. Stationery Card/Input (#FAF7F2)
    ========================================================================== */

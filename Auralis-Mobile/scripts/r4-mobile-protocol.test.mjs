@@ -33,28 +33,17 @@ import {
   resolveTabletPreviewKind,
 } from '../src/utils/tabletFilePreview.ts'
 
-test('resolves H5 and mini-program service addresses only from environment values', () => {
+test('resolves mobile service addresses only from environment values', () => {
   const h5 = resolveRuntimeConfig({
-    VITE_API_BASE_URL: 'https://api.auralis.test',
-    VITE_WS_BASE_URL: 'wss://events.auralis.test',
+    VITE_API_BASE_URL: 'https://api.auralis.test/',
+    VITE_WS_BASE_URL: 'wss://events.auralis.test/',
   }, 'h5')
   assert.equal(h5.apiBaseUrl, 'https://api.auralis.test')
   assert.equal(h5.websocketBaseUrl, 'wss://events.auralis.test')
-
-  const weixin = resolveRuntimeConfig({
-    VITE_API_BASE_URL: 'https://api.auralis.test/',
-    VITE_WS_BASE_URL: 'wss://events.auralis.test/',
-  }, 'mp-weixin')
-  assert.equal(weixin.apiBaseUrl, 'https://api.auralis.test')
-  assert.equal(weixin.websocketBaseUrl, 'wss://events.auralis.test')
 })
 
-test('rejects missing or insecure production service addresses', () => {
+test('rejects missing or invalid production service addresses', () => {
   assert.throws(() => resolveRuntimeConfig({}, 'h5'), /VITE_API_BASE_URL/)
-  assert.throws(() => resolveRuntimeConfig({
-    VITE_API_BASE_URL: 'http://api.auralis.test',
-    VITE_WS_BASE_URL: 'ws://events.auralis.test',
-  }, 'mp-weixin'), /HTTPS/)
 })
 
 test('resolves the ticket websocket path without adding an access token', () => {

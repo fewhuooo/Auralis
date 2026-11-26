@@ -1,7 +1,7 @@
 <template>
   <view class="app-header-container" :class="{ 'with-border': showBorder }">
     <view class="status-bar-placeholder"></view>
-    <view class="app-header-bar" :style="headerBarStyle">
+    <view class="app-header-bar">
       <view class="header-left">
         <view
           v-if="effectiveShowBack"
@@ -75,27 +75,6 @@ const emit = defineEmits(['back-click', 'right-click'])
 
 const layoutStore = useLayoutStore()
 const effectiveShowBack = computed(() => props.showBack || props.showBackButton)
-
-const headerBarStyle = computed(() => {
-  // #ifdef MP-WEIXIN
-  try {
-    const info = uni.getSystemInfoSync()
-    const menuRect = (uni as unknown as {
-      getMenuButtonBoundingClientRect?: () => { left: number }
-    }).getMenuButtonBoundingClientRect?.()
-    if (menuRect && info.windowWidth > menuRect.left) {
-      const reservePx = Math.max(96, Math.round(info.windowWidth - menuRect.left + 12))
-      return { paddingRight: `${reservePx}px` }
-    }
-  } catch {
-    // Fallback to default Mini Program capsule spacing
-  }
-  return { paddingRight: '104px' }
-  // #endif
-  // #ifndef MP-WEIXIN
-  return {}
-  // #endif
-})
 
 const topLevelRoutes = [
   '/pages/mobile/home/index',

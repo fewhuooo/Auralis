@@ -59,7 +59,6 @@ function currentLoginRoute(): string {
   } catch {
     // Ignore route lookup error outside page context
   }
-  // #ifndef MP-WEIXIN
   try {
     const sysInfo = uni.getSystemInfoSync()
     const width = sysInfo.windowWidth || sysInfo.screenWidth
@@ -70,7 +69,6 @@ function currentLoginRoute(): string {
   } catch {
     // Fallback to mobile login route when system info is unavailable
   }
-  // #endif
   return '/pages/mobile/login/index'
 }
 

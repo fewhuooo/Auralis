@@ -56,9 +56,7 @@
 				"navigationBarTitleText": "登录 / 注册",
 				"navigationStyle": "custom"
 			}
-		}
-		// #ifndef MP-WEIXIN
-		,
+		},
 		{
 			"path": "pages/tablet/dashboard/index",
 			"style": {
@@ -115,7 +113,6 @@
 				"navigationStyle": "custom"
 			}
 		}
-		// #endif
 	],
 	"globalStyle": {
 		"navigationBarTextStyle": "black",

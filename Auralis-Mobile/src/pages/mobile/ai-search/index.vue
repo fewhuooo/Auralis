@@ -293,7 +293,7 @@
     <template #overlay>
       <view v-if="showHistorySheet" class="history-drawer-mask" @click="showHistorySheet = false">
         <view class="history-drawer-panel" @click.stop>
-          <view class="history-drawer-header" :style="historyDrawerHeaderStyle">
+          <view class="history-drawer-header">
             <view class="history-drawer-heading">
               <text class="history-drawer-title">历史对话</text>
               <text v-if="!loadingHistory && conversations.length > 0" class="history-drawer-count num-tabular">
@@ -474,25 +474,6 @@ let programmaticScrollUntil = 0
 let lastAuthScope = `${authStore.isAuthenticated ? '1' : '0'}:${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
 const pendingSubmissionIds: Record<string, string> = {}
 const activityVersions: Record<string, number> = {}
-
-const historyDrawerHeaderStyle = computed(() => {
-  // #ifdef MP-WEIXIN
-  try {
-    const menuRect = (uni as unknown as {
-      getMenuButtonBoundingClientRect?: () => { bottom: number }
-    }).getMenuButtonBoundingClientRect?.()
-    if (menuRect && menuRect.bottom > 0) {
-      return { paddingTop: `${Math.max(48, Math.round(menuRect.bottom + 10))}px` }
-    }
-  } catch {
-    // Fallback to default Mini Program capsule clearance
-  }
-  return { paddingTop: '88px' }
-  // #endif
-  // #ifndef MP-WEIXIN
-  return {}
-  // #endif
-})
 
 const selectedSubject = computed(() => (
   selectedSubjectId.value

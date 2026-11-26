@@ -1,4 +1,4 @@
-export type MobilePlatform = 'h5' | 'mp-weixin' | 'app' | 'tablet'
+export type MobilePlatform = 'h5' | 'app' | 'tablet'
 
 export interface RuntimeConfig {
   apiBaseUrl: string
@@ -38,13 +38,13 @@ export function resolveRuntimeConfig(
 ): RuntimeConfig {
   const apiBaseUrl = validateBaseUrl(
     requiredString(env, 'VITE_API_BASE_URL'),
-    platform === 'mp-weixin' ? ['https:'] : ['https:', 'http:'],
-    platform === 'mp-weixin' ? 'VITE_API_BASE_URL (HTTPS)' : 'VITE_API_BASE_URL',
+    ['https:', 'http:'],
+    'VITE_API_BASE_URL',
   )
   const websocketBaseUrl = validateBaseUrl(
     requiredString(env, 'VITE_WS_BASE_URL'),
-    platform === 'mp-weixin' ? ['wss:'] : ['wss:', 'ws:'],
-    platform === 'mp-weixin' ? 'VITE_WS_BASE_URL (WSS)' : 'VITE_WS_BASE_URL',
+    ['wss:', 'ws:'],
+    'VITE_WS_BASE_URL',
   )
   return { apiBaseUrl, websocketBaseUrl, platform }
 }
@@ -57,7 +57,6 @@ export function resolveWebsocketUrl(pathOrUrl: string, config: RuntimeConfig): s
 
 function currentPlatform(): MobilePlatform {
   const platform = String(import.meta.env.UNI_PLATFORM || '').toLowerCase()
-  if (platform === 'mp-weixin') return 'mp-weixin'
   if (platform === 'app' || platform === 'app-plus') return 'app'
   return 'h5'
 }

@@ -445,7 +445,7 @@ export interface DisplayedFocusTaskView {
 
 const FOCUS_WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
 
-/** Format local date and HH:mm clock string consistently across H5 and MP-Weixin. */
+/** Format local date and HH:mm clock string consistently across phone and tablet layouts. */
 export function formatFocusClockDateTime(nowInput: Date | number = new Date()): { dateText: string; timeText: string } {
   const date = nowInput instanceof Date ? nowInput : new Date(nowInput)
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date
