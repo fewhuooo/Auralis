@@ -16,6 +16,7 @@ const stalePaths = [
   '../src-tauri/gen/android/app/build/intermediates/assets',
   '../src-tauri/gen/android/app/build/intermediates/merged_manifests',
   '../src-tauri/gen/android/app/build/outputs/apk',
+  '../src-tauri/gen/android/app/build/outputs/bundle',
 ]
 for (const relPath of stalePaths) {
   rmSync(fileURLToPath(new URL(relPath, import.meta.url)), { recursive: true, force: true })

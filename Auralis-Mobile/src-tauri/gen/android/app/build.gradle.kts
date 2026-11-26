@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -12,6 +13,48 @@ val tauriProperties = Properties().apply {
     if (propFile.exists()) {
         propFile.inputStream().use { load(it) }
     }
+}
+
+val keystoreProperties = Properties().apply {
+    val propFile = rootProject.file("keystore.properties")
+    if (propFile.exists()) {
+        propFile.inputStream().use { load(it) }
+    }
+}
+
+val releaseKeystorePath = System.getenv("AURALIS_ANDROID_KEYSTORE_PATH")?.trim().orEmpty()
+    .ifEmpty { keystoreProperties.getProperty("storeFile", "").trim() }
+val releaseStorePassword = System.getenv("AURALIS_ANDROID_KEYSTORE_PASSWORD")?.trim().orEmpty()
+    .ifEmpty { keystoreProperties.getProperty("storePassword", "").trim() }
+val releaseKeyAlias = System.getenv("AURALIS_ANDROID_KEY_ALIAS")?.trim().orEmpty()
+    .ifEmpty { keystoreProperties.getProperty("keyAlias", "").trim() }
+val releaseKeyPassword = System.getenv("AURALIS_ANDROID_KEY_PASSWORD")?.trim().orEmpty()
+    .ifEmpty { keystoreProperties.getProperty("keyPassword", "").trim() }
+
+val signingInputs = listOf(
+    releaseKeystorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+)
+val anySigningConfigured = signingInputs.any { it.isNotEmpty() }
+val allSigningConfigured = signingInputs.all { it.isNotEmpty() }
+if (anySigningConfigured && !allSigningConfigured) {
+    throw GradleException(
+        "Incomplete Android release signing configuration. Set all 4 of " +
+            "AURALIS_ANDROID_KEYSTORE_PATH, AURALIS_ANDROID_KEYSTORE_PASSWORD, " +
+            "AURALIS_ANDROID_KEY_ALIAS, AURALIS_ANDROID_KEY_PASSWORD (or keystore.properties)."
+    )
+}
+val releaseKeystoreFile: File? = if (allSigningConfigured) {
+    val rawFile = File(releaseKeystorePath)
+    val resolved = if (rawFile.isAbsolute) rawFile else rootProject.file(releaseKeystorePath)
+    if (!resolved.exists()) {
+        throw GradleException("Android release keystore file not found: ${resolved.absolutePath}")
+    }
+    resolved
+} else {
+    null
 }
 
 val auralisAppTarget = (System.getenv("AURALIS_APP_TARGET") ?: "phone").trim().lowercase()
@@ -30,6 +73,18 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    signingConfigs {
+        if (releaseKeystoreFile != null) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -44,6 +99,9 @@ android {
             }
         }
         getByName("release") {
+            if (releaseKeystoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }
