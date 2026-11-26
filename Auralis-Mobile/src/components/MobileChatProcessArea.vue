@@ -31,11 +31,11 @@
 
     <view v-if="isOpen && hasExpandableBody" class="process-body">
       <template v-for="group in visibleTimelineGroups" :key="group.id">
-        <rich-text
+        <div
           v-if="group.kind === 'reasoning'"
           class="reasoning-rich-text"
-          :nodes="group.nodes"
-        />
+          v-html="group.nodes"
+        ></div>
         <view v-else class="process-tool-steps">
           <view
             v-for="tool in group.tools"

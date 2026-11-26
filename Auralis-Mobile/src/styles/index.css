@@ -605,6 +605,21 @@ uni-button::after {
   40% { opacity: 1; transform: scale(1.15); }
 }
 
+.katex-display-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 10px 0;
+  max-width: 100%;
+}
+
+.katex-display {
+  margin: 0.4em 0;
+}
+
+.katex {
+  font-size: 1.04em;
+}
+
 /* #ifdef H5 */
 html,
 body,

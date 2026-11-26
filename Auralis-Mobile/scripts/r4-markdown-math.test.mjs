@@ -7,29 +7,33 @@ import {
   renderMarkdownHtml,
 } from '../src/utils/markdown.ts'
 
-test('renderMarkdownHtml renders inline math, nested fractions, scripts and Greek symbols without leaking raw tokens', () => {
+test('renderMarkdownHtml renders inline math, nested fractions, scripts and Greek symbols via KaTeX without leaking raw tokens', () => {
   const html = renderMarkdownHtml(
     '构造 $\\varphi(x) = f(x) - \\frac{f(b)-f(a)}{b-a}(x-a)$ 与 $x_0, x^{2n}, \\xi \\in (a, b)$',
   )
-  assert.match(html, /φ\(x\)/)
-  assert.match(html, /ξ ∈ \(a, b\)/)
-  assert.match(html, /<span[^>]*>f\(b\)-f\(a\)<\/span><span[^>]*>b-a<\/span>/)
-  assert.match(html, /<sub[^>]*>0<\/sub>/)
-  assert.match(html, /<sup[^>]*>2n<\/sup>/)
-  assert.doesNotMatch(html, /\\varphi|\\frac|\\xi|@@AURALIS/)
+  assert.match(html, /class="katex"/)
+  assert.match(html, /class="katex-mathml"/)
+  assert.match(html, /<mfrac>/)
+  assert.match(html, /<msub>/)
+  assert.match(html, /<msup>/)
+  assert.match(html, /φ/)
+  assert.match(html, /ξ/)
+  const visibleHtml = html.replace(/<annotation[^>]*>[\s\S]*?<\/annotation>/g, '')
+  assert.doesNotMatch(visibleHtml, /\\varphi|\\frac|\\xi/)
+  assert.doesNotMatch(html, /@@AURALIS/)
 })
 
 test('renderMarkdownHtml renders overlapping TeX commands, braces, roots, text and display blocks cleanly', () => {
   const html = renderMarkdownHtml(
     '区间 $\\left( x \\right)$ 与集合 $\\{a, b\\}$ 及 $x \\leq y$，以及 $\\sqrt{x^2 + 1} + \\text{<safe>}$\n\n$$E = mc^2$$',
   )
-  assert.match(html, /\( x \)/)
+  assert.match(html, /class="katex"/)
   assert.doesNotMatch(html, /≤ft/)
-  assert.match(html, /\{a, b\}/)
-  assert.match(html, /≤ y/)
-  assert.match(html, /√<span[^>]*>x<sup[^>]*>2<\/sup> \+ 1<\/span>/)
+  assert.match(html, /<msqrt>/)
   assert.match(html, /&lt;safe&gt;/)
-  assert.match(html, /<div[^>]*text-align:center[^>]*>E = mc<sup[^>]*>2<\/sup><\/div>/)
+  assert.match(html, /class="katex-display-wrapper"/)
+  assert.match(html, /class="katex-display"/)
+  assert.match(html, /mc/)
 })
 
 test('renderMarkdownHtml isolates literal placeholder tokens and code blocks cleanly without inline pill leakage', () => {
@@ -38,14 +42,17 @@ test('renderMarkdownHtml isolates literal placeholder tokens and code blocks cle
   )
   assert.match(html, /<code[^>]*>@@AURALISMATH0@@<\/code>/)
   assert.match(html, /<pre style="[^"]*"><code style="font-family:inherit;background:transparent;[^"]*">const x = 1\s*<\/code><\/pre>/)
-  assert.match(html, />y<\/span>/)
+  assert.match(html, /class="katex"/)
+  assert.match(html, />y</)
 })
 
-test('renderMarkdownHtml keeps dollar variables inside code spans and fenced code blocks untouched', () => {
-  const html = renderMarkdownHtml('环境变量 `$HOME` 与\n```\n$PATH\n```\n不转数学')
+test('renderMarkdownHtml keeps dollar variables and pure currencies inside code spans and prose untouched', () => {
+  const html = renderMarkdownHtml('环境变量 `$HOME` 与\n```\n$PATH\n```\n以及价格 $100$ 与 $50.00$ 不转数学')
   assert.match(html, /<code[^>]*>\$HOME<\/code>/)
   assert.match(html, /<code[^>]*>\$PATH\s*<\/code>/)
-  assert.doesNotMatch(html, /font-style:italic/)
+  assert.match(html, /\$100\$/)
+  assert.match(html, /\$50\.00\$/)
+  assert.doesNotMatch(html, /class="katex"/)
 })
 
 test('renderMarkdownHtml escapes raw HTML and XSS payloads in prose, math, links and image schemes', () => {
@@ -55,7 +62,7 @@ test('renderMarkdownHtml escapes raw HTML and XSS payloads in prose, math, links
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/)
   assert.match(html, /<strong[^>]*>bold<\/strong>/)
-  assert.doesNotMatch(html, /<script|<img\s+src=x|src="javascript:/i)
+  assert.doesNotMatch(html, /<script|<img\s+src=x|<img\b[^>]*\bonerror\s*=|src="javascript:/i)
   assert.match(html, /<img src="https:\/\/example\.com\/a\.png" alt="ok"/)
 })
 
@@ -78,8 +85,10 @@ test('renderMarkdownHtml styles Markdown tables without corrupting thead tags', 
 
 test('renderMarkdownHtml supports \\[...\\] and \\(...\\) delimiters as well as plain excerpts', () => {
   const html = renderMarkdownHtml('勾股定理 \\(a^2 + b^2 = c^2\\) 与\n\n\\[E = mc^2\\]')
-  assert.match(html, /a<sup[^>]*>2<\/sup> \+ b<sup[^>]*>2<\/sup> = c<sup[^>]*>2<\/sup>/)
-  assert.match(html, /<div[^>]*text-align:center[^>]*>E = mc<sup[^>]*>2<\/sup><\/div>/)
+  assert.match(html, /class="katex"/)
+  assert.match(html, /class="katex-display-wrapper"/)
+  assert.match(html, /class="katex-display"/)
+  assert.match(html, /<msup>/)
 
   const excerpt = plainMarkdownExcerpt('结论：\\(x_0\\) 满足 \\[\\frac{1}{2}\\]')
   assert.equal(excerpt, '结论：x₀ 满足 (1)/(2)')
