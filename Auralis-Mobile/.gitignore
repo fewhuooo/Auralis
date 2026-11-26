@@ -23,6 +23,10 @@ src-tauri/gen/android/.gradle
 src-tauri/gen/android/app/build
 src-tauri/gen/android/app/src/main/assets
 src-tauri/gen/android/app/src/main/jniLibs
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/.kotlin
+src-tauri/gen/android/app/.cxx
+src-tauri/gen/android/app/tauri.properties
 
 # Editor directories and files
 .idea

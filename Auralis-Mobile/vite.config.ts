@@ -93,7 +93,7 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => {
       port: 1420,
       strictPort: false,
       watch: {
-        ignored: ['**/public-tablet/file-viewer/**'],
+        ignored: ['**/public-tablet/file-viewer/**', '**/src-tauri/**'],
       },
     },
   }
