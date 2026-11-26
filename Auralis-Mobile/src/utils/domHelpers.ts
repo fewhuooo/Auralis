@@ -11,6 +11,7 @@ interface TextareaLike {
   style?: { height?: string }
   scrollHeight?: unknown
   querySelector?: (selector: string) => unknown
+  $el?: unknown
 }
 
 export interface EnterKeyOptions {
@@ -27,6 +28,9 @@ function asTextareaLike(candidate: unknown): TextareaLike | null {
   if (typeof node.querySelector === 'function') {
     const inner = node.querySelector('textarea')
     if (inner && typeof inner === 'object') return inner as TextareaLike
+  }
+  if (node.$el && node.$el !== candidate) {
+    return asTextareaLike(node.$el)
   }
   return null
 }

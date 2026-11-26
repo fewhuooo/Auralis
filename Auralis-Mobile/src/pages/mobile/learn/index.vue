@@ -47,7 +47,6 @@
           <div
             ref="stripScrollRef"
             class="subject-strip-scroll zen-scroll-x"
-            @scroll="onSubjectStripScroll"
           >
             <div class="subject-strip">
               <div
@@ -649,10 +648,8 @@ let subjectReviewReqId = 0
 let lastAuthScope = ''
 let hasShownOnce = false
 let refreshInFlight: { scope: string; promise: Promise<void> } | null = null
-let lastObservedScrollLeft = 0
 let stripScrollTimer: ReturnType<typeof setTimeout> | null = null
 let isPageUnmounted = false
-let stripScrollSeq = 0
 
 function scopeKeyForAuth(): string {
   return `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
@@ -1046,12 +1043,6 @@ function clearStripScrollTimer() {
   }
 }
 
-function onSubjectStripScroll(event: Event) {
-  const el = (event.currentTarget as HTMLElement | null) ?? stripScrollRef.value
-  if (!el) return
-  lastObservedScrollLeft = Math.max(0, el.scrollLeft)
-}
-
 function scrollActiveSubjectToStart() {
   if (isPageUnmounted || !activeSubjectId.value) return
   const activeIdx = subjectStore.subjects.findIndex(item => item.id === activeSubjectId.value)
@@ -1084,7 +1075,6 @@ function scrollActiveSubjectToStart() {
   })
 
   if (Math.abs(currentScrollLeft - target) < 2) return
-  lastObservedScrollLeft = target
   if (typeof containerEl.scrollTo === 'function') {
     containerEl.scrollTo({ left: target, behavior: 'smooth' })
     return
@@ -1330,11 +1320,9 @@ watch(
       editingBlockId.value = ''
       blockModalError.value = ''
       selectedSubjectId.value = ''
-      ++stripScrollSeq
       if (stripScrollRef.value) {
         stripScrollRef.value.scrollLeft = 0
       }
-      lastObservedScrollLeft = 0
       clearStripScrollTimer()
       if (authStore.isAuthenticated) {
         void refreshPageData()
@@ -1403,7 +1391,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   isPageUnmounted = true
-  ++stripScrollSeq
   clearStripScrollTimer()
   stopReviewPreload?.()
   stopReviewPreload = null

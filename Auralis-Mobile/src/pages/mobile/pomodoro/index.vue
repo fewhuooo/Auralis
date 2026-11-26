@@ -390,13 +390,10 @@ async function completeBoundTask() {
   flex: 1;
   height: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .timer-scroll-inner {
   width: 100%;
-  flex: 1;
   min-height: 100%;
   display: flex;
   flex-direction: column;

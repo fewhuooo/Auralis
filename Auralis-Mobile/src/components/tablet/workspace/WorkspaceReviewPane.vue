@@ -719,8 +719,6 @@ const milestoneSubtitle = computed(() => {
   height: 0;
   min-height: 0;
   width: 100%;
-  display: flex;
-  flex-direction: column;
 }
 
 .review-pane {

@@ -183,6 +183,7 @@
           ref="composerInputRef"
           v-model="query"
           class="composer-input"
+          rows="1"
           :maxlength="2000"
           placeholder="问问 Auralis AI..."
           @input="handleQueryInput"
@@ -501,7 +502,7 @@ function handleChatScroll(event: Event) {
 }
 
 function handleQueryInput(event: unknown) {
-  syncTextareaAutoHeight(event, 140)
+  syncTextareaAutoHeight(event, 96)
   onQueryInput()
 }
 

@@ -225,6 +225,22 @@ uni-button::after {
   content: none !important;
 }
 
+/* Reset native input/textarea defaults so borderless fields behave consistently without uni-h5 wrappers */
+input,
+textarea {
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+textarea {
+  resize: none;
+}
+
 /* ===== Semantic Reusable Surface & Interactive Primitives ===== */
 .zen-panel {
   background-color: var(--glass-surface-strong);

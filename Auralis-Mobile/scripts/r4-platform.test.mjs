@@ -618,6 +618,12 @@ test('utils/domHelpers guards IME composition, Shift+Enter, preventDefault, and 
   assert.equal(innerTextarea.style.height, '72px')
   resetTextareaHeight(uniTextareaHost)
   assert.equal(innerTextarea.style.height, '')
+
+  const vueTextareaProxy = { $el: uniTextareaHost }
+  syncTextareaAutoHeight(vueTextareaProxy, 140)
+  assert.equal(innerTextarea.style.height, '72px')
+  resetTextareaHeight(vueTextareaProxy)
+  assert.equal(innerTextarea.style.height, '')
 })
 
 test('utils/pickerHelpers validates calendar dates, month rollovers, 42-cell grids, and HH:mm clamping', () => {
