@@ -1,4 +1,5 @@
 {
+  "productName": "Auralis HD",
   "build": {
     "beforeDevCommand": "npm run dev:tablet",
     "beforeBuildCommand": "node scripts/vite-build.mjs tablet build",

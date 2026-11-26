@@ -19,7 +19,7 @@ class MainActivity : TauriActivity() {
     ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
       view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-      insets
+      WindowInsetsCompat.CONSUMED
     }
     ViewCompat.requestApplyInsets(contentView)
 

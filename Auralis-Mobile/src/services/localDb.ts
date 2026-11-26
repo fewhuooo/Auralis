@@ -641,23 +641,29 @@ async function ensureInitialized(scope: string): Promise<void> {
   }
 }
 
-async function executeScoped(sql: string, params: unknown[] = []): Promise<void> {
-  const scope = currentScope()
+async function executeForScope(scope: string, sql: string, params: unknown[] = []): Promise<void> {
   await ensureInitialized(scope)
   await executeRawForScope(scope, sql, params)
 }
 
-async function selectScoped<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const scope = currentScope()
+async function selectForScope<T>(scope: string, sql: string, params: unknown[] = []): Promise<T[]> {
   await ensureInitialized(scope)
   return selectRawForScope<T>(scope, sql, params)
+}
+
+async function executeScoped(sql: string, params: unknown[] = []): Promise<void> {
+  await executeForScope(currentScope(), sql, params)
+}
+
+async function selectScoped<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+  return selectForScope<T>(currentScope(), sql, params)
 }
 
 /**
  * Serializes derived-cache writes per scope/table and verifies scope invariance
  * right before committing so account switches or disk constraints cannot corrupt state.
  */
-function serializeCacheWrite(bucket: string, operation: () => Promise<void>): Promise<void> {
+function serializeCacheWrite(bucket: string, operation: (scope: string) => Promise<void>): Promise<void> {
   const expectedScope = safeCurrentScope()
   if (!expectedScope) return Promise.resolve()
   const queueKey = `${expectedScope}:${bucket}`
@@ -666,7 +672,7 @@ function serializeCacheWrite(bucket: string, operation: () => Promise<void>): Pr
     const activeScope = safeCurrentScope()
     if (!activeScope || activeScope !== expectedScope) return
     try {
-      await operation()
+      await operation(expectedScope)
     } catch (error) {
       console.warn(`[SQLite Mobile] Cache persistence skipped (${bucket}):`, error)
     }
@@ -679,6 +685,223 @@ function serializeCacheWrite(bucket: string, operation: () => Promise<void>): Pr
     }
   })
   return run
+}
+
+async function setMetadataForScope(scope: string, key: string, value: string): Promise<void> {
+  await executeForScope(
+    scope,
+    `INSERT INTO sync_metadata (key, value) VALUES ($1, $2)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value],
+  )
+}
+
+async function saveBlockForScope(
+  scope: string,
+  block: KnowledgeBlock,
+  syncStatus = 'synced',
+  syncVersion = 0,
+): Promise<void> {
+  const isDeletedVal = block.is_deleted ? 1 : 0
+  const versionVal = block.sync_version || syncVersion || 0
+  const subjectIdVal = block.subjectId || ''
+  const sourceFileIdVal = block.sourceFileId || ''
+  const tagsVal = block.tags ? JSON.stringify(block.tags) : '[]'
+  const masteryVal = block.mastery || 0
+  const reviewAtVal = block.reviewAt || ''
+  const relatedBlockIdsVal = block.relatedBlockIds ? JSON.stringify(block.relatedBlockIds) : '[]'
+
+  await executeForScope(
+    scope,
+    `INSERT INTO knowledge_blocks (
+       id, subject, title, preview, time, source, color, sync_status,
+       is_deleted, sync_version, subject_id, source_file_id, tags, mastery, review_at, related_block_ids
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     ON CONFLICT(id) DO UPDATE SET
+       subject = excluded.subject,
+       title = excluded.title,
+       preview = excluded.preview,
+       time = excluded.time,
+       source = excluded.source,
+       color = excluded.color,
+       sync_status = excluded.sync_status,
+       is_deleted = excluded.is_deleted,
+       sync_version = excluded.sync_version,
+       subject_id = excluded.subject_id,
+       source_file_id = excluded.source_file_id,
+       tags = excluded.tags,
+       mastery = excluded.mastery,
+       review_at = excluded.review_at,
+       related_block_ids = excluded.related_block_ids`,
+    [
+      block.id,
+      block.subject || '',
+      block.title || '',
+      block.preview || '',
+      block.time || '',
+      block.source || '',
+      block.color || '',
+      syncStatus,
+      isDeletedVal,
+      versionVal,
+      subjectIdVal,
+      sourceFileIdVal,
+      tagsVal,
+      masteryVal,
+      reviewAtVal,
+      relatedBlockIdsVal,
+    ],
+  )
+}
+
+async function hardDeleteBlockForScope(scope: string, id: string): Promise<void> {
+  await executeForScope(scope, 'DELETE FROM knowledge_blocks WHERE id = $1', [id])
+}
+
+async function saveTaskForScope(
+  scope: string,
+  task: Task,
+  syncStatus = 'synced',
+  syncVersion = 0,
+): Promise<void> {
+  if (!task.id) {
+    throw new Error('Cannot save a task without an id')
+  }
+  const taskId = task.id
+  const isDeletedVal = task.is_deleted ? 1 : 0
+  const versionVal = task.sync_version || syncVersion || 0
+  const positionVal = task.position || '0'
+  const subjectIdVal = task.subjectId || ''
+  const scheduledAtVal = task.scheduledAt || null
+  const dueAtVal = task.dueAt || null
+  const durationVal = Math.max(0, safeFiniteInt(task.duration, 0))
+  const startTimeVal = task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || null)
+
+  await executeForScope(
+    scope,
+    `INSERT INTO task_blocks (
+       id, name, subject, desc, duration, status, startTime, scheduled_at,
+       due_at, sync_status, is_deleted, sync_version, position, subject_id
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       subject = excluded.subject,
+       desc = excluded.desc,
+       duration = excluded.duration,
+       status = excluded.status,
+       startTime = excluded.startTime,
+       scheduled_at = excluded.scheduled_at,
+       due_at = excluded.due_at,
+       sync_status = excluded.sync_status,
+       is_deleted = excluded.is_deleted,
+       sync_version = excluded.sync_version,
+       position = excluded.position,
+       subject_id = excluded.subject_id`,
+    [
+      taskId,
+      task.name || '',
+      task.subject || '',
+      task.desc || '',
+      durationVal,
+      task.status,
+      startTimeVal,
+      scheduledAtVal,
+      dueAtVal,
+      syncStatus,
+      isDeletedVal,
+      versionVal,
+      positionVal,
+      subjectIdVal,
+    ],
+  )
+}
+
+async function hardDeleteTaskForScope(scope: string, id: string): Promise<void> {
+  await executeForScope(scope, 'DELETE FROM task_blocks WHERE id = $1', [id])
+}
+
+async function saveSourceFileForScope(
+  scope: string,
+  file: SourceFileInput | Record<string, unknown>,
+): Promise<void> {
+  const record = asRecord(file)
+  const fileId = String(record.id || '')
+  const exists = await selectForScope<SourceFileExistingRow>(
+    scope,
+    'SELECT id, subject_id, catalog_json, block_count, payload_json FROM source_files WHERE id = $1',
+    [fileId],
+  )
+  const existingRow = exists[0] ?? null
+  const subjectIdVal = typeof record.subject_id === 'string' && record.subject_id
+    ? record.subject_id
+    : (typeof existingRow?.subject_id === 'string' ? existingRow.subject_id : '')
+  const catalogJsonVal = typeof record.catalog_json === 'string'
+    ? record.catalog_json
+    : (typeof existingRow?.catalog_json === 'string' ? existingRow.catalog_json : '')
+  const blockCountVal = record.block_count !== undefined && record.block_count !== null
+    ? safeFiniteInt(record.block_count, 0)
+    : safeFiniteInt(existingRow?.block_count, 0)
+  const fileSizeVal = Math.max(0, safeFiniteInt(record.file_size ?? record.assetSizeBytes, 0))
+  const createdAtVal = safeFiniteInt(record.created_at, Date.now())
+  const versionVal = safeFiniteInt(record.version, 0)
+  const existingPayload = typeof existingRow?.payload_json === 'string' ? existingRow.payload_json : ''
+  const payloadJsonVal = typeof record.payload_json === 'string' && record.payload_json.trim()
+    ? record.payload_json
+    : existingPayload
+
+  if (existingRow) {
+    await executeForScope(
+      scope,
+      `UPDATE source_files SET
+         subject_id = $1,
+         name = $2,
+         file_path = $3,
+         file_type = $4,
+         file_size = $5,
+         catalog_json = $6,
+         block_count = $7,
+         version = $8,
+         payload_json = $9
+       WHERE id = $10`,
+      [
+        subjectIdVal,
+        String(record.name || ''),
+        String(record.file_path || ''),
+        String(record.file_type || ''),
+        fileSizeVal,
+        catalogJsonVal,
+        blockCountVal,
+        versionVal,
+        payloadJsonVal,
+        fileId,
+      ],
+    )
+    return
+  }
+
+  await executeForScope(
+    scope,
+    `INSERT INTO source_files (
+       id, subject_id, name, file_path, file_type, file_size,
+       catalog_json, block_count, created_at, version, payload_json
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      fileId,
+      subjectIdVal,
+      String(record.name || ''),
+      String(record.file_path || ''),
+      String(record.file_type || ''),
+      fileSizeVal,
+      catalogJsonVal,
+      blockCountVal,
+      createdAtVal,
+      versionVal,
+      payloadJsonVal,
+    ],
+  )
 }
 
 function shouldSkipServerMerge(
@@ -744,11 +967,7 @@ export const localDb = {
   },
 
   async setMetadata(key: string, value: string): Promise<void> {
-    await executeScoped(
-      `INSERT INTO sync_metadata (key, value) VALUES ($1, $2)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      [key, value],
-    )
+    await setMetadataForScope(currentScope(), key, value)
   },
 
   // Knowledge Blocks
@@ -785,75 +1004,29 @@ export const localDb = {
   },
 
   async saveBlock(block: KnowledgeBlock, syncStatus = 'synced', syncVersion = 0): Promise<void> {
-    const isDeletedVal = block.is_deleted ? 1 : 0
-    const versionVal = block.sync_version || syncVersion || 0
-    const subjectIdVal = block.subjectId || ''
-    const sourceFileIdVal = block.sourceFileId || ''
-    const tagsVal = block.tags ? JSON.stringify(block.tags) : '[]'
-    const masteryVal = block.mastery || 0
-    const reviewAtVal = block.reviewAt || ''
-    const relatedBlockIdsVal = block.relatedBlockIds ? JSON.stringify(block.relatedBlockIds) : '[]'
-
-    await executeScoped(
-      `INSERT INTO knowledge_blocks (
-         id, subject, title, preview, time, source, color, sync_status,
-         is_deleted, sync_version, subject_id, source_file_id, tags, mastery, review_at, related_block_ids
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-       ON CONFLICT(id) DO UPDATE SET
-         subject = excluded.subject,
-         title = excluded.title,
-         preview = excluded.preview,
-         time = excluded.time,
-         source = excluded.source,
-         color = excluded.color,
-         sync_status = excluded.sync_status,
-         is_deleted = excluded.is_deleted,
-         sync_version = excluded.sync_version,
-         subject_id = excluded.subject_id,
-         source_file_id = excluded.source_file_id,
-         tags = excluded.tags,
-         mastery = excluded.mastery,
-         review_at = excluded.review_at,
-         related_block_ids = excluded.related_block_ids`,
-      [
-        block.id,
-        block.subject || '',
-        block.title || '',
-        block.preview || '',
-        block.time || '',
-        block.source || '',
-        block.color || '',
-        syncStatus,
-        isDeletedVal,
-        versionVal,
-        subjectIdVal,
-        sourceFileIdVal,
-        tagsVal,
-        masteryVal,
-        reviewAtVal,
-        relatedBlockIdsVal,
-      ],
-    )
+    await saveBlockForScope(currentScope(), block, syncStatus, syncVersion)
   },
 
   async deleteBlock(id: string): Promise<void> {
-    const record = await selectScoped<{ sync_status: string | null }>(
+    const scope = currentScope()
+    const record = await selectForScope<{ sync_status: string | null }>(
+      scope,
       'SELECT sync_status FROM knowledge_blocks WHERE id = $1',
       [id],
     )
     if (record[0]?.sync_status === 'pending_create') {
-      await executeScoped('DELETE FROM knowledge_blocks WHERE id = $1', [id])
+      await executeForScope(scope, 'DELETE FROM knowledge_blocks WHERE id = $1', [id])
       return
     }
-    await executeScoped(
+    await executeForScope(
+      scope,
       'UPDATE knowledge_blocks SET is_deleted = 1, sync_status = $1 WHERE id = $2',
       ['pending_delete', id],
     )
   },
 
   async hardDeleteBlock(id: string): Promise<void> {
-    await executeScoped('DELETE FROM knowledge_blocks WHERE id = $1', [id])
+    await hardDeleteBlockForScope(currentScope(), id)
   },
 
   async getUnsyncedBlocks(): Promise<KnowledgeBlockRow[]> {
@@ -869,16 +1042,18 @@ export const localDb = {
   },
 
   async batchMergeBlocks(serverBlocks: Array<Record<string, unknown>>): Promise<void> {
+    const scope = currentScope()
     for (const block of serverBlocks) {
       const id = typeof block.id === 'string' ? block.id : ''
       if (!id) continue
-      const local = await selectScoped<SyncStatusVersionRow>(
+      const local = await selectForScope<SyncStatusVersionRow>(
+        scope,
         'SELECT sync_status, sync_version FROM knowledge_blocks WHERE id = $1',
         [id],
       )
       if (block.isDeleted || block.is_deleted) {
         if (local.length > 0 && !shouldSkipServerMerge(local, block)) {
-          await this.hardDeleteBlock(id)
+          await hardDeleteBlockForScope(scope, id)
         }
         continue
       }
@@ -910,7 +1085,7 @@ export const localDb = {
         reviewAt: (block.reviewAt || block.review_at || undefined) as string | undefined,
         relatedBlockIds,
       }
-      await this.saveBlock(mappedBlock, 'synced', version)
+      await saveBlockForScope(scope, mappedBlock, 'synced', version)
     }
   },
 
@@ -941,75 +1116,29 @@ export const localDb = {
   },
 
   async saveTask(task: Task, syncStatus = 'synced', syncVersion = 0): Promise<void> {
-    if (!task.id) {
-      throw new Error('Cannot save a task without an id')
-    }
-    const taskId = task.id
-    const isDeletedVal = task.is_deleted ? 1 : 0
-    const versionVal = task.sync_version || syncVersion || 0
-    const positionVal = task.position || '0'
-    const subjectIdVal = task.subjectId || ''
-    const scheduledAtVal = task.scheduledAt || null
-    const dueAtVal = task.dueAt || null
-    const durationVal = Math.max(0, safeFiniteInt(task.duration, 0))
-    const startTimeVal = task.scheduledAt ? formatLocalTimeHHmm(task.scheduledAt) : (task.startTime || null)
-
-    await executeScoped(
-      `INSERT INTO task_blocks (
-         id, name, subject, desc, duration, status, startTime, scheduled_at,
-         due_at, sync_status, is_deleted, sync_version, position, subject_id
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       ON CONFLICT(id) DO UPDATE SET
-         name = excluded.name,
-         subject = excluded.subject,
-         desc = excluded.desc,
-         duration = excluded.duration,
-         status = excluded.status,
-         startTime = excluded.startTime,
-         scheduled_at = excluded.scheduled_at,
-         due_at = excluded.due_at,
-         sync_status = excluded.sync_status,
-         is_deleted = excluded.is_deleted,
-         sync_version = excluded.sync_version,
-         position = excluded.position,
-         subject_id = excluded.subject_id`,
-      [
-        taskId,
-        task.name || '',
-        task.subject || '',
-        task.desc || '',
-        durationVal,
-        task.status,
-        startTimeVal,
-        scheduledAtVal,
-        dueAtVal,
-        syncStatus,
-        isDeletedVal,
-        versionVal,
-        positionVal,
-        subjectIdVal,
-      ],
-    )
+    await saveTaskForScope(currentScope(), task, syncStatus, syncVersion)
   },
 
   async deleteTask(id: string): Promise<void> {
-    const record = await selectScoped<{ sync_status: string | null }>(
+    const scope = currentScope()
+    const record = await selectForScope<{ sync_status: string | null }>(
+      scope,
       'SELECT sync_status FROM task_blocks WHERE id = $1',
       [id],
     )
     if (record[0]?.sync_status === 'pending_create') {
-      await executeScoped('DELETE FROM task_blocks WHERE id = $1', [id])
+      await executeForScope(scope, 'DELETE FROM task_blocks WHERE id = $1', [id])
       return
     }
-    await executeScoped(
+    await executeForScope(
+      scope,
       'UPDATE task_blocks SET is_deleted = 1, sync_status = $1 WHERE id = $2',
       ['pending_delete', id],
     )
   },
 
   async hardDeleteTask(id: string): Promise<void> {
-    await executeScoped('DELETE FROM task_blocks WHERE id = $1', [id])
+    await hardDeleteTaskForScope(currentScope(), id)
   },
 
   async getUnsyncedTasks(): Promise<TaskBlockRow[]> {
@@ -1025,16 +1154,18 @@ export const localDb = {
   },
 
   async batchMergeTasks(serverTasks: Array<Record<string, unknown>>): Promise<void> {
+    const scope = currentScope()
     for (const task of serverTasks) {
       const id = typeof task.id === 'string' ? task.id : ''
       if (!id) continue
-      const local = await selectScoped<SyncStatusVersionRow>(
+      const local = await selectForScope<SyncStatusVersionRow>(
+        scope,
         'SELECT sync_status, sync_version FROM task_blocks WHERE id = $1',
         [id],
       )
       if (task.isDeleted || task.is_deleted) {
         if (local.length > 0 && !shouldSkipServerMerge(local, task)) {
-          await this.hardDeleteTask(id)
+          await hardDeleteTaskForScope(scope, id)
         }
         continue
       }
@@ -1059,7 +1190,7 @@ export const localDb = {
         position: typeof task.position === 'string' && task.position ? task.position : '0',
         subjectId: (task.subjectId || task.subject_id || undefined) as string | undefined,
       }
-      await this.saveTask(mappedTask, 'synced', version)
+      await saveTaskForScope(scope, mappedTask, 'synced', version)
     }
   },
 
@@ -1075,7 +1206,9 @@ export const localDb = {
     entityId: string,
     options: { appliedMutationType: string; serverVersion: number | null; deleted: boolean },
   ): Promise<void> {
-    const rows = await selectScoped<Pick<LocalMutationRow, 'id' | 'action' | 'payload'>>(
+    const scope = currentScope()
+    const rows = await selectForScope<Pick<LocalMutationRow, 'id' | 'action' | 'payload'>>(
+      scope,
       'SELECT id, action, payload FROM local_mutations WHERE entity_type = $1 AND entity_id = $2 AND sync_status = $3 ORDER BY id ASC',
       [entityType, entityId, 'pending'],
     )
@@ -1084,7 +1217,7 @@ export const localDb = {
       const currentAction = String(row.action || '').toLowerCase()
       if (options.deleted) {
         if (currentAction !== 'create') {
-          await executeScoped('DELETE FROM local_mutations WHERE id = $1', [row.id])
+          await executeForScope(scope, 'DELETE FROM local_mutations WHERE id = $1', [row.id])
         }
         continue
       }
@@ -1103,7 +1236,8 @@ export const localDb = {
           // Keep raw payload when not valid JSON
         }
       }
-      await executeScoped(
+      await executeForScope(
+        scope,
         'UPDATE local_mutations SET action = $1, payload = $2 WHERE id = $3',
         [nextAction, nextPayloadRaw, row.id],
       )
@@ -1117,9 +1251,11 @@ export const localDb = {
     action: string,
     payload: unknown,
   ): Promise<void> {
+    const scope = currentScope()
     const normalizedAction = String(action || '').toLowerCase()
     const createdAt = Date.now()
-    const existing = await selectScoped<Pick<LocalMutationRow, 'id' | 'action' | 'payload'>>(
+    const existing = await selectForScope<Pick<LocalMutationRow, 'id' | 'action' | 'payload'>>(
+      scope,
       'SELECT id, action, payload FROM local_mutations WHERE entity_type = $1 AND entity_id = $2 AND sync_status = $3 ORDER BY id ASC',
       [entityType, entityId, 'pending'],
     )
@@ -1136,11 +1272,12 @@ export const localDb = {
       if (hasPendingCreate && normalizedAction === 'delete') {
         for (const row of mutableExisting) {
           if (row.id != null) {
-            await executeScoped('DELETE FROM local_mutations WHERE id = $1', [row.id])
+            await executeForScope(scope, 'DELETE FROM local_mutations WHERE id = $1', [row.id])
           }
         }
         if (inFlightExisting.length === 0) return
-        await executeScoped(
+        await executeForScope(
+          scope,
           `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [clientId, entityType, entityId, 'delete', nextPayloadStr, createdAt, 'pending'],
@@ -1150,13 +1287,14 @@ export const localDb = {
 
       if (hasPendingCreate || normalizedAction === 'update') {
         const coalescedAction = hasPendingCreate ? 'create' : 'update'
-        await executeScoped(
+        await executeForScope(
+          scope,
           'UPDATE local_mutations SET client_id = $1, action = $2, payload = $3, created_at = $4 WHERE id = $5',
           [clientId, coalescedAction, nextPayloadStr, createdAt, latest.id],
         )
         for (const extra of mutableExisting.slice(0, -1)) {
           if (extra.id != null) {
-            await executeScoped('DELETE FROM local_mutations WHERE id = $1', [extra.id])
+            await executeForScope(scope, 'DELETE FROM local_mutations WHERE id = $1', [extra.id])
           }
         }
         return
@@ -1165,10 +1303,11 @@ export const localDb = {
       if (normalizedAction === 'delete') {
         for (const row of mutableExisting) {
           if (row.id != null) {
-            await executeScoped('DELETE FROM local_mutations WHERE id = $1', [row.id])
+            await executeForScope(scope, 'DELETE FROM local_mutations WHERE id = $1', [row.id])
           }
         }
-        await executeScoped(
+        await executeForScope(
+          scope,
           `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [clientId, entityType, entityId, 'delete', nextPayloadStr, createdAt, 'pending'],
@@ -1179,7 +1318,8 @@ export const localDb = {
 
     if (inFlightExisting.length > 0 && normalizedAction !== 'create') {
       const nextPayloadStr = JSON.stringify(preserveFromRows(payload, inFlightExisting))
-      await executeScoped(
+      await executeForScope(
+        scope,
         `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [clientId, entityType, entityId, normalizedAction, nextPayloadStr, createdAt, 'pending'],
@@ -1187,7 +1327,8 @@ export const localDb = {
       return
     }
 
-    await executeScoped(
+    await executeForScope(
+      scope,
       `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [clientId, entityType, entityId, normalizedAction, JSON.stringify(payload), createdAt, 'pending'],
@@ -1297,13 +1438,15 @@ export const localDb = {
   },
 
   async saveSubject(subject: SubjectInput | Record<string, unknown>): Promise<void> {
+    const scope = currentScope()
     const record = asRecord(subject)
     const id = String(record.id || '')
     const name = String(record.name || '')
     const description = String(record.description || '')
     const icon = String(record.icon || '')
     const version = Number(record.version || 0)
-    const existing = await selectScoped<{ id: string; sort_key: string | null }>(
+    const existing = await selectForScope<{ id: string; sort_key: string | null }>(
+      scope,
       'SELECT id, sort_key FROM subjects WHERE id = $1',
       [id],
     )
@@ -1312,7 +1455,8 @@ export const localDb = {
     const sortKeyVal = typeof rawSortKey === 'string' ? rawSortKey : existingSortKey
 
     if (existing.length > 0) {
-      await executeScoped(
+      await executeForScope(
+        scope,
         `UPDATE subjects SET
            name = $1,
            description = $2,
@@ -1325,7 +1469,8 @@ export const localDb = {
       return
     }
 
-    await executeScoped(
+    await executeForScope(
+      scope,
       `INSERT INTO subjects (id, name, description, icon, sort_key, created_at, version)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [id, name, description, icon, sortKeyVal, safeFiniteInt(record.created_at, Date.now()), version],
@@ -1333,14 +1478,17 @@ export const localDb = {
   },
 
   async deleteSubject(id: string): Promise<void> {
+    const scope = currentScope()
     const activeScope = safeCurrentScope()
-    const subjectSources = await selectScoped<SourceFileIdPayloadRow>(
+    const subjectSources = await selectForScope<SourceFileIdPayloadRow>(
+      scope,
       'SELECT id, payload_json FROM source_files WHERE subject_id = $1',
       [id],
     )
     for (const row of subjectSources) {
       if (row.id) {
-        await executeScoped(
+        await executeForScope(
+          scope,
           'DELETE FROM ai_overview_cache WHERE scope_type = $1 AND scope_id = $2',
           ['FILE', String(row.id)],
         )
@@ -1350,14 +1498,14 @@ export const localDb = {
         void deleteCachedDocument(activeScope, parsed.assetId)
       }
     }
-    await executeScoped('DELETE FROM source_files WHERE subject_id = $1', [id])
-    await executeScoped('DELETE FROM ai_overview_cache WHERE subject_id = $1', [id])
-    await executeScoped('DELETE FROM review_states_cache WHERE subject_id = $1', [id])
-    await executeScoped('DELETE FROM subject_stats_cache WHERE subject_id = $1', [id])
-    await executeScoped('DELETE FROM sync_metadata WHERE key = $1', [reviewStatesLoadedMetaKey(id)])
-    await executeScoped('UPDATE knowledge_blocks SET subject_id = NULL WHERE subject_id = $1', [id])
-    await executeScoped('UPDATE task_blocks SET subject_id = NULL WHERE subject_id = $1', [id])
-    await executeScoped('DELETE FROM subjects WHERE id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM source_files WHERE subject_id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM ai_overview_cache WHERE subject_id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM review_states_cache WHERE subject_id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM subject_stats_cache WHERE subject_id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM sync_metadata WHERE key = $1', [reviewStatesLoadedMetaKey(id)])
+    await executeForScope(scope, 'UPDATE knowledge_blocks SET subject_id = NULL WHERE subject_id = $1', [id])
+    await executeForScope(scope, 'UPDATE task_blocks SET subject_id = NULL WHERE subject_id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM subjects WHERE id = $1', [id])
   },
 
   // Source Files CRUD & SourceView Projection
@@ -1392,93 +1540,24 @@ export const localDb = {
   },
 
   async saveSourceFile(file: SourceFileInput | Record<string, unknown>): Promise<void> {
-    const record = asRecord(file)
-    const fileId = String(record.id || '')
-    const exists = await selectScoped<SourceFileExistingRow>(
-      'SELECT id, subject_id, catalog_json, block_count, payload_json FROM source_files WHERE id = $1',
-      [fileId],
-    )
-    const existingRow = exists[0] ?? null
-    const subjectIdVal = typeof record.subject_id === 'string' && record.subject_id
-      ? record.subject_id
-      : (typeof existingRow?.subject_id === 'string' ? existingRow.subject_id : '')
-    const catalogJsonVal = typeof record.catalog_json === 'string'
-      ? record.catalog_json
-      : (typeof existingRow?.catalog_json === 'string' ? existingRow.catalog_json : '')
-    const blockCountVal = record.block_count !== undefined && record.block_count !== null
-      ? safeFiniteInt(record.block_count, 0)
-      : safeFiniteInt(existingRow?.block_count, 0)
-    const fileSizeVal = Math.max(0, safeFiniteInt(record.file_size ?? record.assetSizeBytes, 0))
-    const createdAtVal = safeFiniteInt(record.created_at, Date.now())
-    const versionVal = safeFiniteInt(record.version, 0)
-    const existingPayload = typeof existingRow?.payload_json === 'string' ? existingRow.payload_json : ''
-    const payloadJsonVal = typeof record.payload_json === 'string' && record.payload_json.trim()
-      ? record.payload_json
-      : existingPayload
-
-    if (existingRow) {
-      await executeScoped(
-        `UPDATE source_files SET
-           subject_id = $1,
-           name = $2,
-           file_path = $3,
-           file_type = $4,
-           file_size = $5,
-           catalog_json = $6,
-           block_count = $7,
-           version = $8,
-           payload_json = $9
-         WHERE id = $10`,
-        [
-          subjectIdVal,
-          String(record.name || ''),
-          String(record.file_path || ''),
-          String(record.file_type || ''),
-          fileSizeVal,
-          catalogJsonVal,
-          blockCountVal,
-          versionVal,
-          payloadJsonVal,
-          fileId,
-        ],
-      )
-      return
-    }
-
-    await executeScoped(
-      `INSERT INTO source_files (
-         id, subject_id, name, file_path, file_type, file_size,
-         catalog_json, block_count, created_at, version, payload_json
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [
-        fileId,
-        subjectIdVal,
-        String(record.name || ''),
-        String(record.file_path || ''),
-        String(record.file_type || ''),
-        fileSizeVal,
-        catalogJsonVal,
-        blockCountVal,
-        createdAtVal,
-        versionVal,
-        payloadJsonVal,
-      ],
-    )
+    await saveSourceFileForScope(currentScope(), file)
   },
 
   async deleteSourceFile(id: string): Promise<void> {
+    const scope = currentScope()
     const activeScope = safeCurrentScope()
-    const rows = await selectScoped<PayloadJsonRow>(
+    const rows = await selectForScope<PayloadJsonRow>(
+      scope,
       'SELECT payload_json FROM source_files WHERE id = $1',
       [id],
     )
     const parsed = rows.length > 0 ? parseJsonSafely<SourceView>(rows[0]?.payload_json) : null
-    await executeScoped(
+    await executeForScope(
+      scope,
       'DELETE FROM ai_overview_cache WHERE scope_type = $1 AND scope_id = $2',
       ['FILE', id],
     )
-    await executeScoped('DELETE FROM source_files WHERE id = $1', [id])
+    await executeForScope(scope, 'DELETE FROM source_files WHERE id = $1', [id])
     if (activeScope && parsed?.assetId) {
       void deleteCachedDocument(activeScope, parsed.assetId)
     }
@@ -1486,9 +1565,10 @@ export const localDb = {
 
   async upsertSourceView(subjectId: string, item: SourceView): Promise<void> {
     if (!subjectId || !item.id || item.deletedAt) return
-    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
+    await serializeCacheWrite(`source_files:${subjectId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
       const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN
-      await this.saveSourceFile({
+      await saveSourceFileForScope(scope, {
         id: item.id,
         subject_id: item.subjectId || subjectId,
         name: item.title || '未命名资料',
@@ -1542,33 +1622,36 @@ export const localDb = {
 
   async replaceSubjectSources(subjectId: string, items: SourceView[]): Promise<void> {
     if (!subjectId) return
-    await serializeCacheWrite(`source_files:${subjectId}`, async () => {
-      const activeScope = safeCurrentScope()
+    await serializeCacheWrite(`source_files:${subjectId}`, async (scope) => {
       const activeItems = items.filter((item): item is SourceView & { id: string } => Boolean(item.id && !item.deletedAt))
       const nextIds = new Set(activeItems.map((item) => item.id))
-      const existingRows = await selectScoped<SourceFileIdPayloadRow>(
+      const existingRows = await selectForScope<SourceFileIdPayloadRow>(
+        scope,
         'SELECT id, payload_json FROM source_files WHERE subject_id = $1',
         [subjectId],
       )
 
       for (const row of existingRows) {
+        if (safeCurrentScope() !== scope) return
         const existingId = row.id ? String(row.id) : ''
         if (existingId && !nextIds.has(existingId)) {
           const parsed = parseJsonSafely<SourceView>(row.payload_json)
-          await executeScoped(
+          await executeForScope(
+            scope,
             'DELETE FROM ai_overview_cache WHERE scope_type = $1 AND scope_id = $2',
             ['FILE', existingId],
           )
-          await executeScoped('DELETE FROM source_files WHERE id = $1', [existingId])
-          if (activeScope && parsed?.assetId) {
-            void deleteCachedDocument(activeScope, parsed.assetId)
+          await executeForScope(scope, 'DELETE FROM source_files WHERE id = $1', [existingId])
+          if (parsed?.assetId) {
+            void deleteCachedDocument(scope, parsed.assetId)
           }
         }
       }
 
       for (const item of activeItems) {
+        if (safeCurrentScope() !== scope) return
         const createdAtMs = item.createdAt ? Date.parse(item.createdAt) : NaN
-        await this.saveSourceFile({
+        await saveSourceFileForScope(scope, {
           id: item.id,
           subject_id: item.subjectId || subjectId,
           name: item.title || '未命名资料',
@@ -1595,11 +1678,13 @@ export const localDb = {
 
   async saveSubjectOverviewCache(subjectId: string, view: OverviewResultView): Promise<void> {
     if (!subjectId) return
-    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async () => {
+    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
       const key = subjectOverviewCacheKey(subjectId)
       const updatedAt = view.updatedAt || new Date().toISOString()
       const payload = JSON.stringify(view)
-      await executeScoped(
+      await executeForScope(
+        scope,
         `INSERT INTO ai_overview_cache (
            cache_key, scope_type, scope_id, subject_id, revision_key, payload_json, updated_at
          )
@@ -1619,8 +1704,9 @@ export const localDb = {
   async deleteSubjectOverviewCache(subjectId: string): Promise<void> {
     if (!subjectId) return
     const key = subjectOverviewCacheKey(subjectId)
-    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async () => {
-      await executeScoped('DELETE FROM ai_overview_cache WHERE cache_key = $1', [key])
+    await serializeCacheWrite(`overview:SUBJECT:${subjectId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
+      await executeForScope(scope, 'DELETE FROM ai_overview_cache WHERE cache_key = $1', [key])
     })
   },
 
@@ -1648,16 +1734,20 @@ export const localDb = {
     view: OverviewResultView,
   ): Promise<void> {
     if (!sourceId) return
-    await serializeCacheWrite(`overview:FILE:${sourceId}`, async () => {
+    await serializeCacheWrite(`overview:FILE:${sourceId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
       const revisionKey = (ingestionRevision || view.ingestionRevision || 'latest').trim() || 'latest'
       const key = sourceOverviewCacheKey(sourceId, revisionKey)
       const updatedAt = view.updatedAt || new Date().toISOString()
       const payload = JSON.stringify(view)
-      await executeScoped(
+      await executeForScope(
+        scope,
         'DELETE FROM ai_overview_cache WHERE scope_type = $1 AND scope_id = $2 AND revision_key != $3',
         ['FILE', sourceId, revisionKey],
       )
-      await executeScoped(
+      if (safeCurrentScope() !== scope) return
+      await executeForScope(
+        scope,
         `INSERT INTO ai_overview_cache (
            cache_key, scope_type, scope_id, subject_id, revision_key, payload_json, updated_at
          )
@@ -1676,8 +1766,10 @@ export const localDb = {
 
   async deleteSourceOverviewCache(sourceId: string): Promise<void> {
     if (!sourceId) return
-    await serializeCacheWrite(`overview:FILE:${sourceId}`, async () => {
-      await executeScoped(
+    await serializeCacheWrite(`overview:FILE:${sourceId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
+      await executeForScope(
+        scope,
         'DELETE FROM ai_overview_cache WHERE scope_type = $1 AND scope_id = $2',
         ['FILE', sourceId],
       )
@@ -1708,12 +1800,15 @@ export const localDb = {
 
   async replaceSubjectReviewStates(subjectId: string, states: ReviewState[]): Promise<void> {
     if (!subjectId) return
-    await serializeCacheWrite(`review_states:${subjectId}`, async () => {
-      await executeScoped('DELETE FROM review_states_cache WHERE subject_id = $1', [subjectId])
+    await serializeCacheWrite(`review_states:${subjectId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
+      await executeForScope(scope, 'DELETE FROM review_states_cache WHERE subject_id = $1', [subjectId])
       const now = new Date().toISOString()
       for (const state of states) {
+        if (safeCurrentScope() !== scope) return
         if (!state.knowledgeBlockId) continue
-        await executeScoped(
+        await executeForScope(
+          scope,
           `INSERT INTO review_states_cache (knowledge_block_id, subject_id, payload_json, updated_at)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT(knowledge_block_id) DO UPDATE SET
@@ -1723,14 +1818,17 @@ export const localDb = {
           [state.knowledgeBlockId, subjectId, JSON.stringify(state), state.updatedAt || now],
         )
       }
-      await this.setMetadata(reviewStatesLoadedMetaKey(subjectId), '1')
+      if (safeCurrentScope() !== scope) return
+      await setMetadataForScope(scope, reviewStatesLoadedMetaKey(subjectId), '1')
     })
   },
 
   async upsertReviewState(subjectId: string, state: ReviewState): Promise<void> {
     if (!subjectId || !state.knowledgeBlockId) return
-    await serializeCacheWrite(`review_states:${subjectId}`, async () => {
-      await executeScoped(
+    await serializeCacheWrite(`review_states:${subjectId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
+      await executeForScope(
+        scope,
         `INSERT INTO review_states_cache (knowledge_block_id, subject_id, payload_json, updated_at)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT(knowledge_block_id) DO UPDATE SET
@@ -1766,11 +1864,13 @@ export const localDb = {
     stats: SubjectStats,
   ): Promise<void> {
     if (!subjectId || !timeZone) return
-    await serializeCacheWrite(`stats:${subjectId}`, async () => {
+    await serializeCacheWrite(`stats:${subjectId}`, async (scope) => {
+      if (safeCurrentScope() !== scope) return
       const key = subjectStatsCacheKey(subjectId, days, timeZone)
       const payload = JSON.stringify(stats)
       const updatedAt = stats.generatedAt || new Date().toISOString()
-      await executeScoped(
+      await executeForScope(
+        scope,
         `INSERT INTO subject_stats_cache (cache_key, subject_id, days, time_zone, payload_json, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT(cache_key) DO UPDATE SET
@@ -1782,6 +1882,33 @@ export const localDb = {
         [key, subjectId, days, timeZone, payload, updatedAt],
       )
     })
+  },
+
+  async closeScope(scope: string): Promise<void> {
+    if (!scope) return
+    const inFlightInit = initializingScopes.get(scope)
+    if (inFlightInit) {
+      await inFlightInit.catch(() => undefined)
+    }
+
+    await enqueueScopeOp(scope, async () => {
+      const db = openDatabases.get(scope)
+      if (!db) return
+      try {
+        await db.close(databasePathForScope(scope))
+      } catch {
+        // Ignore database close errors on idle scope teardown
+      } finally {
+        openDatabases.delete(scope)
+        initializedScopes.delete(scope)
+      }
+    })
+  },
+
+  async closeInactiveScopes(activeScope = currentScope()): Promise<void> {
+    const candidates = Array.from(new Set([...openDatabases.keys(), ...initializedScopes]))
+      .filter((scope) => scope !== activeScope)
+    await Promise.all(candidates.map((scope) => this.closeScope(scope)))
   },
 
   async clearScopeStorage(scope: string): Promise<void> {

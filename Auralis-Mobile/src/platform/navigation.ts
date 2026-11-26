@@ -1,25 +1,60 @@
 import type { Router } from 'vue-router'
 
+interface HistoryNavigationInfo {
+  direction?: string
+  type?: string
+}
+
+interface RouterHistoryLike {
+  listen?: (callback: (to: unknown, from: unknown, info: HistoryNavigationInfo) => void) => () => void
+}
+
 let activeRouter: Router | null = null
 let fallbackHomeRoute = '/pages/mobile/home/index'
 let inAppHistoryDepth = 0
-let popstateBound = false
+let pendingProgrammaticBacks = 0
+let hasHistoryListener = false
+let cleanupHistoryListener: (() => void) | null = null
 
-function handlePopstate(): void {
+function handleHistoryPop(info?: HistoryNavigationInfo): void {
+  if (info?.type && info.type !== 'pop') return
+  if (info?.direction && info.direction !== 'back') return
+  if (pendingProgrammaticBacks > 0) {
+    pendingProgrammaticBacks -= 1
+    return
+  }
   if (inAppHistoryDepth > 0) {
     inAppHistoryDepth -= 1
   }
 }
 
 export function bindNavigationRouter(router: Router, options?: { homeRoute?: string }): void {
+  cleanupHistoryListener?.()
+  cleanupHistoryListener = null
+  hasHistoryListener = false
   activeRouter = router
   inAppHistoryDepth = 0
+  pendingProgrammaticBacks = 0
   if (options?.homeRoute) {
     fallbackHomeRoute = options.homeRoute
   }
-  if (!popstateBound && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-    window.addEventListener('popstate', handlePopstate)
-    popstateBound = true
+
+  const history = (router as unknown as { options?: { history?: RouterHistoryLike } }).options?.history
+  if (history && typeof history.listen === 'function') {
+    cleanupHistoryListener = history.listen((_to, _from, info) => {
+      handleHistoryPop(info)
+    })
+    hasHistoryListener = true
+    return
+  }
+
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    const onPopstate = () => handleHistoryPop()
+    window.addEventListener('popstate', onPopstate)
+    cleanupHistoryListener = () => {
+      window.removeEventListener('popstate', onPopstate)
+    }
+    hasHistoryListener = true
   }
 }
 
@@ -43,6 +78,7 @@ export function redirectTo(url: string, options?: { complete?: () => void }): vo
 
 export function reLaunch(url: string): void {
   inAppHistoryDepth = 0
+  pendingProgrammaticBacks = 0
   if (!activeRouter) return
   void activeRouter.replace(url)
 }
@@ -51,6 +87,9 @@ export function navigateBack(): void {
   if (!activeRouter) return
   if (canNavigateBack()) {
     inAppHistoryDepth -= 1
+    if (hasHistoryListener) {
+      pendingProgrammaticBacks += 1
+    }
     activeRouter.back()
     return
   }

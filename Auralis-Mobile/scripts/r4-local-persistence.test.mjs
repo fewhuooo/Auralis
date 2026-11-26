@@ -517,6 +517,59 @@ test('localDb preserves subjects.sortKey, updates source_files.subject_id, sanit
   assert.deepEqual(await localDb.getTasks(), [])
 })
 
+test('localDb pins multi-step writes to initial scope across async switch and closes idle handles without dropping data', async (context) => {
+  let switchMidWrite = false
+  let scopeA = ''
+  let switchedTo = ''
+  const env = setupLocalDbTestEnv(context, {
+    onSelect: (path, sql) => {
+      if (switchMidWrite && scopeA && path.includes(scopeA) && sql.includes('SELECT id, sort_key FROM subjects')) {
+        switchMidWrite = false
+        switchedTo = globalThis.__pinScopeSwitch()
+      }
+    },
+  })
+  const { localDataScope } = await import('../src/services/localDataScope.ts?local-pin-close')
+  const { localDb } = await import('../src/services/localDb.ts?local-pin-close')
+
+  scopeA = localDataScope.activate('user-a-pin', 'dev-1')
+  const scopeB = localDataScope.activate('user-b-pin', 'dev-1')
+  await localDb.init()
+  localDataScope.activate('user-a-pin', 'dev-1')
+  await localDb.init()
+
+  globalThis.__pinScopeSwitch = () => localDataScope.activate('user-b-pin', 'dev-1')
+  switchMidWrite = true
+  try {
+    await localDb.saveSubject({
+      id: 'sub-pinned-a',
+      name: 'Pinned To Scope A',
+      description: 'Must stay in A',
+      icon: 'book',
+      version: 1,
+    })
+  } finally {
+    delete globalThis.__pinScopeSwitch
+  }
+  assert.equal(switchedTo, scopeB)
+  // Scope B must not receive Scope A's in-flight saveSubject write
+  assert.deepEqual(await localDb.getSubjects(), [])
+
+  // Close Scope A idle pool explicitly while Scope B stays active, then verify Scope A data persists on reopen
+  await localDb.closeScope(scopeA)
+  assert.equal(env.openPaths.has(`sqlite:auralis_${scopeA}.db`), false)
+  assert.equal(env.openPaths.has(`sqlite:auralis_${scopeB}.db`), true)
+
+  localDataScope.activate('user-a-pin', 'dev-1')
+  const aSubjects = await localDb.getSubjects()
+  assert.equal(aSubjects.length, 1)
+  assert.equal(aSubjects[0].id, 'sub-pinned-a')
+
+  await localDb.closeInactiveScopes(scopeA)
+  assert.equal(env.openPaths.has(`sqlite:auralis_${scopeA}.db`), true)
+  assert.equal(env.openPaths.has(`sqlite:auralis_${scopeB}.db`), false)
+})
+
 test('tabletNoteRepository persists and queries notes via localDb.executeSql over real SQLite', async (context) => {
   setupLocalDbTestEnv(context)
   const { localDataScope } = await import('../src/services/localDataScope.ts?local-tablet-notes')
