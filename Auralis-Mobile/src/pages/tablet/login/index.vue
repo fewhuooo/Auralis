@@ -156,7 +156,7 @@ onPageShow(redirectIfAuthenticated)
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: clamp(14px, 2.4vh, 28px) clamp(16px, 2.5vw, 32px);
   background:
     radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
     radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
@@ -166,13 +166,13 @@ onPageShow(redirectIfAuthenticated)
 
 .login-wrapper {
   display: flex;
-  width: 100%;
-  max-width: 880px;
-  min-height: 540px;
+  width: min(720px, 76vw, calc(100vw - 32px));
+  min-height: min(420px, calc(100vh - 48px));
+  max-height: calc(100vh - 28px);
   background-color: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-radius: 28px;
+  border-radius: 22px;
   overflow: hidden;
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
@@ -180,13 +180,13 @@ onPageShow(redirectIfAuthenticated)
 }
 
 .brand-side {
-  width: 360px;
+  width: clamp(220px, 38%, 300px);
   background: linear-gradient(155deg, #F7F2EB 0%, #EFE8DC 100%);
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 44px 44px 48px;
+  padding: clamp(20px, 3.2vh, 34px) clamp(20px, 2.6vw, 34px);
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
   box-sizing: border-box;
@@ -232,7 +232,7 @@ onPageShow(redirectIfAuthenticated)
 }
 
 .brand-wordmark {
-  font-size: 46px;
+  font-size: clamp(28px, 3vw, 36px);
   font-weight: 800;
   color: var(--text-primary);
   line-height: 0.95;
@@ -256,14 +256,15 @@ onPageShow(redirectIfAuthenticated)
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 36px 40px;
+  padding: clamp(18px, 3vh, 28px) clamp(20px, 2.8vw, 32px);
   background-color: var(--color-bg-primary);
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
 .login-box {
   width: 100%;
-  max-width: 320px;
+  max-width: 280px;
 }
 
 .compact-brand {
@@ -377,12 +378,12 @@ onPageShow(redirectIfAuthenticated)
   margin: 20px 0 0;
   padding: 0;
   width: 100%;
-  height: 44px;
-  line-height: 44px;
+  height: 38px;
+  line-height: 38px;
   background: var(--accent-gradient);
   color: #FFFFFF;
   border-radius: 12px;
-  font-size: 14.5px;
+  font-size: 13px;
   font-weight: var(--font-weight-semibold);
   display: flex;
   align-items: center;
@@ -424,6 +425,32 @@ onPageShow(redirectIfAuthenticated)
 
 .login-page {
   min-height: 100dvh;
+}
+
+.login-wrapper {
+  min-height: min(420px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 28px);
+}
+
+@media (max-height: 640px) {
+  .auth-toggle,
+  .reset-header {
+    margin-bottom: 16px;
+  }
+
+  .form-stack {
+    gap: 10px;
+  }
+
+  .submit-btn {
+    margin-top: 14px;
+    height: 38px;
+    line-height: 38px;
+  }
+
+  .footer-links {
+    margin-top: 12px;
+  }
 }
 
 @media (max-width: 760px) {

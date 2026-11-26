@@ -392,13 +392,13 @@ onUnmounted(stopClock)
 
 .main-content {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1520px;
   margin: 0 auto;
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 32px 28px;
-  gap: 48px;
+  padding: clamp(16px, 2.6vh, 32px) clamp(18px, 2.4vw, 32px);
+  gap: clamp(20px, 3.2vw, 48px);
   box-sizing: border-box;
 }
 
@@ -424,9 +424,9 @@ onUnmounted(stopClock)
 
 .panel-card {
   background: var(--color-bg-primary, #F7F2EB);
-  border-radius: 24px;
+  border-radius: 18px;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 26px 28px;
+  padding: 18px 20px;
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.02),
     0 12px 30px -4px rgba(0, 0, 0, 0.05),
@@ -479,8 +479,8 @@ onUnmounted(stopClock)
 
 .task-selector-trigger {
   width: 100%;
-  height: 52px;
-  padding: 0 20px;
+  height: 44px;
+  padding: 0 16px;
   border-radius: var(--radius-full);
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -766,7 +766,7 @@ onUnmounted(stopClock)
 }
 
 .stat-val {
-  font-size: 40px;
+  font-size: 32px;
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1;
@@ -800,7 +800,7 @@ onUnmounted(stopClock)
   }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 780px) {
   .t-pomodoro {
     overflow-y: auto;
   }

@@ -501,9 +501,9 @@ const taskCompletionRate = computed(() => {
 }
 
 .stats-pane {
-  max-width: 980px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 22px 26px 84px;
+  padding: clamp(16px, 2vw, 24px) clamp(18px, 2.4vw, 28px) 84px;
   display: flex;
   flex-direction: column;
   gap: 16px;

@@ -1544,20 +1544,20 @@ onPageLoad((options) => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 14px;
-  gap: 14px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   background-color: transparent;
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .history-card {
-  width: 260px;
+  width: clamp(194px, 18vw, 248px);
   flex-shrink: 0;
   height: 100%;
   background-color: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid #EAE6DD;
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--glass-shadow-subtle);
   display: flex;
   flex-direction: column;
@@ -1569,7 +1569,7 @@ onPageLoad((options) => {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 18px 16px 12px;
+  padding: 14px 14px 10px;
   flex-shrink: 0;
 }
 
@@ -1587,7 +1587,7 @@ onPageLoad((options) => {
 
 .history-new-btn {
   margin: 0 14px 12px;
-  height: 40px;
+  height: 34px;
   padding: 0 14px;
   border-radius: 12px;
   background-color: #EEF2E6;
@@ -1596,7 +1596,7 @@ onPageLoad((options) => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--color-sage-ink);
   flex-shrink: 0;
@@ -1642,7 +1642,7 @@ onPageLoad((options) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 12px;
+  padding: 8px 10px;
   border-radius: 12px;
   background-color: transparent;
   border: 1px solid transparent;
@@ -1669,7 +1669,7 @@ onPageLoad((options) => {
 }
 
 .history-title {
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   overflow: hidden;
@@ -1727,7 +1727,7 @@ onPageLoad((options) => {
   height: 100%;
   background-color: var(--color-bg-primary, #F7F2EB);
   border: 1px solid #EAE6DD;
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--glass-shadow-subtle);
   display: flex;
   flex-direction: column;
@@ -1736,8 +1736,8 @@ onPageLoad((options) => {
 }
 
 .chat-header {
-  height: 52px;
-  padding: 0 24px;
+  height: 44px;
+  padding: 0 18px;
   border-bottom: 1px solid rgba(45, 55, 40, 0.06);
   display: flex;
   align-items: center;
@@ -1778,7 +1778,7 @@ onPageLoad((options) => {
 
 .welcome-inner {
   width: 100%;
-  max-width: 680px;
+  max-width: min(760px, 100%);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1794,7 +1794,7 @@ onPageLoad((options) => {
 }
 
 .welcome-title {
-  font-size: 26px;
+  font-size: 21px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   letter-spacing: -0.025em;
@@ -1844,7 +1844,7 @@ onPageLoad((options) => {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  padding: 14px 16px;
+  padding: 11px 14px;
   border-radius: 15px;
   background-color: #FFFFFF;
   border: 1px solid #EAE6DD;
@@ -1865,7 +1865,7 @@ onPageLoad((options) => {
 }
 
 .starter-card-title {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   line-height: 1.38;
@@ -1886,7 +1886,7 @@ onPageLoad((options) => {
 
 .chat-stream {
   width: 100%;
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto;
   padding: 20px 28px 36px;
   box-sizing: border-box;
@@ -1917,7 +1917,7 @@ onPageLoad((options) => {
 }
 
 .user-text {
-  font-size: 15px;
+  font-size: 13.5px;
   line-height: 1.55;
   color: var(--text-primary, #262522);
   letter-spacing: -0.005em;
@@ -2027,7 +2027,7 @@ onPageLoad((options) => {
 .input-dock-inner {
   position: relative;
   width: 100%;
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto;
 }
 
@@ -2090,7 +2090,7 @@ onPageLoad((options) => {
   min-height: 28px;
   max-height: 124px;
   padding: 2px 4px 0 0;
-  font-size: 14.5px;
+  font-size: 13.5px;
   line-height: 1.5;
   color: var(--text-primary);
   background-color: transparent;

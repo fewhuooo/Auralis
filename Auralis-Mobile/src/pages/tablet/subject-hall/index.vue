@@ -375,7 +375,7 @@ onMounted(async () => {
 .t-subject-hall {
   width: 100%;
   height: 100%;
-  padding: 16px 20px;
+  padding: var(--tablet-shell-pad);
   background-color: transparent;
   overflow-y: auto;
   box-sizing: border-box;
@@ -383,11 +383,11 @@ onMounted(async () => {
 
 .hall-content {
   width: 100%;
-  max-width: 1360px;
+  max-width: 1680px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 28px 32px;
-  border-radius: 20px;
+  padding: 16px 20px;
+  border-radius: 16px;
   box-sizing: border-box;
 }
 
@@ -396,7 +396,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
@@ -407,7 +407,7 @@ onMounted(async () => {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.03em;
@@ -486,17 +486,17 @@ onMounted(async () => {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(206px, 1fr));
+  gap: 12px;
 }
 
 .subject-card {
-  padding: 20px 22px;
-  border-radius: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-height: 158px;
+  gap: 8px;
+  min-height: 128px;
   cursor: pointer;
   box-sizing: border-box;
   transition: transform 0.22s var(--ease-out), box-shadow 0.22s ease, border-color 0.22s ease;
@@ -523,9 +523,9 @@ onMounted(async () => {
 }
 
 .s-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
@@ -570,14 +570,14 @@ onMounted(async () => {
 }
 
 .s-name {
-  font-size: 17px;
+  font-size: 14.5px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   letter-spacing: -0.015em;
 }
 
 .s-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
   display: -webkit-box;

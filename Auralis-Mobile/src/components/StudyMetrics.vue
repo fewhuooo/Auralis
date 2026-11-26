@@ -364,4 +364,45 @@ defineExpose({
   height: 12px;
   margin-top: 6px;
 }
+
+:global(html[data-app-target='tablet']) .bento-grid {
+  gap: 7px;
+}
+
+:global(html[data-app-target='tablet']) .bento-tile {
+  padding: 9px 12px;
+  border-radius: 12px;
+}
+
+:global(html[data-app-target='tablet']) .bento-tile.is-featured {
+  padding: 10px 14px;
+}
+
+:global(html[data-app-target='tablet']) .featured-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+:global(html[data-app-target='tablet']) .tile-main {
+  gap: 2px;
+}
+
+:global(html[data-app-target='tablet']) .metric-value {
+  font-size: 17px;
+}
+
+:global(html[data-app-target='tablet']) .bento-tile.is-featured .metric-value {
+  font-size: 22px;
+}
+
+:global(html[data-app-target='tablet']) .pc-stat-cell {
+  padding: 9px 11px;
+  gap: 6px;
+  border-radius: 12px;
+}
+
+:global(html[data-app-target='tablet']) .pc-stat-value {
+  font-size: 17px;
+}
 </style>

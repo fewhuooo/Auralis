@@ -1391,8 +1391,8 @@ onUnmounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 14px 18px 18px;
-  gap: 16px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   overflow: hidden;
   box-sizing: border-box;
   background-color: transparent;
@@ -1414,9 +1414,9 @@ onUnmounted(() => {
 }
 
 .studio-left {
-  flex: 3.8;
-  min-width: 340px;
-  max-width: 450px;
+  flex: 3.6;
+  min-width: clamp(248px, 25vw, 310px);
+  max-width: 400px;
 }
 
 .studio-right {
@@ -1432,22 +1432,22 @@ onUnmounted(() => {
 }
 
 .studio-left-inner {
-  padding: 20px 18px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   box-sizing: border-box;
 }
 
 .studio-right-inner {
-  padding: 26px 32px;
-  max-width: 960px;
+  padding: 18px 22px;
+  max-width: 1120px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 /* ===== Left Panel Cards ===== */
@@ -1463,15 +1463,15 @@ onUnmounted(() => {
 }
 
 .user-profile-card {
-  padding: 18px 20px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
 .user-avatar {
-  width: 58px;
-  height: 58px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: linear-gradient(135deg, #8B9A6E 0%, #6E8052 100%);
   box-shadow:
@@ -1484,7 +1484,7 @@ onUnmounted(() => {
 }
 
 .avatar-initial {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   color: #FAF7F2;
   letter-spacing: -0.5px;
@@ -1793,7 +1793,7 @@ onUnmounted(() => {
 
 /* ===== Right Panel Settings Groups ===== */
 .settings-title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.03em;
@@ -1839,10 +1839,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 22px;
+  padding: 10px 16px;
   border-bottom: 1px solid rgba(45, 55, 40, 0.05);
   gap: 20px;
-  min-height: 54px;
+  min-height: 44px;
   box-sizing: border-box;
 }
 
@@ -2454,12 +2454,11 @@ onUnmounted(() => {
 
 @media (max-width: 1150px) {
   .studio-left {
-    min-width: 300px;
     flex: 3.6;
   }
 
   .studio-right-inner {
-    padding: 20px 22px;
+    padding: 18px 22px;
   }
 }
 
@@ -2481,7 +2480,7 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 760px) {
   .profile-studio {
     flex-direction: column;
     overflow-y: auto;

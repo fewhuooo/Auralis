@@ -12,7 +12,7 @@
         <div
           class="active-capsule-indicator"
           :style="{
-            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * 52 : 0}px)`,
+            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * navItemStepPx : 0}px)`,
             opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
           }"
         >
@@ -153,6 +153,8 @@ const syncBadgeClass = computed(() => {
   return 'status-connected'
 })
 
+const navItemStepPx = 44
+
 const navItems = [
   { path: '/pages/tablet/dashboard/index', icon: 'home', label: '首页' },
   { path: '/pages/tablet/subject-hall/index', icon: 'book', label: '学科' },
@@ -251,10 +253,11 @@ const navigate = (path: string) => {
     linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   overflow: hidden;
   position: relative;
+  box-sizing: border-box;
 }
 
 .sidebar {
-  width: 68px;
+  width: var(--tablet-sidebar-width);
   height: 100%;
   background-color: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -273,13 +276,13 @@ const navigate = (path: string) => {
 
 .logo-area {
   width: 100%;
-  padding: 20px 0 16px;
+  padding: 12px 0 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-bottom: 1px solid rgba(45, 55, 40, 0.06);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   cursor: pointer;
   transition: transform 0.2s var(--ease-out);
 }
@@ -298,7 +301,7 @@ const navigate = (path: string) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
 }
 
@@ -307,7 +310,7 @@ const navigate = (path: string) => {
   top: 0;
   left: 0;
   right: 0;
-  height: 44px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -319,25 +322,25 @@ const navigate = (path: string) => {
 .nav-active-bar {
   position: absolute;
   left: 0;
-  top: 12px;
+  top: 10px;
   width: 3.5px;
-  height: 20px;
+  height: 18px;
   background: var(--accent-gradient);
   border-radius: 0 4px 4px 0;
   box-shadow: 0 0 8px rgba(139, 154, 110, 0.55);
 }
 
 .capsule-inner {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   background-color: rgba(139, 154, 110, 0.16);
 }
 
 .nav-item {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -357,7 +360,7 @@ const navigate = (path: string) => {
 
 .sidebar-footer {
   width: 100%;
-  padding: 14px 0 18px;
+  padding: 10px 0 12px;
   border-top: 1px solid rgba(45, 55, 40, 0.06);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   display: flex;
@@ -375,14 +378,14 @@ const navigate = (path: string) => {
 }
 
 .sidebar-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 700;
   color: #FFFFFF;
   box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
@@ -533,5 +536,16 @@ const navigate = (path: string) => {
 
 .tablet-layout {
   height: 100dvh;
+}
+
+@media (max-height: 660px) {
+  .logo-area {
+    padding: 10px 0 8px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-footer {
+    padding: 8px 0 10px;
+  }
 }
 </style>

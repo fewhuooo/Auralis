@@ -136,7 +136,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .tier2-drawer.is-open {
-  width: 272px;
+  width: clamp(204px, 18.5vw, 256px);
   opacity: 1;
   border-width: 1px;
   pointer-events: auto;
@@ -144,7 +144,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .drawer-content {
-  width: 272px;
+  width: clamp(204px, 18.5vw, 256px);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -152,7 +152,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .drawer-header {
-  height: 50px;
+  height: 42px;
   padding: 0 14px 0 16px;
   display: flex;
   align-items: center;
@@ -292,7 +292,7 @@ const subjectOverviewSubtitle = computed(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px 10px 13px;
+  padding: 8px 8px 8px 11px;
   border-radius: 12px;
   cursor: pointer;
   transition: background-color 0.16s ease;

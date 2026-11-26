@@ -192,7 +192,7 @@ onMounted(() => {
   height: 100dvh;
 }
 
-@media (min-width: 540px) {
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
   .layout-container {
     max-width: 440px;
     margin: 0 auto;

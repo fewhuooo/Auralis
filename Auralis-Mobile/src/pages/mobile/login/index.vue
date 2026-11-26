@@ -151,7 +151,6 @@ onPageShow(redirectIfAuthenticated)
 .login-page {
   position: relative;
   width: 100%;
-  max-width: 440px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -177,7 +176,7 @@ onPageShow(redirectIfAuthenticated)
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 340px;
+  max-width: 360px;
   margin: 0 auto;
   animation: uiFadeUp 0.36s var(--ease-out) both;
 }
@@ -332,8 +331,9 @@ onPageShow(redirectIfAuthenticated)
   min-height: 100dvh;
 }
 
-@media (min-width: 540px) {
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
   .login-page {
+    max-width: 440px;
     background-color: var(--glass-bg);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);

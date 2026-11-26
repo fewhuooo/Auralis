@@ -761,7 +761,7 @@ function handleBack() {
 
 .study-card {
   width: 100%;
-  max-width: 440px;
+  max-width: 560px;
   flex: 1;
   min-height: 0;
   padding: 18px 18px 16px;
@@ -1081,7 +1081,7 @@ function handleBack() {
 
 .action-dock {
   width: 100%;
-  max-width: 440px;
+  max-width: 560px;
   margin: 0 auto;
   padding: 6px 18px 6px;
   box-sizing: border-box;

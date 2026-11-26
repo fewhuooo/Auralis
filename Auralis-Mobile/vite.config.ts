@@ -2,6 +2,21 @@ import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, loadEnv, type Plugin, type PluginOption, type UserConfig } from 'vite'
 
+function createAppTargetHtmlPlugin(target: 'phone' | 'tablet'): Plugin {
+  const viewportScale =
+    target === 'tablet'
+      ? 'initial-scale=0.85, maximum-scale=0.85, minimum-scale=0.85'
+      : 'initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'
+  return {
+    name: 'auralis-app-target-html',
+    transformIndexHtml(html) {
+      return html
+        .replace('<html lang="zh-CN">', `<html lang="zh-CN" data-app-target="${target}">`)
+        .replace('initial-scale=1.0, maximum-scale=1.0', viewportScale)
+    },
+  }
+}
+
 function createPackagedPptFallbackPlugin(): Plugin {
   const virtualId = '\0auralis-packaged-ppt-fallback'
   return {
@@ -51,7 +66,7 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => {
   }
 
   return {
-    plugins: [vue(), ...tabletPlugins],
+    plugins: [vue(), createAppTargetHtmlPlugin(target), ...tabletPlugins],
     publicDir: isTablet ? 'public-tablet' : false,
     define: {
       __AURALIS_APP_TARGET__: JSON.stringify(target),

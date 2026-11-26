@@ -2111,7 +2111,6 @@ onUnmounted(() => {
   bottom: 0;
   left: 0;
   margin: 0 auto;
-  max-width: 440px;
   padding: 0 20px 24px;
   background-color: rgba(28, 28, 26, 0.24);
   backdrop-filter: blur(10px) saturate(140%);
@@ -2124,8 +2123,16 @@ onUnmounted(() => {
   animation: dropdownMaskIn 0.18s ease-out both;
 }
 
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
+  .subject-dropdown-mask {
+    max-width: 440px;
+  }
+}
+
 .subject-dropdown-panel {
   width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
   max-height: 64vh;
   max-height: 64dvh;
   padding: 16px 16px 14px;

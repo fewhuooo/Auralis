@@ -1124,7 +1124,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .ai-panel {
   position: relative;
-  width: 320px;
+  width: clamp(260px, 23vw, 336px);
   height: 100%;
   flex-shrink: 0;
   border-radius: var(--radius-card);
@@ -1559,11 +1559,11 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1180px) {
   .ai-panel {
-    width: 288px;
+    width: clamp(260px, 23vw, 336px);
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .ai-panel {
     width: 100%;
     height: 360px;

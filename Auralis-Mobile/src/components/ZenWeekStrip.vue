@@ -194,4 +194,26 @@ const monthTitle = computed(() => {
 .w-dot.visible {
   opacity: 1;
 }
+
+:global(html[data-app-target='tablet']) .week-nav {
+  min-height: 18px;
+}
+
+:global(html[data-app-target='tablet']) .week-day {
+  gap: 2px;
+  padding: 2px 0;
+}
+
+:global(html[data-app-target='tablet']) .w-label {
+  font-size: 10px;
+}
+
+:global(html[data-app-target='tablet']) .w-num-circle {
+  width: 28px;
+  height: 28px;
+}
+
+:global(html[data-app-target='tablet']) .w-num {
+  font-size: 12.5px;
+}
 </style>

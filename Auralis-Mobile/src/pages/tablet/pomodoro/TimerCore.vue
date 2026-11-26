@@ -219,8 +219,8 @@ const focusStore = useFocusStore()
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 28px;
-  margin-top: 26px;
+  gap: 20px;
+  margin-top: 18px;
 }
 
 .ctrl-btn {
@@ -250,8 +250,8 @@ const focusStore = useFocusStore()
 }
 
 .main-btn {
-  width: 76px;
-  height: 76px;
+  width: 62px;
+  height: 62px;
   border-radius: 50%;
   background: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
   display: flex;
@@ -299,7 +299,7 @@ const focusStore = useFocusStore()
   box-sizing: border-box;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 780px) {
   .timer-core {
     padding-top: 46px;
     padding-bottom: 12px;
@@ -308,6 +308,26 @@ const focusStore = useFocusStore()
   .time-row {
     top: 4px;
     left: 4px;
+  }
+}
+
+@media (max-height: 640px) {
+  .phase-status {
+    margin-top: 12px;
+  }
+
+  .progress-dots {
+    margin-top: 10px;
+  }
+
+  .controls {
+    margin-top: 16px;
+    gap: 20px;
+  }
+
+  .main-btn {
+    width: 62px;
+    height: 62px;
   }
 }
 </style>

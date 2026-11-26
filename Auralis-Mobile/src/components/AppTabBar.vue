@@ -174,8 +174,13 @@ function goToAi() {
   right: 0;
   bottom: 0;
   margin: 0 auto;
-  max-width: 440px;
   z-index: var(--z-index-tabbar, 800);
+}
+
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
+  .app-bar-shell {
+    max-width: 440px;
+  }
 }
 
 .app-bar-scrim {
@@ -199,6 +204,8 @@ function goToAi() {
   pointer-events: none;
   position: relative;
   z-index: 1;
+  max-width: 560px;
+  margin: 0 auto;
   padding: 0 20px calc(14px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
