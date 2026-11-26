@@ -90,23 +90,27 @@ import {
 function handleKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   if (previewImageState.visible) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
     closeImagePreview()
     return
   }
   if (confirmState.visible) {
+    event.preventDefault()
+    event.stopImmediatePropagation()
     resolveConfirm(false)
   }
 }
 
 onMounted(() => {
   if (typeof window !== 'undefined') {
-    window.addEventListener('keydown', handleKeydown)
+    window.addEventListener('keydown', handleKeydown, true)
   }
 })
 
 onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
-    window.removeEventListener('keydown', handleKeydown)
+    window.removeEventListener('keydown', handleKeydown, true)
   }
 })
 </script>

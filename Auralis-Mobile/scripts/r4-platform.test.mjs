@@ -30,6 +30,15 @@ import { sendHttpRequest } from '../src/platform/http.ts'
 import { openExternalUrl } from '../src/platform/opener.ts'
 import { getDeviceSystemInfo, getViewportMetrics } from '../src/platform/system.ts'
 import { openWebSocket } from '../src/platform/websocket.ts'
+import { handleEnterKey, resetTextareaHeight, syncTextareaAutoHeight } from '../src/utils/domHelpers.ts'
+import {
+  buildCalendarCells,
+  formatDateKey,
+  formatTimeHHmm,
+  parseDateKeyParts,
+  parseTimeHHmm,
+  shiftMonth,
+} from '../src/utils/pickerHelpers.ts'
 
 function resolveTsCandidate(baseUrl, relPath) {
   if (/\.[a-z0-9]+$/i.test(relPath)) return null
@@ -575,4 +584,59 @@ test('utils/filePicker handles missing body, click failure cleanup, file selecti
   assert.equal(await focusCancelPromise, null)
   assert.equal(focusDom.children.size, 0)
   assert.equal(focusDom.win.listenerCount('focus'), 0)
+})
+
+test('utils/domHelpers guards IME composition, Shift+Enter, preventDefault, and resizes native/uni textareas', () => {
+  let calls = 0
+  let prevented = 0
+  const fire = () => {
+    calls += 1
+  }
+
+  handleEnterKey({ key: 'Enter', isComposing: true }, fire)
+  handleEnterKey({ key: 'Enter', keyCode: 229 }, fire)
+  handleEnterKey({ key: 'Enter', shiftKey: true }, fire, { allowShiftNewline: true, preventDefault: true })
+  handleEnterKey({ key: 'Escape' }, fire)
+  assert.equal(calls, 0)
+
+  handleEnterKey({ key: 'Enter', shiftKey: false, preventDefault: () => { prevented += 1 } }, fire, {
+    allowShiftNewline: true,
+    preventDefault: true,
+  })
+  assert.equal(calls, 1)
+  assert.equal(prevented, 1)
+
+  const nativeTextarea = { tagName: 'TEXTAREA', style: { height: '' }, scrollHeight: 185 }
+  syncTextareaAutoHeight({ currentTarget: nativeTextarea }, 140)
+  assert.equal(nativeTextarea.style.height, '140px')
+  resetTextareaHeight(nativeTextarea)
+  assert.equal(nativeTextarea.style.height, '')
+
+  const innerTextarea = { tagName: 'TEXTAREA', style: { height: '' }, scrollHeight: 72 }
+  const uniTextareaHost = { tagName: 'UNI-TEXTAREA', querySelector: (sel) => (sel === 'textarea' ? innerTextarea : null) }
+  syncTextareaAutoHeight({ target: uniTextareaHost, currentTarget: uniTextareaHost }, 140)
+  assert.equal(innerTextarea.style.height, '72px')
+  resetTextareaHeight(uniTextareaHost)
+  assert.equal(innerTextarea.style.height, '')
+})
+
+test('utils/pickerHelpers validates calendar dates, month rollovers, 42-cell grids, and HH:mm clamping', () => {
+  assert.deepEqual(parseDateKeyParts('2026-02-28'), { year: 2026, month: 2, day: 28 })
+  assert.equal(parseDateKeyParts('2026-02-30'), null)
+  assert.equal(parseDateKeyParts('invalid'), null)
+  assert.equal(formatDateKey(2026, 3, 5), '2026-03-05')
+
+  assert.deepEqual(shiftMonth(2026, 12, 1), { year: 2027, month: 1 })
+  assert.deepEqual(shiftMonth(2026, 1, -1), { year: 2025, month: 12 })
+
+  const cells = buildCalendarCells(2026, 11)
+  assert.equal(cells.length, 42)
+  assert.equal(cells.filter(c => c.inMonth).length, 30)
+  assert.equal(cells.some(c => c.key === '2026-11-26' && c.inMonth), true)
+
+  assert.deepEqual(parseTimeHHmm('09:30'), { hour: 9, minute: 30 })
+  assert.deepEqual(parseTimeHHmm('29:99'), { hour: 23, minute: 59 })
+  assert.deepEqual(parseTimeHHmm('bad'), { hour: 9, minute: 0 })
+  assert.equal(formatTimeHHmm(7, 5), '07:05')
+  assert.equal(formatTimeHHmm(-3, 75), '00:59')
 })

@@ -236,7 +236,12 @@
                     </text>
                   </view>
 
-                  <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onTaskDueDateChange">
+                  <ZenDatePicker
+                    v-model="taskForm.dueDateKey"
+                    :fallback-date="selectedDateKey"
+                    :disabled="submittingCapture"
+                    title="选择截止日期"
+                  >
                     <view class="due-picker-pill num-tabular" :class="{ filled: Boolean(taskForm.dueDateKey) }">
                       <LineIcon
                         name="calendar"
@@ -247,7 +252,7 @@
                         {{ taskForm.dueDateKey || '请选择截止日期' }}
                       </text>
                     </view>
-                  </picker>
+                  </ZenDatePicker>
                 </view>
               </template>
 
@@ -340,6 +345,7 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
+import ZenDatePicker from '@/components/ZenDatePicker.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { confirmDialog, showToast } from '@/platform/feedback'
 import { onPageShow } from '@/platform/lifecycle'
@@ -626,10 +632,6 @@ async function submitInlineSubject() {
       creatingSubject.value = false
     }
   }
-}
-
-function onTaskDueDateChange(event: { detail?: { value?: string } }) {
-  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
 }
 
 async function submitTask() {

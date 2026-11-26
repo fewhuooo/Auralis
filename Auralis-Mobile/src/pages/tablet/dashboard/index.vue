@@ -253,25 +253,29 @@
               <view class="schedule-row-card">
                 <text class="schedule-date-label">排入 {{ selectedDateHeading }}</text>
                 <view class="schedule-controls">
-                  <picker
+                  <ZenTimePicker
                     v-if="taskForm.scheduled"
-                    mode="time"
-                    :value="taskForm.timeHHmm"
+                    v-model="taskForm.timeHHmm"
                     :disabled="savingTask"
-                    @change="onModalTimeChange"
+                    title="选择开始时间"
                   >
                     <view class="time-pill num-tabular">
                       <LineIcon name="clock" size="13px" color="#76855B" />
                       <text>{{ taskForm.timeHHmm }}</text>
                     </view>
-                  </picker>
-                  <switch
-                    :checked="taskForm.scheduled"
+                  </ZenTimePicker>
+                  <button
+                    type="button"
+                    role="switch"
+                    :aria-checked="taskForm.scheduled"
+                    aria-label="按时段排期"
                     :disabled="savingTask"
-                    color="#8B9A6E"
-                    style="transform: scale(0.84); transform-origin: right center;"
-                    @change="onScheduledSwitch"
-                  />
+                    class="zen-switch"
+                    :class="{ checked: taskForm.scheduled }"
+                    @click="taskForm.scheduled = !taskForm.scheduled"
+                  >
+                    <span class="zen-switch-thumb"></span>
+                  </button>
                 </view>
               </view>
             </view>
@@ -291,17 +295,17 @@
                 >清除</text>
               </view>
 
-              <picker
-                mode="date"
-                :value="taskForm.dueDateKey || selectedDateKey"
+              <ZenDatePicker
+                v-model="taskForm.dueDateKey"
+                :fallback-date="selectedDateKey"
                 :disabled="savingTask"
-                @change="onModalDueDateChange"
+                title="选择截止日期"
               >
                 <view class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
                   <LineIcon name="calendar" size="14px" :color="taskForm.dueDateKey ? '#76855B' : '#8B9A6E'" />
                   <text class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</text>
                 </view>
-              </picker>
+              </ZenDatePicker>
 
               <view class="quick-date-row">
                 <view
@@ -344,6 +348,8 @@ import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
+import ZenDatePicker from '@/components/ZenDatePicker.vue'
+import ZenTimePicker from '@/components/ZenTimePicker.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { confirmDialog, showToast } from '@/platform/feedback'
@@ -537,19 +543,6 @@ const dueDatePresets = computed(() => [
 
 function toggleDuePreset(key: string) {
   taskForm.dueDateKey = taskForm.dueDateKey === key ? '' : key
-}
-
-function onScheduledSwitch(event: Event) {
-  const detail = (event as Event & { detail?: { value?: boolean } }).detail
-  taskForm.scheduled = Boolean(detail?.value)
-}
-
-function onModalTimeChange(event: { detail?: { value?: string } }) {
-  if (event?.detail?.value) taskForm.timeHHmm = event.detail.value
-}
-
-function onModalDueDateChange(event: { detail?: { value?: string } }) {
-  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
 }
 
 async function submitCreateTask() {
@@ -1229,6 +1222,36 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.zen-switch {
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 9999px;
+  background: rgba(28, 28, 26, 0.16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.zen-switch.checked {
+  background: #8B9A6E;
+}
+
+.zen-switch-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: transform 0.18s ease;
+}
+
+.zen-switch.checked .zen-switch-thumb {
+  transform: translateX(18px);
 }
 
 .time-pill {
