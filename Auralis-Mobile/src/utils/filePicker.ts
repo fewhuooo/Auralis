@@ -27,11 +27,11 @@ export function normalizeBrowserFile(file: File): LocalUploadFile {
 }
 
 export function pickLocalDocument(): Promise<LocalUploadFile | null> {
-  if (typeof document === 'undefined') {
+  if (typeof document === 'undefined' || !document.body) {
     return Promise.reject(new Error('当前环境暂不支持文件选择'))
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = SUPPORTED_UPLOAD_EXTENSIONS.join(',')
@@ -41,6 +41,7 @@ export function pickLocalDocument(): Promise<LocalUploadFile | null> {
 
     let settled = false
     let cancelTimer: ReturnType<typeof setTimeout> | null = null
+    const win = typeof window !== 'undefined' ? window : null
 
     const cleanup = () => {
       if (cancelTimer) {
@@ -49,7 +50,7 @@ export function pickLocalDocument(): Promise<LocalUploadFile | null> {
       }
       input.removeEventListener('change', handleChange)
       input.removeEventListener('cancel', handleCancel)
-      window.removeEventListener('focus', handleWindowFocus)
+      win?.removeEventListener('focus', handleWindowFocus)
       input.remove()
     }
 
@@ -77,9 +78,18 @@ export function pickLocalDocument(): Promise<LocalUploadFile | null> {
 
     input.addEventListener('change', handleChange)
     input.addEventListener('cancel', handleCancel)
-    window.addEventListener('focus', handleWindowFocus, { once: true })
-    document.body.appendChild(input)
-    input.click()
+    win?.addEventListener('focus', handleWindowFocus, { once: true })
+
+    try {
+      document.body.appendChild(input)
+      input.click()
+    } catch (error) {
+      if (!settled) {
+        settled = true
+        cleanup()
+        reject(error)
+      }
+    }
   })
 }
 

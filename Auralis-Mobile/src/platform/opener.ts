@@ -1,5 +1,12 @@
 export function openExternalUrl(url: string): boolean {
   if (typeof window === 'undefined' || typeof window.open !== 'function') return false
-  const opened = window.open(url, '_blank', 'noopener,noreferrer')
-  return Boolean(opened)
+  // Passing noopener/noreferrer in windowFeatures forces window.open() to return null per HTML spec.
+  const opened = window.open(url, '_blank')
+  if (!opened) return false
+  try {
+    opened.opener = null
+  } catch {
+    // Ignore cross-origin restrictions when severing opener
+  }
+  return true
 }
