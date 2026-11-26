@@ -51,7 +51,7 @@ function rememberEvent(event: RealtimeEvent): boolean {
   return true
 }
 
-export async function connectRealtimeSync() {
+export async function connectRealtimeSync(options?: { resetBackoff?: boolean }) {
   const auth = useAuthStore()
   const targetIdentity = auth.user?.id && auth.serverDeviceId ? `${auth.user.id}:${auth.serverDeviceId}` : ''
   if (!auth.isAuthenticated || !targetIdentity) return
@@ -63,7 +63,15 @@ export async function connectRealtimeSync() {
     disconnectRealtimeSync()
   }
 
+  if (options?.resetBackoff) {
+    reconnectAttempt = 0
+  }
+
   if (socketTask && activeSocketIdentity === targetIdentity) return
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
   if (activeConnectFlight && activeConnectFlight.seq === connectSeq && activeConnectFlight.identity === targetIdentity) {
     return activeConnectFlight.promise
   }

@@ -1,19 +1,31 @@
 package com.auralis.mobile
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   private var appWebView: WebView? = null
+  private var hasPaused = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    enableEdgeToEdge()
+    enableEdgeToEdge(
+      statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+      navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+    )
     super.onCreate(savedInstanceState)
+
+    WindowCompat.getInsetsController(window, window.decorView).apply {
+      isAppearanceLightStatusBars = true
+      isAppearanceLightNavigationBars = true
+    }
 
     val contentView = findViewById<View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(contentView) { view, insets ->
@@ -35,6 +47,9 @@ class MainActivity : TauriActivity() {
         webView.evaluateJavascript(
           "(!window.dispatchEvent(new CustomEvent('auralis-android-back', { cancelable: true }))).toString()"
         ) { result ->
+          if (isFinishing || isDestroyed) {
+            return@evaluateJavascript
+          }
           if (result == "\"true\"" || result == "true") {
             return@evaluateJavascript
           }
@@ -50,5 +65,35 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     appWebView = webView
+  }
+
+  override fun onPause() {
+    super.onPause()
+    hasPaused = true
+    if (!isFinishing && !isDestroyed) {
+      appWebView?.evaluateJavascript(
+        "window.dispatchEvent(new CustomEvent('auralis-app-pause'));",
+        null,
+      )
+    }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    if (!hasPaused) {
+      return
+    }
+    hasPaused = false
+    if (!isFinishing && !isDestroyed) {
+      appWebView?.evaluateJavascript(
+        "window.dispatchEvent(new CustomEvent('auralis-app-resume'));",
+        null,
+      )
+    }
+  }
+
+  override fun onDestroy() {
+    appWebView = null
+    super.onDestroy()
   }
 }

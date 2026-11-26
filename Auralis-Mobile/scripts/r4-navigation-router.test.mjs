@@ -4,6 +4,22 @@ import test from 'node:test'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import {
+  handleAndroidBack,
+  installAndroidBackBridge,
+  registerBackHandler,
+} from '../src/platform/backButton.ts'
+import {
+  closeImagePreview,
+  confirmState,
+  loadingState,
+  openConfirm,
+  openImagePreview,
+  openLoading,
+  closeLoading,
+  previewImageState,
+  resolveConfirm,
+} from '../src/platform/feedbackState.ts'
+import {
   bindNavigationRouter,
   canNavigateBack,
   getCurrentRoutePath,
@@ -180,7 +196,9 @@ test('platform/lifecycle normalizes query params and dispatches visibility show/
   globalThis.__lifecycleTestState = lifecycleState
 
   const docListeners = new Map()
+  const winListeners = new Map()
   const prevDoc = globalThis.document
+  const prevWin = globalThis.window
   const mockDocument = {
     visibilityState: 'visible',
     addEventListener(type, fn) {
@@ -193,7 +211,19 @@ test('platform/lifecycle normalizes query params and dispatches visibility show/
       for (const fn of [...(docListeners.get(type) ?? [])]) fn()
     },
   }
+  const mockWindow = {
+    addEventListener(type, fn) {
+      winListeners.set(type, [...(winListeners.get(type) ?? []), fn])
+    },
+    removeEventListener(type, fn) {
+      winListeners.set(type, (winListeners.get(type) ?? []).filter((f) => f !== fn))
+    },
+    dispatch(type) {
+      for (const fn of [...(winListeners.get(type) ?? [])]) fn()
+    },
+  }
   Object.defineProperty(globalThis, 'document', { configurable: true, value: mockDocument })
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: mockWindow })
 
   const loader = registerHooks({
     resolve(specifier, ctx, nextResolve) {
@@ -238,6 +268,7 @@ test('platform/lifecycle normalizes query params and dispatches visibility show/
     loader.deregister()
     delete globalThis.__lifecycleTestState
     Object.defineProperty(globalThis, 'document', { configurable: true, value: prevDoc })
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: prevWin })
   })
 
   const { onAppHide, onAppShow, onPageHide, onPageLoad, onPageShow } = await import(
@@ -263,24 +294,217 @@ test('platform/lifecycle normalizes query params and dispatches visibility show/
   for (const fn of lifecycleState.mounted) fn()
   assert.deepEqual(events, ['page:show'])
   assert.equal((docListeners.get('visibilitychange') ?? []).length, 4)
+  assert.equal((winListeners.get('auralis-app-pause') ?? []).length, 4)
+  assert.equal((winListeners.get('auralis-app-resume') ?? []).length, 4)
 
-  // Redundant visible event without prior hidden transition must NOT re-fire show callbacks
+  // Redundant visible/resume events without prior hidden/pause transition must NOT re-fire show callbacks
   mockDocument.dispatch('visibilitychange')
+  mockWindow.dispatch('auralis-app-resume')
   assert.deepEqual(events, ['page:show'])
 
+  // Native Android pause + WebView hidden visibilitychange must fire hide callbacks ONLY once
+  mockWindow.dispatch('auralis-app-pause')
   mockDocument.visibilityState = 'hidden'
   mockDocument.dispatch('visibilitychange')
   assert.deepEqual(events, ['page:show', 'page:hide', 'app:hide'])
 
+  // Native Android resume + WebView visible visibilitychange must fire show callbacks ONLY once
+  mockWindow.dispatch('auralis-app-resume')
   mockDocument.visibilityState = 'visible'
   mockDocument.dispatch('visibilitychange')
   assert.deepEqual(events, ['page:show', 'page:hide', 'app:hide', 'page:show', 'app:show'])
 
+  // Native pause -> resume WITHOUT any visibilitychange still triggers hide and show cleanly
+  mockWindow.dispatch('auralis-app-pause')
+  mockWindow.dispatch('auralis-app-resume')
+  assert.deepEqual(events, [
+    'page:show',
+    'page:hide',
+    'app:hide',
+    'page:show',
+    'app:show',
+    'page:hide',
+    'app:hide',
+    'page:show',
+    'app:show',
+  ])
+
   for (const fn of lifecycleState.activated) fn()
   for (const fn of lifecycleState.deactivated) fn()
-  assert.equal(events.filter((e) => e === 'page:show').length, 3)
-  assert.equal(events.filter((e) => e === 'page:hide').length, 2)
+  assert.equal(events.filter((e) => e === 'page:show').length, 4)
+  assert.equal(events.filter((e) => e === 'page:hide').length, 3)
 
   for (const fn of lifecycleState.unmounted) fn()
   assert.equal((docListeners.get('visibilitychange') ?? []).length, 0)
+  assert.equal((winListeners.get('auralis-app-pause') ?? []).length, 0)
+  assert.equal((winListeners.get('auralis-app-resume') ?? []).length, 0)
+})
+
+test('platform/backButton resolves overlay priority, LIFO modals, secondary routes, and root pass-through', async (context) => {
+  const routes = [
+    { path: '/pages/mobile/home/index', component: { render: () => null } },
+    { path: '/pages/mobile/learn/index', component: { render: () => null } },
+    { path: '/pages/mobile/review/index', component: { render: () => null } },
+    { path: '/pages/mobile/ai-search/index', component: { render: () => null } },
+    { path: '/pages/mobile/login/index', component: { render: () => null } },
+    { path: '/pages/tablet/dashboard/index', component: { render: () => null } },
+    { path: '/pages/tablet/subject-hall/index', component: { render: () => null } },
+    { path: '/pages/tablet/workspace/index', component: { render: () => null } },
+    { path: '/pages/tablet/handwriting/index', component: { render: () => null } },
+    { path: '/pages/tablet/ai-search/index', component: { render: () => null } },
+  ]
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes,
+  })
+  await router.replace('/pages/mobile/home/index')
+  await router.isReady()
+  bindNavigationRouter(router, { homeRoute: '/pages/mobile/home/index' })
+
+  const winListeners = new Map()
+  const prevWin = globalThis.window
+  const mockWin = {
+    addEventListener(type, fn) {
+      winListeners.set(type, [...(winListeners.get(type) ?? []), fn])
+    },
+    removeEventListener(type, fn) {
+      winListeners.set(type, (winListeners.get(type) ?? []).filter((f) => f !== fn))
+    },
+    dispatchBack() {
+      let defaultPrevented = false
+      const event = {
+        get defaultPrevented() {
+          return defaultPrevented
+        },
+        preventDefault() {
+          defaultPrevented = true
+        },
+      }
+      for (const fn of [...(winListeners.get('auralis-android-back') ?? [])]) {
+        fn(event)
+      }
+      return defaultPrevented
+    },
+  }
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: mockWin })
+
+  let returnRoute = ''
+  const triggeredReturns = []
+  const disposers = []
+  context.after(() => {
+    for (const dispose of disposers) dispose()
+    closeImagePreview()
+    resolveConfirm(false)
+    closeLoading()
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: prevWin })
+  })
+
+  const disposeBridge = installAndroidBackBridge({
+    consumeReturnRoute: () => {
+      const next = returnRoute
+      returnRoute = ''
+      return next
+    },
+    triggerReturn: (duration) => triggeredReturns.push(duration),
+  })
+  disposers.push(disposeBridge)
+
+  // Priority: preview image -> confirm -> LIFO registered handlers (loading does not trap)
+  const closedModals = []
+  let innerOpen = true
+  let outerOpen = true
+  disposers.push(registerBackHandler(() => {
+    if (!outerOpen) return false
+    outerOpen = false
+    closedModals.push('outer')
+    return true
+  }))
+  disposers.push(registerBackHandler(() => false))
+  disposers.push(registerBackHandler(() => {
+    if (!innerOpen) return false
+    innerOpen = false
+    closedModals.push('inner')
+    return true
+  }))
+
+  openLoading('同步中...')
+  openImagePreview('https://example.test/diagram.png')
+  const confirmPromise = openConfirm({ title: '删除确认', content: '确认删除？' })
+
+  assert.equal(mockWin.dispatchBack(), true)
+  assert.equal(previewImageState.visible, false)
+  assert.equal(confirmState.visible, true)
+
+  assert.equal(mockWin.dispatchBack(), true)
+  assert.equal(confirmState.visible, false)
+  assert.equal(await confirmPromise, false)
+
+  assert.equal(mockWin.dispatchBack(), true)
+  assert.deepEqual(closedModals, ['inner'])
+  assert.equal(mockWin.dispatchBack(), true)
+  assert.deepEqual(closedModals, ['inner', 'outer'])
+  assert.equal(loadingState.visible, true)
+  closeLoading()
+
+  // Router history navigation takes precedence over secondary fallback
+  navigateTo('/pages/mobile/review/index')
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(mockWin.dispatchBack(), true)
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(getCurrentRoutePath(), '/pages/mobile/home/index')
+  assert.equal(triggeredReturns.at(-1), 360)
+
+  // AI Search opened via redirectTo consumes saved returnRoute cleanly
+  returnRoute = '/pages/mobile/learn/index'
+  redirectTo('/pages/mobile/ai-search/index')
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(mockWin.dispatchBack(), true)
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(getCurrentRoutePath(), '/pages/mobile/learn/index')
+  assert.equal(returnRoute, '')
+
+  // AI Search without saved returnRoute falls back to mobile home
+  redirectTo('/pages/mobile/ai-search/index')
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(handleAndroidBack({ consumeReturnRoute: () => returnRoute }), true)
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(getCurrentRoutePath(), '/pages/mobile/home/index')
+
+  // Review reached via redirect/deep-link does NOT consume AI returnRoute and falls back to learn
+  returnRoute = '/pages/mobile/pomodoro/index'
+  redirectTo('/pages/mobile/review/index')
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(mockWin.dispatchBack(), true)
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(getCurrentRoutePath(), '/pages/mobile/learn/index')
+  assert.equal(returnRoute, '/pages/mobile/pomodoro/index')
+
+  // Tablet secondary routes fall back to tablet subject-hall
+  redirectTo('/pages/tablet/workspace/index')
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(mockWin.dispatchBack(), true)
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(getCurrentRoutePath(), '/pages/tablet/subject-hall/index')
+
+  redirectTo('/pages/tablet/handwriting/index')
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(mockWin.dispatchBack(), true)
+  await new Promise((resolve) => setTimeout(resolve, 15))
+  assert.equal(getCurrentRoutePath(), '/pages/tablet/subject-hall/index')
+
+  // Top-level root routes must NOT consume Android Back (let Android exit/background cleanly)
+  for (const rootPath of [
+    '/pages/mobile/home/index',
+    '/pages/mobile/learn/index',
+    '/pages/mobile/login/index',
+    '/pages/tablet/dashboard/index',
+    '/pages/tablet/ai-search/index',
+  ]) {
+    redirectTo(rootPath)
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    assert.equal(mockWin.dispatchBack(), false, `Expected root route ${rootPath} not to prevent default`)
+  }
+
+  disposeBridge()
+  assert.equal((winListeners.get('auralis-android-back') ?? []).length, 0)
 })

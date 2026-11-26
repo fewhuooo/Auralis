@@ -19,51 +19,81 @@ export function onPageLoad(callback: (query: Record<string, string | undefined>)
   callback(normalizeQuery(route.query))
 }
 
-export function onPageShow(callback: () => void): void {
-  let wasHidden = false
+function subscribeForegroundTransitions(
+  onHide?: () => void,
+  onShow?: () => void,
+): () => void {
+  let isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
+  const markHidden = () => {
+    if (isHidden) return
+    isHidden = true
+    onHide?.()
+  }
+
+  const markVisible = () => {
+    if (!isHidden) return
+    isHidden = false
+    onShow?.()
+  }
+
   const handleVisibility = () => {
     if (typeof document === 'undefined') return
     if (document.visibilityState === 'hidden') {
-      wasHidden = true
+      markHidden()
       return
     }
-    if (document.visibilityState === 'visible' && wasHidden) {
-      wasHidden = false
-      callback()
+    if (document.visibilityState === 'visible') {
+      markVisible()
     }
   }
 
+  const hasDoc = typeof document !== 'undefined' && typeof document.addEventListener === 'function'
+  const hasWin = typeof window !== 'undefined' && typeof window.addEventListener === 'function'
+
+  if (hasDoc) {
+    document.addEventListener('visibilitychange', handleVisibility)
+  }
+  if (hasWin) {
+    window.addEventListener('auralis-app-pause', markHidden)
+    window.addEventListener('auralis-app-resume', markVisible)
+  }
+
+  return () => {
+    if (hasDoc) {
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+    if (hasWin) {
+      window.removeEventListener('auralis-app-pause', markHidden)
+      window.removeEventListener('auralis-app-resume', markVisible)
+    }
+  }
+}
+
+export function onPageShow(callback: () => void): void {
+  let stopTransitions: (() => void) | null = null
+
   onMounted(() => {
     callback()
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions = subscribeForegroundTransitions(undefined, callback)
   })
   onActivated(() => callback())
   onUnmounted(() => {
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions?.()
+    stopTransitions = null
   })
 }
 
 export function onPageHide(callback: () => void): void {
-  const handleVisibility = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      callback()
-    }
-  }
+  let stopTransitions: (() => void) | null = null
 
   onMounted(() => {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions = subscribeForegroundTransitions(callback, undefined)
   })
   onDeactivated(() => callback())
   onUnmounted(() => {
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions?.()
+    stopTransitions = null
   })
 }
 
@@ -74,46 +104,25 @@ export function onAppLaunch(callback: () => void | Promise<void>): void {
 }
 
 export function onAppShow(callback: () => void): void {
-  let wasHidden = false
-  const handleVisibility = () => {
-    if (typeof document === 'undefined') return
-    if (document.visibilityState === 'hidden') {
-      wasHidden = true
-      return
-    }
-    if (document.visibilityState === 'visible' && wasHidden) {
-      wasHidden = false
-      callback()
-    }
-  }
+  let stopTransitions: (() => void) | null = null
 
   onMounted(() => {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions = subscribeForegroundTransitions(undefined, callback)
   })
   onUnmounted(() => {
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions?.()
+    stopTransitions = null
   })
 }
 
 export function onAppHide(callback: () => void): void {
-  const handleVisibility = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      callback()
-    }
-  }
+  let stopTransitions: (() => void) | null = null
 
   onMounted(() => {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions = subscribeForegroundTransitions(callback, undefined)
   })
   onUnmounted(() => {
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
+    stopTransitions?.()
+    stopTransitions = null
   })
 }

@@ -3,19 +3,24 @@
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
+import { onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
+import { installAndroidBackBridge } from '@/platform/backButton'
 import { ensureFeedbackHost } from '@/platform/feedback'
 import { onAppHide, onAppLaunch, onAppShow } from '@/platform/lifecycle'
+import { subscribeNetworkStatus } from '@/platform/network'
 import { connectRealtimeSync, disconnectRealtimeSync } from '@/api/sync'
 import { localDb } from '@/services/localDb'
 import { cursorKeyForAuth } from '@/services/syncController'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
+import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSyncStore } from '@/store/useSyncStore'
 
 let activeRuntimeKey = ''
 let runtimeFlight: { token: symbol; key: string; promise: Promise<void> } | null = null
+let stopBackBridge: (() => void) | null = null
+let stopNetworkWatch: (() => void) | null = null
 
 async function startAuthenticatedRuntime() {
   const authStore = useAuthStore()
@@ -65,6 +70,20 @@ async function startAuthenticatedRuntime() {
 onAppLaunch(async () => {
   void ensureFeedbackHost()
   const authStore = useAuthStore()
+  const layoutStore = useLayoutStore()
+
+  stopBackBridge = installAndroidBackBridge({
+    consumeReturnRoute: () => layoutStore.consumeReturnRoute(),
+    triggerReturn: (duration) => layoutStore.triggerReturn(duration),
+  })
+
+  stopNetworkWatch = subscribeNetworkStatus((online) => {
+    if (!online) return
+    if (!authStore.isAuthenticated || runtimeFlight) return
+    const focusStore = useFocusStore()
+    void useSyncStore().triggerSync().then(() => focusStore.flushPendingSessions())
+    void connectRealtimeSync({ resetBackoff: true })
+  })
 
   watch(
     () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
@@ -86,7 +105,9 @@ onAppLaunch(async () => {
     { flush: 'sync' },
   )
 
-  if (authStore.token && await authStore.restoreSession()) {
+  if (authStore.isAuthenticated) {
+    await startAuthenticatedRuntime()
+  } else if (authStore.token && await authStore.restoreSession()) {
     await startAuthenticatedRuntime()
   }
 })
@@ -98,11 +119,18 @@ onAppShow(() => {
   focusStore.reconcileNow(true)
   if (runtimeFlight) return
   void useSyncStore().triggerSync().then(() => focusStore.flushPendingSessions())
-  void connectRealtimeSync()
+  void connectRealtimeSync({ resetBackoff: true })
 })
 
 onAppHide(() => {
   disconnectRealtimeSync()
+})
+
+onUnmounted(() => {
+  stopBackBridge?.()
+  stopBackBridge = null
+  stopNetworkWatch?.()
+  stopNetworkWatch = null
 })
 </script>
 
