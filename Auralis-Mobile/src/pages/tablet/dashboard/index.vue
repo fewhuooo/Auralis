@@ -978,6 +978,11 @@ onUnmounted(() => {
   border-color: rgba(0, 0, 0, 0.05);
 }
 
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-close-btn.is-disabled {
   opacity: 0.4;
   pointer-events: none;
@@ -1089,6 +1094,10 @@ onUnmounted(() => {
   color: var(--color-sage-dark);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
   transform: translateY(-1px);
+}
+
+.subject-chip:active {
+  transform: scale(0.95);
 }
 
 .subject-chip.active {
@@ -1284,8 +1293,13 @@ onUnmounted(() => {
   transition: background-color 0.16s ease;
 }
 
-.due-clear-btn:hover {
+.due-clear-btn:hover,
+.due-clear-btn:active {
   background: rgba(139, 154, 110, 0.12);
+}
+
+.due-clear-btn:active {
+  transform: scale(0.95);
 }
 
 .due-picker-box {
@@ -1308,6 +1322,11 @@ onUnmounted(() => {
 
 .due-picker-box:hover {
   border-color: rgba(139, 154, 110, 0.4);
+}
+
+.due-picker-box:active {
+  border-color: rgba(139, 154, 110, 0.55);
+  transform: scale(0.985);
 }
 
 .due-picker-box.has-value {
@@ -1345,6 +1364,12 @@ onUnmounted(() => {
 .due-preset-chip:hover {
   border-color: var(--color-zen-sage);
   color: var(--color-sage-dark);
+}
+
+.due-preset-chip:active {
+  border-color: var(--color-zen-sage);
+  background: rgba(139, 154, 110, 0.12);
+  transform: scale(0.95);
 }
 
 .due-preset-chip.active {
@@ -1403,6 +1428,11 @@ onUnmounted(() => {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -1412,6 +1442,10 @@ onUnmounted(() => {
 .modal-btn-primary:hover:not(:disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 @media (min-width: 1360px) {

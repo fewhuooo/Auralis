@@ -398,6 +398,11 @@ const navigate = (path: string) => {
   box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.28);
 }
 
+.sidebar-avatar-entry:active .sidebar-avatar {
+  transform: scale(0.93);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 2px 8px rgba(139, 154, 110, 0.2);
+}
+
 .avatar-sync-badge {
   position: absolute;
   right: -2px;
@@ -410,6 +415,11 @@ const navigate = (path: string) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: transform 0.16s var(--ease-out);
+}
+
+.avatar-sync-badge:active {
+  transform: scale(0.88);
 }
 
 .avatar-sync-dot {

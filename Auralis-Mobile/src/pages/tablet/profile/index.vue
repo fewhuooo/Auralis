@@ -2425,7 +2425,14 @@ onUnmounted(() => {
   background-color: #F7F2EB;
 }
 
-.cell-btn.danger:hover:not(.is-disabled) {
+.cell-btn:active:not(.is-disabled) {
+  border-color: var(--border-strong);
+  background-color: #EFEBE2;
+  transform: scale(0.95);
+}
+
+.cell-btn.danger:hover:not(.is-disabled),
+.cell-btn.danger:active:not(.is-disabled) {
   background-color: rgba(201, 59, 59, 0.08);
   border-color: var(--color-danger);
 }
@@ -2448,8 +2455,20 @@ onUnmounted(() => {
   background-color: rgba(139, 154, 110, 0.08);
 }
 
+.model-chip:active {
+  border-color: #8B9A6E;
+  color: #637748;
+  background-color: rgba(139, 154, 110, 0.14);
+  transform: scale(0.95);
+}
+
 .eye-toggle-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
+}
+
+.eye-toggle-btn:active {
+  background-color: rgba(0, 0, 0, 0.09);
+  transform: translateY(-50%) scale(0.92);
 }
 
 @media (max-width: 1150px) {

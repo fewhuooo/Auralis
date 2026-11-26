@@ -243,9 +243,47 @@ html[data-app-target='tablet'] .ui-seg-item {
   font-size: 12px;
 }
 
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+a,
+[role='button'],
+[role='tab'],
+[role='checkbox'],
+[role='option'],
+[role='switch'],
+[role='menuitem'],
+.ui-btn,
+.ui-icon-btn,
+.ui-seg-item {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.zen-touch-pressed {
+  animation: zenTouchPress 85ms var(--ease-out) forwards;
+}
+
+.zen-touch-releasing {
+  animation: zenTouchRelease 180ms var(--ease-spring) forwards;
+}
+
+@keyframes zenTouchPress {
+  from { scale: 1; filter: brightness(1); }
+  to { scale: var(--zen-press-scale, 0.955); filter: brightness(0.95); }
+}
+
+@keyframes zenTouchRelease {
+  from { scale: var(--zen-press-scale, 0.955); filter: brightness(0.95); }
+  to { scale: 1; filter: brightness(1); }
 }
 
 body {
@@ -377,7 +415,7 @@ textarea {
 }
 
 .ui-btn:active {
-  transform: scale(0.975);
+  transform: scale(0.965);
 }
 
 .ui-btn[disabled],
@@ -396,6 +434,11 @@ textarea {
   box-shadow: 0 4px 14px rgba(118, 135, 88, 0.22);
 }
 
+.ui-btn-primary:active {
+  filter: brightness(0.94);
+  box-shadow: 0 2px 8px rgba(118, 135, 88, 0.18);
+}
+
 .ui-btn-secondary {
   background-color: var(--glass-sub-bg);
   backdrop-filter: var(--glass-blur-soft);
@@ -409,6 +452,11 @@ textarea {
   border-color: var(--border-accent);
 }
 
+.ui-btn-secondary:active {
+  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.08);
+}
+
 .ui-btn-ghost {
   background-color: transparent;
   color: var(--text-secondary);
@@ -418,9 +466,17 @@ textarea {
   background-color: rgba(45, 55, 40, 0.04);
 }
 
+.ui-btn-ghost:active {
+  background-color: rgba(45, 55, 40, 0.07);
+}
+
 .ui-btn-danger {
   background-color: var(--color-danger-bg);
   color: var(--color-danger);
+}
+
+.ui-btn-danger:active {
+  background-color: rgba(201, 59, 59, 0.16);
 }
 
 .ui-icon-btn {
@@ -451,7 +507,9 @@ textarea {
 }
 
 .ui-icon-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
+  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.12);
 }
 
 .ui-input {
@@ -513,7 +571,16 @@ textarea {
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.16s var(--ease-out);
+}
+
+.ui-seg-item:active {
+  transform: scale(0.96);
+}
+
+.ui-seg-item:not(.active):active {
+  background-color: rgba(139, 154, 110, 0.09);
+  color: var(--text-primary);
 }
 
 .ui-seg-item.active {

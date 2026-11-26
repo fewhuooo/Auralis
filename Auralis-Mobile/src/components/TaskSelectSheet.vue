@@ -199,12 +199,18 @@ function choose(task: Task | null) {
   border-radius: 12px;
   margin-bottom: 8px;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.14s var(--ease-out);
 }
 
 .task-option:hover {
   background-color: rgba(139, 154, 110, 0.10);
   border-color: rgba(139, 154, 110, 0.30);
+}
+
+.task-option:active {
+  background-color: rgba(139, 154, 110, 0.14);
+  border-color: rgba(139, 154, 110, 0.36);
+  transform: scale(0.985);
 }
 
 .task-option.is-selected {

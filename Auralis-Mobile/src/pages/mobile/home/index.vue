@@ -1446,6 +1446,13 @@ onUnmounted(() => {
   color: var(--color-sage-dark);
 }
 
+.chip-item:active,
+.subject-chip:active {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.1);
+  transform: scale(0.95);
+}
+
 .chip-item.active,
 .subject-chip.active {
   background-color: rgba(139, 154, 110, 0.14);
@@ -1541,6 +1548,11 @@ onUnmounted(() => {
   border-color: rgba(139, 154, 110, 0.4);
 }
 
+.due-picker-pill:active {
+  border-color: rgba(139, 154, 110, 0.55);
+  transform: scale(0.985);
+}
+
 .due-picker-pill.filled {
   border-color: var(--color-zen-sage);
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.14);
@@ -1568,6 +1580,13 @@ onUnmounted(() => {
   text-align: center;
   cursor: pointer;
   box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.16s var(--ease-out);
+}
+
+.file-drop-box:active {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.08);
+  transform: scale(0.985);
 }
 
 .file-drop-name {

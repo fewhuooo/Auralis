@@ -11,6 +11,11 @@
 
         <div v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
           <div
+            class="auth-seg-thumb"
+            :class="{ 'is-register': mode === 'register' }"
+            aria-hidden="true"
+          ></div>
+          <div
             class="ui-seg-item"
             :class="{ active: mode === 'login', 'is-disabled': pending }"
             role="tab"
@@ -197,7 +202,40 @@ onPageShow(redirectIfAuthenticated)
 }
 
 .mode-switch {
+  position: relative;
   margin-bottom: 22px;
+}
+
+.auth-seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 9px) / 2);
+  border-radius: 9px;
+  background: var(--accent-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 2px 10px rgba(118, 135, 88, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 0;
+  transition: transform 0.24s var(--ease-spring);
+}
+
+.auth-seg-thumb.is-register {
+  transform: translateX(calc(100% + 3px));
+}
+
+.mode-switch .ui-seg-item {
+  position: relative;
+  z-index: 1;
+}
+
+.mode-switch .ui-seg-item.active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: #FFFFFF;
 }
 
 .ui-seg-item.is-disabled {
@@ -267,9 +305,16 @@ onPageShow(redirectIfAuthenticated)
   font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.14s ease, transform 0.14s var(--ease-out);
+}
+
+.code-button:active:not([disabled]) {
+  opacity: 0.72;
+  transform: scale(0.95);
 }
 
 .code-button[disabled] {
@@ -324,6 +369,12 @@ onPageShow(redirectIfAuthenticated)
   color: var(--text-muted);
   padding: 4px 10px;
   cursor: pointer;
+  transition: opacity 0.14s ease, color 0.14s ease;
+}
+
+.link-btn:active {
+  opacity: 0.7;
+  color: var(--text-primary);
 }
 
 .login-viewport,

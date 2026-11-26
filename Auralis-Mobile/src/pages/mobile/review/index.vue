@@ -926,6 +926,12 @@ function handleBack() {
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;
+  transition: transform 0.14s var(--ease-out), background-color 0.14s ease;
+}
+
+.reopen-pill:active {
+  transform: scale(0.95);
+  background-color: rgba(139, 154, 110, 0.1);
 }
 
 .content-zone {
@@ -1050,6 +1056,11 @@ function handleBack() {
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
   cursor: pointer;
+  transition: transform 0.14s var(--ease-out), background-color 0.14s ease;
+}
+
+.selftest-size-chip:active {
+  transform: scale(0.94);
 }
 
 .selftest-size-chip.active {
@@ -1077,6 +1088,12 @@ function handleBack() {
   gap: 6px;
   font-size: 13.5px;
   font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: transform 0.14s var(--ease-out);
+}
+
+.action-capsule:active:not(.is-disabled) {
+  transform: scale(0.97);
 }
 
 .action-dock {
@@ -1113,6 +1130,12 @@ function handleBack() {
   gap: 6px;
   font-size: 14px;
   font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: transform 0.14s var(--ease-out);
+}
+
+.dock-btn:active:not(.is-disabled) {
+  transform: scale(0.97);
 }
 
 .dock-rate-btn {

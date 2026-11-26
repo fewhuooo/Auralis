@@ -508,6 +508,10 @@ onMounted(async () => {
   box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.36), 0 12px 30px rgba(45, 55, 40, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.90);
 }
 
+.subject-card:active {
+  transform: scale(0.982);
+}
+
 .subject-card:hover .card-arrow {
   transform: translateX(3px);
 }
@@ -562,6 +566,11 @@ onMounted(async () => {
 
 .icon-action-btn:hover {
   border-color: var(--border-accent);
+}
+
+.icon-action-btn:active {
+  border-color: var(--border-accent);
+  transform: scale(0.9);
 }
 
 .icon-action-btn.danger:hover {
@@ -625,6 +634,12 @@ onMounted(async () => {
 .add-card:hover {
   border-color: var(--color-zen-sage);
   background-color: rgba(139, 154, 110, 0.08);
+}
+
+.add-card:active {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.12);
+  transform: scale(0.982);
 }
 
 .add-plus-btn {
@@ -702,6 +717,11 @@ onMounted(async () => {
 .modal-close-btn:hover {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.05);
+}
+
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .modal-close-btn.is-disabled {
@@ -845,6 +865,10 @@ onMounted(async () => {
   transform: translateY(-1px);
 }
 
+.icon-option:active {
+  transform: scale(0.93);
+}
+
 .icon-option.selected {
   background: rgba(139, 154, 110, 0.16);
   border-color: var(--color-zen-sage);
@@ -906,6 +930,11 @@ onMounted(async () => {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -915,6 +944,10 @@ onMounted(async () => {
 .modal-btn-primary:hover:not(:disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 @media (max-width: 760px) {

@@ -342,6 +342,11 @@ function handleSubmit() {
   border-color: rgba(0, 0, 0, 0.05);
 }
 
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-body {
   padding: 8px 28px 18px;
   overflow-y: auto;
@@ -370,6 +375,12 @@ function handleSubmit() {
 .drop-zone.is-active {
   border-color: var(--color-zen-sage);
   background: rgba(139, 154, 110, 0.08);
+}
+
+.drop-zone:active {
+  border-color: var(--color-zen-sage);
+  background: rgba(139, 154, 110, 0.12);
+  transform: scale(0.985);
 }
 
 .drop-zone.has-file {
@@ -519,6 +530,10 @@ function handleSubmit() {
   transform: translateY(-1px);
 }
 
+.subject-chip:active {
+  transform: scale(0.95);
+}
+
 .subject-chip.is-active {
   background: rgba(139, 154, 110, 0.14);
   border-color: var(--color-zen-sage);
@@ -592,6 +607,11 @@ function handleSubmit() {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -601,5 +621,9 @@ function handleSubmit() {
 .modal-btn-primary:hover:not(:disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 </style>

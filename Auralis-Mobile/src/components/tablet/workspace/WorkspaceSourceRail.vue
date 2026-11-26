@@ -209,6 +209,11 @@ const subjectOverviewSubtitle = computed(() => {
   background: var(--color-bg-tertiary);
 }
 
+.drawer-subject-entry:active {
+  background: var(--color-bg-tertiary);
+  transform: scale(0.985);
+}
+
 .drawer-subject-entry.is-active {
   border-color: rgba(139, 154, 110, 0.42);
   background: linear-gradient(90deg, rgba(139, 154, 110, 0.16) 0%, rgba(139, 154, 110, 0.05) 100%);
@@ -302,6 +307,11 @@ const subjectOverviewSubtitle = computed(() => {
   background: var(--color-bg-tertiary);
 }
 
+.drawer-item:active {
+  background: var(--color-bg-tertiary);
+  transform: scale(0.985);
+}
+
 .drawer-item.is-active {
   background: linear-gradient(90deg, rgba(139, 154, 110, 0.16) 0%, rgba(139, 154, 110, 0.04) 100%);
 }
@@ -392,6 +402,12 @@ const subjectOverviewSubtitle = computed(() => {
 .drawer-item-delete:hover {
   opacity: 1;
   background: var(--color-danger-bg);
+}
+
+.drawer-item-delete:active {
+  opacity: 1;
+  background: var(--color-danger-bg);
+  transform: scale(0.9);
 }
 
 .drawer-skeletons {

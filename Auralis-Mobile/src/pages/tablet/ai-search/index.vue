@@ -1654,6 +1654,11 @@ onPageLoad((options) => {
   background-color: rgba(28, 28, 26, 0.035);
 }
 
+.history-item:active {
+  background-color: rgba(28, 28, 26, 0.065);
+  transform: scale(0.985);
+}
+
 .history-item.active {
   background-color: #FFFFFF;
   border-color: #EAE6DD;
@@ -1711,13 +1716,20 @@ onPageLoad((options) => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
   opacity: 0.68;
-  transition: opacity 0.14s ease, background-color 0.14s ease;
+  transition: opacity 0.14s ease, background-color 0.14s ease, transform 0.14s var(--ease-out);
 }
 
 .history-del:hover {
   opacity: 1;
   background-color: var(--color-danger-bg);
+}
+
+.history-del:active {
+  opacity: 1;
+  background-color: var(--color-danger-bg);
+  transform: scale(0.9);
 }
 
 .chat-card {

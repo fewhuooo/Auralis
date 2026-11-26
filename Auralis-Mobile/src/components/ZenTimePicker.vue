@@ -252,10 +252,16 @@ onBeforeUnmount(() => {
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease, transform 0.14s var(--ease-out);
 }
 
 .zen-time-option:hover {
   background: rgba(139, 154, 110, 0.14);
+}
+
+.zen-time-option:active {
+  background: rgba(139, 154, 110, 0.18);
+  transform: scale(0.95);
 }
 
 .zen-time-option.is-active {

@@ -295,11 +295,16 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 0.14s ease, color 0.14s ease;
+  transition: background-color 0.14s ease, color 0.14s ease, transform 0.14s var(--ease-out);
 }
 
 .zen-cal-cell:hover {
   background: rgba(139, 154, 110, 0.14);
+}
+
+.zen-cal-cell:active {
+  background: rgba(139, 154, 110, 0.18);
+  transform: scale(0.92);
 }
 
 .zen-cal-cell.is-muted {

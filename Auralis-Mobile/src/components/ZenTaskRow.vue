@@ -115,6 +115,7 @@ const showTrailingSlot = computed(() => (
   background-color: var(--glass-sub-bg);
   backdrop-filter: var(--glass-blur-soft);
   -webkit-backdrop-filter: var(--glass-blur-soft);
+  cursor: pointer;
   transition: border-color 0.18s ease, transform 0.16s var(--ease-out), box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
@@ -134,6 +135,11 @@ const showTrailingSlot = computed(() => (
 
 .task-row:hover {
   border-color: rgba(139, 154, 110, 0.45);
+}
+
+.task-row:active {
+  border-color: rgba(139, 154, 110, 0.45);
+  transform: scale(0.985);
 }
 
 .task-row.is-completed {
@@ -337,6 +343,12 @@ const showTrailingSlot = computed(() => (
 .row-icon-btn:hover {
   opacity: 1;
   background-color: rgba(28, 28, 26, 0.05);
+}
+
+.row-icon-btn:active {
+  opacity: 1;
+  background-color: rgba(28, 28, 26, 0.08);
+  transform: scale(0.9);
 }
 
 @media (max-width: 390px) {

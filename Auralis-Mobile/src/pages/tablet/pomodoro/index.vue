@@ -451,6 +451,10 @@ onUnmounted(stopClock)
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03), 0 16px 36px -4px rgba(0, 0, 0, 0.07);
 }
 
+.panel-card:active {
+  transform: scale(0.992);
+}
+
 .card-header {
   display: flex;
   flex-direction: column;
@@ -496,6 +500,11 @@ onUnmounted(stopClock)
 
 .task-selector-trigger:hover:not(.is-locked) {
   border-color: rgba(139, 154, 110, 0.5);
+}
+
+.task-selector-trigger:active:not(.is-locked) {
+  border-color: rgba(139, 154, 110, 0.6);
+  transform: scale(0.985);
 }
 
 .task-selector-trigger.is-open {
@@ -567,7 +576,7 @@ onUnmounted(stopClock)
   gap: 12px;
   cursor: pointer;
   box-sizing: border-box;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.14s var(--ease-out);
 }
 
 .task-option-item:last-child {
@@ -576,6 +585,11 @@ onUnmounted(stopClock)
 
 .task-option-item:hover {
   background: rgba(139, 154, 110, 0.10);
+}
+
+.task-option-item:active {
+  background: rgba(139, 154, 110, 0.16);
+  transform: scale(0.985);
 }
 
 .task-option-item.is-selected {

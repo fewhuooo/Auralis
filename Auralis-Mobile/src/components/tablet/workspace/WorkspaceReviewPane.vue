@@ -1123,6 +1123,11 @@ const milestoneSubtitle = computed(() => {
   box-shadow: 0 2px 8px rgba(139, 154, 110, 0.18);
 }
 
+.voluntary-btn:active:not(:disabled) {
+  background: rgba(139, 154, 110, 0.16);
+  transform: scale(0.96);
+}
+
 .voluntary-btn.is-disabled,
 .voluntary-btn:disabled {
   opacity: 0.42;
@@ -1156,6 +1161,11 @@ const milestoneSubtitle = computed(() => {
   border-color: rgba(139, 154, 110, 0.5);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04), 0 10px 24px -4px rgba(0, 0, 0, 0.09), 0 3px 8px -1px rgba(139, 154, 110, 0.15);
   transform: translateY(-2px);
+}
+
+.action-panel:active:not(.is-disabled) {
+  border-color: rgba(139, 154, 110, 0.55);
+  transform: scale(0.985);
 }
 
 .action-panel.is-disabled {
@@ -1311,10 +1321,22 @@ const milestoneSubtitle = computed(() => {
   color: var(--text-primary);
 }
 
+.nav-back-btn:active:not(:disabled) {
+  background: var(--color-bg-secondary);
+  transform: scale(0.96);
+}
+
 .nav-end-btn:hover:not(:disabled),
 .reopen-btn:hover:not(:disabled) {
   background: var(--color-bg-secondary);
   color: var(--text-primary);
+}
+
+.nav-end-btn:active:not(:disabled),
+.reopen-btn:active:not(:disabled) {
+  background: var(--color-bg-secondary);
+  color: var(--text-primary);
+  transform: scale(0.96);
 }
 
 .round-progress-pill {
@@ -1702,6 +1724,10 @@ const milestoneSubtitle = computed(() => {
 .milestone-primary-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   filter: brightness(1.06);
+}
+
+.milestone-primary-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 @media (max-width: 960px) {

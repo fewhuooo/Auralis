@@ -486,6 +486,11 @@ function handleDelete() {
   border-color: rgba(0, 0, 0, 0.05);
 }
 
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .kb-view-scroll,
 .kb-edit-scroll {
   flex: 1;
@@ -654,6 +659,10 @@ function handleDelete() {
   transform: scale(1.18);
 }
 
+.color-dot:active {
+  transform: scale(0.92);
+}
+
 .color-dot.is-selected {
   box-shadow: 0 0 0 2px var(--color-bg-primary, #F7F2EB), 0 0 0 4.5px var(--color-zen-sage, #8B9A6E);
   transform: scale(1.15);
@@ -796,6 +805,11 @@ function handleDelete() {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled):not([disabled]):not(.is-disabled) {
+  background: rgba(0, 0, 0, 0.08);
+  transform: scale(0.97);
+}
+
 .modal-btn-ghost-danger {
   background: transparent;
   color: #C05646;
@@ -813,6 +827,11 @@ function handleDelete() {
   border-color: rgba(192, 86, 70, 0.4);
 }
 
+.modal-btn-ghost-danger:active:not(:disabled):not([disabled]):not(.is-disabled) {
+  background: rgba(192, 86, 70, 0.12);
+  transform: scale(0.97);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -828,5 +847,9 @@ function handleDelete() {
 .modal-btn-primary:hover:not(:disabled):not([disabled]):not(.is-disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.modal-btn-primary:active:not(:disabled):not([disabled]):not(.is-disabled) {
+  transform: scale(0.97);
 }
 </style>

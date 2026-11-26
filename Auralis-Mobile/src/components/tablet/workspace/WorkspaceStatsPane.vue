@@ -795,6 +795,11 @@ const taskCompletionRate = computed(() => {
   transform: translateX(2px);
 }
 
+.action-card:active {
+  border-color: var(--border-accent);
+  transform: scale(0.985);
+}
+
 .action-card.is-urgent {
   border-color: rgba(200, 155, 109, 0.45);
 }

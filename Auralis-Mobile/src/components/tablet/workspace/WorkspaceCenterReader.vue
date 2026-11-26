@@ -1002,6 +1002,12 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
 }
 
+.preview-ctrl-btn:active:not(:disabled) {
+  background: rgba(139, 154, 110, 0.18);
+  color: var(--text-primary);
+  transform: scale(0.92);
+}
+
 .preview-ctrl-btn:disabled {
   opacity: 0.35;
   cursor: default;
@@ -1053,6 +1059,12 @@ onBeforeUnmount(() => {
   background: var(--color-bg-tertiary);
 }
 
+.status-icon-btn:active:not(:disabled) {
+  border-color: var(--border-accent);
+  background: var(--color-bg-tertiary);
+  transform: scale(0.92);
+}
+
 .status-icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
@@ -1095,6 +1107,12 @@ onBeforeUnmount(() => {
 .edge-collapse-btn:hover {
   opacity: 1;
   border-color: var(--border-accent);
+}
+
+.edge-collapse-btn:active {
+  opacity: 1;
+  border-color: var(--border-accent);
+  transform: translateY(-50%) scale(0.94);
 }
 
 .preview-stage {
@@ -1526,6 +1544,10 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 20px -4px rgba(45, 55, 40, 0.08);
 }
 
+.block-card:active {
+  transform: scale(0.985);
+}
+
 .block-card-header {
   display: flex;
   align-items: flex-start;
@@ -1570,13 +1592,20 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: background-color 0.14s ease, transform 0.14s var(--ease-out);
+}
+
+.card-action-btn:active {
+  transform: scale(0.9);
+  background: rgba(45, 55, 40, 0.1);
 }
 
 .card-action-btn.is-copied {
   background: var(--color-sage-bg);
 }
 
-.card-action-btn.is-danger:hover {
+.card-action-btn.is-danger:hover,
+.card-action-btn.is-danger:active {
   background: var(--color-danger-bg);
 }
 
