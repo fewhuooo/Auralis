@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { getViewportMetrics } from '@/platform/system'
 
 export type DeviceType = 'phone' | 'tablet'
 
@@ -9,11 +10,7 @@ export const useDeviceStore = defineStore('device', () => {
 
   const detect = () => {
     try {
-      const sysInfo = uni.getSystemInfoSync()
-      // windowWidth/windowHeight = 可用视口宽高（随旋转、分屏变化）
-      const width = sysInfo.windowWidth || sysInfo.screenWidth
-      const height = sysInfo.windowHeight || sysInfo.screenHeight
-
+      const { width, height } = getViewportMetrics()
       // 判断是否应使用平板布局：
       // 1. 宽度 >= 768（满足平板基础宽度）
       // 2. 高度 >= 500（排除手机横屏的情况，手机横屏宽度大但高度通常<500）

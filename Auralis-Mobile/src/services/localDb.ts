@@ -7,6 +7,7 @@ import type { Task } from '@/store/useTaskStore';
 import { buildSyncedBlockRecord } from '@/utils/blockSyncMapper';
 import { formatLocalTimeHHmm } from '@/utils/dateKey';
 import { normalizeTaskPosition } from '@/utils/taskSyncMapper';
+import { getStorageItem, removeStorageItem, setStorageItem } from '@/platform/storage';
 import { localDataScope } from './localDataScope.ts';
 import { deleteCachedDocument } from './localDocumentCache.ts';
 
@@ -101,12 +102,12 @@ export function preserveMutationBaseVersion(incoming: unknown, priorRaw: unknown
 const h5Db = {
   getTable(name: string): any[] {
     const key = `auralis:local:${localDataScope.current()}:${name}`;
-    const data = uni.getStorageSync(key);
+    const data = getStorageItem(key);
     return data ? JSON.parse(data) : [];
   },
   saveTable(name: string, data: any[]): void {
     const key = `auralis:local:${localDataScope.current()}:${name}`;
-    uni.setStorageSync(key, JSON.stringify(data));
+    setStorageItem(key, JSON.stringify(data));
   }
 };
 
@@ -1821,7 +1822,7 @@ export const localDb = {
     const focusKeys = ['focus_state', 'focus_daily', 'focus_outbox'];
     for (const key of focusKeys) {
       try {
-        uni.removeStorageSync(`auralis:local:${scope}:${key}`);
+        removeStorageItem(`auralis:local:${scope}:${key}`);
       } catch {
         // Ignore storage removal errors
       }
@@ -1841,7 +1842,7 @@ export const localDb = {
       ];
       for (const name of tableNames) {
         try {
-          uni.removeStorageSync(`auralis:local:${scope}:${name}`);
+          removeStorageItem(`auralis:local:${scope}:${name}`);
         } catch {
           // Ignore storage removal errors
         }

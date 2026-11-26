@@ -76,12 +76,24 @@ loader.deregister()
 
 function useStorageFixture(context) {
   const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: key => storage.get(key),
-    setStorageSync: (key, value) => storage.set(key, structuredClone(value)),
-    removeStorageSync: key => storage.delete(key),
-  }
-  context.after(() => { delete globalThis.uni })
+  const hadOwn = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: key => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: key => storage.delete(key),
+      clear: () => storage.clear(),
+    },
+  })
+  context.after(() => {
+    if (hadOwn) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
+  })
   return storage
 }
 
@@ -215,7 +227,7 @@ test('workspace recovers a previous subject confirmation before loading without 
   const block = { knowledgeBlockId: 'alpha', knowledgeBlockVersion: 4, contentHash: 'a'.repeat(64) }
   const attempt = { ...block, clientCommandId: 'attempt', baseVersion: 7, reviewId: 'review', rating: 'GOOD' }
   const confirmation = { ...block, clientCommandId: 'confirm', baseVersion: 8 }
-  storage.set(key, { subjectId: 'alpha', attempt, confirmation })
+  storage.set(key, JSON.stringify({ subjectId: 'alpha', attempt, confirmation }))
   const calls = []
   const api = {
     async queue(_at, _cursor, subject) {
@@ -1538,7 +1550,7 @@ test('useMobileLifecycleReview retries frozen pending command across recreation,
       durationSeconds: 1,
     },
   }
-  storage.set(storageKey, conflictAttemptPending)
+  storage.set(storageKey, JSON.stringify(conflictAttemptPending))
   r2.pendingCommand.value = conflictAttemptPending
   await r2.retryPending()
   assert.equal(r2.pendingIsConflict.value, true)
@@ -1764,9 +1776,8 @@ test('useMobileLifecycleReview uses REVIEW_CORRECTED on first FUZZY correction a
 
 test('useSyncStore.resetOfflineData clears both due and lifecycle pending review keys', async (context) => {
   const storage = useStorageFixture(context)
-  globalThis.uni.getNetworkType = ({ success }) => success({ networkType: 'wifi' })
-  storage.set('auralis:review:pending:user-reset:dev-reset', { old: true })
-  storage.set(lifecyclePendingStorageKey('user-reset', 'dev-reset'), { body: { clientCommandId: 'cmd-old' } })
+  storage.set('auralis:review:pending:user-reset:dev-reset', JSON.stringify({ old: true }))
+  storage.set(lifecyclePendingStorageKey('user-reset', 'dev-reset'), JSON.stringify({ body: { clientCommandId: 'cmd-old' } }))
 
   const syncMocks = new Map([
     ['./useAuthStore', `

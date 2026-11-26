@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { getStorageItem, setStorageItem } from '../platform/storage.ts'
 
 export const useLayoutStore = defineStore('layout', () => {
   const showDrawer = ref(false)
@@ -16,7 +17,7 @@ export const useLayoutStore = defineStore('layout', () => {
   const setSlideDirection = (dir: 'right' | 'left' | 'up' | 'down') => {
     pageSlideDirection.value = dir
     try {
-      uni.setStorageSync('__slide_dir', dir)
+      setStorageItem('__slide_dir', dir)
     } catch {
       // Ignore storage failure
     }
@@ -24,7 +25,7 @@ export const useLayoutStore = defineStore('layout', () => {
 
   const getSlideDirection = (): 'right' | 'left' | 'up' | 'down' => {
     try {
-      const stored = uni.getStorageSync('__slide_dir')
+      const stored = getStorageItem('__slide_dir')
       if (stored === 'left' || stored === 'right' || stored === 'up' || stored === 'down') return stored
     } catch {
       // Ignore storage failure

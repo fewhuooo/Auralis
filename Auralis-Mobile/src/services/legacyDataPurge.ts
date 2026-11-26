@@ -1,3 +1,5 @@
+import { getStorageItem, removeStorageItem, setStorageItem } from '@/platform/storage'
+
 const PURGE_MARKER = 'auralis:legacy-local-data-purged:v2'
 const LEGACY_TABLES = [
   'sync_metadata',
@@ -23,10 +25,10 @@ function executeLegacySql(sql: string): Promise<void> {
 }
 
 export async function purgeLegacyLocalData(): Promise<void> {
-  if (uni.getStorageSync(PURGE_MARKER)) return
+  if (getStorageItem(PURGE_MARKER)) return
   if (typeof plus === 'undefined' || !plus.sqlite) {
-    for (const table of LEGACY_TABLES) uni.removeStorageSync(`h5_db_${table}`)
-    uni.setStorageSync(PURGE_MARKER, new Date().toISOString())
+    for (const table of LEGACY_TABLES) removeStorageItem(`h5_db_${table}`)
+    setStorageItem(PURGE_MARKER, new Date().toISOString())
     return
   }
 
@@ -41,7 +43,7 @@ export async function purgeLegacyLocalData(): Promise<void> {
   }
   try {
     for (const table of LEGACY_TABLES) await executeLegacySql(`DROP TABLE IF EXISTS ${table}`)
-    uni.setStorageSync(PURGE_MARKER, new Date().toISOString())
+    setStorageItem(PURGE_MARKER, new Date().toISOString())
   } finally {
     if (!wasOpen) {
       await new Promise<void>((resolve) => plus.sqlite.closeDatabase({

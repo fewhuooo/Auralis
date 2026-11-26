@@ -15,18 +15,26 @@ import { MAX_UPLOAD_FILE_SIZE_BYTES, validateUploadFile } from '../src/utils/upl
 
 function setupLocalDbTestEnv(context, options = {}) {
   const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: (key) => storage.get(key) ?? '',
-    setStorageSync: (key, val) => {
-      if (options.onSet && options.onSet(key, val) === false) {
-        return
-      }
-      storage.set(key, val)
+  const hadOwn = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, val) => {
+        if (options.onSet && options.onSet(key, String(val)) === false) {
+          return
+        }
+        storage.set(key, String(val))
+      },
+      removeItem: (key) => {
+        storage.delete(key)
+      },
+      clear: () => {
+        storage.clear()
+      },
     },
-    removeStorageSync: (key) => {
-      storage.delete(key)
-    },
-  }
+  })
 
   const loader = registerHooks({
     resolve(specifier, ctx, nextResolve) {
@@ -42,7 +50,11 @@ function setupLocalDbTestEnv(context, options = {}) {
 
   context.after(() => {
     loader.deregister()
-    delete globalThis.uni
+    if (hadOwn) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
   })
 
   return storage

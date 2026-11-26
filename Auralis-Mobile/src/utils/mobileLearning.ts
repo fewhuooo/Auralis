@@ -1,4 +1,5 @@
 import type { ReviewState } from '../api/reviewApi.ts'
+import { copyText } from '../platform/clipboard.ts'
 import type { KnowledgeBlock } from '../store/useBlockStore.ts'
 import type { Subject } from '../store/useSubjectStore.ts'
 import { plainMarkdownExcerpt } from './markdown.ts'
@@ -351,37 +352,6 @@ export function computeLeadingScrollLeft(input: {
   return target
 }
 
-function fallbackCopyInBrowser(text: string): boolean {
-  if (typeof document === 'undefined' || !document.body) return false
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.top = '-9999px'
-  textarea.style.left = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.select()
-  let ok = false
-  try {
-    ok = document.execCommand('copy')
-  } catch {
-    ok = false
-  }
-  document.body.removeChild(textarea)
-  return ok
-}
-
 export function copyTextWithFallback(text: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      uni.setClipboardData({
-        data: text,
-        showToast: false,
-        success: () => resolve(true),
-        fail: () => resolve(fallbackCopyInBrowser(text)),
-      })
-    } catch {
-      resolve(fallbackCopyInBrowser(text))
-    }
-  })
+  return copyText(text)
 }

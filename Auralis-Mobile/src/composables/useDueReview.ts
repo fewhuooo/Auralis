@@ -7,6 +7,7 @@ import type {
   ReviewState,
 } from '@/api/reviewApi'
 import { ApiProblemError } from '@/api/protocol'
+import { getStorageJson, removeStorageItem, setStorageJson } from '@/platform/storage'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { uuidv7 } from '@/utils/uuid'
@@ -136,9 +137,9 @@ export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
     if (!isCurrent()) return null
     try {
       const key = pendingKey()
-      pending = uni.getStorageSync<PendingReview | ''>(key) || null
+      pending = getStorageJson<PendingReview>(key)
       if (pending && pendingClientCommandId(pending) === discardPending) {
-        uni.removeStorageSync(key)
+        removeStorageItem(key)
         pending = null
       }
     } catch (error) {
@@ -408,14 +409,14 @@ export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
     saving.value = true
     saveError.value = ''
     try {
-      uni.setStorageSync(key, command)
+      setStorageJson(key, command)
       if (command.learning) {
         const completed = await api.completeLearning(command.learning)
         if (!isCurrentSubmission()) return
         if (completed.state?.needsLearning) throw new Error('Learning completion did not clear needsLearning')
-        const saved = uni.getStorageSync<PendingReview | ''>(key)
+        const saved = getStorageJson<PendingReview>(key)
         if (saved && pendingClientCommandId(saved) === command.learning.clientCommandId) {
-          uni.removeStorageSync(key)
+          removeStorageItem(key)
         }
         pending = null
         if (!subjectId.value || command.subjectId === subjectId.value) {
@@ -453,7 +454,7 @@ export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
             contentHash: attempt.contentHash,
             baseVersion: selected.state.version,
           }
-          uni.setStorageSync(key, command)
+          setStorageJson(key, command)
         } else if (selected.effectiveReview?.effectiveRating !== 'AGAIN') {
           throw new Error('Review retry result is missing')
         }
@@ -464,9 +465,9 @@ export function useDueReview(api: typeof reviewApi, options?: DueReviewScope) {
         if (confirmed.effectiveReview?.effectiveRating !== 'GOOD') throw new Error('Review confirmation is missing')
         confirmedState = confirmed.state
       }
-      const saved = uni.getStorageSync<PendingReview | ''>(key)
+      const saved = getStorageJson<PendingReview>(key)
       if (saved && pendingClientCommandId(saved) === attempt.clientCommandId) {
-        uni.removeStorageSync(key)
+        removeStorageItem(key)
       }
       pending = null
       if (options?.pcCompletion && attempt.rating === 'AGAIN') {

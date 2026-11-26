@@ -18,7 +18,7 @@ test('Mobile distinguishes client device key from server device id', () => {
   assert.doesNotMatch(realtime, /deviceId/)
   assert.match(sync, /serverDeviceId/)
   assert.match(authStore, /!parsed\?\.serverDeviceId/)
-  assert.match(authStore, /uni\.removeStorageSync\(AUTH_STORAGE_KEY\)/)
+  assert.match(authStore, /removeStorageItem\(AUTH_STORAGE_KEY\)/)
   assert.match(authStore, /serverDeviceId\.value = ''/)
   assert.match(authStore, /isAuthenticated = computed\(\(\) => Boolean\(token\.value && user\.value\?\.id && serverDeviceId\.value\)\)/)
 })

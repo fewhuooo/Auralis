@@ -1,3 +1,5 @@
+import { getStorageItem, removeStorageItem, setStorageItem } from '../platform/storage.ts'
+
 const SCOPE_STORAGE_KEY = 'auralis:local-data-scope:v2'
 const LEGACY_SCOPE = 'legacy-unassigned'
 let resetSequence = 0
@@ -51,7 +53,7 @@ export function createLocalDataScope(storage: ScopeStorage) {
 }
 
 export const localDataScope = createLocalDataScope({
-  get: (key) => uni.getStorageSync(key),
-  set: (key, value) => uni.setStorageSync(key, value),
-  remove: (key) => uni.removeStorageSync(key),
+  get: (key) => getStorageItem(key),
+  set: (key, value) => setStorageItem(key, value),
+  remove: (key) => removeStorageItem(key),
 })

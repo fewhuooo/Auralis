@@ -615,11 +615,29 @@ test('task color migration quotes native string ids and bounds invalid warnings 
   assert.match(source, /if \(result\.status === 'changed'\)/)
 })
 
-test('connectRealtimeSync passes complete callback for SocketTask and handles disconnect during in-flight ticket without deadlock', async (context) => {
+test('connectRealtimeSync uses platform WebSocket and handles disconnect during in-flight ticket without deadlock', async (context) => {
   const loginGen = Symbol('gen')
   let triggerSyncCalls = 0
-  let socketOptions = []
-  let ticketResolvers = []
+  const createdSockets = []
+  const ticketResolvers = []
+  const prevWebSocket = globalThis.WebSocket
+
+  class FakeWebSocket {
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSING = 2
+    static CLOSED = 3
+    constructor(url) {
+      this.url = url
+      this.readyState = FakeWebSocket.OPEN
+      this.closed = false
+      createdSockets.push(this)
+    }
+    close() {
+      this.readyState = FakeWebSocket.CLOSED
+      this.closed = true
+    }
+  }
 
   globalThis.__syncTestAuth = {
     isAuthenticated: true,
@@ -635,20 +653,7 @@ test('connectRealtimeSync passes complete callback for SocketTask and handles di
       ticketResolvers.push(resolve)
     }),
   }
-  globalThis.uni = {
-    connectSocket(opts) {
-      socketOptions.push(opts)
-      let openCb = null
-      return {
-        onOpen(cb) { openCb = cb },
-        onMessage() {},
-        onClose() {},
-        onError() {},
-        close() {},
-        _emitOpen() { openCb?.() },
-      }
-    },
-  }
+  globalThis.WebSocket = FakeWebSocket
 
   const mocks = new Map([
     ['./realtimeApi', 'export const realtimeApi = globalThis.__syncTestRealtimeApi;'],
@@ -662,6 +667,9 @@ test('connectRealtimeSync passes complete callback for SocketTask and handles di
       if (mocks.has(specifier)) {
         return { url: `data:text/javascript,${encodeURIComponent(mocks.get(specifier))}`, shortCircuit: true }
       }
+      if (specifier.startsWith('@/')) {
+        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, ctx)
+      }
       if (ctx.parentURL?.includes('/Auralis-Mobile/src/') && (specifier.startsWith('./') || specifier.startsWith('../')) && !/\.[a-z0-9]+$/i.test(specifier)) {
         return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
       }
@@ -674,7 +682,7 @@ test('connectRealtimeSync passes complete callback for SocketTask and handles di
     delete globalThis.__syncTestAuth
     delete globalThis.__syncTestSyncStore
     delete globalThis.__syncTestRealtimeApi
-    delete globalThis.uni
+    globalThis.WebSocket = prevWebSocket
   })
 
   const { connectRealtimeSync, disconnectRealtimeSync } = await import('../src/api/sync.ts?realtime-race-test')
@@ -689,24 +697,18 @@ test('connectRealtimeSync passes complete callback for SocketTask and handles di
   // Stale first ticket resolves after disconnect — must NOT open a socket
   ticketResolvers[0]({ ticket: 'stale-ticket', websocketUrl: '/ws/events?ticket=stale' })
   await firstAttempt
-  assert.equal(socketOptions.length, 0)
+  assert.equal(createdSockets.length, 0)
 
-  // Fresh second ticket resolves — must open socket with complete callback & trigger sync on open
-  const origConnectSocket = globalThis.uni.connectSocket
-  let createdTask = null
-  globalThis.uni.connectSocket = (opts) => {
-    createdTask = origConnectSocket(opts)
-    return createdTask
-  }
+  // Fresh second ticket resolves — must open WebSocket & trigger sync on open
   ticketResolvers[1]({ ticket: 'fresh-ticket', websocketUrl: '/ws/events?ticket=fresh' })
   await secondAttempt
-  assert.equal(socketOptions.length, 1)
-  assert.equal(typeof socketOptions[0].complete, 'function')
-  assert.equal(socketOptions[0].url, 'wss://ws.auralis.test/ws/events?ticket=fresh')
+  assert.equal(createdSockets.length, 1)
+  assert.equal(createdSockets[0].url, 'wss://ws.auralis.test/ws/events?ticket=fresh')
 
-  createdTask._emitOpen()
+  createdSockets[0].onopen()
   assert.equal(triggerSyncCalls, 1)
   disconnectRealtimeSync()
+  assert.equal(createdSockets[0].closed, true)
 })
 
 test('createRoutePreloader deduplicates routes, retries after failure, tolerates missing bridge, and cancels sibling preload', async () => {

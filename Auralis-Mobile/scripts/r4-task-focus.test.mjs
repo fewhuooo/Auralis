@@ -322,14 +322,9 @@ test('useTaskStore retains checked-off home todos until unchecked, deleted, sche
     get serverDeviceId() { return mockDeviceId.value },
     getLoginGeneration: () => generation,
   }
-  globalThis.uni = {
-    onNetworkStatusChange() {},
-    getNetworkType({ success }) { success({ networkType: 'wifi' }) },
-  }
   context.after(() => {
     delete globalThis.__taskTestDb
     delete globalThis.__taskTestAuth
-    delete globalThis.uni
   })
 
   const loader = registerHooks({
@@ -392,13 +387,13 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
   const storage = new Map()
   const scope = 'user-1:dev-1'
   storage.set('auralis.settings.autoSync', 'false')
-  storage.set(outboxKeyForScope(scope), [{
+  storage.set(outboxKeyForScope(scope), JSON.stringify([{
     clientSessionId: 'sess-1',
     startedAt: '2026-11-18T08:00:00Z',
     endedAt: '2026-11-18T08:25:00Z',
     durationSeconds: 1500,
     dateKey: '2026-11-18',
-  }])
+  }]))
 
   let recorded = 0
   const gen = Symbol('gen')
@@ -415,12 +410,16 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
       return {}
     },
   }
-  globalThis.uni = {
-    getStorageSync: (key) => storage.get(key) ?? '',
-    setStorageSync: (key, val) => { storage.set(key, val) },
-    vibrateLong: () => {},
-    showToast: () => {},
-  }
+  const hadOwnStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, val) => { storage.set(key, String(val)) },
+      removeItem: (key) => { storage.delete(key) },
+    },
+  })
 
   const mocks = new Map([
     ['@/api/focusApi', 'export const focusApi = globalThis.__focusStoreApi;'],
@@ -444,7 +443,11 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
     loader.deregister()
     delete globalThis.__focusStoreAuth
     delete globalThis.__focusStoreApi
-    delete globalThis.uni
+    if (hadOwnStorage) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
   })
 
   const { useFocusStore } = await import('../src/store/useFocusStore.ts?focus-autosync-test')
@@ -465,10 +468,16 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
 
 test('localDb H5 preserves numeric-string task positions, heals numeric cache rows, and excludes CANCELLED tasks', async (context) => {
   const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: (key) => storage.get(key) ?? '',
-    setStorageSync: (key, val) => { storage.set(key, val) },
-  }
+  const hadOwnStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, val) => { storage.set(key, String(val)) },
+      removeItem: (key) => { storage.delete(key) },
+    },
+  })
 
   const loader = registerHooks({
     resolve(specifier, ctx, nextResolve) {
@@ -484,7 +493,11 @@ test('localDb H5 preserves numeric-string task positions, heals numeric cache ro
 
   context.after(() => {
     loader.deregister()
-    delete globalThis.uni
+    if (hadOwnStorage) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
   })
 
   const { localDataScope } = await import('../src/services/localDataScope.ts?localdb-pos-test')
@@ -556,11 +569,16 @@ test('localDb H5 preserves numeric-string task positions, heals numeric cache ro
 
 test('localDb coalesces pending offline mutations per entity, backfills legacy H5 ids, and guards markMutationSynced by client_id', async (context) => {
   const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: key => storage.get(key),
-    setStorageSync: (key, value) => storage.set(key, value),
-    removeStorageSync: key => storage.delete(key),
-  }
+  const hadOwnStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: key => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: key => storage.delete(key),
+    },
+  })
   const loader = registerHooks({
     resolve(specifier, ctx, nextResolve) {
       if (specifier.startsWith('@/')) {
@@ -574,7 +592,11 @@ test('localDb coalesces pending offline mutations per entity, backfills legacy H
   })
   context.after(() => {
     loader.deregister()
-    delete globalThis.uni
+    if (hadOwnStorage) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
   })
 
   const { localDataScope } = await import('../src/services/localDataScope.ts?localdb-coalesce-test')
@@ -645,11 +667,16 @@ test('localDb coalesces pending offline mutations per entity, backfills legacy H
 
 test('localDb H5 query parser handles quotes containing WHERE, ORDER BY, AND, and =, and fences in-flight mutations during rebase', async (context) => {
   const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: key => storage.get(key),
-    setStorageSync: (key, value) => storage.set(key, value),
-    removeStorageSync: key => storage.delete(key),
-  }
+  const hadOwnStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: key => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: key => storage.delete(key),
+    },
+  })
   const loader = registerHooks({
     resolve(specifier, ctx, nextResolve) {
       if (specifier.startsWith('@/')) {
@@ -663,7 +690,11 @@ test('localDb H5 query parser handles quotes containing WHERE, ORDER BY, AND, an
   })
   context.after(() => {
     loader.deregister()
-    delete globalThis.uni
+    if (hadOwnStorage) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
   })
 
   const { localDataScope } = await import('../src/services/localDataScope.ts?localdb-sql-fencing-test')
@@ -980,15 +1011,10 @@ test('useTaskStore enforces scheduled completion lock and recovers overdue tasks
     get isSyncing() { return isSyncingFlag },
     async triggerSync() { triggerSyncCalls += 1 },
   }
-  globalThis.uni = {
-    onNetworkStatusChange() {},
-    getNetworkType({ success }) { success({ networkType: 'wifi' }) },
-  }
   context.after(() => {
     delete globalThis.__taskOverdueDb
     delete globalThis.__taskOverdueAuth
     delete globalThis.__taskOverdueSync
-    delete globalThis.uni
   })
 
   const loader = registerHooks({
@@ -1100,16 +1126,11 @@ test('useTaskStore clears stale tasks synchronously on account switch, fences lo
     get isResettingOffline() { return resetActive },
     async triggerSync() {},
   }
-  globalThis.uni = {
-    onNetworkStatusChange() {},
-    getNetworkType({ success }) { success({ networkType: 'wifi' }) },
-  }
   context.after(() => {
     delete globalThis.__taskFenceDb
     delete globalThis.__taskFenceAuth
     delete globalThis.__taskFenceSync
     delete globalThis.__taskFenceGetClientId
-    delete globalThis.uni
   })
 
   const loader = registerHooks({

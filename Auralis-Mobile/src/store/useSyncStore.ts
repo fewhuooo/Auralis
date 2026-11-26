@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { useSyncApi } from '@/api/useSyncApi'
+import { showToast } from '@/platform/feedback'
+import { isNetworkOnline } from '@/platform/network'
+import { getStorageItem, removeStorageItem, setStorageItem } from '@/platform/storage'
 import { localDb } from '@/services/localDb'
 import { localDataScope } from '@/services/localDataScope'
 // #ifdef H5
@@ -39,18 +42,13 @@ export const useSyncStore = defineStore('sync', () => {
       serverDeviceId: auth.serverDeviceId,
       loginGeneration: auth.getLoginGeneration(),
     }),
-    checkOnline: () => new Promise((resolve) => {
-      uni.getNetworkType({
-        success: ({ networkType }) => resolve(networkType !== 'none'),
-        fail: () => resolve(true),
-      })
-    }),
+    checkOnline: async () => isNetworkOnline(),
     syncApi: useSyncApi,
     localDb,
     localDataScope,
     prefStorage: {
-      get: (key: string) => uni.getStorageSync(key),
-      set: (key: string, value: string) => uni.setStorageSync(key, value),
+      get: (key: string) => getStorageItem(key),
+      set: (key: string, value: string) => setStorageItem(key, value),
     },
     onDataChanged: async () => {
       await Promise.all([
@@ -74,8 +72,8 @@ export const useSyncStore = defineStore('sync', () => {
       // #endif
       if (auth.user?.id && auth.serverDeviceId) {
         try {
-          uni.removeStorageSync(`auralis:review:pending:${auth.user.id}:${auth.serverDeviceId}`)
-          uni.removeStorageSync(`auralis:review:lifecycle:pending:${auth.user.id}:${auth.serverDeviceId}`)
+          removeStorageItem(`auralis:review:pending:${auth.user.id}:${auth.serverDeviceId}`)
+          removeStorageItem(`auralis:review:lifecycle:pending:${auth.user.id}:${auth.serverDeviceId}`)
         } catch {
           // Ignore storage cleanup error during scope reset
         }
@@ -83,10 +81,7 @@ export const useSyncStore = defineStore('sync', () => {
     },
     onTaskMutationRejected: (taskIds) => {
       useTaskStore().suppressOverdueRecovery(taskIds)
-      uni.showToast({
-        title: '部分日程与云端已有安排冲突或无效，已同步最新状态',
-        icon: 'none',
-      })
+      showToast('部分日程与云端已有安排冲突或无效，已同步最新状态')
     },
     onSyncCompleted: () => {
       void useTaskStore().recoverOverdueTasks()
