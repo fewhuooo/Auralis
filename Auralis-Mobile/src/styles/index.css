@@ -199,50 +199,6 @@
   --tablet-shell-pad: clamp(8px, 0.95vw, 14px);
 }
 
-html[data-app-target='tablet'] .zen-panel {
-  border-radius: 16px;
-}
-
-html[data-app-target='tablet'] .zen-card,
-html[data-app-target='tablet'] .ui-surface {
-  border-radius: 14px;
-}
-
-html[data-app-target='tablet'] .ui-btn {
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 10px;
-}
-
-html[data-app-target='tablet'] .ui-btn.sm {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-}
-
-html[data-app-target='tablet'] .ui-icon-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-}
-
-html[data-app-target='tablet'] .ui-icon-btn.sm {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-}
-
-html[data-app-target='tablet'] .ui-input {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 10px;
-}
-
-html[data-app-target='tablet'] .ui-seg-item {
-  height: 30px;
-  font-size: 12px;
-}
-
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -588,6 +544,50 @@ textarea {
   color: #FFFFFF;
   border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow: 0 2px 10px rgba(118, 135, 88, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+:where(html[data-app-target='tablet']) .zen-panel {
+  border-radius: 16px;
+}
+
+:where(html[data-app-target='tablet']) .zen-card,
+:where(html[data-app-target='tablet']) .ui-surface {
+  border-radius: 14px;
+}
+
+:where(html[data-app-target='tablet']) .ui-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
+:where(html[data-app-target='tablet']) .ui-btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+:where(html[data-app-target='tablet']) .ui-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+:where(html[data-app-target='tablet']) .ui-icon-btn.sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+:where(html[data-app-target='tablet']) .ui-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+:where(html[data-app-target='tablet']) .ui-seg-item {
+  height: 30px;
+  font-size: 12px;
 }
 
 .ui-tag {

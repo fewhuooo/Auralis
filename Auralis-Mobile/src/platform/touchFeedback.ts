@@ -146,6 +146,13 @@ export function installTouchFeedback(): () => void {
     resetElementVisual(targetEl)
   }
 
+  function cancelAllPresses() {
+    cancelActivePress()
+    for (const el of Array.from(timersByEl.keys())) {
+      resetElementVisual(el)
+    }
+  }
+
   function onPointerDown(event: PointerEvent) {
     if (event.pointerType === 'mouse' && event.button !== 0) return
     const el = resolvePressableTarget(event.target)
@@ -201,7 +208,7 @@ export function installTouchFeedback(): () => void {
 
   function onVisibilityChange() {
     if (document.hidden) {
-      cancelActivePress()
+      cancelAllPresses()
     }
   }
 
@@ -209,7 +216,7 @@ export function installTouchFeedback(): () => void {
   document.addEventListener('pointermove', onPointerMove, { passive: true })
   document.addEventListener('pointerup', onPointerUp, { passive: true })
   document.addEventListener('pointercancel', onPointerCancel, { passive: true })
-  window.addEventListener('blur', cancelActivePress, { passive: true })
+  window.addEventListener('blur', cancelAllPresses, { passive: true })
   document.addEventListener('visibilitychange', onVisibilityChange, { passive: true })
 
   return () => {
@@ -217,15 +224,9 @@ export function installTouchFeedback(): () => void {
     document.removeEventListener('pointermove', onPointerMove)
     document.removeEventListener('pointerup', onPointerUp)
     document.removeEventListener('pointercancel', onPointerCancel)
-    window.removeEventListener('blur', cancelActivePress)
+    window.removeEventListener('blur', cancelAllPresses)
     document.removeEventListener('visibilitychange', onVisibilityChange)
 
-    if (activePress) {
-      resetElementVisual(activePress.el)
-      activePress = null
-    }
-    for (const el of Array.from(timersByEl.keys())) {
-      resetElementVisual(el)
-    }
+    cancelAllPresses()
   }
 }

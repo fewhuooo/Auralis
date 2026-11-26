@@ -21,6 +21,10 @@ class FakeClassList {
   contains(token: string): boolean {
     return this.set.has(token)
   }
+
+  values(): IterableIterator<string> {
+    return this.set.values()
+  }
 }
 
 class FakeStyle {
@@ -115,13 +119,10 @@ class FakeElement {
   }
 
   private hasClassEndingWith(suffix: string): boolean {
-    // Check common overlay mask names used in the app
-    return (
-      this.classList.contains('zen-modal-mask')
-      || this.classList.contains('zen-sheet-mask')
-      || this.classList.contains('subject-dropdown-mask')
-      || this.classList.contains('scope-dropdown-mask')
-    )
+    for (const token of this.classList.values()) {
+      if (token.endsWith(suffix)) return true
+    }
+    return false
   }
 
   closest(selector: string): FakeElement | null {
@@ -318,4 +319,54 @@ test('dispose clears pressed state, pending timers, and event listeners cleanly'
   assert.equal(pill.style.getPropertyValue('--zen-press-scale'), '')
   assert.equal(docListeners.get('pointerdown')?.size ?? 0, 0)
   assert.equal(winListeners.get('blur')?.size ?? 0, 0)
+})
+
+test('pointercancel clears active pressed state immediately without triggering release animation', (context) => {
+  const { appRoot, fakeDocument } = setupDomHarness(context)
+
+  const button = appRoot.append(new FakeElement('button', { classes: ['ui-btn'] }))
+  const dispose = installTouchFeedback()
+  try {
+    fakeDocument.dispatch('pointerdown', { pointerType: 'touch', button: 0, pointerId: 11, clientX: 20, clientY: 20, target: button })
+    assert.equal(button.classList.contains('zen-touch-pressed'), true)
+
+    fakeDocument.dispatch('pointercancel', { pointerType: 'touch', pointerId: 11 })
+    assert.equal(button.classList.contains('zen-touch-pressed'), false)
+    assert.equal(button.classList.contains('zen-touch-releasing'), false)
+    assert.equal(button.style.getPropertyValue('--zen-press-scale'), '')
+  } finally {
+    dispose()
+  }
+})
+
+test('blur and visibilitychange cancel pending quick-tap hold timers cleanly', (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const { appRoot, fakeDocument, fakeWindow } = setupDomHarness(context)
+
+  const picker = appRoot.append(new FakeElement('div', { cursor: 'pointer', width: 240, height: 80 }))
+  const dispose = installTouchFeedback()
+  try {
+    fakeDocument.dispatch('pointerdown', { pointerType: 'touch', button: 0, pointerId: 12, clientX: 30, clientY: 30, target: picker })
+    context.mock.timers.tick(25)
+    fakeDocument.dispatch('pointerup', { pointerType: 'touch', pointerId: 12, clientX: 30, clientY: 30 })
+    assert.equal(picker.classList.contains('zen-touch-pressed'), true)
+
+    fakeWindow.dispatch('blur', {})
+    assert.equal(picker.classList.contains('zen-touch-pressed'), false)
+    assert.equal(picker.classList.contains('zen-touch-releasing'), false)
+    assert.equal(picker.style.getPropertyValue('--zen-press-scale'), '')
+
+    // Ensure backgrounded visibilitychange also cancels held quick-tap timers
+    fakeDocument.dispatch('pointerdown', { pointerType: 'touch', button: 0, pointerId: 13, clientX: 30, clientY: 30, target: picker })
+    context.mock.timers.tick(25)
+    fakeDocument.dispatch('pointerup', { pointerType: 'touch', pointerId: 13, clientX: 30, clientY: 30 })
+    assert.equal(picker.classList.contains('zen-touch-pressed'), true)
+
+    fakeDocument.hidden = true
+    fakeDocument.dispatch('visibilitychange', {})
+    assert.equal(picker.classList.contains('zen-touch-pressed'), false)
+    assert.equal(picker.style.getPropertyValue('--zen-press-scale'), '')
+  } finally {
+    dispose()
+  }
 })

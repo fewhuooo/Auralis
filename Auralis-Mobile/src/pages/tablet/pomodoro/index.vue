@@ -451,10 +451,6 @@ onUnmounted(stopClock)
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03), 0 16px 36px -4px rgba(0, 0, 0, 0.07);
 }
 
-.panel-card:active {
-  transform: scale(0.992);
-}
-
 .card-header {
   display: flex;
   flex-direction: column;

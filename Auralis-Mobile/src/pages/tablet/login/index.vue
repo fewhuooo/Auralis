@@ -259,7 +259,7 @@ onPageShow(redirectIfAuthenticated)
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: clamp(18px, 3vh, 28px) clamp(20px, 2.8vw, 32px);
   background-color: var(--color-bg-primary);
@@ -270,6 +270,7 @@ onPageShow(redirectIfAuthenticated)
 .login-box {
   width: 100%;
   max-width: 280px;
+  margin: auto 0;
 }
 
 .compact-brand {
