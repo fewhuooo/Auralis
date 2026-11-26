@@ -1,3 +1,5 @@
+import { isTauriRuntime } from './tauriRuntime.ts'
+
 function fallbackCopyViaTextarea(text: string): boolean {
   if (typeof document === 'undefined' || !document.body) return false
   const textarea = document.createElement('textarea')
@@ -19,6 +21,15 @@ function fallbackCopyViaTextarea(text: string): boolean {
 }
 
 export async function copyText(text: string): Promise<boolean> {
+  if (isTauriRuntime()) {
+    try {
+      const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
+      await writeText(text)
+      return true
+    } catch {
+      // Fall through to standard clipboard / textarea fallback on plugin error
+    }
+  }
   if (
     typeof window !== 'undefined'
     && window.isSecureContext

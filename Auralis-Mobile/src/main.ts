@@ -1,15 +1,14 @@
 import 'katex/dist/katex.min.css'
-import { createSSRApp } from "vue";
-import { createPinia } from "pinia";
-import App from "./App.vue";
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
+import router from './router'
 
-export function createApp() {
-  const app = createSSRApp(App);
+const app = createApp(App)
+const pinia = createPinia()
+app.use(pinia)
+app.use(router)
 
-  const pinia = createPinia();
-  app.use(pinia);
-
-  return {
-    app,
-  };
-}
+void router.isReady().then(() => {
+  app.mount('#app')
+})

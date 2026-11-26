@@ -82,7 +82,6 @@
 
               <div class="mastery-ring-box">
                 <div class="mastery-ring">
-                  <!-- #ifdef H5 -->
                   <svg class="ring-svg" viewBox="0 0 100 100" aria-hidden="true">
                     <circle cx="50" cy="50" :r="ringRadius" fill="none" class="ring-track" />
                     <circle
@@ -95,10 +94,6 @@
                       :stroke-dashoffset="ringDashOffset"
                     />
                   </svg>
-                  <!-- #endif -->
-                  <!-- #ifndef H5 -->
-                  <div class="ring-conic-track" :style="{ background: ringConicBackground }"></div>
-                  <!-- #endif -->
                   <div class="ring-inner">
                     <span class="ring-percent num-tabular">{{ summary.masteryPercent }}%</span>
                     <div class="ring-pill">
@@ -490,10 +485,6 @@ const ringCircumference = 2 * Math.PI * ringRadius
 const ringDashOffset = computed(() => (
   ringCircumference * (1 - summary.value.masteryPercent / 100)
 ))
-const ringConicBackground = computed(() => {
-  const deg = Math.round((summary.value.masteryPercent / 100) * 3600) / 10
-  return `conic-gradient(var(--color-zen-sage) ${deg}deg, rgba(139, 154, 110, 0.14) ${deg}deg)`
-})
 
 const canStartLearning = computed(() => (
   statesLoaded.value && !statesLoading.value && !loading.value && summary.value.pendingLearningCount > 0
@@ -1005,14 +996,6 @@ const milestoneSubtitle = computed(() => {
   transition: stroke-dashoffset 0.35s var(--ease-out);
 }
 
-.ring-conic-track {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  -webkit-mask: radial-gradient(circle, transparent 70px, #000 71px);
-  mask: radial-gradient(circle, transparent 70px, #000 71px);
-}
-
 .ring-inner {
   position: absolute;
   inset: 0;
@@ -1133,14 +1116,12 @@ const milestoneSubtitle = computed(() => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .voluntary-btn:hover:not(:disabled) {
   background: rgba(139, 154, 110, 0.12);
   border-color: rgba(139, 154, 110, 0.35);
   color: #384A22;
   box-shadow: 0 2px 8px rgba(139, 154, 110, 0.18);
 }
-/* #endif */
 
 .voluntary-btn.is-disabled,
 .voluntary-btn:disabled {
@@ -1171,13 +1152,11 @@ const milestoneSubtitle = computed(() => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .action-panel:hover:not(.is-disabled) {
   border-color: rgba(139, 154, 110, 0.5);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04), 0 10px 24px -4px rgba(0, 0, 0, 0.09), 0 3px 8px -1px rgba(139, 154, 110, 0.15);
   transform: translateY(-2px);
 }
-/* #endif */
 
 .action-panel.is-disabled {
   opacity: 0.65;
@@ -1259,12 +1238,10 @@ const milestoneSubtitle = computed(() => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .action-panel:not(.is-disabled):hover .action-cta {
   border-color: var(--border-default);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
 }
-/* #endif */
 
 .action-hint {
   font-size: 12px;
@@ -1328,7 +1305,6 @@ const milestoneSubtitle = computed(() => {
   transition: all 0.16s ease;
 }
 
-/* #ifdef H5 */
 .nav-back-btn:hover:not(:disabled) {
   background: var(--color-bg-secondary);
   border-color: var(--border-default);
@@ -1340,7 +1316,6 @@ const milestoneSubtitle = computed(() => {
   background: var(--color-bg-secondary);
   color: var(--text-primary);
 }
-/* #endif */
 
 .round-progress-pill {
   padding: 7px 16px;
@@ -1590,7 +1565,6 @@ const milestoneSubtitle = computed(() => {
   font-size: 16px;
 }
 
-/* #ifdef H5 */
 .reveal-btn:hover:not(:disabled) {
   border-color: var(--border-default);
   transform: translateY(-2px);
@@ -1614,7 +1588,6 @@ const milestoneSubtitle = computed(() => {
   transform: translateY(-2px);
   box-shadow: 0 8px 22px -3px rgba(229, 115, 115, 0.22), 0 3px 8px -1px rgba(0, 0, 0, 0.06);
 }
-/* #endif */
 
 .rate-btn:active:not(:disabled),
 .reveal-btn:active:not(:disabled) {
@@ -1726,12 +1699,10 @@ const milestoneSubtitle = computed(() => {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* #ifdef H5 */
 .milestone-primary-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   filter: brightness(1.06);
 }
-/* #endif */
 
 @media (max-width: 960px) {
   .review-pane {

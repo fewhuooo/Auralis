@@ -573,7 +573,7 @@ function serializeCacheWrite(bucket: string, operation: () => Promise<void>): Pr
     try {
       await operation();
     } catch (error) {
-      if (typeof uni === 'undefined' && typeof plus === 'undefined') return;
+      if (typeof plus === 'undefined') return;
       console.warn(`[SQLite Mobile] Cache persistence skipped (${bucket}):`, error);
     }
   });

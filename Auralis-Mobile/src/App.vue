@@ -1,5 +1,10 @@
+<template>
+  <RouterView />
+</template>
+
 <script setup lang="ts">
 import { watch } from 'vue'
+import { RouterView } from 'vue-router'
 import { ensureFeedbackHost } from '@/platform/feedback'
 import { onAppHide, onAppLaunch, onAppShow } from '@/platform/lifecycle'
 import { connectRealtimeSync, disconnectRealtimeSync } from '@/api/sync'

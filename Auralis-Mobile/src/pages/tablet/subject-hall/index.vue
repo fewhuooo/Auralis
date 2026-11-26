@@ -444,13 +444,11 @@ onMounted(async () => {
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* #ifdef H5 */
 .search-box:focus-within {
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
-/* #endif */
 
 .search-input {
   flex: 1;
@@ -813,7 +811,6 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
-/* #ifdef H5 */
 .modal-form-input:focus,
 .modal-form-textarea:focus {
   outline: none;
@@ -821,7 +818,6 @@ onMounted(async () => {
   background: #FDFBF8;
   box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
-/* #endif */
 
 .icon-grid {
   display: grid;

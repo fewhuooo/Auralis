@@ -531,9 +531,7 @@ const navigate = (path: string) => {
   left: 16%;
 }
 
-/* #ifdef H5 */
 .tablet-layout {
   height: 100dvh;
 }
-/* #endif */
 </style>

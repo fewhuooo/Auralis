@@ -188,7 +188,6 @@ onMounted(() => {
   background: transparent;
 }
 
-/* #ifdef H5 */
 .mobile-viewport-shell {
   height: 100dvh;
 }
@@ -202,5 +201,4 @@ onMounted(() => {
     box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
   }
 }
-/* #endif */
 </style>

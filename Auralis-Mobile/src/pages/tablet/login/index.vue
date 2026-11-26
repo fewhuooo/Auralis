@@ -325,13 +325,11 @@ onPageShow(redirectIfAuthenticated)
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* #ifdef H5 */
 .code-field:focus-within {
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
-/* #endif */
 
 .code-input {
   flex: 1;
@@ -424,11 +422,9 @@ onPageShow(redirectIfAuthenticated)
   color: var(--text-primary);
 }
 
-/* #ifdef H5 */
 .login-page {
   min-height: 100dvh;
 }
-/* #endif */
 
 @media (max-width: 760px) {
   .brand-side {

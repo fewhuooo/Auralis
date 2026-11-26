@@ -1,6 +1,5 @@
 <template>
   <div ref="shellRef" class="doc-viewer-shell" :aria-busy="loading">
-    <!-- #ifdef H5 -->
     <div class="doc-viewer-rotation-stage" :style="rotationStageStyle">
       <div
         v-show="!errorMessage"
@@ -42,16 +41,13 @@
         </div>
       </div>
     </div>
-    <!-- #endif -->
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-// #ifdef H5
 import { localDataScope } from '@/services/localDataScope'
 import { deleteCachedDocument, putCachedDocument } from '@/services/localDocumentCache'
-// #endif
 import type {
   FileRenderContext,
   FileRenderHandler,
@@ -480,7 +476,6 @@ async function loadDocument(): Promise<void> {
     return
   }
 
-  // #ifdef H5
   const cacheScope = localDataScope.current()
   await nextTick()
   if (token !== loadToken) return
@@ -676,7 +671,6 @@ async function loadDocument(): Promise<void> {
       waitAbort = null
     }
   }
-  // #endif
 }
 
 function retry(): void {
@@ -689,12 +683,10 @@ function handleResize(): void {
 }
 
 onMounted(() => {
-  // #ifdef H5
   measureShellBounds()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleResize)
   }
-  // #endif
 })
 
 watch(
@@ -706,11 +698,9 @@ watch(
 onBeforeUnmount(() => {
   loadToken += 1
   abortActiveWork()
-  // #ifdef H5
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleResize)
   }
-  // #endif
   void destroyActiveViewer('component-unmount')
 })
 

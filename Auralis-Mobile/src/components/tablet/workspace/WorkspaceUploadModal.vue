@@ -21,7 +21,6 @@
       </div>
 
       <div class="modal-body">
-        <!-- #ifdef H5 -->
         <div
           class="drop-zone"
           :class="{ 'is-active': isDragover, 'has-file': Boolean(selectedFile) }"
@@ -48,27 +47,6 @@
             {{ selectedFileHint }}
           </div>
         </div>
-        <!-- #endif -->
-
-        <!-- #ifndef H5 -->
-        <div
-          class="drop-zone"
-          :class="{ 'has-file': Boolean(selectedFile) }"
-          role="button"
-          aria-label="选择上传文件"
-          @click="triggerNativePicker"
-        >
-          <div class="drop-icon" :class="{ 'is-success': Boolean(selectedFile) }">
-            <LineIcon
-              :name="selectedFile ? 'check' : 'upload'"
-              size="22px"
-              :color="selectedFile ? '#76855B' : 'var(--text-muted)'"
-            />
-          </div>
-          <span class="drop-text">{{ selectedFile ? selectedFile.name : '点击选择本地文件' }}</span>
-          <span class="drop-hint">{{ selectedFileHint }}</span>
-        </div>
-        <!-- #endif -->
 
         <div v-if="uploading" class="upload-progress">
           <div class="progress-header">
@@ -141,12 +119,9 @@ import LineIcon from '@/components/LineIcon.vue'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
-  pickLocalDocument,
+  normalizeBrowserFile,
   validateUploadFile,
 } from '@/utils/filePicker'
-// #ifdef H5
-import { normalizeBrowserFile } from '@/utils/filePicker'
-// #endif
 import { formatBytes } from '@/utils/sourceFormat'
 
 export interface UploadSubjectOption {
@@ -253,7 +228,6 @@ function applyChosenFile(candidate: LocalUploadFile) {
   }
 }
 
-// #ifdef H5
 function triggerH5FileInput() {
   if (props.uploading || typeof document === 'undefined') return
   const input = document.createElement('input')
@@ -274,21 +248,6 @@ function handleH5Drop(event: DragEvent) {
   if (!rawFile) return
   applyChosenFile(normalizeBrowserFile(rawFile))
 }
-// #endif
-
-// #ifndef H5
-async function triggerNativePicker() {
-  if (props.uploading) return
-  try {
-    const picked = await pickLocalDocument()
-    if (picked) {
-      applyChosenFile(picked)
-    }
-  } catch (error) {
-    localError.value = error instanceof Error && error.message ? error.message : '选择文件失败'
-  }
-}
-// #endif
 
 function handleClose() {
   if (props.uploading) return
@@ -522,14 +481,12 @@ function handleSubmit() {
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
 }
 
-/* #ifdef H5 */
 .modal-form-input:focus {
   outline: none;
   border-color: var(--color-zen-sage);
   background: #FDFBF8;
   box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
-/* #endif */
 
 .subject-grid {
   display: flex;

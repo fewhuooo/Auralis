@@ -278,12 +278,10 @@ function choose(task: Task | null) {
   color: #536B79;
 }
 
-/* #ifdef H5 */
 @media (min-width: 540px) {
   .zen-sheet-body.sheet-panel {
     border: 1px solid rgba(139, 154, 110, 0.25);
     box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.13), 0 8px 24px -6px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7);
   }
 }
-/* #endif */
 </style>

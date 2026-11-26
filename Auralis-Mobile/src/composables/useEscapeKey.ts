@@ -1,7 +1,6 @@
 import { onMounted, onUnmounted } from 'vue'
 
 export function useEscapeKey(isActive: () => boolean, onEscape: () => void): void {
-  // #ifdef H5
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key !== 'Escape') return
     if (!isActive()) return
@@ -20,5 +19,4 @@ export function useEscapeKey(isActive: () => boolean, onEscape: () => void): voi
       window.removeEventListener('keydown', handleKeyDown)
     }
   })
-  // #endif
 }

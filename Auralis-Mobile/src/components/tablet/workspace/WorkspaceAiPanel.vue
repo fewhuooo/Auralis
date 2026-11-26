@@ -1305,13 +1305,11 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .starter-card:hover {
   border-color: #D7D0C2;
   box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06);
   transform: translateY(-1px);
 }
-/* #endif */
 
 .starter-card:active {
   transform: scale(0.988);
@@ -1489,13 +1487,11 @@ onBeforeUnmount(() => {
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
 }
 
-/* #ifdef H5 */
 .input-capsule:focus-within {
   border-color: var(--color-zen-sage);
   background: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0, 0, 0, 0.05);
 }
-/* #endif */
 
 .composer-input {
   flex: 1;

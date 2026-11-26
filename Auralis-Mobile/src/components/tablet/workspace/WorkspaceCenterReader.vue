@@ -106,7 +106,6 @@
           </div>
 
           <template v-if="fileReaderMode === 'document' && (hasPreviewSource || (previewLoading && showCorePreviewControls))">
-            <!-- #ifdef H5 -->
             <div v-if="showCorePreviewControls" class="preview-controls-bar" aria-label="文档预览控制">
               <div class="preview-control-group">
                 <button
@@ -159,7 +158,6 @@
                 </button>
               </div>
             </div>
-            <!-- #endif -->
 
             <div class="preview-utility-actions">
               <button
@@ -302,7 +300,6 @@
             </div>
           </div>
 
-          <!-- #ifdef H5 -->
           <WorkspaceDocumentViewer
             v-else-if="hasPreviewSource && isCoreFileViewerKind(activePreviewKind)"
             ref="docViewerRef"
@@ -320,7 +317,6 @@
             @open-external="openActiveDocument"
             @retry-source="emit('retry-preview')"
           />
-          <!-- #endif -->
 
           <div v-else-if="previewUrl" class="empty-state">
             <div class="doc-meta-card zen-card">
@@ -361,7 +357,6 @@
           @open-document="setFileReaderMode('document')"
         />
 
-        <!-- #ifdef H5 -->
         <div
           v-if="fileReaderMode === 'document' && isCoreDocPreview && viewerReady && previewPageCount > 1"
           class="floating-page-pill"
@@ -388,7 +383,6 @@
             <LineIcon name="chevron-right" size="14px" color="currentColor" />
           </div>
         </div>
-        <!-- #endif -->
         </template>
       </div>
 
@@ -576,9 +570,7 @@ import LineIcon from '@/components/LineIcon.vue'
 import WorkspaceOverviewPane from '@/components/tablet/workspace/WorkspaceOverviewPane.vue'
 import WorkspaceReviewPane from '@/components/tablet/workspace/WorkspaceReviewPane.vue'
 import WorkspaceStatsPane from '@/components/tablet/workspace/WorkspaceStatsPane.vue'
-// #ifdef H5
 import WorkspaceDocumentViewer from '@/components/tablet/workspace/WorkspaceDocumentViewer.vue'
-// #endif
 import type { DocViewerZoomPayload } from '@/components/tablet/workspace/WorkspaceDocumentViewer.vue'
 import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
@@ -768,25 +760,21 @@ const hasPreviewSource = computed(() => Boolean(props.previewUrl || props.previe
 
 const isCoreDocPreview = computed(() => {
   let enabled = false
-  // #ifdef H5
   enabled = (
     hasPreviewSource.value
     && !isImageMedia(props.previewMimeType, previewMediaName.value)
     && isCoreFileViewerKind(activePreviewKind.value)
   )
-  // #endif
   return enabled
 })
 
 const showCorePreviewControls = computed(() => {
   let enabled = false
-  // #ifdef H5
   enabled = (
     Boolean(props.selectedSource?.assetId)
     && !isImageMedia(props.previewMimeType, previewMediaName.value)
     && isCoreFileViewerKind(activePreviewKind.value)
   )
-  // #endif
   return enabled
 })
 

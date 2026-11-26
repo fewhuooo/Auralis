@@ -7,7 +7,8 @@ import { configureAuthSessionBridge } from '@/api/request'
 import { useAuthApi } from '@/api/useAuthApi'
 import { getCurrentRoutePath, reLaunch } from '@/platform/navigation'
 import { getStorageItem, removeStorageItem, setStorageItem, setStorageJson } from '@/platform/storage'
-import { getDeviceSystemInfo, getViewportMetrics } from '@/platform/system'
+import { getDeviceSystemInfo } from '@/platform/system'
+import { getDefaultLoginRoute } from '@/router/target'
 import { localDataScope } from '@/services/localDataScope'
 import { purgeLegacyLocalData } from '@/services/legacyDataPurge'
 
@@ -57,11 +58,7 @@ function currentLoginRoute(): string {
   const route = getCurrentRoutePath()
   if (route.startsWith('/pages/tablet/')) return '/pages/tablet/login/index'
   if (route.startsWith('/pages/mobile/')) return '/pages/mobile/login/index'
-  const { width, height } = getViewportMetrics()
-  if (width >= 768 && height >= 500) {
-    return '/pages/tablet/login/index'
-  }
-  return '/pages/mobile/login/index'
+  return getDefaultLoginRoute()
 }
 
 export const useAuthStore = defineStore('auth', () => {

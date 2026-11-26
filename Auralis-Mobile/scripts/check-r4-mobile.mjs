@@ -11,6 +11,7 @@ const scanRoots = [
   'src/config',
   'src/components',
   'src/platform',
+  'src/router',
   'src/composables',
   'src/utils',
   'src/App.vue',
@@ -35,19 +36,24 @@ const scopedForbidden = [
     allow: new Set(),
   },
   {
-    label: '@dcloudio/uni-app import outside platform/lifecycle.ts',
+    label: '@dcloudio/uni-app import',
     pattern: /@dcloudio\/uni-app/,
-    allow: new Set(['src/platform/lifecycle.ts']),
+    allow: new Set(),
   },
   {
-    label: 'uni.* runtime call outside platform/navigation.ts',
+    label: 'uni.* runtime call',
     pattern: /\buni\./,
-    allow: new Set(['src/platform/navigation.ts']),
+    allow: new Set(),
   },
   {
-    label: 'getCurrentPages() call outside platform/navigation.ts',
+    label: 'getCurrentPages() call',
     pattern: /\bgetCurrentPages\s*\(/,
-    allow: new Set(['src/platform/navigation.ts']),
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp conditional compilation directive',
+    pattern: /#(?:ifdef|ifndef|endif)\b/,
+    allow: new Set(),
   },
   {
     label: 'UniApp template tag',
@@ -114,6 +120,7 @@ for (const file of files) {
 }
 
 const retiredPages = [
+  'src/pages/launch/index.vue',
   'src/pages/mobile/settings/index.vue',
   'src/pages/mobile/timeline/index.vue',
   'src/pages/mobile/handwriting/index.vue',

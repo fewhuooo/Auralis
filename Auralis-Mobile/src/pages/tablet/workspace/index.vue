@@ -219,9 +219,7 @@ import { useEscapeKey } from '@/composables/useEscapeKey'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDataScope } from '@/services/localDataScope'
 import { localDb } from '@/services/localDb'
-// #ifdef H5
 import { deleteCachedDocument, getCachedDocument } from '@/services/localDocumentCache'
-// #endif
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -505,7 +503,6 @@ async function loadSourcePreview(bypassCache = false) {
   previewUrl.value = ''
   previewBuffer.value = null
   try {
-    // #ifdef H5
     if (bypassCache) {
       await deleteCachedDocument(activeScope, source.assetId)
       if (token !== previewReqToken || !isFenceValid(fence)) return
@@ -519,7 +516,6 @@ async function loadSourcePreview(bypassCache = false) {
         return
       }
     }
-    // #endif
 
     const res = await assetApi.downloadUrl(source.assetId)
     if (token !== previewReqToken || !isFenceValid(fence)) return
@@ -769,11 +765,9 @@ async function handleDeleteSource(source: SourceView) {
     if (!isFenceValid(fence, false)) return
     await localDb.deleteSourceFile(source.id).catch(() => {})
     if (!isFenceValid(fence, false)) return
-    // #ifdef H5
     if (source.assetId) {
       void deleteCachedDocument(activeScope, source.assetId)
     }
-    // #endif
     const wasSelected = selectedSourceId.value === source.id
     if (wasSelected) {
       selectedSourceId.value = null

@@ -1,3 +1,5 @@
+import { getAppTarget } from '../router/target.ts'
+
 export type MobilePlatform = 'h5' | 'app' | 'tablet'
 
 export interface RuntimeConfig {
@@ -56,9 +58,7 @@ export function resolveWebsocketUrl(pathOrUrl: string, config: RuntimeConfig): s
 }
 
 function currentPlatform(): MobilePlatform {
-  const platform = String(import.meta.env.UNI_PLATFORM || '').toLowerCase()
-  if (platform === 'app' || platform === 'app-plus') return 'app'
-  return 'h5'
+  return getAppTarget() === 'tablet' ? 'tablet' : 'app'
 }
 
 export function getRuntimeConfig(): RuntimeConfig {

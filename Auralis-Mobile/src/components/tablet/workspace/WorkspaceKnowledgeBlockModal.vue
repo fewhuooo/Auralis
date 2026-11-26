@@ -621,7 +621,6 @@ function handleDelete() {
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
 }
 
-/* #ifdef H5 */
 .modal-form-input:focus,
 .modal-form-input:focus-within,
 .kb-form-textarea:focus,
@@ -631,7 +630,6 @@ function handleDelete() {
   background: #FDFBF8;
   box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
-/* #endif */
 
 .color-row {
   display: flex;

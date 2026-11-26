@@ -2420,7 +2420,6 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-/* #ifdef H5 */
 .cell-btn:hover {
   border-color: var(--border-strong);
   background-color: #F7F2EB;
@@ -2452,7 +2451,6 @@ onUnmounted(() => {
 .eye-toggle-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
-/* #endif */
 
 @media (max-width: 1150px) {
   .studio-left {

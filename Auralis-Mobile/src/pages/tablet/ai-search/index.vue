@@ -1650,11 +1650,9 @@ onPageLoad((options) => {
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-/* #ifdef H5 */
 .history-item:hover {
   background-color: rgba(28, 28, 26, 0.035);
 }
-/* #endif */
 
 .history-item.active {
   background-color: #FFFFFF;
@@ -1717,12 +1715,10 @@ onPageLoad((options) => {
   transition: opacity 0.14s ease, background-color 0.14s ease;
 }
 
-/* #ifdef H5 */
 .history-del:hover {
   opacity: 1;
   background-color: var(--color-danger-bg);
 }
-/* #endif */
 
 .chat-card {
   position: relative;
@@ -1858,13 +1854,11 @@ onPageLoad((options) => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .starter-card:hover {
   border-color: #D7D0C2;
   box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06);
   transform: translateY(-1px);
 }
-/* #endif */
 
 .starter-card:active {
   transform: scale(0.988);
@@ -1997,11 +1991,9 @@ onPageLoad((options) => {
   background-color: rgba(28, 28, 26, 0.05);
 }
 
-/* #ifdef H5 */
 .footer-action-chip:hover {
   background-color: rgba(28, 28, 26, 0.05);
 }
-/* #endif */
 
 .footer-action-label {
   font-size: var(--text-xs);
@@ -2088,12 +2080,10 @@ onPageLoad((options) => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .composer-card:focus-within {
   border-color: rgba(110, 127, 80, 0.55);
   box-shadow: 0 12px 32px rgba(72, 62, 46, 0.14), 0 4px 12px rgba(85, 107, 61, 0.10);
 }
-/* #endif */
 
 .composer-textarea {
   width: 100%;
@@ -2153,7 +2143,6 @@ onPageLoad((options) => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .scope-capsule:hover {
   background-color: #EFF3E8;
   border-color: rgba(85, 107, 61, 0.35);
@@ -2163,7 +2152,6 @@ onPageLoad((options) => {
   background-color: #F4F1EA;
   border-color: #EAE6DD;
 }
-/* #endif */
 
 .scope-capsule:active {
   transform: scale(0.97);
@@ -2285,11 +2273,9 @@ onPageLoad((options) => {
   transition: background-color 0.15s ease;
 }
 
-/* #ifdef H5 */
 .dropdown-item:hover {
   background-color: rgba(28, 28, 26, 0.04);
 }
-/* #endif */
 
 .dropdown-item:active {
   background-color: rgba(28, 28, 26, 0.06);

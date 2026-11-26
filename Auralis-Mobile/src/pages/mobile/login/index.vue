@@ -241,13 +241,11 @@ onPageShow(redirectIfAuthenticated)
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* #ifdef H5 */
 .code-field:focus-within {
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
-/* #endif */
 
 .code-input {
   flex: 1;
@@ -329,7 +327,6 @@ onPageShow(redirectIfAuthenticated)
   cursor: pointer;
 }
 
-/* #ifdef H5 */
 .login-viewport,
 .login-page {
   min-height: 100dvh;
@@ -345,5 +342,4 @@ onPageShow(redirectIfAuthenticated)
     box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
   }
 }
-/* #endif */
 </style>

@@ -6,9 +6,7 @@ import { isNetworkOnline } from '@/platform/network'
 import { getStorageItem, removeStorageItem, setStorageItem } from '@/platform/storage'
 import { localDb } from '@/services/localDb'
 import { localDataScope } from '@/services/localDataScope'
-// #ifdef H5
 import { clearScopeDocumentCache } from '@/services/localDocumentCache'
-// #endif
 import { createSyncController } from '@/services/syncController'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -65,11 +63,9 @@ export const useSyncStore = defineStore('sync', () => {
       const focusStore = useFocusStore()
       focusStore.dismissCompletedTaskPrompt()
       focusStore.reconcileNow(false)
-      // #ifdef H5
       if (previousScope) {
         void clearScopeDocumentCache(previousScope)
       }
-      // #endif
       if (auth.user?.id && auth.serverDeviceId) {
         try {
           removeStorageItem(`auralis:review:pending:${auth.user.id}:${auth.serverDeviceId}`)
