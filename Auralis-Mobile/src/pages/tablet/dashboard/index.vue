@@ -1,10 +1,10 @@
 <template>
   <TabletLayout>
-    <view class="t-dashboard">
-      <view class="left-column zen-panel">
-        <view class="greeting-header">
-          <text class="greeting-title">{{ greeting }}，{{ displayName }}</text>
-          <view
+    <div class="t-dashboard">
+      <div class="left-column zen-panel">
+        <div class="greeting-header">
+          <span class="greeting-title">{{ greeting }}，{{ displayName }}</span>
+          <div
             class="todo-fab-add-btn"
             role="button"
             title="新建任务"
@@ -12,8 +12,8 @@
             @click="openCreateModal"
           >
             <LineIcon name="plus" size="16px" color="#FFFFFF" />
-          </view>
-        </view>
+          </div>
+        </div>
 
         <ZenWeekStrip
           v-model="selectedDateKey"
@@ -23,35 +23,35 @@
           :frameless="true"
         />
 
-        <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
-          <view
+        <div class="tasks-scroll zen-scroll-y">
+          <div
             v-if="hydrated && scheduledForDay.length === 0 && taskStore.homePendingTasks.length === 0"
             class="clear-day-canvas zen-card"
           >
-            <view class="clear-day-halo" aria-hidden="true">
+            <div class="clear-day-halo" aria-hidden="true">
               <LineIcon name="calendar" size="22px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="clear-day-title">今日无安排</text>
-            <view class="ui-btn ui-btn-secondary sm clear-day-cta" role="button" @click="openCreateModal">
+            </div>
+            <span class="clear-day-title">今日无安排</span>
+            <div class="ui-btn ui-btn-secondary sm clear-day-cta" role="button" @click="openCreateModal">
               <LineIcon name="plus" size="14px" color="var(--color-sage-ink)" />
-              <text>新建任务</text>
-            </view>
-          </view>
+              <span>新建任务</span>
+            </div>
+          </div>
 
           <template v-else-if="hydrated || scheduledForDay.length > 0 || taskStore.homePendingTasks.length > 0">
-            <view class="task-section">
-              <view class="section-header">
-                <text class="section-title">日程</text>
-                <text v-if="scheduledForDay.length > 0" class="section-count num-tabular">
+            <div class="task-section">
+              <div class="section-header">
+                <span class="section-title">日程</span>
+                <span v-if="scheduledForDay.length > 0" class="section-count num-tabular">
                   {{ scheduledForDay.length }}
-                </text>
-              </view>
+                </span>
+              </div>
 
-              <view v-if="scheduledForDay.length === 0" class="empty-slot zen-empty-surface">
-                <text class="empty-text">暂无日程</text>
-              </view>
+              <div v-if="scheduledForDay.length === 0" class="empty-slot zen-empty-surface">
+                <span class="empty-text">暂无日程</span>
+              </div>
 
-              <view v-else class="card-stack">
+              <div v-else class="card-stack">
                 <ZenTaskRow
                   v-for="item in scheduledForDay"
                   :key="item.id"
@@ -61,22 +61,22 @@
                   @toggle="toggleTaskItem"
                   @unschedule="unscheduleTaskItem"
                 />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="task-section">
-              <view class="section-header">
-                <text class="section-title">待办</text>
-                <text v-if="taskStore.homePendingTasks.length > 0" class="section-count num-tabular">
+            <div class="task-section">
+              <div class="section-header">
+                <span class="section-title">待办</span>
+                <span v-if="taskStore.homePendingTasks.length > 0" class="section-count num-tabular">
                   {{ taskStore.homePendingTasks.length }}
-                </text>
-              </view>
+                </span>
+              </div>
 
-              <view v-if="taskStore.homePendingTasks.length === 0" class="empty-slot zen-empty-surface">
-                <text class="empty-text">暂无待办</text>
-              </view>
+              <div v-if="taskStore.homePendingTasks.length === 0" class="empty-slot zen-empty-surface">
+                <span class="empty-text">暂无待办</span>
+              </div>
 
-              <view v-else class="card-stack">
+              <div v-else class="card-stack">
                 <ZenTaskRow
                   v-for="todo in taskStore.homePendingTasks"
                   :key="todo.id"
@@ -86,28 +86,28 @@
                   @toggle="toggleTaskItem"
                   @delete="confirmDeleteTodo"
                 />
-              </view>
-            </view>
+              </div>
+            </div>
           </template>
-        </scroll-view>
-      </view>
+        </div>
+      </div>
 
-      <view class="right-column">
-        <view class="subjects-card zen-panel">
-          <view class="panel-header">
-            <text class="panel-title">学科空间</text>
-            <text v-if="subjectStore.subjects.length > 0" class="section-count num-tabular">
+      <div class="right-column">
+        <div class="subjects-card zen-panel">
+          <div class="panel-header">
+            <span class="panel-title">学科空间</span>
+            <span v-if="subjectStore.subjects.length > 0" class="section-count num-tabular">
               {{ subjectStore.subjects.length }}
-            </text>
-          </view>
+            </span>
+          </div>
 
-          <view v-if="hydrated && subjectStore.subjects.length === 0" class="subjects-empty">
-            <text class="empty-text">暂无学科</text>
-          </view>
+          <div v-if="hydrated && subjectStore.subjects.length === 0" class="subjects-empty">
+            <span class="empty-text">暂无学科</span>
+          </div>
 
-          <scroll-view v-else-if="subjectStore.subjects.length > 0" scroll-y :show-scrollbar="false" class="subjects-scroll">
-            <view class="subject-list">
-              <view
+          <div v-else-if="subjectStore.subjects.length > 0" class="subjects-scroll zen-scroll-y">
+            <div class="subject-list">
+              <div
                 v-for="sub in subjectStore.subjects"
                 :key="sub.id"
                 class="subject-row"
@@ -115,46 +115,46 @@
                 :aria-label="`进入学科 ${sub.name}`"
                 @click="openSubjectWorkspace(sub.id)"
               >
-                <view class="subject-row-left">
-                  <view class="sub-icon-badge">
+                <div class="subject-row-left">
+                  <div class="sub-icon-badge">
                     <LineIcon
                       :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
                       size="16px"
                       color="var(--color-sage-ink)"
                     />
-                  </view>
-                  <text class="sub-name">{{ sub.name }}</text>
-                </view>
-                <view class="subject-row-right">
-                  <view class="subject-meta num-tabular">
+                  </div>
+                  <span class="sub-name">{{ sub.name }}</span>
+                </div>
+                <div class="subject-row-right">
+                  <div class="subject-meta num-tabular">
                     <LineIcon name="layers" size="12px" color="var(--text-muted)" />
-                    <text>{{ sub.blockCount || 0 }}</text>
-                  </view>
+                    <span>{{ sub.blockCount || 0 }}</span>
+                  </div>
                   <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
-                </view>
-              </view>
-            </view>
-          </scroll-view>
-        </view>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <view class="metrics-panel zen-panel">
+        <div class="metrics-panel zen-panel">
           <StudyMetrics />
-        </view>
-      </view>
-    </view>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
-      <view v-if="showCreateModal" class="zen-modal-mask task-modal-mask" @click="closeCreateModal">
-        <view
+      <div v-if="showCreateModal" class="zen-modal-mask task-modal-mask" @click="closeCreateModal">
+        <div
           class="task-modal"
           role="dialog"
           aria-modal="true"
           aria-label="新建学习任务"
           @click.stop
         >
-          <view class="modal-header">
-            <text class="modal-title">新建学习任务</text>
-            <view
+          <div class="modal-header">
+            <span class="modal-title">新建学习任务</span>
+            <div
               class="modal-close-btn"
               :class="{ 'is-disabled': savingTask }"
               role="button"
@@ -162,42 +162,42 @@
               @click="closeCreateModal"
             >
               <LineIcon name="close" size="15px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-body">
+          <div class="modal-body">
             <!-- 任务名称 -->
-            <view class="modal-form-group">
-              <view class="modal-form-label">
-                <text>任务名称</text>
-                <text class="required">*</text>
-              </view>
+            <div class="modal-form-group">
+              <div class="modal-form-label">
+                <span>任务名称</span>
+                <span class="required">*</span>
+              </div>
               <input
                 v-model="taskForm.name"
                 class="modal-form-input"
                 maxlength="80"
                 placeholder="请输入学习或专注任务名称..."
                 :disabled="savingTask"
-                @confirm="submitCreateTask"
+                @keydown="handleEnterKey($event, submitCreateTask)"
               />
-            </view>
+            </div>
 
             <!-- 所属学科 -->
-            <view class="modal-form-group">
-              <view class="subject-header">
-                <view class="modal-form-label">
-                  <text>所属学科</text>
-                  <text class="required">*</text>
-                </view>
-                <text v-if="subjectStore.subjects.length > 0" class="subject-count-hint num-tabular">
+            <div class="modal-form-group">
+              <div class="subject-header">
+                <div class="modal-form-label">
+                  <span>所属学科</span>
+                  <span class="required">*</span>
+                </div>
+                <span v-if="subjectStore.subjects.length > 0" class="subject-count-hint num-tabular">
                   共 {{ subjectStore.subjects.length }} 门
-                </text>
-              </view>
-              <view v-if="subjectStore.subjects.length === 0" class="empty-hint">
+                </span>
+              </div>
+              <div v-if="subjectStore.subjects.length === 0" class="empty-hint">
                 暂无学科，请先创建学科空间
-              </view>
-              <view v-else class="subject-grid">
-                <view
+              </div>
+              <div v-else class="subject-grid">
+                <div
                   v-for="sub in subjectStore.subjects"
                   :key="sub.id"
                   class="subject-chip"
@@ -210,27 +210,27 @@
                     size="13px"
                     :color="taskForm.subjectId === sub.id ? '#76855B' : 'var(--text-secondary)'"
                   />
-                  <text class="chip-name">{{ sub.name }}</text>
-                </view>
-              </view>
-            </view>
+                  <span class="chip-name">{{ sub.name }}</span>
+                </div>
+              </div>
+            </div>
 
             <!-- 专注时长（PC 同源 7 档整半小时分段滑轨） -->
-            <view class="modal-form-group">
-              <view class="duration-header">
-                <text class="modal-form-label">专注时长</text>
-                <view class="duration-value-pill num-tabular">
+            <div class="modal-form-group">
+              <div class="duration-header">
+                <span class="modal-form-label">专注时长</span>
+                <div class="duration-value-pill num-tabular">
                   <LineIcon name="clock" size="13px" color="#76855B" />
-                  <text>{{ taskForm.duration }} 分钟（{{ (taskForm.duration / 60).toFixed(1) }} 小时）</text>
-                </view>
-              </view>
+                  <span>{{ taskForm.duration }} 分钟（{{ (taskForm.duration / 60).toFixed(1) }} 小时）</span>
+                </div>
+              </div>
 
-              <view class="duration-segmented-track">
-                <view class="track-segments-row">
-                  <view class="active-thumb-pill" :style="durationThumbStyle">
-                    <text class="active-thumb-text num-tabular">{{ activeDurationLabel }}</text>
-                  </view>
-                  <view
+              <div class="duration-segmented-track">
+                <div class="track-segments-row">
+                  <div class="active-thumb-pill" :style="durationThumbStyle">
+                    <span class="active-thumb-text num-tabular">{{ activeDurationLabel }}</span>
+                  </div>
+                  <div
                     v-for="opt in DURATION_OPTIONS"
                     :key="opt.minutes"
                     class="track-segment-item"
@@ -238,31 +238,31 @@
                     role="button"
                     @click="!savingTask && (taskForm.duration = opt.minutes)"
                   >
-                    <text class="segment-label num-tabular">{{ opt.label }}</text>
-                  </view>
-                </view>
-              </view>
-            </view>
+                    <span class="segment-label num-tabular">{{ opt.label }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- 日程安排（平板专属直接排程） -->
-            <view class="modal-form-group">
-              <view class="modal-form-label">
-                <text>日程安排</text>
-                <text class="optional-tag">可选</text>
-              </view>
-              <view class="schedule-row-card">
-                <text class="schedule-date-label">排入 {{ selectedDateHeading }}</text>
-                <view class="schedule-controls">
+            <div class="modal-form-group">
+              <div class="modal-form-label">
+                <span>日程安排</span>
+                <span class="optional-tag">可选</span>
+              </div>
+              <div class="schedule-row-card">
+                <span class="schedule-date-label">排入 {{ selectedDateHeading }}</span>
+                <div class="schedule-controls">
                   <ZenTimePicker
                     v-if="taskForm.scheduled"
                     v-model="taskForm.timeHHmm"
                     :disabled="savingTask"
                     title="选择开始时间"
                   >
-                    <view class="time-pill num-tabular">
+                    <div class="time-pill num-tabular">
                       <LineIcon name="clock" size="13px" color="#76855B" />
-                      <text>{{ taskForm.timeHHmm }}</text>
-                    </view>
+                      <span>{{ taskForm.timeHHmm }}</span>
+                    </div>
                   </ZenTimePicker>
                   <button
                     type="button"
@@ -276,24 +276,24 @@
                   >
                     <span class="zen-switch-thumb"></span>
                   </button>
-                </view>
-              </view>
-            </view>
+                </div>
+              </div>
+            </div>
 
             <!-- 截止时间 -->
-            <view class="modal-form-group">
-              <view class="due-header">
-                <view class="modal-form-label">
-                  <text>截止时间</text>
-                  <text class="optional-tag">可选</text>
-                </view>
-                <text
+            <div class="modal-form-group">
+              <div class="due-header">
+                <div class="modal-form-label">
+                  <span>截止时间</span>
+                  <span class="optional-tag">可选</span>
+                </div>
+                <span
                   v-if="taskForm.dueDateKey && !savingTask"
                   class="due-clear-btn"
                   role="button"
                   @click="taskForm.dueDateKey = ''"
-                >清除</text>
-              </view>
+                >清除</span>
+              </div>
 
               <ZenDatePicker
                 v-model="taskForm.dueDateKey"
@@ -301,14 +301,14 @@
                 :disabled="savingTask"
                 title="选择截止日期"
               >
-                <view class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
+                <div class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
                   <LineIcon name="calendar" size="14px" :color="taskForm.dueDateKey ? '#76855B' : '#8B9A6E'" />
-                  <text class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</text>
-                </view>
+                  <span class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</span>
+                </div>
               </ZenDatePicker>
 
-              <view class="quick-date-row">
-                <view
+              <div class="quick-date-row">
+                <div
                   v-for="preset in dueDatePresets"
                   :key="preset.label"
                   class="due-preset-chip"
@@ -316,13 +316,13 @@
                   role="button"
                   @click="!savingTask && toggleDuePreset(preset.key)"
                 >
-                  <text>{{ preset.label }}</text>
-                </view>
-              </view>
-            </view>
-          </view>
+                  <span>{{ preset.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-          <view class="modal-footer">
+          <div class="modal-footer">
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
@@ -335,9 +335,9 @@
               :disabled="!canSubmitTask"
               @click="submitCreateTask"
             >{{ savingTask ? '保存中…' : taskForm.scheduled ? '加入日程' : '添加到待办' }}</button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
     </template>
   </TabletLayout>
 </template>
@@ -367,6 +367,7 @@ import {
   shiftDateKey,
   toLocalDateKey,
 } from '@/utils/dateKey'
+import { handleEnterKey } from '@/utils/domHelpers'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
 
 const authStore = useAuthStore()

@@ -1,13 +1,13 @@
 <template>
-  <view class="timer-core">
-    <view class="time-row">
-      <view class="datetime-pill num-tabular">
-        <view class="datetime-dot" aria-hidden="true"></view>
-        <text>{{ dateText }} {{ timeText }}</text>
-      </view>
-    </view>
+  <div class="timer-core">
+    <div class="time-row">
+      <div class="datetime-pill num-tabular">
+        <div class="datetime-dot" aria-hidden="true"></div>
+        <span>{{ dateText }} {{ timeText }}</span>
+      </div>
+    </div>
 
-    <view class="center-block">
+    <div class="center-block">
       <PomodoroRing
         size="min(400px, 44vw, 52vh)"
         :total-seconds="focusStore.totalSeconds"
@@ -21,18 +21,18 @@
         @center-click="focusStore.toggle()"
       />
 
-      <view class="phase-status">
-        <view
+      <div class="phase-status">
+        <div
           class="phase-pill"
           :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
         >
-          <view class="phase-beacon" aria-hidden="true"></view>
-          <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
-        </view>
-      </view>
+          <div class="phase-beacon" aria-hidden="true"></div>
+          <span>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</span>
+        </div>
+      </div>
 
-      <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
-        <view
+      <div class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
+        <div
           v-for="idx in 4"
           :key="idx"
           class="dot"
@@ -40,29 +40,29 @@
             'is-filled': focusStore.cycleCount >= idx,
             'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
           }"
-        ></view>
-      </view>
+        ></div>
+      </div>
 
-      <view class="controls">
-        <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
-          <text>重置</text>
-        </view>
-        <view
+      <div class="controls">
+        <div class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
+          <span>重置</span>
+        </div>
+        <div
           class="main-btn"
           :class="{ 'is-running': focusStore.isRunning, 'is-break': focusStore.isBreakPhase }"
           role="button"
           :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
           @click="focusStore.toggle()"
         >
-          <view v-if="focusStore.isRunning" class="pause-icon"></view>
-          <view v-else class="play-icon"></view>
-        </view>
-        <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
-          <text>跳过</text>
-        </view>
-      </view>
-    </view>
-  </view>
+          <div v-if="focusStore.isRunning" class="pause-icon"></div>
+          <div v-else class="play-icon"></div>
+        </div>
+        <div class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
+          <span>跳过</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

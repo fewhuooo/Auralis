@@ -1,245 +1,245 @@
 <template>
   <TabletLayout>
-    <view class="profile-studio">
+    <div class="profile-studio">
       <!-- ===== LEFT PANEL: 数据透视与身份面板 ===== -->
-      <view class="studio-left">
-        <scroll-view scroll-y :show-scrollbar="false" class="panel-scroll">
-          <view class="studio-left-inner">
+      <div class="studio-left">
+        <div class="panel-scroll zen-scroll-y">
+          <div class="studio-left-inner">
             <!-- 1. 用户基本资料卡 -->
-            <view class="user-profile-card">
-              <view class="user-avatar">
-                <text class="avatar-initial">{{ avatarInitial }}</text>
-              </view>
-              <view class="user-profile-meta">
-                <text class="user-name">{{ displayName }}</text>
-                <view class="user-badges">
-                  <view class="user-streak-pill">
+            <div class="user-profile-card">
+              <div class="user-avatar">
+                <span class="avatar-initial">{{ avatarInitial }}</span>
+              </div>
+              <div class="user-profile-meta">
+                <span class="user-name">{{ displayName }}</span>
+                <div class="user-badges">
+                  <div class="user-streak-pill">
                     <LineIcon name="fire" size="13px" color="#C89B6D" />
-                    <text>本周专注天数</text>
-                    <text class="streak-count num-tabular">{{ weeklyFocusDays }}</text>
-                  </view>
-                </view>
-              </view>
-            </view>
+                    <span>本周专注天数</span>
+                    <span class="streak-count num-tabular">{{ weeklyFocusDays }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- 2. 核心学习指标 -->
-            <view class="study-stats-card">
-              <view class="card-head-between">
-                <text class="card-heading">核心学习指标</text>
-              </view>
+            <div class="study-stats-card">
+              <div class="card-head-between">
+                <span class="card-heading">核心学习指标</span>
+              </div>
               <StudyMetrics ref="metricsRef" variant="pc" @loaded="handleMetricsLoaded" />
-            </view>
+            </div>
 
             <!-- 3. 学科知识分布 -->
-            <view class="subject-dist-card">
-              <view class="card-head-between">
-                <text class="card-heading">学科知识分布</text>
-              </view>
-              <view v-if="subjectDistItems.length === 0" class="no-data-hint">
-                <text>暂无学科分布统计</text>
-              </view>
-              <view v-else class="subject-list">
-                <view v-for="sub in subjectDistItems" :key="sub.id" class="subject-row">
-                  <view class="subject-dot" :style="{ backgroundColor: sub.color }"></view>
-                  <text class="subject-name">{{ sub.name }}</text>
-                  <view class="subject-bar-bg">
-                    <view
+            <div class="subject-dist-card">
+              <div class="card-head-between">
+                <span class="card-heading">学科知识分布</span>
+              </div>
+              <div v-if="subjectDistItems.length === 0" class="no-data-hint">
+                <span>暂无学科分布统计</span>
+              </div>
+              <div v-else class="subject-list">
+                <div v-for="sub in subjectDistItems" :key="sub.id" class="subject-row">
+                  <div class="subject-dot" :style="{ backgroundColor: sub.color }"></div>
+                  <span class="subject-name">{{ sub.name }}</span>
+                  <div class="subject-bar-bg">
+                    <div
                       class="subject-bar-fill"
                       :style="{ width: `${sub.pct}%`, backgroundColor: sub.color }"
-                    ></view>
-                  </view>
-                  <text class="subject-count-badge num-tabular">{{ sub.count }} 块</text>
-                </view>
-              </view>
-            </view>
+                    ></div>
+                  </div>
+                  <span class="subject-count-badge num-tabular">{{ sub.count }} 块</span>
+                </div>
+              </div>
+            </div>
 
             <!-- 4. 账号与安全凭证 -->
-            <view class="account-card">
-              <text class="account-card-title">账号与安全凭证</text>
+            <div class="account-card">
+              <span class="account-card-title">账号与安全凭证</span>
 
               <!-- 4.1 账号资料 -->
-              <view class="account-section">
-                <view class="account-section-header">
-                  <view class="setting-label-with-icon">
+              <div class="account-section">
+                <div class="account-section-header">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="id-card" size="15px" color="var(--color-sage-ink)" />
-                    <text class="account-section-title">账号资料</text>
-                  </view>
-                </view>
-                <view class="account-section-body">
-                  <view class="account-detail">
-                    <text class="cell-label">用户名</text>
-                    <text class="cell-val">@{{ authStore.username || 'auralis' }}</text>
-                  </view>
-                  <view class="account-detail">
-                    <text class="cell-label">显示名称</text>
-                    <text class="cell-val">{{ displayName }}</text>
-                    <view class="cell-btn" role="button" @click="openNameModal">
-                      <text>修改</text>
-                    </view>
-                  </view>
-                  <view class="account-detail">
-                    <text class="cell-label">登录密码</text>
-                    <text class="cell-sub">••••••••</text>
-                    <view class="cell-btn" role="button" @click="openPasswordModal">
-                      <text>修改</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
+                    <span class="account-section-title">账号资料</span>
+                  </div>
+                </div>
+                <div class="account-section-body">
+                  <div class="account-detail">
+                    <span class="cell-label">用户名</span>
+                    <span class="cell-val">@{{ authStore.username || 'auralis' }}</span>
+                  </div>
+                  <div class="account-detail">
+                    <span class="cell-label">显示名称</span>
+                    <span class="cell-val">{{ displayName }}</span>
+                    <div class="cell-btn" role="button" @click="openNameModal">
+                      <span>修改</span>
+                    </div>
+                  </div>
+                  <div class="account-detail">
+                    <span class="cell-label">登录密码</span>
+                    <span class="cell-sub">••••••••</span>
+                    <div class="cell-btn" role="button" @click="openPasswordModal">
+                      <span>修改</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- 4.2 登录设备管理 -->
-              <view class="account-sessions">
-                <view class="account-section-header">
-                  <view class="setting-label-with-icon">
+              <div class="account-sessions">
+                <div class="account-section-header">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="device" size="15px" color="var(--color-sage-ink)" />
-                    <text class="account-section-title">登录设备管理</text>
-                  </view>
-                  <view class="session-header-actions">
-                    <view class="ui-icon-btn sm" role="button" aria-label="刷新设备列表" @click="loadSessions">
+                    <span class="account-section-title">登录设备管理</span>
+                  </div>
+                  <div class="session-header-actions">
+                    <div class="ui-icon-btn sm" role="button" aria-label="刷新设备列表" @click="loadSessions">
                       <LineIcon name="refresh" size="13px" color="var(--text-secondary)" />
-                    </view>
-                    <view class="cell-btn" role="button" @click="handleLogout">
-                      <text>退出登录</text>
-                    </view>
-                  </view>
-                </view>
-                <view class="account-section-body">
-                  <view v-if="loadingSessions && sessionsList.length === 0" class="quota-skeleton">
-                    <view class="ui-shimmer shimmer-line"></view>
-                  </view>
-                  <view v-else-if="sessionsError" class="quota-error">
-                    <text class="error-msg">{{ sessionsError }}</text>
-                    <view class="cell-btn" role="button" @click="loadSessions">
-                      <text>重试</text>
-                    </view>
-                  </view>
-                  <text v-else-if="sessionsList.length === 0" class="session-empty">暂无登录设备记录</text>
-                  <view v-else class="sessions-list">
-                    <view
+                    </div>
+                    <div class="cell-btn" role="button" @click="handleLogout">
+                      <span>退出登录</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="account-section-body">
+                  <div v-if="loadingSessions && sessionsList.length === 0" class="quota-skeleton">
+                    <div class="ui-shimmer shimmer-line"></div>
+                  </div>
+                  <div v-else-if="sessionsError" class="quota-error">
+                    <span class="error-msg">{{ sessionsError }}</span>
+                    <div class="cell-btn" role="button" @click="loadSessions">
+                      <span>重试</span>
+                    </div>
+                  </div>
+                  <span v-else-if="sessionsList.length === 0" class="session-empty">暂无登录设备记录</span>
+                  <div v-else class="sessions-list">
+                    <div
                       v-for="s in sessionsList"
                       :key="s.id || s.serverDeviceId"
                       class="account-operation session-item"
                     >
-                      <view class="session-meta">
-                        <view class="session-title-line">
-                          <text class="row-label">{{ s.deviceName || s.platform || '未知设备' }}</text>
-                          <text v-if="isCurrentSession(s)" class="session-current-pill">当前设备</text>
-                        </view>
-                        <text class="row-sub num-tabular">
+                      <div class="session-meta">
+                        <div class="session-title-line">
+                          <span class="row-label">{{ s.deviceName || s.platform || '未知设备' }}</span>
+                          <span v-if="isCurrentSession(s)" class="session-current-pill">当前设备</span>
+                        </div>
+                        <span class="row-sub num-tabular">
                           {{ s.platform || 'UNKNOWN' }} · 最近活跃 {{ formatDateTime(s.lastUsedAt || s.createdAt || '') }}
-                        </text>
-                      </view>
-                      <view
+                        </span>
+                      </div>
+                      <div
                         v-if="!isCurrentSession(s) && s.id"
                         class="cell-btn danger"
                         :class="{ 'is-disabled': revokingAllOthers || Boolean(revokingSessionId) }"
                         role="button"
                         @click="revokeDevice(s.id)"
                       >
-                        <text>{{ revokingSessionId === s.id ? '下线中...' : '下线' }}</text>
-                      </view>
-                    </view>
-                    <view
+                        <span>{{ revokingSessionId === s.id ? '下线中...' : '下线' }}</span>
+                      </div>
+                    </div>
+                    <div
                       v-if="sessionsList.some(item => !isCurrentSession(item))"
                       class="cell-btn danger revoke-all-btn"
                       :class="{ 'is-disabled': revokingAllOthers || Boolean(revokingSessionId) }"
                       role="button"
                       @click="revokeAllOthers"
                     >
-                      <text>{{ revokingAllOthers ? '下线中...' : '下线全部其他设备' }}</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
+                      <span>{{ revokingAllOthers ? '下线中...' : '下线全部其他设备' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- 4.3 数据与账户重置 -->
-              <view class="danger-zone">
-                <view class="account-section-header">
-                  <view class="setting-label-with-icon">
+              <div class="danger-zone">
+                <div class="account-section-header">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="shield" size="15px" color="var(--color-sage-ink)" />
-                    <text class="account-section-title">数据与账户重置</text>
-                  </view>
-                </view>
-                <view class="account-section-body">
-                  <view class="account-operation">
-                    <view class="row-info">
-                      <text class="row-label">重置本地离线数据</text>
-                      <text class="row-desc">清除本机离线数据和未同步草稿，并重新同步云端</text>
-                    </view>
-                    <view
+                    <span class="account-section-title">数据与账户重置</span>
+                  </div>
+                </div>
+                <div class="account-section-body">
+                  <div class="account-operation">
+                    <div class="row-info">
+                      <span class="row-label">重置本地离线数据</span>
+                      <span class="row-desc">清除本机离线数据和未同步草稿，并重新同步云端</span>
+                    </div>
+                    <div
                       class="cell-btn danger"
                       :class="{ 'is-disabled': syncStore.isResettingOffline || syncStore.isSyncing }"
                       role="button"
                       @click="handleResetOfflineData"
                     >
-                      <text>{{ syncStore.isResettingOffline ? '重置中...' : '重置' }}</text>
-                    </view>
-                  </view>
+                      <span>{{ syncStore.isResettingOffline ? '重置中...' : '重置' }}</span>
+                    </div>
+                  </div>
 
-                  <view class="account-operation">
-                    <view class="row-info">
-                      <text class="row-label">注销账户</text>
-                      <text class="row-desc">停用账户并清理云端数据</text>
-                    </view>
-                    <view class="cell-btn danger" role="button" @click="openDeleteAccountModal">
-                      <text>注销</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
+                  <div class="account-operation">
+                    <div class="row-info">
+                      <span class="row-label">注销账户</span>
+                      <span class="row-desc">停用账户并清理云端数据</span>
+                    </div>
+                    <div class="cell-btn danger" role="button" @click="openDeleteAccountModal">
+                      <span>注销</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- ===== RIGHT PANEL: 个人偏好与设置 ===== -->
-      <view class="studio-right">
-        <scroll-view scroll-y :show-scrollbar="false" class="panel-scroll">
-          <view class="studio-right-inner">
-            <text class="settings-title">个人偏好与设置</text>
+      <div class="studio-right">
+        <div class="panel-scroll zen-scroll-y">
+          <div class="studio-right-inner">
+            <span class="settings-title">个人偏好与设置</span>
 
             <!-- 1. 同步与数据 -->
-            <view class="settings-group">
-              <view class="group-header">
-                <view class="group-title-line">
+            <div class="settings-group">
+              <div class="group-header">
+                <div class="group-title-line">
                   <LineIcon name="cloud" size="16px" color="var(--color-sage-ink)" />
-                  <text class="group-title">同步与数据</text>
-                </view>
-              </view>
+                  <span class="group-title">同步与数据</span>
+                </div>
+              </div>
 
-              <view class="group-items">
-                <view class="settings-row sync-status-row">
-                  <view class="row-info">
-                    <view class="setting-label-with-icon">
+              <div class="group-items">
+                <div class="settings-row sync-status-row">
+                  <div class="row-info">
+                    <div class="setting-label-with-icon">
                       <LineIcon name="activity" size="15px" color="var(--text-muted)" />
-                      <text class="row-label">同步状态</text>
-                    </view>
-                  </view>
-                  <view class="row-control sync-status-controls">
-                    <view class="status-pill-badge" :class="{ 'is-warning': syncStatusView.tone === 'warning' }">
-                      <view class="status-dot-indicator"></view>
-                      <text>{{ syncStatusView.label }}</text>
-                    </view>
-                    <view
+                      <span class="row-label">同步状态</span>
+                    </div>
+                  </div>
+                  <div class="row-control sync-status-controls">
+                    <div class="status-pill-badge" :class="{ 'is-warning': syncStatusView.tone === 'warning' }">
+                      <div class="status-dot-indicator"></div>
+                      <span>{{ syncStatusView.label }}</span>
+                    </div>
+                    <div
                       class="action-btn primary"
                       :class="{ 'is-disabled': syncStore.isSyncing || syncStore.isResettingOffline }"
                       role="button"
                       @click="handleSyncNow"
                     >
-                      <text>{{ syncButtonText }}</text>
-                    </view>
-                  </view>
-                </view>
+                      <span>{{ syncButtonText }}</span>
+                    </div>
+                  </div>
+                </div>
 
-                <view class="settings-row">
-                  <view class="row-info">
-                    <view class="setting-label-with-icon">
+                <div class="settings-row">
+                  <div class="row-info">
+                    <div class="setting-label-with-icon">
                       <LineIcon name="refresh" size="15px" color="var(--text-muted)" />
-                      <text class="row-label">自动同步</text>
-                    </view>
-                  </view>
-                  <view class="row-control">
-                    <view
+                      <span class="row-label">自动同步</span>
+                    </div>
+                  </div>
+                  <div class="row-control">
+                    <div
                       class="toggle-btn"
                       :class="{ 'is-on': syncStore.autoSyncEnabled }"
                       role="switch"
@@ -247,132 +247,128 @@
                       aria-label="自动同步"
                       @click="handleToggleAutoSync"
                     >
-                      <view class="toggle-knob"></view>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
+                      <div class="toggle-knob"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- 2. AI 设置（模型与服务 + 使用额度） -->
-            <view class="settings-group">
-              <view class="group-header">
-                <view class="group-title-line">
+            <div class="settings-group">
+              <div class="group-header">
+                <div class="group-title-line">
                   <LineIcon name="sparkles" size="16px" color="var(--color-sage-ink)" />
-                  <text class="group-title">AI 设置</text>
-                </view>
-              </view>
+                  <span class="group-title">AI 设置</span>
+                </div>
+              </div>
 
               <!-- 2.1 AI 模型与服务 -->
-              <view class="ai-settings-section first-ai-section">
-                <view class="ai-subheader">
-                  <view class="setting-label-with-icon">
+              <div class="ai-settings-section first-ai-section">
+                <div class="ai-subheader">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="cpu" size="15px" color="var(--text-muted)" />
-                    <text class="ai-subtitle">AI 模型与服务</text>
-                  </view>
-                </view>
+                    <span class="ai-subtitle">AI 模型与服务</span>
+                  </div>
+                </div>
 
-                <view class="ai-section-content">
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                <div class="ai-section-content">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="server" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">AI 服务商</text>
-                      </view>
-                    </view>
-                    <view class="row-control byok-control-wrap">
+                        <span class="row-label">AI 服务商</span>
+                      </div>
+                    </div>
+                    <div class="row-control byok-control-wrap">
                       <input
                         class="pc-settings-input byok-input"
                         v-model="customProvider"
                         placeholder="例如 DEEPSEEK"
-                        placeholder-style="color: #9A9A95;"
                         :disabled="aiBusy"
                       />
-                    </view>
-                  </view>
+                    </div>
+                  </div>
 
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="link" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">Base URL</text>
-                      </view>
-                      <text class="row-desc byok-hint-indent">
+                        <span class="row-label">Base URL</span>
+                      </div>
+                      <span class="row-desc byok-hint-indent">
                         {{ customProvider.trim() && canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
-                      </text>
-                    </view>
-                    <view class="row-control byok-control-wrap">
+                      </span>
+                    </div>
+                    <div class="row-control byok-control-wrap">
                       <input
                         class="pc-settings-input byok-input"
                         v-model="customBaseUrl"
                         placeholder="例如 https://api.deepseek.com"
-                        placeholder-style="color: #9A9A95;"
                         :disabled="aiBusy"
                       />
-                    </view>
-                  </view>
+                    </div>
+                  </div>
 
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="key" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">API Key</text>
-                      </view>
-                      <text v-if="!aiInitializing" class="row-desc byok-hint-indent">
+                        <span class="row-label">API Key</span>
+                      </div>
+                      <span v-if="!aiInitializing" class="row-desc byok-hint-indent">
                         {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
-                      </text>
-                    </view>
-                    <view class="row-control byok-control-wrap">
-                      <view class="api-key-wrapper">
+                      </span>
+                    </div>
+                    <div class="row-control byok-control-wrap">
+                      <div class="api-key-wrapper">
                         <input
                           class="pc-settings-input byok-input api-key-input"
                           v-model="customApiKey"
                           placeholder="sk-..."
-                          placeholder-style="color: #9A9A95;"
-                          :password="!showApiKey"
+                          :type="showApiKey ? 'text' : 'password'"
                           :disabled="aiBusy"
                         />
-                        <view
+                        <div
                           class="eye-toggle-btn"
                           role="button"
                           :aria-label="showApiKey ? '隐藏密钥' : '显示密钥'"
                           @click="showApiKey = !showApiKey"
                         >
                           <LineIcon :name="showApiKey ? 'eye-off' : 'eye'" size="15px" color="var(--text-muted)" />
-                        </view>
-                      </view>
-                    </view>
-                  </view>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="ai" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">对话模型</text>
-                      </view>
-                    </view>
-                    <view class="row-control byok-control-wrap">
-                      <view class="byok-model-detect-group">
+                        <span class="row-label">对话模型</span>
+                      </div>
+                    </div>
+                    <div class="row-control byok-control-wrap">
+                      <div class="byok-model-detect-group">
                         <input
                           class="pc-settings-input byok-model-input"
                           v-model="customChatModel"
                           placeholder="例如 deepseek-chat"
-                          placeholder-style="color: #9A9A95;"
                           :disabled="aiBusy"
                         />
-                        <view
+                        <div
                           class="action-btn byok-detect-btn"
                           :class="{ 'is-disabled': detectingModels || aiBusy }"
                           role="button"
                           @click="fetchModelsForProvider"
                         >
-                          <text>{{ detectingModels ? '检测中...' : '自动检测' }}</text>
-                        </view>
-                      </view>
-                      <view v-if="availableModels.length > 0" class="detected-models-tray">
-                        <text class="tray-label">检测到 {{ availableModels.length }} 个候选模型：</text>
-                        <view class="chips-row">
-                          <view
+                          <span>{{ detectingModels ? '检测中...' : '自动检测' }}</span>
+                        </div>
+                      </div>
+                      <div v-if="availableModels.length > 0" class="detected-models-tray">
+                        <span class="tray-label">检测到 {{ availableModels.length }} 个候选模型：</span>
+                        <div class="chips-row">
+                          <div
                             v-for="m in availableModels.slice(0, 10)"
                             :key="m"
                             class="model-chip"
@@ -380,169 +376,169 @@
                             role="button"
                             @click="customChatModel = m"
                           >
-                            <text>{{ m }}</text>
-                          </view>
-                        </view>
-                      </view>
-                    </view>
-                  </view>
-                </view>
+                            <span>{{ m }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                <view class="byok-action-footer ai-section-content">
-                  <text class="byok-tip">{{ aiInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</text>
-                  <view class="byok-btn-group">
-                    <view
+                <div class="byok-action-footer ai-section-content">
+                  <span class="byok-tip">{{ aiInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
+                  <div class="byok-btn-group">
+                    <div
                       class="action-btn"
                       :class="{ 'is-disabled': testingConnection || aiBusy }"
                       role="button"
                       @click="testProviderConnection"
                     >
-                      <text>{{ testingConnection ? '测试中...' : '测试连接' }}</text>
-                    </view>
-                    <view
+                      <span>{{ testingConnection ? '测试中...' : '测试连接' }}</span>
+                    </div>
+                    <div
                       class="action-btn primary"
                       :class="{ 'is-disabled': aiBusy }"
                       role="button"
                       @click="saveAiSettings"
                     >
-                      <text>{{ savingAi ? '保存中...' : '保存 AI 配置' }}</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
+                      <span>{{ savingAi ? '保存中...' : '保存 AI 配置' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- 2.2 AI 使用额度 -->
-              <view class="ai-settings-section">
-                <view class="ai-subheader">
-                  <view class="setting-label-with-icon">
+              <div class="ai-settings-section">
+                <div class="ai-subheader">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="gauge" size="15px" color="var(--text-muted)" />
-                    <text class="ai-subtitle">AI 使用额度</text>
-                  </view>
-                  <view
+                    <span class="ai-subtitle">AI 使用额度</span>
+                  </div>
+                  <div
                     v-if="aiUsage && !loadingAiUsage"
                     class="action-btn secondary"
                     role="button"
                     aria-label="刷新额度"
                     @click="fetchAiUsage"
                   >
-                    <text>{{ aiUsageError ? '刷新重试' : '刷新' }}</text>
-                  </view>
-                </view>
+                    <span>{{ aiUsageError ? '刷新重试' : '刷新' }}</span>
+                  </div>
+                </div>
 
-                <view class="ai-section-content">
-                  <view v-if="loadingAiUsage && !aiUsage" class="quota-skeleton">
-                    <view class="ui-shimmer shimmer-line"></view>
-                    <view class="ui-shimmer shimmer-line"></view>
-                  </view>
+                <div class="ai-section-content">
+                  <div v-if="loadingAiUsage && !aiUsage" class="quota-skeleton">
+                    <div class="ui-shimmer shimmer-line"></div>
+                    <div class="ui-shimmer shimmer-line"></div>
+                  </div>
 
-                  <view v-else-if="aiUsageError && !aiUsage" class="quota-error">
-                    <text class="error-msg">{{ aiUsageError }}</text>
-                    <view class="action-btn secondary" role="button" @click="fetchAiUsage">
-                      <text>重试</text>
-                    </view>
-                  </view>
+                  <div v-else-if="aiUsageError && !aiUsage" class="quota-error">
+                    <span class="error-msg">{{ aiUsageError }}</span>
+                    <div class="action-btn secondary" role="button" @click="fetchAiUsage">
+                      <span>重试</span>
+                    </div>
+                  </div>
 
-                  <view v-else-if="aiUsage" class="usage-content">
+                  <div v-else-if="aiUsage" class="usage-content">
                     <!-- 每小时额度 -->
-                    <view class="usage-card">
-                      <view class="usage-card-header">
-                        <view class="usage-header-left">
-                          <text class="usage-plan-name">每小时额度</text>
-                          <text class="usage-percent-badge num-tabular" :class="{ 'is-low': hourlyUsagePct < 20 }">
+                    <div class="usage-card">
+                      <div class="usage-card-header">
+                        <div class="usage-header-left">
+                          <span class="usage-plan-name">每小时额度</span>
+                          <span class="usage-percent-badge num-tabular" :class="{ 'is-low': hourlyUsagePct < 20 }">
                             剩余 {{ hourlyUsagePct }}%
-                          </text>
-                        </view>
-                        <text class="usage-reset-tag num-tabular">
+                          </span>
+                        </div>
+                        <span class="usage-reset-tag num-tabular">
                           重置时间: {{ formatClockTime(aiUsage.hourly.resetAt) || '—' }}
-                        </text>
-                      </view>
-                      <view class="usage-progress-bar-wrap">
-                        <view
+                        </span>
+                      </div>
+                      <div class="usage-progress-bar-wrap">
+                        <div
                           class="usage-progress-bar-fill"
                           :class="{ 'is-low': hourlyUsagePct < 20 }"
                           :style="{ width: `${hourlyUsagePct}%` }"
-                        ></view>
-                      </view>
-                      <view class="usage-grid">
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">总额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.limitTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">剩余额度</text>
-                          <text class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.hourly.remainingTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">已用额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.chargedTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">预留额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.reservedTokens) }}</text>
-                        </view>
-                      </view>
-                    </view>
+                        ></div>
+                      </div>
+                      <div class="usage-grid">
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">总额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.limitTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">剩余额度</span>
+                          <span class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.hourly.remainingTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">已用额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.chargedTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">预留额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.reservedTokens) }}</span>
+                        </div>
+                      </div>
+                    </div>
 
                     <!-- 每日额度 -->
-                    <view class="usage-card">
-                      <view class="usage-card-header">
-                        <view class="usage-header-left">
-                          <text class="usage-plan-name">每日额度</text>
-                          <text class="usage-percent-badge num-tabular" :class="{ 'is-low': dailyUsagePct < 20 }">
+                    <div class="usage-card">
+                      <div class="usage-card-header">
+                        <div class="usage-header-left">
+                          <span class="usage-plan-name">每日额度</span>
+                          <span class="usage-percent-badge num-tabular" :class="{ 'is-low': dailyUsagePct < 20 }">
                             剩余 {{ dailyUsagePct }}%
-                          </text>
-                        </view>
-                        <text class="usage-reset-tag num-tabular">
+                          </span>
+                        </div>
+                        <span class="usage-reset-tag num-tabular">
                           重置时间: {{ formatDateTime(aiUsage.daily.resetAt) }}
-                        </text>
-                      </view>
-                      <view class="usage-progress-bar-wrap">
-                        <view
+                        </span>
+                      </div>
+                      <div class="usage-progress-bar-wrap">
+                        <div
                           class="usage-progress-bar-fill"
                           :class="{ 'is-low': dailyUsagePct < 20 }"
                           :style="{ width: `${dailyUsagePct}%` }"
-                        ></view>
-                      </view>
-                      <view class="usage-grid">
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">总额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.limitTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">剩余额度</text>
-                          <text class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.daily.remainingTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">已结算（估算）</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.chargedTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">在途预留（估算）</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.reservedTokens) }}</text>
-                        </view>
-                      </view>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
-    </view>
+                        ></div>
+                      </div>
+                      <div class="usage-grid">
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">总额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.limitTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">剩余额度</span>
+                          <span class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.daily.remainingTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">已结算（估算）</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.chargedTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">在途预留（估算）</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.reservedTokens) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
       <!-- 1. 修改显示名称 -->
-      <view v-if="showNameModal" class="zen-modal-mask" @click="closeAllModals">
-        <view class="zen-modal-body studio-modal" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">修改显示名称</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
+      <div v-if="showNameModal" class="zen-modal-mask" @click="closeAllModals">
+        <div class="zen-modal-body studio-modal" @click.stop>
+          <div class="modal-header">
+            <span class="modal-title">修改显示名称</span>
+            <div class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
+          <div class="modal-form">
             <input
               class="ui-input"
               v-model="nameDraft"
@@ -550,150 +546,150 @@
               placeholder="输入显示名称"
               :disabled="savingName"
             />
-          </view>
+          </div>
 
-          <view class="modal-footer">
-            <view class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
-              <text>取消</text>
-            </view>
-            <view
+          <div class="modal-footer">
+            <div class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
+              <span>取消</span>
+            </div>
+            <div
               class="ui-btn ui-btn-primary"
               :class="{ 'is-disabled': savingName }"
               role="button"
               @click="submitDisplayName"
             >
-              <text>{{ savingName ? '保存中...' : '保存' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ savingName ? '保存中...' : '保存' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 2. 修改登录密码 (aligned with PC ChangePasswordDialog) -->
-      <view v-if="showPasswordModal" class="zen-modal-mask" @click="closeAllModals">
-        <view class="zen-modal-body studio-modal" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">修改登录密码</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
+      <div v-if="showPasswordModal" class="zen-modal-mask" @click="closeAllModals">
+        <div class="zen-modal-body studio-modal" @click.stop>
+          <div class="modal-header">
+            <span class="modal-title">修改登录密码</span>
+            <div class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
-            <view class="security-tip">
+          <div class="modal-form">
+            <div class="security-tip">
               <LineIcon name="key" size="15px" color="var(--color-sage-ink)" />
-              <text class="security-tip-text">新密码至少 8 位，包含大写字母、小写字母和符号</text>
-            </view>
+              <span class="security-tip-text">新密码至少 8 位，包含大写字母、小写字母和符号</span>
+            </div>
 
-            <view class="modal-field">
-              <view class="modal-field-label">
-                <text>原密码</text>
-                <text class="required-mark">*</text>
-              </view>
+            <div class="modal-field">
+              <div class="modal-field-label">
+                <span>原密码</span>
+                <span class="required-mark">*</span>
+              </div>
               <input
                 class="ui-input"
                 v-model="pwdForm.currentPassword"
-                password
+                type="password"
                 placeholder="请输入当前正在使用的密码"
                 :disabled="savingPwd"
                 @input="pwdError = ''"
               />
-            </view>
+            </div>
 
-            <view class="modal-field">
-              <view class="modal-field-label">
-                <text>新密码</text>
-                <text class="required-mark">*</text>
-              </view>
+            <div class="modal-field">
+              <div class="modal-field-label">
+                <span>新密码</span>
+                <span class="required-mark">*</span>
+              </div>
               <input
                 class="ui-input"
                 v-model="pwdForm.newPassword"
-                password
+                type="password"
                 placeholder="请输入新密码"
                 :disabled="savingPwd"
                 @input="pwdError = ''"
               />
-            </view>
+            </div>
 
-            <view class="modal-field">
-              <view class="modal-field-label">
-                <text>确认新密码</text>
-                <text class="required-mark">*</text>
-              </view>
+            <div class="modal-field">
+              <div class="modal-field-label">
+                <span>确认新密码</span>
+                <span class="required-mark">*</span>
+              </div>
               <input
                 class="ui-input"
                 v-model="pwdForm.confirmPassword"
-                password
+                type="password"
                 placeholder="请再次输入新密码核对"
                 :disabled="savingPwd"
                 @input="pwdError = ''"
               />
-            </view>
+            </div>
 
-            <view v-if="pwdError" class="error-tip">
+            <div v-if="pwdError" class="error-tip">
               <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-              <text class="error-tip-text">{{ pwdError }}</text>
-            </view>
-          </view>
+              <span class="error-tip-text">{{ pwdError }}</span>
+            </div>
+          </div>
 
-          <view class="modal-footer">
-            <view class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
-              <text>取消</text>
-            </view>
-            <view
+          <div class="modal-footer">
+            <div class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
+              <span>取消</span>
+            </div>
+            <div
               class="ui-btn ui-btn-primary"
               :class="{ 'is-disabled': savingPwd }"
               role="button"
               @click="submitPasswordChange"
             >
-              <text>{{ savingPwd ? '保存中...' : '确认修改' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ savingPwd ? '保存中...' : '确认修改' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 3. 注销账户确认 -->
-      <view v-if="showDeleteAccountModal" class="zen-modal-mask" @click="closeAllModals">
-        <view class="zen-modal-body studio-modal" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">注销账户确认</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
+      <div v-if="showDeleteAccountModal" class="zen-modal-mask" @click="closeAllModals">
+        <div class="zen-modal-body studio-modal" @click.stop>
+          <div class="modal-header">
+            <span class="modal-title">注销账户确认</span>
+            <div class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
-            <text class="modal-desc">
+          <div class="modal-form">
+            <span class="modal-desc">
               确认注销后，本机会退出登录，服务端会停用账户并在后台清理云端数据。本机保存的业务数据会保留。请输入登录密码确认注销。
-            </text>
+            </span>
             <input
               class="ui-input"
               v-model="deletePwd"
-              password
+              type="password"
               placeholder="请输入当前账号密码"
               :disabled="deletingAccount"
               @input="deleteAccountError = ''"
             />
-            <view v-if="deleteAccountError" class="error-tip">
+            <div v-if="deleteAccountError" class="error-tip">
               <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-              <text class="error-tip-text">{{ deleteAccountError }}</text>
-            </view>
-          </view>
+              <span class="error-tip-text">{{ deleteAccountError }}</span>
+            </div>
+          </div>
 
-          <view class="modal-footer">
-            <view class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
-              <text>取消</text>
-            </view>
-            <view
+          <div class="modal-footer">
+            <div class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
+              <span>取消</span>
+            </div>
+            <div
               class="ui-btn ui-btn-danger"
               :class="{ 'is-disabled': deletingAccount }"
               role="button"
               @click="submitDeleteAccount"
             >
-              <text>{{ deletingAccount ? '注销中...' : '确认注销' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ deletingAccount ? '注销中...' : '确认注销' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
   </TabletLayout>
 </template>
@@ -2066,6 +2062,10 @@ onUnmounted(() => {
   color: var(--text-primary);
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pc-settings-input::placeholder {
+  color: #9A9A95;
 }
 
 .pc-settings-input:focus,

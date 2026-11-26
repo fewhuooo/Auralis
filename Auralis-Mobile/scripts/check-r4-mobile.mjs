@@ -41,13 +41,28 @@ const scopedForbidden = [
   },
   {
     label: 'uni.* runtime call outside platform/navigation.ts',
-    pattern: /\buni\.(?!createSelectorQuery\b)/,
+    pattern: /\buni\./,
     allow: new Set(['src/platform/navigation.ts']),
   },
   {
     label: 'getCurrentPages() call outside platform/navigation.ts',
     pattern: /\bgetCurrentPages\s*\(/,
     allow: new Set(['src/platform/navigation.ts']),
+  },
+  {
+    label: 'UniApp template tag',
+    pattern: /<(?:view|text|scroll-view|image|picker|switch|rich-text)(?=[\s/>])/,
+    allow: new Set(),
+  },
+  {
+    label: 'rpx responsive unit',
+    pattern: /\d+(?:\.\d+)?rpx\b|['"]rpx['"]/,
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp template attribute or scroll-view deep selector',
+    pattern: /\b(?:confirm-type|placeholder-style|show-confirm-bar|auto-height|scroll-into-view|scroll-with-animation|show-scrollbar)\b|:scroll-left\s*=|:password\s*=|@confirm\s*=|<button\b[^>]*:loading\s*=|<input\b[^>]*\spassword(?=[\s/>])|:deep\(\.uni-scroll-view-content\)/,
+    allow: new Set(),
   },
 ]
 

@@ -1,15 +1,15 @@
 <template>
   <TabletLayout>
-    <view class="t-workspace">
+    <div class="t-workspace">
       <!-- 1. PC 同源左侧一级窄条导轨 (72px) -->
       <aside class="tier1-strip zen-panel" aria-label="工作区导轨">
-        <view class="tier1-top">
-          <view class="tier1-btn" role="button" aria-label="返回学科大厅" @click="goBack">
+        <div class="tier1-top">
+          <div class="tier1-btn" role="button" aria-label="返回学科大厅" @click="goBack">
             <LineIcon name="chevron-left" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">返回</text>
-          </view>
+            <span class="tier1-btn-text">返回</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'preview' || centerView === 'subject-overview' || centerView === 'onboarding' }"
             role="button"
@@ -17,10 +17,10 @@
             @click="handleFilesRailClick"
           >
             <LineIcon name="file-text" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">资料</text>
-          </view>
+            <span class="tier1-btn-text">资料</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'blocks' }"
             role="button"
@@ -28,10 +28,10 @@
             @click="openCenterSection('blocks')"
           >
             <LineIcon name="grid" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">知识库</text>
-          </view>
+            <span class="tier1-btn-text">知识库</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'review' }"
             role="button"
@@ -39,10 +39,10 @@
             @click="openCenterSection('review')"
           >
             <LineIcon name="history" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">复习</text>
-          </view>
+            <span class="tier1-btn-text">复习</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'stats' }"
             role="button"
@@ -50,15 +50,15 @@
             @click="openCenterSection('stats')"
           >
             <LineIcon name="chart" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">统计</text>
-          </view>
-        </view>
+            <span class="tier1-btn-text">统计</span>
+          </div>
+        </div>
 
-        <view class="tier1-bottom">
-          <view class="subject-mini-icon" :title="subjectName" aria-hidden="true">
+        <div class="tier1-bottom">
+          <div class="subject-mini-icon" :title="subjectName" aria-hidden="true">
             <LineIcon :name="`subj-${safeSubjectIcon}`" size="20px" color="#FFFFFF" />
-          </view>
-        </view>
+          </div>
+        </div>
       </aside>
 
       <!-- 2. 可折叠学习资料与学科总览抽屉 -->
@@ -118,11 +118,11 @@
         @open-files-drawer="openFilesDrawer"
         @open-review="openCenterSection('review')"
       />
-    </view>
+    </div>
 
     <template #modal>
       <!-- 右下角 AI 伴读悬浮图标按钮 -->
-      <view
+      <div
         v-if="!aiPanelVisible"
         class="ai-fab-btn"
         role="button"
@@ -131,11 +131,11 @@
         @click="openAiFloating"
       >
         <LineIcon name="auralis-mark" size="21px" color="var(--color-sage-ink)" />
-        <view v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></view>
-      </view>
+        <div v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></div>
+      </div>
 
       <!-- 非阻塞 AI 伴读浮窗（懒挂载 + 保活不销毁流式状态） -->
-      <view
+      <div
         v-if="aiPanelMounted"
         v-show="aiPanelVisible"
         class="ai-floating-shell"
@@ -153,7 +153,7 @@
           @typing-change="aiTyping = $event"
           @request-save-block="handleRequestSaveBlock"
         />
-      </view>
+      </div>
 
       <!-- AI 回答存为知识块弹窗（置于独立模态层，避免受浮窗 transform 限制） -->
       <SaveKnowledgeBlockModal

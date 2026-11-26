@@ -1,45 +1,45 @@
 <template>
   <TabletLayout>
-    <view class="t-subject-hall">
-      <view class="hall-content zen-panel">
-        <view class="hall-header">
-          <view class="title-row">
-            <text class="page-title">学科空间</text>
-            <text v-if="subjects.length > 0" class="count-num num-tabular">{{ subjects.length }}</text>
-          </view>
+    <div class="t-subject-hall">
+      <div class="hall-content zen-panel">
+        <div class="hall-header">
+          <div class="title-row">
+            <span class="page-title">学科空间</span>
+            <span v-if="subjects.length > 0" class="count-num num-tabular">{{ subjects.length }}</span>
+          </div>
 
-          <view class="header-actions">
-            <view v-if="subjects.length > 0" class="search-box">
+          <div class="header-actions">
+            <div v-if="subjects.length > 0" class="search-box">
               <LineIcon name="search" size="14px" color="var(--text-muted)" />
               <input class="search-input" v-model="searchQuery" placeholder="搜索学科" />
-              <view v-if="searchQuery" class="search-clear" role="button" aria-label="清空搜索" @click="searchQuery = ''">
+              <div v-if="searchQuery" class="search-clear" role="button" aria-label="清空搜索" @click="searchQuery = ''">
                 <LineIcon name="close" size="13px" color="var(--text-muted)" />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
+            <div class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
               <LineIcon name="plus" size="15px" color="#FFFFFF" />
-              <text>新建学科</text>
-            </view>
-          </view>
-        </view>
+              <span>新建学科</span>
+            </div>
+          </div>
+        </div>
 
-        <view v-if="hydrated && subjects.length === 0" class="empty-hall zen-card">
+        <div v-if="hydrated && subjects.length === 0" class="empty-hall zen-card">
           <LineIcon name="book" size="30px" color="var(--color-zen-sage)" />
-          <text class="empty-title">暂无学科空间</text>
-          <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
+          <span class="empty-title">暂无学科空间</span>
+          <div class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
             <LineIcon name="plus" size="15px" color="#FFFFFF" />
-            <text>新建学科</text>
-          </view>
-        </view>
+            <span>新建学科</span>
+          </div>
+        </div>
 
-        <view v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
-          <text class="empty-title">无匹配学科</text>
-          <view class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</view>
-        </view>
+        <div v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
+          <span class="empty-title">无匹配学科</span>
+          <div class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</div>
+        </div>
 
-        <view v-else-if="hydrated" class="grid">
-          <view
+        <div v-else-if="hydrated" class="grid">
+          <div
             v-for="subj in filteredSubjects"
             :key="subj.id"
             class="subject-card zen-card"
@@ -47,64 +47,64 @@
             :aria-label="`进入学科 ${subj.name}`"
             @click="enterWorkspace(subj.id)"
           >
-            <view class="card-top">
-              <view class="s-icon">
+            <div class="card-top">
+              <div class="s-icon">
                 <LineIcon
                   :name="`subj-${isSubjectIconKey(subj.icon) ? subj.icon : 'book'}`"
                   size="21px"
                   color="var(--color-sage-ink)"
                 />
-              </view>
-              <view class="card-actions" @click.stop>
-                <view class="icon-action-btn" role="button" aria-label="编辑学科" @click="openEditModal(subj)">
+              </div>
+              <div class="card-actions" @click.stop>
+                <div class="icon-action-btn" role="button" aria-label="编辑学科" @click="openEditModal(subj)">
                   <LineIcon name="edit" size="13px" color="var(--text-muted)" />
-                </view>
-                <view class="icon-action-btn danger" role="button" aria-label="删除学科" @click="handleDeleteSubject(subj)">
+                </div>
+                <div class="icon-action-btn danger" role="button" aria-label="删除学科" @click="handleDeleteSubject(subj)">
                   <LineIcon name="close" size="13px" color="var(--text-muted)" />
-                </view>
-              </view>
-            </view>
+                </div>
+              </div>
+            </div>
 
-            <text class="s-name">{{ subj.name }}</text>
-            <text v-if="subj.description" class="s-desc">{{ subj.description }}</text>
+            <span class="s-name">{{ subj.name }}</span>
+            <span v-if="subj.description" class="s-desc">{{ subj.description }}</span>
 
-            <view class="s-footer">
-              <view class="s-metrics num-tabular">
-                <view class="s-metric-item">
+            <div class="s-footer">
+              <div class="s-metrics num-tabular">
+                <div class="s-metric-item">
                   <LineIcon name="file-text" size="13px" color="var(--text-muted)" />
-                  <text>{{ subj.fileCount || 0 }}</text>
-                </view>
-                <view class="s-metric-item">
+                  <span>{{ subj.fileCount || 0 }}</span>
+                </div>
+                <div class="s-metric-item">
                   <LineIcon name="layers" size="13px" color="var(--text-muted)" />
-                  <text>{{ subj.blockCount || 0 }}</text>
-                </view>
-              </view>
+                  <span>{{ subj.blockCount || 0 }}</span>
+                </div>
+              </div>
               <LineIcon name="arrow-right" size="14px" color="var(--text-muted)" class="card-arrow" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="subject-card add-card" role="button" aria-label="新建学科" @click="openCreateModal">
-            <view class="add-plus-btn">
+          <div class="subject-card add-card" role="button" aria-label="新建学科" @click="openCreateModal">
+            <div class="add-plus-btn">
               <LineIcon name="plus" size="20px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="add-label">新建学科</text>
-          </view>
-        </view>
-      </view>
-    </view>
+            </div>
+            <span class="add-label">新建学科</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
-      <view v-if="showModal" class="zen-modal-mask subject-modal-mask" @click="closeModal">
-        <view
+      <div v-if="showModal" class="zen-modal-mask subject-modal-mask" @click="closeModal">
+        <div
           class="subject-modal"
           role="dialog"
           aria-modal="true"
           :aria-label="isEditing ? '编辑学科空间' : '创建学科空间'"
           @click.stop
         >
-          <view class="modal-header">
-            <text class="modal-title">{{ isEditing ? '编辑学科空间' : '创建学科空间' }}</text>
-            <view
+          <div class="modal-header">
+            <span class="modal-title">{{ isEditing ? '编辑学科空间' : '创建学科空间' }}</span>
+            <div
               class="modal-close-btn"
               :class="{ 'is-disabled': savingSubject }"
               role="button"
@@ -112,37 +112,37 @@
               @click="closeModal"
             >
               <LineIcon name="close" size="15px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-body">
-            <view class="preview-row">
-              <view class="preview-icon">
+          <div class="modal-body">
+            <div class="preview-row">
+              <div class="preview-icon">
                 <LineIcon :name="`subj-${formData.icon}`" size="26px" color="#FFFFFF" />
-              </view>
-              <view class="preview-info">
-                <text class="preview-name">{{ formData.name.trim() || '学科名称预览' }}</text>
-                <text class="preview-desc">{{ formData.description.trim() || '这是您的专属学科知识沉淀空间' }}</text>
-              </view>
-            </view>
+              </div>
+              <div class="preview-info">
+                <span class="preview-name">{{ formData.name.trim() || '学科名称预览' }}</span>
+                <span class="preview-desc">{{ formData.description.trim() || '这是您的专属学科知识沉淀空间' }}</span>
+              </div>
+            </div>
 
-            <view class="modal-form-group">
-              <view class="modal-form-label">
-                <text>学科名称</text>
-                <text class="required">*</text>
-              </view>
+            <div class="modal-form-group">
+              <div class="modal-form-label">
+                <span>学科名称</span>
+                <span class="required">*</span>
+              </div>
               <input
                 v-model="formData.name"
                 class="modal-form-input"
                 maxlength="20"
                 placeholder="例如: 算法与数据结构、应用物理学"
                 :disabled="savingSubject"
-                @confirm="handleSave"
+                @keydown="handleEnterKey($event, handleSave)"
               />
-            </view>
+            </div>
 
-            <view class="modal-form-group">
-              <text class="modal-form-label">学科简述</text>
+            <div class="modal-form-group">
+              <span class="modal-form-label">学科简述</span>
               <textarea
                 v-model="formData.description"
                 class="modal-form-textarea"
@@ -150,12 +150,12 @@
                 placeholder="简短描述这个学科的研究方向或课程定位..."
                 :disabled="savingSubject"
               />
-            </view>
+            </div>
 
-            <view class="modal-form-group">
-              <text class="modal-form-label">选择空间图标</text>
-              <view class="icon-grid">
-                <view
+            <div class="modal-form-group">
+              <span class="modal-form-label">选择空间图标</span>
+              <div class="icon-grid">
+                <div
                   v-for="option in subjectIconOptions"
                   :key="option.key"
                   class="icon-option"
@@ -170,14 +170,14 @@
                     size="20px"
                     :color="formData.icon === option.key ? '#76855B' : 'var(--text-secondary)'"
                   />
-                </view>
-              </view>
-            </view>
+                </div>
+              </div>
+            </div>
 
-            <text v-if="modalError" class="modal-error">{{ modalError }}</text>
-          </view>
+            <span v-if="modalError" class="modal-error">{{ modalError }}</span>
+          </div>
 
-          <view class="modal-footer">
+          <div class="modal-footer">
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
@@ -190,9 +190,9 @@
               :disabled="savingSubject || !formData.name.trim()"
               @click="handleSave"
             >{{ savingSubject ? '保存中…' : isEditing ? '保存修改' : '确认创建' }}</button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
     </template>
   </TabletLayout>
 </template>
@@ -208,6 +208,7 @@ import { navigateTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import { handleEnterKey } from '@/utils/domHelpers'
 import { isSubjectIconKey, subjectIconOptions } from '@/utils/subjectIcon'
 
 const authStore = useAuthStore()

@@ -1,15 +1,15 @@
 <template>
   <TabletLayout>
-    <view class="t-ai-layout">
-      <view class="history-card">
-        <view class="history-header-row">
-          <text class="history-heading-title">历史对话</text>
-          <text v-if="!loadingSessions && conversations.length > 0" class="history-heading-count num-tabular">
+    <div class="t-ai-layout">
+      <div class="history-card">
+        <div class="history-header-row">
+          <span class="history-heading-title">历史对话</span>
+          <span v-if="!loadingSessions && conversations.length > 0" class="history-heading-count num-tabular">
             {{ conversations.length }}
-          </text>
-        </view>
+          </span>
+        </div>
 
-        <view
+        <div
           class="history-new-btn"
           :class="{ disabled: isTyping || isStopping }"
           role="button"
@@ -17,15 +17,15 @@
           @click="startNewChat"
         >
           <LineIcon name="plus" size="14px" color="var(--color-sage-ink)" />
-          <text>开启新对话</text>
-        </view>
+          <span>开启新对话</span>
+        </div>
 
-        <scroll-view scroll-y :show-scrollbar="false" class="history-scroll">
-          <view v-if="loadingSessions" class="history-empty">加载历史对话…</view>
-          <view v-else-if="conversations.length === 0" class="history-empty">暂无历史对话</view>
+        <div class="history-scroll zen-scroll-y">
+          <div v-if="loadingSessions" class="history-empty">加载历史对话…</div>
+          <div v-else-if="conversations.length === 0" class="history-empty">暂无历史对话</div>
 
-          <view v-else class="history-list">
-            <view
+          <div v-else class="history-list">
+            <div
               v-for="item in conversations"
               :key="item.id"
               class="history-item"
@@ -33,16 +33,16 @@
               role="button"
               @click="item.id && switchConversation(item.id)"
             >
-              <view class="history-info">
-                <text class="history-title">{{ item.title || '新对话' }}</text>
-                <view class="history-subline">
-                  <text class="history-time num-tabular">{{ formatConvDate(item.updatedAt || item.createdAt) }}</text>
-                  <text v-if="item.chatScopeState === 'BOUND'" class="history-scope-tag">
+              <div class="history-info">
+                <span class="history-title">{{ item.title || '新对话' }}</span>
+                <div class="history-subline">
+                  <span class="history-time num-tabular">{{ formatConvDate(item.updatedAt || item.createdAt) }}</span>
+                  <span v-if="item.chatScopeState === 'BOUND'" class="history-scope-tag">
                     {{ resolveConversationScope(item, subjectStore.subjects).label }}
-                  </text>
-                </view>
-              </view>
-              <view
+                  </span>
+                </div>
+              </div>
+              <div
                 v-if="item.id"
                 class="history-del"
                 role="button"
@@ -50,70 +50,68 @@
                 @click.stop="confirmDeleteConversation(item.id, item.version ?? 0)"
               >
                 <LineIcon name="trash" size="14px" color="var(--text-muted)" />
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <view class="chat-card">
-        <view class="chat-header">
-          <text class="chat-title">{{ currentConversationTitle }}</text>
-          <text v-if="isConversationUnsupported" class="unsupported-badge">旧版对话只读</text>
-        </view>
+      <div class="chat-card">
+        <div class="chat-header">
+          <span class="chat-title">{{ currentConversationTitle }}</span>
+          <span v-if="isConversationUnsupported" class="unsupported-badge">旧版对话只读</span>
+        </div>
 
-        <view v-if="messages.length === 0" class="welcome-stage">
-          <view class="welcome-inner">
-            <view class="welcome-hero">
-              <text class="welcome-title">{{ welcomeTitle }}</text>
-              <text class="welcome-subtitle num-tabular">{{ welcomeSubtitle }}</text>
-            </view>
+        <div v-if="messages.length === 0" class="welcome-stage">
+          <div class="welcome-inner">
+            <div class="welcome-hero">
+              <span class="welcome-title">{{ welcomeTitle }}</span>
+              <span class="welcome-subtitle num-tabular">{{ welcomeSubtitle }}</span>
+            </div>
 
-            <view class="starter-section">
-              <view v-if="preSendError" class="pre-send-error" role="alert">
+            <div class="starter-section">
+              <div v-if="preSendError" class="pre-send-error" role="alert">
                 <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-                <text class="pre-send-error-text">{{ preSendError }}</text>
-              </view>
+                <span class="pre-send-error-text">{{ preSendError }}</span>
+              </div>
 
-              <view class="starter-cards">
-                <view
+              <div class="starter-cards">
+                <div
                   v-for="item in starterItems"
                   :key="item.prompt"
                   class="starter-card"
                   role="button"
                   @click="submitStarterPrompt(item.prompt)"
                 >
-                  <text class="starter-card-title">{{ item.prompt }}</text>
-                  <text class="starter-card-hint">{{ item.hint }}</text>
-                </view>
-              </view>
-            </view>
-          </view>
-        </view>
+                  <span class="starter-card-title">{{ item.prompt }}</span>
+                  <span class="starter-card-hint">{{ item.hint }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <scroll-view
+        <div
           v-else
-          scroll-y
-          :show-scrollbar="false"
-          class="chat-scroll"
-          :scroll-into-view="scrollTargetId"
+          ref="chatScrollRef"
+          class="chat-scroll zen-scroll-y"
           @scroll="handleChatScroll"
           @wheel="handleChatWheel"
           @touchstart="handleChatTouchStart"
           @touchmove="handleChatTouchMove"
         >
-          <view class="chat-stream">
-            <view
+          <div class="chat-stream">
+            <div
               v-for="(msg, index) in messages"
               :key="msg.id"
               class="chat-row"
               :class="msg.role"
             >
-              <view v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
-                <text class="user-text">{{ msg.content }}</text>
-              </view>
+              <div v-if="msg.role === 'user'" class="user-bubble zen-chat-user-bubble">
+                <span class="user-text">{{ msg.content }}</span>
+              </div>
 
-              <view v-else class="assistant-entry">
+              <div v-else class="assistant-entry">
                 <MobileChatProcessArea
                   :reasoning="msg.reasoningText"
                   :tools="msg.tools"
@@ -139,23 +137,23 @@
                   @text-progress="handleStreamingTextProgress"
                 />
 
-                <view v-if="msg.status === 'failed'" class="assistant-error-banner" role="alert">
+                <div v-if="msg.status === 'failed'" class="assistant-error-banner" role="alert">
                   <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-                  <text class="assistant-error-text">{{ msg.errorMessage || '请求失败，请重试' }}</text>
-                </view>
+                  <span class="assistant-error-text">{{ msg.errorMessage || '请求失败，请重试' }}</span>
+                </div>
 
-                <text
+                <span
                   v-else-if="msg.status === 'cancelled' && !hasVisibleAssistantContent(msg)"
                   class="assistant-status-note"
                 >
                   已停止生成
-                </text>
+                </span>
 
-                <view
+                <div
                   v-if="msg.status !== 'streaming' && !drainingMessageIds[msg.id] && (hasCopyableContent(msg) || msg.status === 'failed' || msg.status === 'cancelled')"
                   class="assistant-footer"
                 >
-                  <view
+                  <div
                     v-if="hasCopyableContent(msg)"
                     class="footer-action-chip"
                     role="button"
@@ -163,9 +161,9 @@
                     @click="copyAssistantMessage(msg)"
                   >
                     <LineIcon name="copy" size="13px" color="var(--text-muted)" />
-                    <text class="footer-action-label">复制</text>
-                  </view>
-                  <view
+                    <span class="footer-action-label">复制</span>
+                  </div>
+                  <div
                     v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && !isConversationUnsupported && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
                     class="footer-action-chip"
                     role="button"
@@ -173,9 +171,9 @@
                     @click="regenerateAssistantMessage(msg.id)"
                   >
                     <LineIcon name="refresh" size="13px" color="var(--text-muted)" />
-                    <text class="footer-action-label">{{ msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成' }}</text>
-                  </view>
-                  <view
+                    <span class="footer-action-label">{{ msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成' }}</span>
+                  </div>
+                  <div
                     v-if="hasCopyableContent(msg)"
                     class="footer-action-chip"
                     role="button"
@@ -183,50 +181,48 @@
                     @click="openSaveBlockModal(msg)"
                   >
                     <LineIcon name="plus" size="13px" color="var(--text-muted)" />
-                    <text class="footer-action-label">存为知识块</text>
-                  </view>
-                  <text v-if="msg.status === 'cancelled'" class="assistant-status-note">已停止</text>
-                </view>
-              </view>
-            </view>
+                    <span class="footer-action-label">存为知识块</span>
+                  </div>
+                  <span v-if="msg.status === 'cancelled'" class="assistant-status-note">已停止</span>
+                </div>
+              </div>
+            </div>
 
-            <view :id="anchorId" class="bottom-anchor"></view>
-          </view>
-        </scroll-view>
+            <div class="bottom-anchor"></div>
+          </div>
+        </div>
 
-        <view class="input-dock">
-          <view class="input-dock-inner">
-            <view
+        <div class="input-dock">
+          <div class="input-dock-inner">
+            <div
               v-if="autoScrollLocked && messages.length > 0"
               class="scroll-resume-pill"
               role="button"
               aria-label="回到最新"
               @click="resumeAutoScroll"
             >
-              <view v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></view>
-              <text class="scroll-resume-text">↓ 回到最新</text>
-            </view>
+              <div v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></div>
+              <span class="scroll-resume-text">↓ 回到最新</span>
+            </div>
 
-            <view class="composer-card">
+            <div class="composer-card">
               <textarea
+                ref="composerInputRef"
                 v-model="query"
                 class="composer-textarea"
-                auto-height
+                rows="1"
                 :maxlength="2000"
-                :show-confirm-bar="false"
-                confirm-type="send"
+                enterkeyhint="send"
                 :disabled="isConversationUnsupported"
                 :placeholder="composerPlaceholder"
-                placeholder-style="color: #8A8A85"
-                @input="onQueryInput"
-                @confirm="sendMessage"
+                @input="handleQueryInput"
                 @keydown="handleComposerKeydown"
               />
 
-              <view class="composer-toolbar">
-                <view class="composer-tools-left">
-                  <view class="scope-dropdown-anchor">
-                    <view
+              <div class="composer-toolbar">
+                <div class="composer-tools-left">
+                  <div class="scope-dropdown-anchor">
+                    <div
                       class="scope-capsule"
                       :class="{ 'is-locked': isScopeLocked || isTyping || isStopping, 'is-open': showScopeMenu }"
                       role="button"
@@ -234,12 +230,12 @@
                       :aria-label="isScopeLocked ? `当前检索范围已锁定为${activeScopeLabel}` : `选择检索范围，当前为${activeScopeLabel}`"
                       @click="handleScopePillClick"
                     >
-                      <view
+                      <div
                         class="scope-status-dot"
                         :class="{ 'is-locked': isScopeLocked }"
                         aria-hidden="true"
-                      ></view>
-                      <text class="scope-capsule-text">{{ activeScopeLabel }}</text>
+                      ></div>
+                      <span class="scope-capsule-text">{{ activeScopeLabel }}</span>
                       <LineIcon
                         v-if="!isScopeLocked"
                         class="scope-capsule-chevron"
@@ -248,40 +244,40 @@
                         size="12px"
                         color="var(--text-muted)"
                       />
-                    </view>
+                    </div>
 
-                    <view v-if="showScopeMenu" class="scope-dropdown-mask" @click="showScopeMenu = false"></view>
+                    <div v-if="showScopeMenu" class="scope-dropdown-mask" @click="showScopeMenu = false"></div>
 
-                    <view v-if="showScopeMenu" class="scope-dropdown-menu" @click.stop>
-                      <scroll-view scroll-y :show-scrollbar="false" class="scope-dropdown-scroll">
-                        <view class="dropdown-section-header">
-                          <text>检索范围</text>
-                        </view>
-                        <view
+                    <div v-if="showScopeMenu" class="scope-dropdown-menu" @click.stop>
+                      <div class="scope-dropdown-scroll zen-scroll-y">
+                        <div class="dropdown-section-header">
+                          <span>检索范围</span>
+                        </div>
+                        <div
                           class="dropdown-item"
                           :class="{ 'is-active': selectedSubjectId === null }"
                           role="button"
                           @click="selectScope(null)"
                         >
-                          <view class="dropdown-item-icon">
-                            <view
+                          <div class="dropdown-item-icon">
+                            <div
                               class="scope-status-dot"
                               :class="{ 'is-muted': selectedSubjectId !== null }"
                               aria-hidden="true"
-                            ></view>
-                          </view>
-                          <view class="dropdown-item-text">
-                            <text class="dropdown-item-label">全部资料</text>
-                            <text class="dropdown-item-desc">检索全部学科已就绪资料</text>
-                          </view>
-                        </view>
+                            ></div>
+                          </div>
+                          <div class="dropdown-item-text">
+                            <span class="dropdown-item-label">全部资料</span>
+                            <span class="dropdown-item-desc">检索全部学科已就绪资料</span>
+                          </div>
+                        </div>
 
                         <template v-if="subjectStore.subjects.length > 0">
-                          <view class="dropdown-divider"></view>
-                          <view class="dropdown-section-header">
-                            <text>按学科限定</text>
-                          </view>
-                          <view
+                          <div class="dropdown-divider"></div>
+                          <div class="dropdown-section-header">
+                            <span>按学科限定</span>
+                          </div>
+                          <div
                             v-for="sub in subjectStore.subjects"
                             :key="sub.id"
                             class="dropdown-item"
@@ -289,28 +285,28 @@
                             role="button"
                             @click="selectScope(sub.id)"
                           >
-                            <view class="dropdown-item-icon">
+                            <div class="dropdown-item-icon">
                               <LineIcon
                                 :name="resolveSubjectIcon(sub.icon)"
                                 size="15px"
                                 :color="selectedSubjectId === sub.id ? 'var(--color-sage-ink)' : 'var(--text-muted)'"
                               />
-                            </view>
-                            <view class="dropdown-item-text">
-                              <text class="dropdown-item-label">{{ sub.name }}</text>
-                              <text class="dropdown-item-desc num-tabular">{{ formatSubjectStats(sub) }}</text>
-                            </view>
-                          </view>
+                            </div>
+                            <div class="dropdown-item-text">
+                              <span class="dropdown-item-label">{{ sub.name }}</span>
+                              <span class="dropdown-item-desc num-tabular">{{ formatSubjectStats(sub) }}</span>
+                            </div>
+                          </div>
                         </template>
 
-                        <view v-else class="dropdown-empty-hint">
-                          <text>暂无学科，可先使用「全部资料」</text>
-                        </view>
-                      </scroll-view>
-                    </view>
-                  </view>
+                        <div v-else class="dropdown-empty-hint">
+                          <span>暂无学科，可先使用「全部资料」</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-                  <view
+                  <div
                     v-if="messages.length > 0 || currentConversationId"
                     class="composer-tool-btn"
                     :class="{ disabled: isTyping || isStopping }"
@@ -319,10 +315,10 @@
                     @click="startNewChat"
                   >
                     <LineIcon name="plus" size="15px" color="var(--color-sage-ink)" />
-                  </view>
-                </view>
+                  </div>
+                </div>
 
-                <view
+                <div
                   v-if="isTyping || isStopping"
                   class="composer-action-btn stop-btn"
                   :class="{ disabled: isStopping }"
@@ -330,9 +326,9 @@
                   aria-label="停止生成"
                   @click="stopGeneration"
                 >
-                  <view class="stop-square"></view>
-                </view>
-                <view
+                  <div class="stop-square"></div>
+                </div>
+                <div
                   v-else
                   class="composer-action-btn send-btn"
                   :class="{ disabled: isConversationUnsupported || !query.trim() }"
@@ -341,13 +337,13 @@
                   @click="sendMessage"
                 >
                   <LineIcon name="arrow-up" size="17px" color="#FFFFFF" />
-                </view>
-              </view>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
       <SaveKnowledgeBlockModal
@@ -363,7 +359,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import {
   chatWithAI,
@@ -384,6 +380,7 @@ import { onPageLoad } from '@/platform/lifecycle'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import { handleEnterKey, resetTextareaHeight, syncTextareaAutoHeight } from '@/utils/domHelpers'
 import {
   applyContentDelta,
   applyReasoningDelta,
@@ -421,7 +418,8 @@ const STARTER_HINTS = [
 const authStore = useAuthStore()
 const blockStore = useBlockStore()
 const subjectStore = useSubjectStore()
-const instanceProxy = getCurrentInstance()?.proxy
+const chatScrollRef = ref<HTMLElement | null>(null)
+const composerInputRef = ref<HTMLElement | null>(null)
 
 const conversations = ref<ConversationView[]>([])
 const loadingSessions = ref(false)
@@ -432,14 +430,21 @@ const selectedSubjectId = ref<string | null>(null)
 const boundScopeLabelOverride = ref<string | null>(null)
 const messages = ref<MobileChatMessage[]>([])
 const query = ref('')
+
+watch(
+  query,
+  (val) => {
+    if (!val) {
+      void nextTick(() => resetTextareaHeight(composerInputRef.value))
+    }
+  },
+)
 const isTyping = ref(false)
 const isStopping = ref(false)
 const activeRunId = ref('')
 const activeAttemptId = ref('')
 const isConversationUnsupported = ref(false)
 const preSendError = ref('')
-const scrollTargetId = ref('')
-const anchorId = 'tablet-chat-anchor'
 const autoScrollLocked = ref(false)
 const drainingMessageIds = ref<Record<string, boolean>>({})
 
@@ -570,20 +575,11 @@ function setMessageDraining(msgId: string, draining: boolean) {
   }
 }
 
-function measureChatViewport(): Promise<number> {
-  if (chatViewportHeight > 0) return Promise.resolve(chatViewportHeight)
-  return new Promise((resolve) => {
-    const queryBuilder = instanceProxy
-      ? uni.createSelectorQuery().in(instanceProxy)
-      : uni.createSelectorQuery()
-    queryBuilder.select('.chat-scroll').boundingClientRect((rect) => {
-      const box = Array.isArray(rect) ? rect[0] : rect
-      if (box && typeof box.height === 'number' && box.height > 0) {
-        chatViewportHeight = box.height
-      }
-      resolve(chatViewportHeight)
-    }).exec()
-  })
+function measureChatViewport(): number {
+  if (chatScrollRef.value && chatScrollRef.value.clientHeight > 0) {
+    chatViewportHeight = chatScrollRef.value.clientHeight
+  }
+  return chatViewportHeight
 }
 
 function scrollToBottom(force = false) {
@@ -593,12 +589,14 @@ function scrollToBottom(force = false) {
     touchPullUpDetected = false
   }
   if (scrollTimer) return
-  void measureChatViewport()
+  measureChatViewport()
   nextTick(() => {
     programmaticScrollUntil = Date.now() + 180
-    scrollTargetId.value = anchorId
+    const el = chatScrollRef.value
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
     scrollTimer = setTimeout(() => {
-      scrollTargetId.value = ''
       scrollTimer = null
     }, 90)
   })
@@ -644,13 +642,16 @@ function handleChatWheel(event: unknown) {
   }
 }
 
-function handleChatScroll(event: unknown) {
-  const payload = event as { detail?: { scrollTop?: number; scrollHeight?: number } }
-  const scrollTop = Number(payload?.detail?.scrollTop ?? 0)
-  const scrollHeight = Number(payload?.detail?.scrollHeight ?? 0)
+function handleChatScroll(event: Event) {
+  const el = (event.currentTarget as HTMLElement | null) ?? chatScrollRef.value
+  if (!el) return
+  if (el.clientHeight > 0) {
+    chatViewportHeight = el.clientHeight
+  }
+  const scrollTop = el.scrollTop
+  const scrollHeight = el.scrollHeight
   const isProgrammatic = Date.now() < programmaticScrollUntil
   if (chatViewportHeight <= 0) {
-    void measureChatViewport()
     prevScrollTop = scrollTop
     return
   }
@@ -668,6 +669,11 @@ function handleChatScroll(event: unknown) {
   }
 }
 
+function handleQueryInput(event: unknown) {
+  syncTextareaAutoHeight(event, 124)
+  onQueryInput()
+}
+
 function onQueryInput() {
   if (preSendError.value) {
     preSendError.value = ''
@@ -675,16 +681,9 @@ function onQueryInput() {
 }
 
 function handleComposerKeydown(event: unknown) {
-  const e = event as {
-    key?: string
-    shiftKey?: boolean
-    isComposing?: boolean
-    preventDefault?: () => void
-  }
-  if (e?.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault?.()
+  handleEnterKey(event, () => {
     void sendMessage()
-  }
+  }, { allowShiftNewline: true, preventDefault: true })
 }
 
 function toggleProcess(index: number) {
@@ -2107,6 +2106,10 @@ onPageLoad((options) => {
   background-color: transparent;
   box-sizing: border-box;
   overflow-y: auto;
+}
+
+.composer-textarea::placeholder {
+  color: #8A8A85;
 }
 
 .composer-toolbar {
