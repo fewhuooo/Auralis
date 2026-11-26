@@ -14,12 +14,12 @@ const scanRoots = [
   'src/router',
   'src/composables',
   'src/utils',
+  'src/styles',
   'src/App.vue',
   'src/main.ts',
 ]
 const ignored = new Set([
   'src/api/generated/schema.ts',
-  'src/services/localDb.ts',
 ])
 const forbidden = [
   { label: 'legacy response wrapper', pattern: /(?:body|response|res\.data)\s*(?:&&|\?)?[^\n]{0,80}\.code\s*===?\s*200/ },
@@ -70,6 +70,21 @@ const scopedForbidden = [
     pattern: /\b(?:confirm-type|placeholder-style|show-confirm-bar|auto-height|scroll-into-view|scroll-with-animation|show-scrollbar)\b|:scroll-left\s*=|:password\s*=|@confirm\s*=|<button\b[^>]*:loading\s*=|<input\b[^>]*\spassword(?=[\s/>])|:deep\(\.uni-scroll-view-content\)/,
     allow: new Set(),
   },
+  {
+    label: 'HTML5+ plus.* runtime call',
+    pattern: /\bplus\./,
+    allow: new Set(),
+  },
+  {
+    label: 'legacy H5 localStorage SQL emulation',
+    pattern: /\bh5Db\b|\bh5_db_/,
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp built-in element selector',
+    pattern: /\buni-(?:app|page|button|input|textarea)\b/,
+    allow: new Set(),
+  },
 ]
 
 async function collect(path) {
@@ -79,7 +94,7 @@ async function collect(path) {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const entryPath = join(path, entry.name)
     if (entry.isDirectory()) files.push(...await collect(entryPath))
-    else if (/\.(?:ts|vue|js|mjs)$/.test(entry.name)) files.push(entryPath)
+    else if (/\.(?:ts|vue|js|mjs|css)$/.test(entry.name)) files.push(entryPath)
   }
   return files
 }
@@ -120,6 +135,7 @@ for (const file of files) {
 }
 
 const retiredPages = [
+  'src/services/legacyDataPurge.ts',
   'src/pages/launch/index.vue',
   'src/pages/mobile/settings/index.vue',
   'src/pages/mobile/timeline/index.vue',

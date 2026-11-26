@@ -24,6 +24,7 @@ import { createStatsApi } from '../src/api/statsApi.ts'
 import { buildWorkspaceReadingContext } from '../src/utils/workspaceChatScope.ts'
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
+import { installLocalDbTestEnv } from './test-helpers/nodeSqliteTauriMock.mjs'
 import { createSseDecoder } from '../src/api/sse.ts'
 import { createRoutePreloader } from '../src/utils/pagePreload.ts'
 import { useLayoutStore } from '../src/store/useLayoutStore.ts'
@@ -592,27 +593,75 @@ test('Task color removal assertions (Mobile)', async () => {
   }
 })
 
-test('task payload cleanup exposes three states and preserves invalid raw payloads', async () => {
-  const root = new URL('../src/', import.meta.url)
-  const source = await readFile(new URL('services/localDb.ts', root), 'utf8')
-  assert.match(source, /export type TaskMutationPayloadCleanupResult\s*=\s*[\s\S]*status: 'changed'/)
-  assert.match(source, /status: 'unchanged'/)
-  assert.match(source, /status: 'invalid'/)
-  assert.match(source, /const rawPayload = typeof payload === 'string' \? payload : \(JSON\.stringify\(payload\) \?\? ''\)/)
-  assert.match(source, /Object\.prototype\.hasOwnProperty\.call\(parsed, 'color'\)/)
-  assert.match(source, /Object\.prototype\.hasOwnProperty\.call\(parsed, 'colorOverride'\)/)
-  assert.match(source, /return \{ status: 'invalid', payload: rawPayload \}/)
+test('task payload cleanup exposes three states and preserves invalid raw payloads', async (context) => {
+  installLocalDbTestEnv(context)
+  const { cleanTaskMutationPayload } = await import('../src/services/localDb.ts?protocol-cleanup')
+
+  const stripped = cleanTaskMutationPayload(JSON.stringify({
+    id: 't-1',
+    name: 'Review',
+    color: '#FF0000',
+    colorOverride: '#00FF00',
+  }))
+  assert.equal(stripped.status, 'changed')
+  assert.deepEqual(JSON.parse(stripped.payload), { id: 't-1', name: 'Review' })
+
+  const unchangedRaw = JSON.stringify({ id: 't-2', name: 'Clean' })
+  assert.deepEqual(cleanTaskMutationPayload(unchangedRaw), {
+    status: 'unchanged',
+    payload: unchangedRaw,
+  })
+
+  assert.deepEqual(cleanTaskMutationPayload('{not-json'), { status: 'invalid', payload: '{not-json' })
+  assert.deepEqual(cleanTaskMutationPayload('[1,2]'), { status: 'invalid', payload: '[1,2]' })
+  assert.deepEqual(cleanTaskMutationPayload('"text"'), { status: 'invalid', payload: '"text"' })
 })
 
-test('task color migration quotes native string ids and bounds invalid warnings per platform', async () => {
-  const root = new URL('../src/', import.meta.url)
-  const source = await readFile(new URL('services/localDb.ts', root), 'utf8')
-  assert.match(source, /UPDATE local_mutations SET payload = '\$\{sanitized\}' WHERE id = '\$\{esc\(String\(mutation\.id\)\)\}'/)
-  assert.match(source, /let nativeInvalidTaskPayloadWarningEmitted = false/)
-  assert.match(source, /let h5InvalidTaskPayloadWarningEmitted = false/)
-  assert.match(source, /if \(nativeInvalidTaskPayloadWarningEmitted\) return/)
-  assert.match(source, /if \(h5InvalidTaskPayloadWarningEmitted\) return/)
-  assert.match(source, /if \(result\.status === 'changed'\)/)
+test('task color migration strips color fields in SQLite and bounds invalid warnings to one emission', async (context) => {
+  installLocalDbTestEnv(context)
+  const { localDataScope } = await import('../src/services/localDataScope.ts?protocol-migration')
+  const { localDb } = await import('../src/services/localDb.ts?protocol-migration')
+
+  localDataScope.activate('user-mig', 'dev-mig')
+  await localDb.init()
+
+  await localDb.executeSql(
+    `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ['c-dirty', 'task', 't-dirty', 'update', JSON.stringify({ id: 't-dirty', name: "O'Brien", color: '#111', colorOverride: '#222' }), 1000, 'pending'],
+  )
+  await localDb.executeSql(
+    `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ['c-bad-1', 'task', 't-bad-1', 'update', '{bad-json-1', 1001, 'pending'],
+  )
+  await localDb.executeSql(
+    `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ['c-bad-2', 'task', 't-bad-2', 'update', '["array-not-object"]', 1002, 'pending'],
+  )
+  await localDb.executeSql(
+    `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ['c-block', 'block', 'b-1', 'update', JSON.stringify({ id: 'b-1', color: '#8B9A6E' }), 1003, 'pending'],
+  )
+
+  const warnings = []
+  const prevWarn = console.warn
+  console.warn = (...args) => warnings.push(args.join(' '))
+  try {
+    await localDb.init()
+  } finally {
+    console.warn = prevWarn
+  }
+
+  const pending = await localDb.getUnsyncedMutations()
+  const dirtyRow = pending.find((row) => row.entity_id === 't-dirty')
+  assert.deepEqual(JSON.parse(dirtyRow.payload), { id: 't-dirty', name: "O'Brien" })
+  assert.equal(pending.find((row) => row.entity_id === 't-bad-1')?.payload, '{bad-json-1')
+  assert.equal(pending.find((row) => row.entity_id === 't-bad-2')?.payload, '["array-not-object"]')
+  assert.equal(JSON.parse(pending.find((row) => row.entity_id === 'b-1').payload).color, '#8B9A6E')
+  assert.equal(warnings.filter((msg) => msg.includes('Preserving invalid TASK color payload')).length, 1)
 })
 
 test('connectRealtimeSync uses platform WebSocket and handles disconnect during in-flight ticket without deadlock', async (context) => {

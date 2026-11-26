@@ -10,7 +10,6 @@ import { getStorageItem, removeStorageItem, setStorageItem, setStorageJson } fro
 import { getDeviceSystemInfo } from '@/platform/system'
 import { getDefaultLoginRoute } from '@/router/target'
 import { localDataScope } from '@/services/localDataScope'
-import { purgeLegacyLocalData } from '@/services/legacyDataPurge'
 
 type AuthResult = components['schemas']['AuthResult']
 type TokenPair = components['schemas']['TokenPair']
@@ -76,7 +75,6 @@ export const useAuthStore = defineStore('auth', () => {
   }, getDeviceSystemInfo())
   const serverDeviceId = ref(persisted?.serverDeviceId || '')
   if (persisted?.user.id && serverDeviceId.value) localDataScope.activate(persisted.user.id, serverDeviceId.value)
-  if (persisted?.user.id) void purgeLegacyLocalData()
 
   const token = computed(() => tokens.value?.accessToken || null)
   const refreshToken = computed(() => tokens.value?.refreshToken || null)
@@ -85,7 +83,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   function persistSession(session: PersistedAuthSession): void {
     localDataScope.activate(session.user.id!, session.serverDeviceId)
-    void purgeLegacyLocalData()
     user.value = session.user
     tokens.value = session.tokens
     sessionId.value = session.sessionId

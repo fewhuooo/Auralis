@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
 import test from 'node:test'
 
 import { createSyncController } from '../src/services/syncController.ts'
 import { selectEvictableCacheKeys } from '../src/services/localDocumentCache.ts'
+import { createTabletNoteRepository } from '../src/services/tabletNoteRepositoryCore.ts'
+import { createNoteDocument } from '../src/services/tabletNoteModel.ts'
+import { installLocalDbTestEnv } from './test-helpers/nodeSqliteTauriMock.mjs'
 import {
   BLOCK_THEME_COLORS,
   DEFAULT_BLOCK_THEME_COLOR,
@@ -14,50 +16,7 @@ import {
 import { MAX_UPLOAD_FILE_SIZE_BYTES, validateUploadFile } from '../src/utils/uploadValidation.ts'
 
 function setupLocalDbTestEnv(context, options = {}) {
-  const storage = new Map()
-  const hadOwn = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
-  const prevStorage = globalThis.localStorage
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: {
-      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
-      setItem: (key, val) => {
-        if (options.onSet && options.onSet(key, String(val)) === false) {
-          return
-        }
-        storage.set(key, String(val))
-      },
-      removeItem: (key) => {
-        storage.delete(key)
-      },
-      clear: () => {
-        storage.clear()
-      },
-    },
-  })
-
-  const loader = registerHooks({
-    resolve(specifier, ctx, nextResolve) {
-      if (specifier.startsWith('@/')) {
-        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, ctx)
-      }
-      if (specifier.startsWith('./') && !specifier.endsWith('.ts') && ctx.parentURL?.includes('Auralis-Mobile')) {
-        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
-      }
-      return nextResolve(specifier, ctx)
-    },
-  })
-
-  context.after(() => {
-    loader.deregister()
-    if (hadOwn) {
-      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
-    } else {
-      delete globalThis.localStorage
-    }
-  })
-
-  return storage
+  return installLocalDbTestEnv(context, options)
 }
 
 test('localDb persists sources with payload_json, prunes removed sources, and cascades deletion', async (context) => {
@@ -279,13 +238,12 @@ test('localDb persists review states, subject stats per days/timeZone, and isola
   assert.equal(await localDb.getSubjectStatsCache('sub-r', 7, 'Asia/Shanghai'), null)
 })
 
-test('localDb swallows derived-cache QuotaExceededError cleanly without crashing UI callers', async (context) => {
+test('localDb swallows derived-cache SQLite write failures cleanly without crashing UI callers', async (context) => {
   setupLocalDbTestEnv(context, {
-    onSet: (key) => {
-      if (key.includes(':ai_overview_cache')) {
-        throw new DOMException('Quota exceeded', 'QuotaExceededError')
+    onExecute: (_path, sql) => {
+      if (/^\s*(?:INSERT|UPDATE)\b/i.test(sql) && sql.includes('ai_overview_cache')) {
+        throw new Error('SQLITE_FULL: database or disk is full')
       }
-      return true
     },
   })
   const { localDataScope } = await import('../src/services/localDataScope.ts?local-persist-quota')
@@ -434,7 +392,7 @@ test('localDocumentCache selectEvictableCacheKeys evicts oldest LRU entries when
 })
 
 test('localDb auto-initializes on first read/write in a new scope and localDataScope.deactivate clears active scope', async (context) => {
-  const storage = setupLocalDbTestEnv(context)
+  const { storage } = setupLocalDbTestEnv(context)
   const { localDataScope } = await import('../src/services/localDataScope.ts?local-auto-init')
   const { localDb } = await import('../src/services/localDb.ts?local-auto-init')
 
@@ -460,7 +418,8 @@ test('localDb auto-initializes on first read/write in a new scope and localDataS
 })
 
 test('localDb preserves subjects.sortKey, updates source_files.subject_id, sanitizes task.duration, and clears prior scope storage', async (context) => {
-  const storage = setupLocalDbTestEnv(context)
+  const env = setupLocalDbTestEnv(context)
+  const { storage } = env
   const { localDataScope } = await import('../src/services/localDataScope.ts?local-batch2')
   const { localDb } = await import('../src/services/localDb.ts?local-batch2')
 
@@ -531,15 +490,61 @@ test('localDb preserves subjects.sortKey, updates source_files.subject_id, sanit
   const savedTasks = await localDb.getTasks()
   assert.equal(savedTasks[0].duration, 0)
 
-  // Seed focus key under current scope then verify clearScopeStorage removes table & focus keys.
+  // Seed focus key and another active scope, then verify clearScopeStorage drops only target scope data & handle.
   storage.set(`auralis:local:${scope}:focus_state`, JSON.stringify({ status: 'paused' }))
-  assert.ok(storage.has(`auralis:local:${scope}:subjects`))
+  assert.equal(env.openPaths.has(`sqlite:auralis_${scope}.db`), true)
   assert.ok(storage.has(`auralis:local:${scope}:focus_state`))
 
+  const otherScope = localDataScope.activate('user-other', 'dev-other')
+  await localDb.saveSubject({
+    id: 'sub-other',
+    name: '离散数学',
+    description: 'Logic & Graph',
+    icon: 'book',
+    version: 1,
+  })
+  assert.equal(env.openPaths.has(`sqlite:auralis_${otherScope}.db`), true)
+
   await localDb.clearScopeStorage(scope)
-  assert.equal(storage.has(`auralis:local:${scope}:subjects`), false)
-  assert.equal(storage.has(`auralis:local:${scope}:task_blocks`), false)
   assert.equal(storage.has(`auralis:local:${scope}:focus_state`), false)
+  assert.equal(env.openPaths.has(`sqlite:auralis_${scope}.db`), false)
+  assert.equal(env.closedPaths.includes(`sqlite:auralis_${scope}.db`), true)
+  assert.equal(env.openPaths.has(`sqlite:auralis_${otherScope}.db`), true)
+  assert.equal((await localDb.getSubjects()).length, 1)
+
+  localDataScope.activate('user-b2', 'dev-b2')
+  assert.deepEqual(await localDb.getSubjects(), [])
+  assert.deepEqual(await localDb.getTasks(), [])
+})
+
+test('tabletNoteRepository persists and queries notes via localDb.executeSql over real SQLite', async (context) => {
+  setupLocalDbTestEnv(context)
+  const { localDataScope } = await import('../src/services/localDataScope.ts?local-tablet-notes')
+  const { localDb } = await import('../src/services/localDb.ts?local-tablet-notes')
+
+  localDataScope.activate('user-notes', 'dev-tablet')
+  const repository = createTabletNoteRepository(localDb)
+  await repository.initSchema()
+
+  const doc = createNoteDocument({
+    id: 'note-1',
+    mode: 'subject-handwriting-note',
+    subjectId: 'sub-phys',
+    title: "Why Newton's Law?",
+    now: '2026-11-25T10:00:00.000Z',
+  })
+  await repository.save(doc)
+  const loaded = await repository.load('note-1')
+  assert.equal(loaded?.title, "Why Newton's Law?")
+
+  await repository.save({
+    ...doc,
+    title: "Newton's Second Law?",
+    updatedAt: '2026-11-25T11:00:00.000Z',
+  })
+  const subjectNotes = await repository.listBySubject('sub-phys', 'subject-handwriting-note')
+  assert.equal(subjectNotes.length, 1)
+  assert.equal(subjectNotes[0].title, "Newton's Second Law?")
 })
 
 test('resolveBlockSourceLabel, normalizeBlockThemeColor, and resolveWorkspaceCreatedBlockSource align with PC workspace', () => {

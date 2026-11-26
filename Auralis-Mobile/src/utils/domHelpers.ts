@@ -61,7 +61,7 @@ export function handleEnterKey(
   onEnter()
 }
 
-/** Expands a textarea to fit its content up to maxHeightPx, supporting both native and uni-textarea hosts. */
+/** Expands a textarea to fit its content up to maxHeightPx, supporting native textarea elements and container refs. */
 export function syncTextareaAutoHeight(eventOrEl: unknown, maxHeightPx = 140): void {
   const textarea = resolveTextareaElement(eventOrEl)
   if (!textarea?.style) return
