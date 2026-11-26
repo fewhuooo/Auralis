@@ -16,6 +16,10 @@ use tauri::State;
 
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
 pub const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 pub const MAX_TIMEOUT_MS: u64 = 120_000;
@@ -701,6 +705,10 @@ impl SidecarSession {
             .stderr(Stdio::piped())
             .current_dir(resource_dir);
         configure_runtime_temp(&mut command, runtime_temp);
+        // The sidecar is a console-subsystem executable; without this flag the
+        // installed GUI app flashes a cmd window for the lifetime of the process.
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
         command.env("AURALIS_OCR_DEBUG", "1");
         command.env("PYTHONIOENCODING", "utf-8");
         command.env("PYTHONUTF8", "1");

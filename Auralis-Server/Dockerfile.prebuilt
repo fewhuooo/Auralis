@@ -1,0 +1,20 @@
+FROM eclipse-temurin:21.0.8_9-jre-jammy
+
+USER root
+RUN if ! command -v curl >/dev/null 2>&1; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.aliyun.com|g; s|http://security.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list \
+        && apt-get update \
+        && apt-get install --no-install-recommends --yes curl \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi \
+    && groupadd --system --gid 10001 auralis \
+    && useradd --system --uid 10001 --gid auralis --home-dir /nonexistent --shell /usr/sbin/nologin auralis
+
+WORKDIR /app
+COPY --chown=auralis:auralis target/auralis-server-0.1.0-SNAPSHOT.jar app.jar
+
+USER auralis:auralis
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=12 \
+    CMD curl --fail --silent http://127.0.0.1:8080/actuator/health/readiness || exit 1
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

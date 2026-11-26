@@ -1,0 +1,26 @@
+# HTTPS gateway overlay. Use after the domain A records point to this host:
+#   docker compose --env-file .env -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d
+# Requires AURALIS_API_DOMAIN and AURALIS_STORAGE_DOMAIN in .env. Then set
+# AURALIS_MINIO_PUBLIC_ENDPOINT=https://<AURALIS_STORAGE_DOMAIN> and rebuild the PC client with https/wss URLs.
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: auralis-caddy
+    restart: unless-stopped
+    environment:
+      AURALIS_API_DOMAIN: ${AURALIS_API_DOMAIN:?AURALIS_API_DOMAIN must be set}
+      AURALIS_STORAGE_DOMAIN: ${AURALIS_STORAGE_DOMAIN:?AURALIS_STORAGE_DOMAIN must be set}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - minio
+
+volumes:
+  caddy_data:
+  caddy_config:

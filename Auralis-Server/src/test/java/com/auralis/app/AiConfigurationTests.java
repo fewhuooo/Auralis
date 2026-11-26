@@ -1,5 +1,6 @@
 package com.auralis.app;
 
+import com.auralis.app.ai.usage.ChatAgentProperties;
 import com.auralis.app.shared.config.AuralisProperties;
 import jakarta.validation.Validation;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,9 @@ class AiConfigurationTests {
     private AuralisProperties properties;
 
     @Autowired
+    private ChatAgentProperties chatAgentProperties;
+
+    @Autowired
     private Environment environment;
 
     @Test
@@ -77,7 +81,9 @@ class AiConfigurationTests {
         assertThat(properties.ai().limits().reservationLeaseMillis()).isEqualTo(300_000L);
         assertThat(properties.ai().limits().heartbeatMillis()).isEqualTo(10_000L);
         assertThat(properties.ai().limits().chatMaxOutputTokens()).isEqualTo(4096);
-        assertThat(properties.ai().limits().chatTaskTokens()).isEqualTo(32_000L);
+        assertThat(properties.ai().limits().chatTaskTokens()).isEqualTo(655_360L);
+        assertThat(chatAgentProperties.maxIterations()).isEqualTo(20);
+        assertThat(chatAgentProperties.maxToolCalls()).isEqualTo(40);
         assertThat(properties.ai().limits().overviewMaxCalls()).isZero();
         assertThat(properties.ai().limits().overviewTaskTokens()).isEqualTo(524_288L);
         assertThat(properties.ai().limits().ingestionMaxCalls()).isEqualTo(512);

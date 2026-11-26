@@ -1,0 +1,25 @@
+{$AURALIS_API_DOMAIN} {
+	encode off
+	reverse_proxy backend:8080 {
+		flush_interval -1
+		transport http {
+			read_timeout 360s
+			write_timeout 360s
+		}
+	}
+}
+
+{$AURALIS_STORAGE_DOMAIN} {
+	encode off
+	request_body {
+		max_size 64MB
+	}
+	reverse_proxy minio:9000 {
+		header_up Host {http.request.host}
+		flush_interval -1
+		transport http {
+			read_timeout 360s
+			write_timeout 360s
+		}
+	}
+}

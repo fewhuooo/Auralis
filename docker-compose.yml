@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${AURALIS_DB_PASSWORD:?AURALIS_DB_PASSWORD must be set}
       POSTGRES_DB: ${AURALIS_DB_NAME:?AURALIS_DB_NAME must be set}
     ports:
-      - "${AURALIS_DB_PORT:-5432}:5432"
+      - "${AURALIS_DB_BIND_IP:-127.0.0.1}:${AURALIS_DB_PORT:-5432}:5432"
     volumes:
       - auralis-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -28,8 +28,8 @@ services:
       MINIO_API_CORS_ALLOW_ORIGIN: ${AURALIS_CORS_ALLOWED_ORIGINS:?AURALIS_CORS_ALLOWED_ORIGINS must be set}
       MINIO_HEALTHCHECK_BUCKET: ${AURALIS_MINIO_BUCKET:?AURALIS_MINIO_BUCKET must be set}
     ports:
-      - "${AURALIS_MINIO_API_PORT:-9000}:9000"
-      - "${AURALIS_MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${AURALIS_MINIO_API_BIND_IP:-0.0.0.0}:${AURALIS_MINIO_API_PORT:-9000}:9000"
+      - "${AURALIS_MINIO_CONSOLE_BIND_IP:-127.0.0.1}:${AURALIS_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - auralis-minio-data:/data
     command: server /data --console-address ":9001"
@@ -72,7 +72,7 @@ services:
   backend:
     build:
       context: ./Auralis-Server
-      dockerfile: Dockerfile
+      dockerfile: ${AURALIS_BACKEND_DOCKERFILE:-Dockerfile}
     container_name: auralis-backend
     restart: unless-stopped
     env_file:
@@ -80,6 +80,7 @@ services:
         required: false
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      JAVA_TOOL_OPTIONS: ${AURALIS_BACKEND_JAVA_OPTS:-}
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${AURALIS_DB_NAME:?AURALIS_DB_NAME must be set}
       SPRING_DATASOURCE_USERNAME: ${AURALIS_DB_USER:?AURALIS_DB_USER must be set}
       SPRING_DATASOURCE_PASSWORD: ${AURALIS_DB_PASSWORD:?AURALIS_DB_PASSWORD must be set}
@@ -131,11 +132,11 @@ services:
       AURALIS_AI_LIMITS_RESERVATION_LEASE_MILLIS: ${AURALIS_AI_LIMITS_RESERVATION_LEASE_MILLIS:-300000}
       AURALIS_AI_LIMITS_HEARTBEAT_MILLIS: ${AURALIS_AI_LIMITS_HEARTBEAT_MILLIS:-10000}
       AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS: ${AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS:-4096}
-      AURALIS_AI_LIMITS_CHAT_TASK_TOKENS: ${AURALIS_AI_LIMITS_CHAT_TASK_TOKENS:-32000}
+      AURALIS_AI_LIMITS_CHAT_TASK_TOKENS: ${AURALIS_AI_LIMITS_CHAT_TASK_TOKENS:-655360}
       AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS: ${AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS:-0}
       AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS: ${AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS:-0}
-      AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:-12}
-      AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:-20}
+      AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:-20}
+      AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:-40}
       AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES:-65536}
       AURALIS_AI_CHAT_AGENT_MAX_SERIALIZED_REQUEST_UTF8_BYTES: ${AURALIS_AI_CHAT_AGENT_MAX_SERIALIZED_REQUEST_UTF8_BYTES:-524288}
       AURALIS_AI_CHAT_AGENT_ATTEMPT_DEADLINE_SECONDS: ${AURALIS_AI_CHAT_AGENT_ATTEMPT_DEADLINE_SECONDS:-300}
@@ -154,7 +155,7 @@ services:
       AURALIS_AI_ALLOWED_PROVIDER_HOSTS: ${AURALIS_AI_ALLOWED_PROVIDER_HOSTS:-api.deepseek.com,api.openai.com,api.siliconflow.cn}
       AURALIS_CORS_ALLOWED_ORIGINS: ${AURALIS_CORS_ALLOWED_ORIGINS:?AURALIS_CORS_ALLOWED_ORIGINS must be set}
     ports:
-      - "${AURALIS_SERVER_PORT:-8080}:8080"
+      - "${AURALIS_SERVER_BIND_IP:-0.0.0.0}:${AURALIS_SERVER_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -166,20 +167,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
-
-  frontend:
-    build:
-      context: ./Auralis-PC
-      dockerfile: Dockerfile
-      args:
-        VITE_OVERVIEW_SSE_DEADLINE_MS: ${VITE_OVERVIEW_SSE_DEADLINE_MS:-300000}
-    container_name: auralis-frontend
-    restart: unless-stopped
-    ports:
-      - "${AURALIS_FRONTEND_PORT:-80}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
 
 volumes:
   auralis-postgres-data:
