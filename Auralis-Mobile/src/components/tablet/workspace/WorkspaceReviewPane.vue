@@ -1,57 +1,58 @@
 <template>
-  <scroll-view scroll-y :show-scrollbar="false" class="review-pane-scroll">
-    <view class="review-pane">
+  <div class="review-pane-scroll zen-scroll-y">
+    <div class="review-pane">
       <!-- 1. 规划总览态 -->
       <template v-if="!inRound">
-        <view class="review-header">
-          <text class="review-header-title">学科复习</text>
-          <text class="review-header-desc">通过回忆、核对和必要时的重新学习，逐步巩固本学科知识。</text>
-        </view>
+        <div class="review-header">
+          <span class="review-header-title">学科复习</span>
+          <span class="review-header-desc">通过回忆、核对和必要时的重新学习，逐步巩固本学科知识。</span>
+        </div>
 
-        <view v-if="statesError" class="pane-notice is-error" role="alert">
-          <text class="notice-text">{{ statesError }}</text>
+        <div v-if="statesError" class="pane-notice is-error" role="alert">
+          <span class="notice-text">{{ statesError }}</span>
           <button
+            type="button"
             class="ui-btn ui-btn-secondary sm"
             :disabled="statesLoading"
             @click="loadPlanningStates"
           >重试</button>
-        </view>
+        </div>
 
-        <view class="dashboard-wrap">
-          <view v-if="statesLoading && !statesLoaded" class="plan-card zen-card">
-            <view class="plan-skeleton-hero ui-shimmer"></view>
-            <view class="plan-skeleton-row ui-shimmer"></view>
-          </view>
+        <div class="dashboard-wrap">
+          <div v-if="statesLoading && !statesLoaded" class="plan-card zen-card">
+            <div class="plan-skeleton-hero ui-shimmer"></div>
+            <div class="plan-skeleton-row ui-shimmer"></div>
+          </div>
 
-          <view v-else class="plan-card zen-card">
-            <view class="plan-top">
-              <view class="plan-meta">
-                <view class="plan-badge">
-                  <text>学科记忆规划</text>
-                </view>
-                <text class="plan-title">{{ subjectName || '当前学科' }}</text>
-                <text class="plan-subtitle num-tabular">共 {{ summary.blockCount }} 个知识块</text>
+          <div v-else class="plan-card zen-card">
+            <div class="plan-top">
+              <div class="plan-meta">
+                <div class="plan-badge">
+                  <span>学科记忆规划</span>
+                </div>
+                <span class="plan-title">{{ subjectName || '当前学科' }}</span>
+                <span class="plan-subtitle num-tabular">共 {{ summary.blockCount }} 个知识块</span>
 
-                <view class="segment-wrap">
-                  <view class="segment-header">
-                    <text class="segment-title">知识块掌握分布</text>
-                    <view class="segment-legend num-tabular">
-                      <view class="legend-item">
-                        <view class="legend-dot is-learning"></view>
-                        <text>待学习 {{ summary.pendingLearningCount }}</text>
-                      </view>
-                      <view class="legend-item">
-                        <view class="legend-dot is-reviewing"></view>
-                        <text>待复习 {{ summary.reviewingCount }}</text>
-                      </view>
-                      <view class="legend-item">
-                        <view class="legend-dot is-mastered"></view>
-                        <text>已掌握 {{ summary.masteredCount }}</text>
-                      </view>
-                    </view>
-                  </view>
+                <div class="segment-wrap">
+                  <div class="segment-header">
+                    <span class="segment-title">知识块掌握分布</span>
+                    <div class="segment-legend num-tabular">
+                      <div class="legend-item">
+                        <div class="legend-dot is-learning"></div>
+                        <span>待学习 {{ summary.pendingLearningCount }}</span>
+                      </div>
+                      <div class="legend-item">
+                        <div class="legend-dot is-reviewing"></div>
+                        <span>待复习 {{ summary.reviewingCount }}</span>
+                      </div>
+                      <div class="legend-item">
+                        <div class="legend-dot is-mastered"></div>
+                        <span>已掌握 {{ summary.masteredCount }}</span>
+                      </div>
+                    </div>
+                  </div>
 
-                  <view
+                  <div
                     class="progress-track"
                     role="progressbar"
                     :aria-valuenow="summary.masteryPercent"
@@ -59,28 +60,28 @@
                     aria-valuemax="100"
                   >
                     <template v-if="summary.blockCount > 0">
-                      <view
+                      <div
                         v-if="summary.pendingLearningCount > 0"
                         class="progress-fill is-learning"
                         :style="{ width: `${summary.distributionPercents.learning}%` }"
-                      ></view>
-                      <view
+                      ></div>
+                      <div
                         v-if="summary.reviewingCount > 0"
                         class="progress-fill is-reviewing"
                         :style="{ width: `${summary.distributionPercents.reviewing}%` }"
-                      ></view>
-                      <view
+                      ></div>
+                      <div
                         v-if="summary.masteredCount > 0"
                         class="progress-fill is-mastered"
                         :style="{ width: `${summary.distributionPercents.mastered}%` }"
-                      ></view>
+                      ></div>
                     </template>
-                  </view>
-                </view>
-              </view>
+                  </div>
+                </div>
+              </div>
 
-              <view class="mastery-ring-box">
-                <view class="mastery-ring">
+              <div class="mastery-ring-box">
+                <div class="mastery-ring">
                   <!-- #ifdef H5 -->
                   <svg class="ring-svg" viewBox="0 0 100 100" aria-hidden="true">
                     <circle cx="50" cy="50" :r="ringRadius" fill="none" class="ring-track" />
@@ -96,307 +97,311 @@
                   </svg>
                   <!-- #endif -->
                   <!-- #ifndef H5 -->
-                  <view class="ring-conic-track" :style="{ background: ringConicBackground }"></view>
+                  <div class="ring-conic-track" :style="{ background: ringConicBackground }"></div>
                   <!-- #endif -->
-                  <view class="ring-inner">
-                    <text class="ring-percent num-tabular">{{ summary.masteryPercent }}%</text>
-                    <view class="ring-pill">
-                      <view class="ring-pill-dot"></view>
-                      <text class="ring-pill-text num-tabular">{{ summary.masteredCount }}/{{ summary.blockCount }}</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
+                  <div class="ring-inner">
+                    <span class="ring-percent num-tabular">{{ summary.masteryPercent }}%</span>
+                    <div class="ring-pill">
+                      <div class="ring-pill-dot"></div>
+                      <span class="ring-pill-text num-tabular">{{ summary.masteredCount }}/{{ summary.blockCount }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-            <view class="panels-container">
-              <view class="panels-toolbar">
-                <view class="group-size-wrap" role="group" aria-label="每组数量">
-                  <text class="group-size-label">每组</text>
-                  <view
+            <div class="panels-container">
+              <div class="panels-toolbar">
+                <div class="group-size-wrap" role="group" aria-label="每组数量">
+                  <span class="group-size-label">每组</span>
+                  <div
                     class="group-size-btn num-tabular"
                     :class="{ active: groupSize === 5 }"
                     role="button"
                     @click="groupSize = 5"
                   >
-                    <text>5 个</text>
-                  </view>
-                  <view
+                    <span>5 个</span>
+                  </div>
+                  <div
                     class="group-size-btn num-tabular"
                     :class="{ active: groupSize === 10 }"
                     role="button"
                     @click="groupSize = 10"
                   >
-                    <text>10 个</text>
-                  </view>
-                </view>
+                    <span>10 个</span>
+                  </div>
+                </div>
 
                 <button
+                  type="button"
                   class="voluntary-btn"
                   :class="{ 'is-disabled': !canStartSelfTest }"
                   :disabled="!canStartSelfTest"
                   @click="enterRound('self-test')"
                 >
-                  <text>自测复习</text>
+                  <span>自测复习</span>
                 </button>
-              </view>
+              </div>
 
-              <view class="panels-grid">
-                <view
+              <div class="panels-grid">
+                <div
                   class="action-panel is-learn"
                   :class="{ 'is-disabled': !canStartLearning }"
                   role="button"
                   aria-label="进入学习"
                   @click="canStartLearning && enterRound('learn')"
                 >
-                  <view class="action-panel-head">
-                    <view class="action-title-group">
-                      <view class="action-icon-wrap is-learn">
+                  <div class="action-panel-head">
+                    <div class="action-title-group">
+                      <div class="action-icon-wrap is-learn">
                         <LineIcon name="book" size="18px" color="var(--text-muted)" />
-                      </view>
-                      <view class="action-name-row">
-                        <text class="action-name">待学习</text>
-                        <text class="action-count num-tabular">· {{ statesLoaded ? summary.pendingLearningCount : '—' }} 个</text>
-                      </view>
-                    </view>
-                    <view class="action-cta">
-                      <text>进入学习</text>
+                      </div>
+                      <div class="action-name-row">
+                        <span class="action-name">待学习</span>
+                        <span class="action-count num-tabular">· {{ statesLoaded ? summary.pendingLearningCount : '—' }} 个</span>
+                      </div>
+                    </div>
+                    <div class="action-cta">
+                      <span>进入学习</span>
                       <LineIcon name="chevron-right" size="11px" color="var(--text-primary)" />
-                    </view>
-                  </view>
-                  <text class="action-hint num-tabular">{{ learnPanelHint }}</text>
-                </view>
+                    </div>
+                  </div>
+                  <span class="action-hint num-tabular">{{ learnPanelHint }}</span>
+                </div>
 
-                <view
+                <div
                   class="action-panel is-review"
                   :class="{ 'is-disabled': !canStartReview }"
                   role="button"
                   aria-label="进入复习"
                   @click="canStartReview && enterRound('review')"
                 >
-                  <view class="action-panel-head">
-                    <view class="action-title-group">
-                      <view class="action-icon-wrap is-review">
+                  <div class="action-panel-head">
+                    <div class="action-title-group">
+                      <div class="action-icon-wrap is-review">
                         <LineIcon name="rotate" size="18px" color="#728258" />
-                      </view>
-                      <view class="action-name-row">
-                        <text class="action-name">待复习</text>
-                        <text class="action-count num-tabular">· {{ statesLoaded ? summary.dueReviewCount : '—' }} 个</text>
-                      </view>
-                    </view>
-                    <view class="action-cta">
-                      <text>进入复习</text>
+                      </div>
+                      <div class="action-name-row">
+                        <span class="action-name">待复习</span>
+                        <span class="action-count num-tabular">· {{ statesLoaded ? summary.dueReviewCount : '—' }} 个</span>
+                      </div>
+                    </div>
+                    <div class="action-cta">
+                      <span>进入复习</span>
                       <LineIcon name="chevron-right" size="11px" color="var(--text-primary)" />
-                    </view>
-                  </view>
-                  <text class="action-hint num-tabular">{{ reviewPanelHint }}</text>
-                </view>
-              </view>
-            </view>
-          </view>
-        </view>
+                    </div>
+                  </div>
+                  <span class="action-hint num-tabular">{{ reviewPanelHint }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </template>
 
       <!-- 2. 轮次学习 / 复习态 -->
-      <view v-else class="round-stage">
-        <view class="round-nav">
-          <view class="round-nav-left">
-            <button class="nav-back-btn" :disabled="submitting" @click="exitRound">
+      <div v-else class="round-stage">
+        <div class="round-nav">
+          <div class="round-nav-left">
+            <button type="button" class="nav-back-btn" :disabled="submitting" @click="exitRound">
               <LineIcon name="chevron-left" size="14px" color="var(--text-secondary)" />
-              <text>返回</text>
+              <span>返回</span>
             </button>
-            <text v-if="progressTotal > 0" class="round-progress-pill num-tabular">
+            <span v-if="progressTotal > 0" class="round-progress-pill num-tabular">
               {{ currentMode === 'FUZZY' ? `巩固 ${progressCurrent} / ${progressTotal}` : `本组 ${progressCurrent} / ${progressTotal}` }}
-            </text>
-            <text v-if="currentMode === 'FUZZY'" class="round-tag">本轮巩固</text>
-            <text v-if="isMasteredCard" class="round-tag">已掌握抽查</text>
-          </view>
+            </span>
+            <span v-if="currentMode === 'FUZZY'" class="round-tag">本轮巩固</span>
+            <span v-if="isMasteredCard" class="round-tag">已掌握抽查</span>
+          </div>
 
-          <button class="nav-end-btn" :disabled="submitting" @click="exitRound">结束本轮</button>
-        </view>
+          <button type="button" class="nav-end-btn" :disabled="submitting" @click="exitRound">结束本轮</button>
+        </div>
 
-        <view v-if="roundNeedsRestart" class="pane-notice is-error" role="alert">
-          <text class="notice-text">{{ actionError || '知识块版本已变化，请返回规划后重新开始。' }}</text>
-          <view class="notice-actions">
-            <button class="ui-btn ui-btn-secondary sm" @click="discardPendingAndReload">刷新本轮</button>
-            <button class="ui-btn ui-btn-ghost sm" @click="exitRound">返回规划</button>
-          </view>
-        </view>
+        <div v-if="roundNeedsRestart" class="pane-notice is-error" role="alert">
+          <span class="notice-text">{{ actionError || '知识块版本已变化，请返回规划后重新开始。' }}</span>
+          <div class="notice-actions">
+            <button type="button" class="ui-btn ui-btn-secondary sm" @click="discardPendingAndReload">刷新本轮</button>
+            <button type="button" class="ui-btn ui-btn-ghost sm" @click="exitRound">返回规划</button>
+          </div>
+        </div>
 
-        <view v-else-if="hasPendingCommand && actionError" class="pane-notice is-error" role="alert">
-          <text class="notice-text">{{ actionError }}</text>
-          <view class="notice-actions">
-            <button v-if="!pendingIsConflict" class="ui-btn ui-btn-primary sm" :disabled="submitting" @click="retryPending">
+        <div v-else-if="hasPendingCommand && actionError" class="pane-notice is-error" role="alert">
+          <span class="notice-text">{{ actionError }}</span>
+          <div class="notice-actions">
+            <button v-if="!pendingIsConflict" type="button" class="ui-btn ui-btn-primary sm" :disabled="submitting" @click="retryPending">
               {{ submitting ? '确认中…' : '原样重试' }}
             </button>
-            <button class="ui-btn ui-btn-secondary sm" :disabled="submitting" @click="discardPendingAndReload">刷新状态</button>
-          </view>
-        </view>
+            <button type="button" class="ui-btn ui-btn-secondary sm" :disabled="submitting" @click="discardPendingAndReload">刷新状态</button>
+          </div>
+        </div>
 
-        <view v-else-if="actionError && activeBlock" class="pane-notice is-error" role="alert">
-          <text class="notice-text">{{ actionError }}</text>
-          <button class="ui-btn ui-btn-ghost sm" @click="actionError = ''">关闭</button>
-        </view>
+        <div v-else-if="actionError && activeBlock" class="pane-notice is-error" role="alert">
+          <span class="notice-text">{{ actionError }}</span>
+          <button type="button" class="ui-btn ui-btn-ghost sm" @click="actionError = ''">关闭</button>
+        </div>
 
-        <view v-if="activeBlock && !roundNeedsRestart" class="study-card zen-card">
-          <view class="study-card-head">
-            <view class="study-head-left">
-              <text class="mode-badge">{{ modeBadgeLabel }}</text>
-              <text class="study-title">{{ activeBlock.title || '未命名知识块' }}</text>
-            </view>
-            <text class="study-pos num-tabular">{{ cardPositionText }}</text>
-          </view>
+        <div v-if="activeBlock && !roundNeedsRestart" class="study-card zen-card">
+          <div class="study-card-head">
+            <div class="study-head-left">
+              <span class="mode-badge">{{ modeBadgeLabel }}</span>
+              <span class="study-title">{{ activeBlock.title || '未命名知识块' }}</span>
+            </div>
+            <span class="study-pos num-tabular">{{ cardPositionText }}</span>
+          </div>
 
-          <view v-if="isRecallHidden" class="recall-zone">
-            <view class="frosted-canvas">
-              <text class="frosted-blurred-text" aria-hidden="true">{{ blurredPreview }}</text>
-              <view class="frosted-veil" aria-hidden="true"></view>
-            </view>
+          <div v-if="isRecallHidden" class="recall-zone">
+            <div class="frosted-canvas">
+              <span class="frosted-blurred-text" aria-hidden="true">{{ blurredPreview }}</span>
+              <div class="frosted-veil" aria-hidden="true"></div>
+            </div>
 
-            <view v-if="phase === 'REVIEW_RECALL'" class="recall-hint">
-              <view class="recall-hint-dot"></view>
-              <text class="recall-hint-text">请在脑海中主动回忆该知识块的核心概念与要点，并依据提取的清晰度与完整性进行客观评估：</text>
-            </view>
-          </view>
+            <div v-if="phase === 'REVIEW_RECALL'" class="recall-hint">
+              <div class="recall-hint-dot"></div>
+              <span class="recall-hint-text">请在脑海中主动回忆该知识块的核心概念与要点，并依据提取的清晰度与完整性进行客观评估：</span>
+            </div>
+          </div>
 
-          <view v-else-if="isContentVisible" class="content-zone">
-            <scroll-view scroll-y :show-scrollbar="false" class="content-scroll">
-              <view class="content-body">
+          <div v-else-if="isContentVisible" class="content-zone">
+            <div class="content-scroll zen-scroll-y">
+              <div class="content-body">
                 <MarkdownText :content="activeBlock.content || '该知识块暂无正文内容'" />
-              </view>
-            </scroll-view>
-          </view>
+              </div>
+            </div>
+          </div>
 
-          <view v-if="phase === 'REVIEW_CHECK'" class="check-guide-bar">
-            <text class="check-guide-tag">核对中</text>
-            <text class="check-guide-text">请对照正文核对你的回忆：确认无误点击「下一个」，若回忆有误请点击「记错了」</text>
-          </view>
+          <div v-if="phase === 'REVIEW_CHECK'" class="check-guide-bar">
+            <span class="check-guide-tag">核对中</span>
+            <span class="check-guide-text">请对照正文核对你的回忆：确认无误点击「下一个」，若回忆有误请点击「记错了」</span>
+          </div>
 
-          <view v-if="!hasPendingCommand" class="study-actions">
-            <view v-if="phase === 'LEARNING_READ'" class="ratings-row">
+          <div v-if="!hasPendingCommand" class="study-actions">
+            <div v-if="phase === 'LEARNING_READ'" class="ratings-row">
               <button
+                type="button"
                 class="reveal-btn"
                 :disabled="submitting"
                 @click="beginLearningRecall"
               >
-                <text>开始回忆</text>
+                <span>开始回忆</span>
                 <LineIcon name="chevron-right" size="14px" color="var(--text-primary)" />
               </button>
-            </view>
+            </div>
 
-            <view v-else-if="phase === 'LEARNING_RECALL'" class="ratings-row">
+            <div v-else-if="phase === 'LEARNING_RECALL'" class="ratings-row">
               <button
+                type="button"
                 class="reveal-btn"
                 :disabled="submitting"
                 @click="revealAnswer"
               >
-                <text>展开核对</text>
+                <span>展开核对</span>
                 <LineIcon name="chevron-right" size="14px" color="var(--text-primary)" />
               </button>
-            </view>
+            </div>
 
-            <view v-else-if="phase === 'LEARNING_CHECK'" class="ratings-row">
-              <button class="rate-btn is-good" :disabled="submitting" @click="completeLearning">
-                <view class="rate-dot is-good"></view>
-                <text>完成学习</text>
+            <div v-else-if="phase === 'LEARNING_CHECK'" class="ratings-row">
+              <button type="button" class="rate-btn is-good" :disabled="submitting" @click="completeLearning">
+                <div class="rate-dot is-good"></div>
+                <span>完成学习</span>
               </button>
-              <button class="rate-btn is-again" :disabled="submitting" @click="failLearning">
-                <view class="rate-dot is-again"></view>
-                <text>继续学习</text>
+              <button type="button" class="rate-btn is-again" :disabled="submitting" @click="failLearning">
+                <div class="rate-dot is-again"></div>
+                <span>继续学习</span>
               </button>
-            </view>
+            </div>
 
-            <view v-else-if="phase === 'REVIEW_RECALL'" class="ratings-row is-tiled">
-              <button class="rate-btn is-good" :disabled="submitting" @click="selectRating('GOOD')">
-                <view class="rate-dot is-good"></view>
-                <text>认识</text>
+            <div v-else-if="phase === 'REVIEW_RECALL'" class="ratings-row is-tiled">
+              <button type="button" class="rate-btn is-good" :disabled="submitting" @click="selectRating('GOOD')">
+                <div class="rate-dot is-good"></div>
+                <span>认识</span>
               </button>
-              <button class="rate-btn is-hard" :disabled="submitting" @click="selectRating('HARD')">
-                <view class="rate-dot is-hard"></view>
-                <text>模糊</text>
+              <button type="button" class="rate-btn is-hard" :disabled="submitting" @click="selectRating('HARD')">
+                <div class="rate-dot is-hard"></div>
+                <span>模糊</span>
               </button>
-              <button class="rate-btn is-again" :disabled="submitting" @click="selectRating('AGAIN')">
-                <view class="rate-dot is-again"></view>
-                <text>忘记了</text>
+              <button type="button" class="rate-btn is-again" :disabled="submitting" @click="selectRating('AGAIN')">
+                <div class="rate-dot is-again"></div>
+                <span>忘记了</span>
               </button>
-            </view>
+            </div>
 
-            <view v-else-if="phase === 'FUZZY_RECALL'" class="ratings-row">
-              <button class="reveal-btn" :disabled="submitting" @click="revealAnswer">
+            <div v-else-if="phase === 'FUZZY_RECALL'" class="ratings-row">
+              <button type="button" class="reveal-btn" :disabled="submitting" @click="revealAnswer">
                 <LineIcon name="eye" size="15px" color="var(--text-primary)" />
-                <text>展开核对</text>
+                <span>展开核对</span>
               </button>
-              <button class="rate-btn is-again" :disabled="submitting" @click="correctReview">
-                <view class="rate-dot is-again"></view>
-                <text>忘记了</text>
+              <button type="button" class="rate-btn is-again" :disabled="submitting" @click="correctReview">
+                <div class="rate-dot is-again"></div>
+                <span>忘记了</span>
               </button>
-            </view>
+            </div>
 
-            <view v-else-if="phase === 'REVIEW_CHECK' || phase === 'FUZZY_CHECK'" class="ratings-row">
-              <button class="rate-btn is-good" :disabled="submitting" @click="confirmReview">
-                <view class="rate-dot is-good"></view>
-                <text>下一个</text>
+            <div v-else-if="phase === 'REVIEW_CHECK' || phase === 'FUZZY_CHECK'" class="ratings-row">
+              <button type="button" class="rate-btn is-good" :disabled="submitting" @click="confirmReview">
+                <div class="rate-dot is-good"></div>
+                <span>下一个</span>
               </button>
-              <button class="rate-btn is-again" :disabled="submitting" @click="correctReview">
-                <view class="rate-dot is-again"></view>
-                <text>记错了</text>
+              <button type="button" class="rate-btn is-again" :disabled="submitting" @click="correctReview">
+                <div class="rate-dot is-again"></div>
+                <span>记错了</span>
               </button>
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view v-if="isMasteredCard && phase === 'REVIEW_RECALL' && !hasPendingCommand" class="reopen-row">
-            <button class="reopen-btn" :disabled="submitting" @click="reopenMasteredBlock">
-              <text>重新学习这块</text>
+          <div v-if="isMasteredCard && phase === 'REVIEW_RECALL' && !hasPendingCommand" class="reopen-row">
+            <button type="button" class="reopen-btn" :disabled="submitting" @click="reopenMasteredBlock">
+              <span>重新学习这块</span>
             </button>
-          </view>
-        </view>
+          </div>
+        </div>
 
-        <view v-else-if="!roundNeedsRestart" class="milestone-card zen-card">
-          <view class="milestone-halo">
+        <div v-else-if="!roundNeedsRestart" class="milestone-card zen-card">
+          <div class="milestone-halo">
             <LineIcon
               :name="loading ? 'refresh' : (loadError || hasPendingCommand) ? 'alert' : 'check'"
               size="28px"
               color="var(--color-zen-sage)"
             />
-          </view>
-          <text class="milestone-title">{{ milestoneTitle }}</text>
-          <text v-if="milestoneSubtitle" class="milestone-subtitle">{{ milestoneSubtitle }}</text>
+          </div>
+          <span class="milestone-title">{{ milestoneTitle }}</span>
+          <span v-if="milestoneSubtitle" class="milestone-subtitle">{{ milestoneSubtitle }}</span>
 
-          <text
+          <span
             v-if="phase === 'ROUND_COMPLETE' && roundMode !== 'learn' && totalFeedbackCount > 0"
             class="feedback-summary num-tabular"
           >
             首次评估：认识 {{ firstFeedbackCounts.GOOD }} · 模糊 {{ firstFeedbackCounts.HARD }} · 忘记 {{ firstFeedbackCounts.AGAIN }}
-          </text>
+          </span>
 
-          <view v-if="!loading" class="milestone-actions">
-            <button v-if="phase === 'GROUP_COMPLETE'" class="milestone-primary-btn" @click="continueNextGroup">
-              <text>继续下一组（{{ nextGroupCount }} 个）</text>
+          <div v-if="!loading" class="milestone-actions">
+            <button v-if="phase === 'GROUP_COMPLETE'" type="button" class="milestone-primary-btn" @click="continueNextGroup">
+              <span>继续下一组（{{ nextGroupCount }} 个）</span>
               <LineIcon name="chevron-right" size="15px" color="#FFFFFF" />
             </button>
 
-            <button v-if="loadError" class="milestone-primary-btn" @click="reloadCurrentRound">
+            <button v-if="loadError" type="button" class="milestone-primary-btn" @click="reloadCurrentRound">
               <LineIcon name="refresh" size="15px" color="#FFFFFF" />
-              <text>重试</text>
+              <span>重试</span>
             </button>
 
             <button
               v-if="phase === 'ROUND_COMPLETE' && selfTestCount > 0"
+              type="button"
               class="milestone-primary-btn"
               @click="startSelfTestRound(groupSize)"
             >
-              <text>再来一组自测</text>
+              <span>再来一组自测</span>
               <LineIcon name="chevron-right" size="15px" color="#FFFFFF" />
             </button>
 
-            <button class="nav-end-btn" @click="exitRound">
-              <text>返回规划</text>
+            <button type="button" class="nav-end-btn" @click="exitRound">
+              <span>返回规划</span>
             </button>
-          </view>
-        </view>
-      </view>
-    </view>
-  </scroll-view>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -714,10 +719,6 @@ const milestoneSubtitle = computed(() => {
   height: 0;
   min-height: 0;
   width: 100%;
-}
-
-.review-pane-scroll :deep(.uni-scroll-view-content) {
-  min-height: 100%;
   display: flex;
   flex-direction: column;
 }

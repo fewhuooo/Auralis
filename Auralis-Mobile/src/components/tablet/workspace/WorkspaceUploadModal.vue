@@ -1,15 +1,15 @@
 <template>
-  <view v-if="visible" class="zen-modal-mask upload-modal-mask" @click="handleClose">
-    <view
+  <div v-if="visible" class="zen-modal-mask upload-modal-mask" @click="handleClose">
+    <div
       class="upload-modal-card"
       role="dialog"
       aria-modal="true"
       aria-label="上传参考文件"
       @click.stop
     >
-      <view class="modal-header">
-        <text class="modal-title">上传参考文件</text>
-        <view
+      <div class="modal-header">
+        <span class="modal-title">上传参考文件</span>
+        <div
           v-if="!uploading"
           class="modal-close-btn"
           role="button"
@@ -17,10 +17,10 @@
           @click="handleClose"
         >
           <LineIcon name="close" size="15px" color="var(--text-muted)" />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <view class="modal-body">
+      <div class="modal-body">
         <!-- #ifdef H5 -->
         <div
           class="drop-zone"
@@ -51,40 +51,40 @@
         <!-- #endif -->
 
         <!-- #ifndef H5 -->
-        <view
+        <div
           class="drop-zone"
           :class="{ 'has-file': Boolean(selectedFile) }"
           role="button"
           aria-label="选择上传文件"
           @click="triggerNativePicker"
         >
-          <view class="drop-icon" :class="{ 'is-success': Boolean(selectedFile) }">
+          <div class="drop-icon" :class="{ 'is-success': Boolean(selectedFile) }">
             <LineIcon
               :name="selectedFile ? 'check' : 'upload'"
               size="22px"
               :color="selectedFile ? '#76855B' : 'var(--text-muted)'"
             />
-          </view>
-          <text class="drop-text">{{ selectedFile ? selectedFile.name : '点击选择本地文件' }}</text>
-          <text class="drop-hint">{{ selectedFileHint }}</text>
-        </view>
+          </div>
+          <span class="drop-text">{{ selectedFile ? selectedFile.name : '点击选择本地文件' }}</span>
+          <span class="drop-hint">{{ selectedFileHint }}</span>
+        </div>
         <!-- #endif -->
 
-        <view v-if="uploading" class="upload-progress">
-          <view class="progress-header">
-            <text class="stage-text">{{ uploadStage || '正在上传本地文件...' }}</text>
-            <text class="progress-pct num-tabular">{{ clampedProgress }}%</text>
-          </view>
-          <view class="progress-track">
-            <view class="progress-fill" :style="{ width: `${clampedProgress}%` }"></view>
-          </view>
-        </view>
+        <div v-if="uploading" class="upload-progress">
+          <div class="progress-header">
+            <span class="stage-text">{{ uploadStage || '正在上传本地文件...' }}</span>
+            <span class="progress-pct num-tabular">{{ clampedProgress }}%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" :style="{ width: `${clampedProgress}%` }"></div>
+          </div>
+        </div>
 
-        <view class="modal-form-group">
-          <view class="modal-form-label">
-            <text>文件名称</text>
-            <text class="required">*</text>
-          </view>
+        <div class="modal-form-group">
+          <div class="modal-form-label">
+            <span>文件名称</span>
+            <span class="required">*</span>
+          </div>
           <input
             v-model="fileName"
             class="modal-form-input"
@@ -92,15 +92,15 @@
             placeholder="例如: 计算机网络.pdf"
             :disabled="uploading"
           />
-        </view>
+        </div>
 
-        <view class="modal-form-group">
-          <view class="modal-form-label">
-            <text>归档至</text>
-            <text class="required">*</text>
-          </view>
-          <view v-if="subjects.length > 0" class="subject-grid">
-            <view
+        <div class="modal-form-group">
+          <div class="modal-form-label">
+            <span>归档至</span>
+            <span class="required">*</span>
+          </div>
+          <div v-if="subjects.length > 0" class="subject-grid">
+            <div
               v-for="subj in subjects"
               :key="subj.id"
               class="subject-chip"
@@ -108,16 +108,16 @@
               role="button"
               @click="!uploading && (selectedSubjectId = subj.id)"
             >
-              <text class="subject-chip-text">{{ subj.name }}</text>
-            </view>
-          </view>
-          <text v-else class="empty-hint">暂无学科，请先创建学科空间</text>
-        </view>
+              <span class="subject-chip-text">{{ subj.name }}</span>
+            </div>
+          </div>
+          <span v-else class="empty-hint">暂无学科，请先创建学科空间</span>
+        </div>
 
-        <text v-if="activeError" class="modal-error" role="alert">{{ activeError }}</text>
-      </view>
+        <span v-if="activeError" class="modal-error" role="alert">{{ activeError }}</span>
+      </div>
 
-      <view class="modal-footer">
+      <div class="modal-footer">
         <button
           type="button"
           class="modal-btn modal-btn-secondary"
@@ -130,9 +130,9 @@
           :disabled="!canSubmit || uploading"
           @click="handleSubmit"
         >{{ uploading ? '导入中...' : '确认登记' }}</button>
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

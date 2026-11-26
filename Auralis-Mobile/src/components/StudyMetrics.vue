@@ -1,12 +1,12 @@
 <template>
-  <view class="study-metrics">
-    <view v-if="error && !metrics" class="metrics-error" :class="{ 'zen-card': variant === 'bento', 'pc-sub-box': variant === 'pc' }">
-      <text class="status-text">统计暂不可用</text>
-      <view class="ui-btn ui-btn-secondary retry-btn" role="button" @click="load">重试</view>
-    </view>
+  <div class="study-metrics">
+    <div v-if="error && !metrics" class="metrics-error" :class="{ 'zen-card': variant === 'bento', 'pc-sub-box': variant === 'pc' }">
+      <span class="status-text">统计暂不可用</span>
+      <div class="ui-btn ui-btn-secondary retry-btn" role="button" @click="load">重试</div>
+    </div>
 
-    <view v-else-if="loading && !metrics" class="bento-grid">
-      <view
+    <div v-else-if="loading && !metrics" class="bento-grid">
+      <div
         v-for="n in 5"
         :key="n"
         :class="[
@@ -14,49 +14,49 @@
           variant === 'pc' ? (n === 5 ? 'is-wide' : '') : (n === 1 ? 'is-featured' : ''),
         ]"
       >
-        <view class="ui-shimmer shimmer-val"></view>
-        <view class="ui-shimmer shimmer-label"></view>
-      </view>
-    </view>
+        <div class="ui-shimmer shimmer-val"></div>
+        <div class="ui-shimmer shimmer-label"></div>
+      </div>
+    </div>
 
-    <view v-else-if="metrics" class="bento-grid">
+    <div v-else-if="metrics" class="bento-grid">
       <template v-if="variant === 'pc'">
-        <view
+        <div
           v-for="(metric, idx) in metrics"
           :key="metric.label"
           class="pc-stat-cell"
           :class="{ 'is-wide': idx === metrics.length - 1 && metrics.length % 2 === 1 }"
         >
-          <view class="pc-stat-top">
-            <view class="pc-stat-icon-wrap" aria-hidden="true">
+          <div class="pc-stat-top">
+            <div class="pc-stat-icon-wrap" aria-hidden="true">
               <LineIcon :name="metricIcon(idx)" size="13px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="pc-stat-label">{{ metric.label }}</text>
-          </view>
-          <text class="pc-stat-value num-tabular" :class="{ 'is-accent': idx === 2 }">
+            </div>
+            <span class="pc-stat-label">{{ metric.label }}</span>
+          </div>
+          <span class="pc-stat-value num-tabular" :class="{ 'is-accent': idx === 2 }">
             {{ metric.value }}
-          </text>
-        </view>
+          </span>
+        </div>
       </template>
 
       <template v-else>
-        <view
+        <div
           v-for="(metric, idx) in metrics"
           :key="metric.label"
           class="bento-tile zen-card"
           :class="{ 'is-featured': idx === 0 && metrics.length % 2 === 1 }"
         >
-          <view class="tile-main">
-            <text class="metric-value num-tabular">{{ metric.value }}</text>
-            <text class="metric-label">{{ metric.label }}</text>
-          </view>
-          <view v-if="idx === 0 && metrics.length % 2 === 1" class="featured-mark" aria-hidden="true">
+          <div class="tile-main">
+            <span class="metric-value num-tabular">{{ metric.value }}</span>
+            <span class="metric-label">{{ metric.label }}</span>
+          </div>
+          <div v-if="idx === 0 && metrics.length % 2 === 1" class="featured-mark" aria-hidden="true">
             <LineIcon name="layers" size="18px" color="var(--color-sage-ink)" />
-          </view>
-        </view>
+          </div>
+        </div>
       </template>
-    </view>
-  </view>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

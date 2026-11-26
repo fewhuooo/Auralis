@@ -1,5 +1,5 @@
 <template>
-  <view
+  <div
     class="line-icon"
     :style="{
       maskImage: `url('${iconUrl}')`,
@@ -8,7 +8,7 @@
       height: size,
       backgroundColor: color,
     }"
-  ></view>
+  ></div>
 </template>
 
 <script setup lang="ts">

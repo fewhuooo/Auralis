@@ -1,58 +1,58 @@
 <template>
-  <view class="flash-card-stage" :class="{ 'has-deck': hasNext && showDeck !== false }">
-    <view v-if="hasNext && showDeck !== false" class="deck-underlay" aria-hidden="true"></view>
+  <div class="flash-card-stage" :class="{ 'has-deck': hasNext && showDeck !== false }">
+    <div v-if="hasNext && showDeck !== false" class="deck-underlay" aria-hidden="true"></div>
 
-    <view
+    <div
       class="flash-card-container"
       role="button"
       :aria-label="flipped ? '切换回题目' : '翻看答案'"
       @click="handleCardClick"
     >
-      <view class="flash-card" :class="{ 'is-flipped': flipped }">
-        <view class="card-face zen-card front-face">
-          <view class="card-header">
-            <view class="card-header-meta">
-              <text class="subject-caption">{{ subject || '通用' }}</text>
-              <text v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</text>
-            </view>
+      <div class="flash-card" :class="{ 'is-flipped': flipped }">
+        <div class="card-face zen-card front-face">
+          <div class="card-header">
+            <div class="card-header-meta">
+              <span class="subject-caption">{{ subject || '通用' }}</span>
+              <span v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</span>
+            </div>
             <LineIcon name="rotate" size="15px" color="var(--text-muted)" />
-          </view>
+          </div>
 
-          <view class="card-front-body">
-            <text class="front-text">{{ front }}</text>
-          </view>
+          <div class="card-front-body">
+            <span class="front-text">{{ front }}</span>
+          </div>
 
-          <view class="card-footer">
-            <text class="hint-text">轻触卡片翻看答案</text>
-          </view>
-        </view>
+          <div class="card-footer">
+            <span class="hint-text">轻触卡片翻看答案</span>
+          </div>
+        </div>
 
-        <view class="card-face zen-card back-face">
-          <view class="card-header" @click.stop="handleHeaderClick">
-            <view class="card-header-meta">
-              <text class="subject-caption active">{{ subject || '通用' }}</text>
-              <text v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</text>
-            </view>
+        <div class="card-face zen-card back-face">
+          <div class="card-header" @click.stop="handleHeaderClick">
+            <div class="card-header-meta">
+              <span class="subject-caption active">{{ subject || '通用' }}</span>
+              <span v-if="statusTag" :class="['status-tag', statusTone]">{{ statusTag }}</span>
+            </div>
             <LineIcon name="rotate" size="15px" color="var(--color-sage-ink)" />
-          </view>
+          </div>
 
-          <view class="question-recap">
-            <text class="recap-label">{{ front }}</text>
-          </view>
+          <div class="question-recap">
+            <span class="recap-label">{{ front }}</span>
+          </div>
 
-          <scroll-view scroll-y :show-scrollbar="false" class="card-back-scroll" @click.stop>
-            <view class="answer-prose">
+          <div class="card-back-scroll zen-scroll-y" @click.stop>
+            <div class="answer-prose">
               <MarkdownText :content="back" />
-            </view>
-          </scroll-view>
+            </div>
+          </div>
 
-          <view class="card-footer" @click.stop="handleHeaderClick">
-            <text class="hint-text">轻触顶栏切回题目</text>
-          </view>
-        </view>
-      </view>
-    </view>
-  </view>
+          <div class="card-footer" @click.stop="handleHeaderClick">
+            <span class="hint-text">轻触顶栏切回题目</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

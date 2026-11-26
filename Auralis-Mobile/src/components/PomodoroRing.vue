@@ -1,5 +1,5 @@
 <template>
-  <view
+  <div
     class="pomodoro-ring"
     :class="{ 'is-running': isRunning }"
     :style="{
@@ -38,19 +38,19 @@
     <!-- #endif -->
 
     <!-- #ifndef H5 -->
-    <view class="ring-conic-track" :style="{ background: ringBackground }"></view>
+    <div class="ring-conic-track" :style="{ background: ringBackground }"></div>
     <!-- #endif -->
 
-    <view class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill, 'is-large': large }">
-      <text v-if="isBreak && !showBottomPill" class="break-kicker">休息</text>
-      <view class="time-container">
-        <text class="time-text num-tabular">{{ formattedTime }}</text>
-      </view>
-      <view v-if="showBottomPill" class="ring-pill" :class="{ 'is-pulsing': isRunning }" aria-hidden="true">
-        <view class="pill-dot" :style="{ backgroundColor: color }"></view>
-      </view>
-      <view v-else-if="cycleCount !== undefined" class="dial-cycles" aria-hidden="true">
-        <view
+    <div class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill, 'is-large': large }">
+      <span v-if="isBreak && !showBottomPill" class="break-kicker">休息</span>
+      <div class="time-container">
+        <span class="time-text num-tabular">{{ formattedTime }}</span>
+      </div>
+      <div v-if="showBottomPill" class="ring-pill" :class="{ 'is-pulsing': isRunning }" aria-hidden="true">
+        <div class="pill-dot" :style="{ backgroundColor: color }"></div>
+      </div>
+      <div v-else-if="cycleCount !== undefined" class="dial-cycles" aria-hidden="true">
+        <div
           v-for="idx in 4"
           :key="idx"
           class="dial-dot"
@@ -58,10 +58,10 @@
             'is-filled': (cycleCount % 4) >= idx || (cycleCount > 0 && cycleCount % 4 === 0),
             'is-break': isBreak,
           }"
-        ></view>
-      </view>
-    </view>
-  </view>
+        ></div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

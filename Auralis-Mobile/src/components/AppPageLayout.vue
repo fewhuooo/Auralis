@@ -1,7 +1,7 @@
 <template>
-  <view class="mobile-viewport-shell">
-    <view class="layout-container" :class="{ 'has-tabbar': showTabBar }">
-      <view
+  <div class="mobile-viewport-shell">
+    <div class="layout-container" :class="{ 'has-tabbar': showTabBar }">
+      <div
         class="page-layer"
         :class="{
           'is-entering-right': isEntering && slideDir === 'right',
@@ -15,12 +15,12 @@
         }"
       >
         <slot></slot>
-      </view>
+      </div>
 
       <AppTabBar v-if="showTabBar" />
       <slot name="overlay"></slot>
-    </view>
-  </view>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

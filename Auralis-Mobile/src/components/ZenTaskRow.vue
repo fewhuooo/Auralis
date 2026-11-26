@@ -1,5 +1,5 @@
 <template>
-  <view
+  <div
     class="task-row zen-card"
     :class="{
       'is-completed': task.status === 'completed',
@@ -7,9 +7,9 @@
       'is-pending': mode === 'pending',
     }"
   >
-    <view v-if="mode === 'pending'" class="todo-accent-bar" aria-hidden="true"></view>
+    <div v-if="mode === 'pending'" class="todo-accent-bar" aria-hidden="true"></div>
 
-    <view
+    <div
       class="check-circle"
       :class="{
         checked: task.status === 'completed',
@@ -22,31 +22,31 @@
       @click="task.id && emit('toggle', task.id)"
     >
       <LineIcon v-if="task.status === 'completed'" name="check" size="11px" color="#FFFFFF" />
-    </view>
+    </div>
 
-    <view class="row-info" :class="{ locked }" @click="task.id && emit('toggle', task.id)">
-      <view v-if="mode === 'pending'" class="pending-title-flow">
-        <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
-        <view v-if="task.dueAt" class="meta-ddl num-tabular" :class="{ overdue: isOverdue }">
+    <div class="row-info" :class="{ locked }" @click="task.id && emit('toggle', task.id)">
+      <div v-if="mode === 'pending'" class="pending-title-flow">
+        <span class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</span>
+        <div v-if="task.dueAt" class="meta-ddl num-tabular" :class="{ overdue: isOverdue }">
           <LineIcon name="calendar" size="10px" :color="task.status === 'completed' ? 'var(--text-muted)' : (isOverdue ? 'var(--color-danger)' : 'var(--color-warning-ink)')" />
-          <text>{{ formatShortDate(task.dueAt) }}</text>
-        </view>
-      </view>
+          <span>{{ formatShortDate(task.dueAt) }}</span>
+        </div>
+      </div>
       <template v-else>
-        <view class="scheduled-meta-row num-tabular">
-          <text class="scheduled-time-pill">{{ startLabel }} · {{ task.duration || 30 }}m</text>
-          <text v-if="task.subject" class="scheduled-subject-pill">{{ task.subject }}</text>
-        </view>
-        <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
+        <div class="scheduled-meta-row num-tabular">
+          <span class="scheduled-time-pill">{{ startLabel }} · {{ task.duration || 30 }}m</span>
+          <span v-if="task.subject" class="scheduled-subject-pill">{{ task.subject }}</span>
+        </div>
+        <span class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</span>
       </template>
-    </view>
+    </div>
 
-    <view v-if="showTrailingSlot" class="row-actions">
-      <text v-if="mode === 'pending' && task.subject" class="todo-subject-pill">
+    <div v-if="showTrailingSlot" class="row-actions">
+      <span v-if="mode === 'pending' && task.subject" class="todo-subject-pill">
         {{ task.subject }}
-      </text>
+      </span>
 
-      <view
+      <div
         v-if="!hideScheduleActions && mode === 'scheduled' && task.id && task.status !== 'completed'"
         class="row-icon-btn"
         role="button"
@@ -55,9 +55,9 @@
         @click.stop="emit('unschedule', task.id)"
       >
         <LineIcon name="close" size="13px" color="var(--text-muted)" />
-      </view>
+      </div>
 
-      <view
+      <div
         v-if="mode === 'pending' && task.id"
         class="row-icon-btn"
         role="button"
@@ -66,9 +66,9 @@
         @click.stop="emit('delete', task.id, task.name)"
       >
         <LineIcon name="trash" size="13px" color="var(--text-muted)" />
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

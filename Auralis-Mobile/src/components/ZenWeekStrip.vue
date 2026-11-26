@@ -1,5 +1,5 @@
 <template>
-  <view
+  <div
     class="week-card"
     :class="{
       'zen-card': !frameless,
@@ -7,12 +7,12 @@
       'is-compact': !showHeader && !frameless,
     }"
   >
-    <view v-if="showHeader" class="week-nav">
-      <text class="week-month num-tabular">{{ monthTitle }}</text>
-    </view>
+    <div v-if="showHeader" class="week-nav">
+      <span class="week-month num-tabular">{{ monthTitle }}</span>
+    </div>
 
-    <view class="week-strip">
-      <view
+    <div class="week-strip">
+      <div
         v-for="day in days"
         :key="day.dateKey"
         class="week-day"
@@ -25,14 +25,14 @@
         :aria-pressed="modelValue === day.dateKey"
         @click="emit('update:modelValue', day.dateKey)"
       >
-        <text class="w-label">{{ day.weekdayLabel }}</text>
-        <view class="w-num-circle">
-          <text class="w-num num-tabular">{{ day.dayNumber }}</text>
-        </view>
-        <view class="w-dot" :class="{ visible: scheduledDates.has(day.dateKey) }"></view>
-      </view>
-    </view>
-  </view>
+        <span class="w-label">{{ day.weekdayLabel }}</span>
+        <div class="w-num-circle">
+          <span class="w-num num-tabular">{{ day.dayNumber }}</span>
+        </div>
+        <div class="w-dot" :class="{ visible: scheduledDates.has(day.dateKey) }"></div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

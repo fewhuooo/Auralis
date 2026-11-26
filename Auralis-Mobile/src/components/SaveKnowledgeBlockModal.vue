@@ -1,18 +1,18 @@
 <template>
-  <view v-if="visible" class="save-block-mask" @click="handleClose">
-    <view class="save-block-dialog" @click.stop>
-      <view class="save-block-header">
-        <text class="save-block-title">存为知识块</text>
-        <view class="save-close-btn" role="button" aria-label="关闭" @click="handleClose">
+  <div v-if="visible" class="save-block-mask" @click="handleClose">
+    <div class="save-block-dialog" @click.stop>
+      <div class="save-block-header">
+        <span class="save-block-title">存为知识块</span>
+        <div class="save-close-btn" role="button" aria-label="关闭" @click="handleClose">
           <LineIcon name="close" size="15px" color="var(--text-muted)" />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <view class="save-block-field">
-        <text class="save-block-label">所属学科</text>
-        <scroll-view v-if="subjectStore.subjects.length > 0" scroll-x :show-scrollbar="false" class="save-subject-strip">
-          <view class="save-subject-row">
-            <view
+      <div class="save-block-field">
+        <span class="save-block-label">所属学科</span>
+        <div v-if="subjectStore.subjects.length > 0" class="save-subject-strip zen-scroll-x">
+          <div class="save-subject-row">
+            <div
               v-for="sub in subjectStore.subjects"
               :key="sub.id"
               class="save-subject-pill"
@@ -20,80 +20,82 @@
               role="button"
               @click="selectedSubjectId = sub.id"
             >
-              <text>{{ sub.name }}</text>
-            </view>
-          </view>
-        </scroll-view>
-        <view v-else class="save-subject-empty-box">
-          <text class="save-subject-empty">暂无可用学科，请先创建学科</text>
-          <view class="save-quick-subject-row">
+              <span>{{ sub.name }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="save-subject-empty-box">
+          <span class="save-subject-empty">暂无可用学科，请先创建学科</span>
+          <div class="save-quick-subject-row">
             <input
               v-model="quickSubjectName"
               class="save-block-input save-quick-subject-input"
               maxlength="20"
               placeholder="输入学科名称快速创建…"
               :disabled="creatingSubject || saving"
-              @confirm="createQuickSubject"
+              @keydown="handleEnterKey($event, createQuickSubject)"
             />
-            <view
+            <div
               class="save-quick-subject-btn"
               :class="{ disabled: creatingSubject || !quickSubjectName.trim() }"
               role="button"
               @click="createQuickSubject"
             >
-              <text>{{ creatingSubject ? '创建中' : '创建学科' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ creatingSubject ? '创建中' : '创建学科' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <view class="save-block-field">
-        <text class="save-block-label">标题</text>
+      <div class="save-block-field">
+        <span class="save-block-label">标题</span>
         <input
           v-model="title"
           class="save-block-input"
           :maxlength="80"
           placeholder="输入知识块标题…"
-          @confirm="confirmSave"
+          @keydown="handleEnterKey($event, confirmSave)"
         />
-      </view>
+      </div>
 
-      <view class="save-block-field">
-        <text class="save-block-label">内容</text>
+      <div class="save-block-field">
+        <span class="save-block-label">内容</span>
         <textarea
+          ref="contentTextareaRef"
           v-model="content"
           class="save-block-textarea"
           :maxlength="4000"
-          auto-height
           placeholder="知识块正文…"
+          @input="syncTextareaAutoHeight($event, 160)"
         />
-      </view>
+      </div>
 
-      <view class="save-block-actions">
-        <view class="save-block-cancel" role="button" @click="handleClose">
-          <text>取消</text>
-        </view>
-        <view
+      <div class="save-block-actions">
+        <div class="save-block-cancel" role="button" @click="handleClose">
+          <span>取消</span>
+        </div>
+        <div
           class="save-block-confirm"
           :class="{ disabled: saving || !hasValidSubject || !title.trim() || !content.trim() }"
           role="button"
           @click="confirmSave"
         >
-          <text>{{ saving ? '保存中…' : '保存' }}</text>
-        </view>
-      </view>
-    </view>
-  </view>
+          <span>{{ saving ? '保存中…' : '保存' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
 import { showToast } from '@/platform/feedback'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { handleEnterKey, syncTextareaAutoHeight } from '@/utils/domHelpers'
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -121,6 +123,7 @@ const selectedSubjectId = ref('')
 const saving = ref(false)
 const quickSubjectName = ref('')
 const creatingSubject = ref(false)
+const contentTextareaRef = ref<HTMLElement | null>(null)
 let openToken = 0
 
 const hasValidSubject = computed(() => subjectStore.subjects.some(s => s.id === selectedSubjectId.value))
@@ -147,6 +150,9 @@ watch(
     content.value = (props.initialPreview || '').slice(0, 4000)
     saving.value = false
     resolveDefaultSubject()
+    void nextTick(() => {
+      syncTextareaAutoHeight(contentTextareaRef.value, 160)
+    })
 
     if (subjectStore.subjects.length === 0) {
       void Promise.all([

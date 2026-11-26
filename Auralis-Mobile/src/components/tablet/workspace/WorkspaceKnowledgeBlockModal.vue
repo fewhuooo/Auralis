@@ -1,22 +1,22 @@
 <template>
-  <view v-if="visible" class="zen-modal-mask kb-modal-mask" @click="handleClose">
-    <view
+  <div v-if="visible" class="zen-modal-mask kb-modal-mask" @click="handleClose">
+    <div
       class="kb-modal-card"
       role="dialog"
       aria-modal="true"
       :aria-label="dialogAriaLabel"
       @click.stop
     >
-      <view class="modal-header">
-        <view v-if="mode === 'view'" class="kb-dialog-header-title">
-          <text class="kb-dialog-main-title">知识块详情</text>
-          <text v-if="displaySubject" class="kb-dialog-subject-pill" :style="subjectPillStyle">
+      <div class="modal-header">
+        <div v-if="mode === 'view'" class="kb-dialog-header-title">
+          <span class="kb-dialog-main-title">知识块详情</span>
+          <span v-if="displaySubject" class="kb-dialog-subject-pill" :style="subjectPillStyle">
             {{ displaySubject }}
-          </text>
-        </view>
-        <text v-else class="modal-title">{{ dialogTitle }}</text>
+          </span>
+        </div>
+        <span v-else class="modal-title">{{ dialogTitle }}</span>
 
-        <view
+        <div
           v-if="!saving"
           class="modal-close-btn"
           role="button"
@@ -24,48 +24,48 @@
           @click="handleClose"
         >
           <LineIcon name="close" size="15px" color="var(--text-muted)" />
-        </view>
-      </view>
+        </div>
+      </div>
 
       <!-- 浏览模式 -->
-      <scroll-view v-if="mode === 'view'" scroll-y :show-scrollbar="false" class="kb-view-scroll">
-        <view class="kb-article-container">
-          <view class="kb-meta-card">
-            <text class="kb-title">{{ block?.title || '未命名知识块' }}</text>
+      <div v-if="mode === 'view'" class="kb-view-scroll zen-scroll-y">
+        <div class="kb-article-container">
+          <div class="kb-meta-card">
+            <span class="kb-title">{{ block?.title || '未命名知识块' }}</span>
 
-            <view class="kb-meta-row">
-              <view v-if="displaySource" class="kb-meta-item kb-meta-source">
+            <div class="kb-meta-row">
+              <div v-if="displaySource" class="kb-meta-item kb-meta-source">
                 <LineIcon name="file-text" size="13px" color="var(--text-muted)" />
-                <text class="kb-meta-source-text">{{ displaySource }}</text>
-              </view>
+                <span class="kb-meta-source-text">{{ displaySource }}</span>
+              </div>
 
-              <view v-if="block?.time" class="kb-meta-item kb-meta-time">
+              <div v-if="block?.time" class="kb-meta-item kb-meta-time">
                 <LineIcon name="history" size="13px" color="var(--text-muted)" />
-                <text class="num-tabular">{{ formatFriendlyTime(block.time) }}</text>
-              </view>
-            </view>
-          </view>
+                <span class="num-tabular">{{ formatFriendlyTime(block.time) }}</span>
+              </div>
+            </div>
+          </div>
 
-          <view class="kb-content-card">
-            <view v-if="rawContent.trim()" class="kb-markdown-content">
+          <div class="kb-content-card">
+            <div v-if="rawContent.trim()" class="kb-markdown-content">
               <MarkdownText :content="rawContent" />
-            </view>
-            <view v-else class="kb-empty-content">
+            </div>
+            <div v-else class="kb-empty-content">
               <LineIcon name="file-text" size="32px" color="var(--text-muted)" />
-              <text class="kb-empty-text">该知识块暂无详细内容</text>
-            </view>
-          </view>
-        </view>
-      </scroll-view>
+              <span class="kb-empty-text">该知识块暂无详细内容</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 编辑 / 创建模式 -->
-      <scroll-view v-else scroll-y :show-scrollbar="false" class="kb-edit-scroll">
-        <view class="edit-body">
-          <view class="modal-form-group">
-            <view class="modal-form-label">
-              <text>标题</text>
-              <text class="required">*</text>
-            </view>
+      <div v-else class="kb-edit-scroll zen-scroll-y">
+        <div class="edit-body">
+          <div class="modal-form-group">
+            <div class="modal-form-label">
+              <span>标题</span>
+              <span class="required">*</span>
+            </div>
             <input
               v-model="draftTitle"
               :disabled="saving"
@@ -73,14 +73,14 @@
               placeholder="输入知识块标题"
               maxlength="120"
             />
-          </view>
+          </div>
 
-          <view class="modal-form-group">
-            <view class="modal-form-label">
-              <text>颜色标记</text>
-            </view>
-            <view class="color-row">
-              <view
+          <div class="modal-form-group">
+            <div class="modal-form-label">
+              <span>颜色标记</span>
+            </div>
+            <div class="color-row">
+              <div
                 v-for="c in BLOCK_THEME_COLORS"
                 :key="c.value"
                 class="color-dot"
@@ -89,55 +89,54 @@
                 :aria-label="c.name"
                 role="button"
                 @click="!saving && (draftColor = c.value)"
-              ></view>
-            </view>
-          </view>
+              ></div>
+            </div>
+          </div>
 
-          <view class="modal-form-group kb-content-group">
-            <view class="editor-label-row">
-              <view class="modal-form-label">
-                <text>知识内容</text>
-                <text class="required">*</text>
-              </view>
-              <view class="render-toggle-group" role="tablist" aria-label="编辑与实时预览切换">
-                <view
+          <div class="modal-form-group kb-content-group">
+            <div class="editor-label-row">
+              <div class="modal-form-label">
+                <span>知识内容</span>
+                <span class="required">*</span>
+              </div>
+              <div class="render-toggle-group" role="tablist" aria-label="编辑与实时预览切换">
+                <div
                   class="render-toggle-btn"
                   :class="{ 'is-active': !isRenderView }"
                   role="tab"
                   :aria-selected="!isRenderView"
                   @click="isRenderView = false"
                 >
-                  <text>编写</text>
-                </view>
-                <view
+                  <span>编写</span>
+                </div>
+                <div
                   class="render-toggle-btn"
                   :class="{ 'is-active': isRenderView }"
                   role="tab"
                   :aria-selected="isRenderView"
                   @click="isRenderView = true"
                 >
-                  <text>实时预览</text>
-                </view>
-              </view>
-            </view>
+                  <span>实时预览</span>
+                </div>
+              </div>
+            </div>
 
-            <view v-if="isRenderView" class="edit-rendered-card">
+            <div v-if="isRenderView" class="edit-rendered-card">
               <MarkdownText v-if="draftContent.trim()" :content="draftContent" />
-              <text v-else class="empty-render-tip">在此实时渲染 Markdown 排版与 LaTeX 数学公式...</text>
-            </view>
+              <span v-else class="empty-render-tip">在此实时渲染 Markdown 排版与 LaTeX 数学公式...</span>
+            </div>
             <textarea
               v-else
               v-model="draftContent"
               :disabled="saving"
               class="modal-form-textarea kb-form-textarea"
-              :maxlength="-1"
               placeholder="在此编写详细知识点内容，支持 Markdown 语法与 LaTeX 数学公式（如 $E=mc^2$ 或 $$公式$$）..."
             />
-          </view>
-        </view>
-      </scroll-view>
+          </div>
+        </div>
+      </div>
 
-      <view class="modal-footer">
+      <div class="modal-footer">
         <template v-if="mode !== 'view'">
           <button
             type="button"
@@ -159,8 +158,8 @@
           </button>
         </template>
 
-        <view v-else class="footer-actions-between">
-          <view class="footer-left-actions">
+        <div v-else class="footer-actions-between">
+          <div class="footer-left-actions">
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
@@ -173,7 +172,7 @@
                 size="14px"
                 :color="copied ? '#2e7d32' : 'var(--text-primary)'"
               />
-              <text>{{ copied ? '已复制' : '复制内容' }}</text>
+              <span>{{ copied ? '已复制' : '复制内容' }}</span>
             </button>
             <button
               type="button"
@@ -183,11 +182,11 @@
               @click="handleDelete"
             >
               <LineIcon name="trash" size="14px" color="#C05646" />
-              <text>删除</text>
+              <span>删除</span>
             </button>
-          </view>
+          </div>
 
-          <view class="footer-right-actions">
+          <div class="footer-right-actions">
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
@@ -196,7 +195,7 @@
               @click="handleStartEdit"
             >
               <LineIcon name="edit" size="14px" color="var(--text-primary)" />
-              <text>编辑</text>
+              <span>编辑</span>
             </button>
             <button
               type="button"
@@ -207,11 +206,11 @@
             >
               确定
             </button>
-          </view>
-        </view>
-      </view>
-    </view>
-  </view>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

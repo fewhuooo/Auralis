@@ -1,33 +1,33 @@
 <template>
-  <view v-if="visible" class="zen-sheet-mask task-sheet-mask" @click="close">
-    <view class="zen-sheet-body sheet-panel" @click.stop>
-      <view class="sheet-header">
-        <text class="sheet-title">选择专注任务</text>
-        <view class="sheet-close-btn" role="button" aria-label="关闭" @click="close">
+  <div v-if="visible" class="zen-sheet-mask task-sheet-mask" @click="close">
+    <div class="zen-sheet-body sheet-panel" @click.stop>
+      <div class="sheet-header">
+        <span class="sheet-title">选择专注任务</span>
+        <div class="sheet-close-btn" role="button" aria-label="关闭" @click="close">
           <LineIcon name="close" size="16px" color="var(--text-muted, #7A7A75)" />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <scroll-view scroll-y :show-scrollbar="false" class="sheet-scroll">
-        <view
+      <div class="sheet-scroll zen-scroll-y">
+        <div
           class="task-option"
           :class="{ 'is-selected': !selectedTaskId }"
           role="button"
           @click="choose(null)"
         >
-          <view class="option-icon is-free">
+          <div class="option-icon is-free">
             <LineIcon name="sparkles" size="16px" color="#536B79" />
-          </view>
-          <view class="option-body">
-            <text class="option-title">自由学习</text>
-          </view>
-          <text class="option-badge is-free-badge">随时开启专注</text>
+          </div>
+          <div class="option-body">
+            <span class="option-title">自由学习</span>
+          </div>
+          <span class="option-badge is-free-badge">随时开启专注</span>
           <LineIcon v-if="!selectedTaskId" name="check" size="16px" color="#637748" />
-        </view>
+        </div>
 
-        <view v-if="scheduledTasks.length > 0" class="group-section">
-          <text class="group-label">已排期日程</text>
-          <view
+        <div v-if="scheduledTasks.length > 0" class="group-section">
+          <span class="group-label">已排期日程</span>
+          <div
             v-for="task in scheduledTasks"
             :key="task.id"
             class="task-option"
@@ -35,21 +35,21 @@
             role="button"
             @click="choose(task)"
           >
-            <view class="option-icon">
+            <div class="option-icon">
               <LineIcon name="calendar" size="15px" color="#637748" />
-            </view>
-            <view class="option-body">
-              <text class="option-title">{{ task.name }}</text>
-              <text v-if="task.subject" class="option-meta num-tabular">{{ task.subject }} · {{ task.duration || 30 }}m</text>
-            </view>
-            <text class="option-badge num-tabular">{{ formatFocusScheduledTime(task.scheduledAt) }}</text>
+            </div>
+            <div class="option-body">
+              <span class="option-title">{{ task.name }}</span>
+              <span v-if="task.subject" class="option-meta num-tabular">{{ task.subject }} · {{ task.duration || 30 }}m</span>
+            </div>
+            <span class="option-badge num-tabular">{{ formatFocusScheduledTime(task.scheduledAt) }}</span>
             <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="#637748" />
-          </view>
-        </view>
+          </div>
+        </div>
 
-        <view v-if="pendingTasks.length > 0" class="group-section">
-          <text class="group-label">待办清单</text>
-          <view
+        <div v-if="pendingTasks.length > 0" class="group-section">
+          <span class="group-label">待办清单</span>
+          <div
             v-for="task in pendingTasks"
             :key="task.id"
             class="task-option"
@@ -57,20 +57,20 @@
             role="button"
             @click="choose(task)"
           >
-            <view class="option-icon">
+            <div class="option-icon">
               <LineIcon name="layers" size="15px" color="var(--text-muted, #7A7A75)" />
-            </view>
-            <view class="option-body">
-              <text class="option-title">{{ task.name }}</text>
-              <text v-if="task.subject" class="option-meta">{{ task.subject }}</text>
-            </view>
-            <text class="option-badge num-tabular">{{ task.duration || 30 }}m</text>
+            </div>
+            <div class="option-body">
+              <span class="option-title">{{ task.name }}</span>
+              <span v-if="task.subject" class="option-meta">{{ task.subject }}</span>
+            </div>
+            <span class="option-badge num-tabular">{{ task.duration || 30 }}m</span>
             <LineIcon v-if="selectedTaskId === task.id" name="check" size="16px" color="#637748" />
-          </view>
-        </view>
-      </scroll-view>
-    </view>
-  </view>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

@@ -1,41 +1,41 @@
 <template>
-  <scroll-view scroll-y :show-scrollbar="false" class="overview-reader-scroll">
-    <view class="reader-body-wrap">
-      <view
+  <div class="overview-reader-scroll zen-scroll-y">
+    <div class="reader-body-wrap">
+      <div
         v-if="kind === 'file' && source && source.ingestionStatus !== 'READY'"
         class="reader-state-card zen-card"
       >
-        <text
+        <span
           class="ui-tag"
           :class="`tone-${getSourceStatusMeta(source.ingestionStatus).tone}`"
-        >{{ getSourceStatusMeta(source.ingestionStatus).label }}</text>
-        <text class="state-heading">资料仍在解析中，暂未生成{{ modeLabel }}</text>
-        <text class="state-desc">
+        >{{ getSourceStatusMeta(source.ingestionStatus).label }}</span>
+        <span class="state-heading">资料仍在解析中，暂未生成{{ modeLabel }}</span>
+        <span class="state-desc">
           {{
             source.ingestionStatus === 'FAILED'
               ? (source.safeErrorDetail || '解析失败，可检查文件后重新上传')
               : '等待 PC 端完成解析索引后将自动呈现精炼总结与结构大纲，你也可以先查看原文件。'
           }}
-        </text>
-        <button class="ui-btn ui-btn-primary sm" @click="emit('open-document')">查看原文</button>
-      </view>
+        </span>
+        <button type="button" class="ui-btn ui-btn-primary sm" @click="emit('open-document')">查看原文</button>
+      </div>
 
-      <view v-else-if="loading && !overview" class="paper-skeletons">
-        <view class="paper-skeleton-title ui-shimmer"></view>
-        <view class="paper-skeleton-line ui-shimmer"></view>
-        <view class="paper-skeleton-line mid ui-shimmer"></view>
-        <view class="paper-skeleton-line ui-shimmer"></view>
-        <view class="paper-skeleton-line short ui-shimmer"></view>
-      </view>
+      <div v-else-if="loading && !overview" class="paper-skeletons">
+        <div class="paper-skeleton-title ui-shimmer"></div>
+        <div class="paper-skeleton-line ui-shimmer"></div>
+        <div class="paper-skeleton-line mid ui-shimmer"></div>
+        <div class="paper-skeleton-line ui-shimmer"></div>
+        <div class="paper-skeleton-line short ui-shimmer"></div>
+      </div>
 
-      <view v-else-if="error && !overview" class="reader-state-card zen-card">
-        <text class="state-heading is-error">{{ error }}</text>
-        <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh')">重试</button>
-      </view>
+      <div v-else-if="error && !overview" class="reader-state-card zen-card">
+        <span class="state-heading is-error">{{ error }}</span>
+        <button type="button" class="ui-btn ui-btn-secondary sm" @click="emit('refresh')">重试</button>
+      </div>
 
-      <view v-else-if="!activeMarkdown" class="reader-state-card zen-card">
-        <text class="state-heading">暂无{{ modeLabel }}</text>
-        <text class="state-desc">
+      <div v-else-if="!activeMarkdown" class="reader-state-card zen-card">
+        <span class="state-heading">暂无{{ modeLabel }}</span>
+        <span class="state-desc">
           {{
             hasSiblingMarkdown
               ? `当前资料已生成${siblingModeLabel}，可切换标签查看`
@@ -45,41 +45,42 @@
                   ? '资料仍在解析索引中，完成后将自动更新'
                   : '暂无生成结果，可点击刷新再次检查'
           }}
-        </text>
-        <view class="state-actions">
+        </span>
+        <div class="state-actions">
           <button
             v-if="hasSiblingMarkdown"
+            type="button"
             class="ui-btn ui-btn-primary sm"
             @click="emit('switch-mode', siblingMode)"
           >
             切换到{{ siblingModeLabel }}
           </button>
-          <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh')">刷新</button>
-        </view>
-      </view>
+          <button type="button" class="ui-btn ui-btn-secondary sm" @click="emit('refresh')">刷新</button>
+        </div>
+      </div>
 
       <template v-else>
-        <view v-if="error" class="inline-warning-bar" role="alert">
-          <text class="inline-warning-text">刷新失败，当前展示上次缓存内容：{{ error }}</text>
-          <button class="retry-inline-btn" @click="emit('refresh')">重试</button>
-        </view>
+        <div v-if="error" class="inline-warning-bar" role="alert">
+          <span class="inline-warning-text">刷新失败，当前展示上次缓存内容：{{ error }}</span>
+          <button type="button" class="retry-inline-btn" @click="emit('refresh')">重试</button>
+        </div>
 
-        <view class="overview-paper zen-card">
-          <view class="paper-header">
-            <text class="paper-title">{{ overview?.title || title }}</text>
-            <text class="paper-meta num-tabular">{{ paperMetaLabel }}</text>
-          </view>
+        <div class="overview-paper zen-card">
+          <div class="paper-header">
+            <span class="paper-title">{{ overview?.title || title }}</span>
+            <span class="paper-meta num-tabular">{{ paperMetaLabel }}</span>
+          </div>
 
-          <view
+          <div
             class="overview-markdown"
             :class="mode === 'outline' ? 'is-outline' : 'is-summary'"
           >
             <MarkdownText :content="activeMarkdown" />
-          </view>
-        </view>
+          </div>
+        </div>
       </template>
-    </view>
-  </scroll-view>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

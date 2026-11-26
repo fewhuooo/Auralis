@@ -1,17 +1,17 @@
 <template>
-  <view class="app-bar-shell">
-    <view class="app-bar-scrim" aria-hidden="true"></view>
-    <view class="app-bar-container" role="navigation" aria-label="主导航">
-      <view class="app-tabbar-float" role="tablist">
-        <view
+  <div class="app-bar-shell">
+    <div class="app-bar-scrim" aria-hidden="true"></div>
+    <div class="app-bar-container" role="navigation" aria-label="主导航">
+      <div class="app-tabbar-float" role="tablist">
+        <div
           class="active-pill-indicator"
           :class="{ 'animate-pill': isAnimatePill }"
           :style="{ transform: `translateX(${displayIndex * 100}%)` }"
         >
-          <view class="pill-inner"></view>
-        </view>
+          <div class="pill-inner"></div>
+        </div>
 
-        <view
+        <div
           v-for="(item, idx) in tabItems"
           :key="item.path"
           class="tab-item"
@@ -25,20 +25,20 @@
             size="19px"
             :color="displayIndex === idx ? '#556B3D' : '#7A7A75'"
           />
-          <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
-        </view>
-      </view>
+          <span class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</span>
+        </div>
+      </div>
 
-      <view
+      <div
         class="app-ai-float"
         role="button"
         aria-label="AI 助手"
         @click="goToAi"
       >
         <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

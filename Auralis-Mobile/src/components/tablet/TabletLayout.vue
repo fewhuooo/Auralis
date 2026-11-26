@@ -1,26 +1,26 @@
 <template>
-  <view class="tablet-layout">
-    <view class="bg-glow bg-glow--1" aria-hidden="true"></view>
-    <view class="bg-glow bg-glow--2" aria-hidden="true"></view>
+  <div class="tablet-layout">
+    <div class="bg-glow bg-glow--1" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--2" aria-hidden="true"></div>
 
-    <view class="sidebar" role="navigation" aria-label="工作台导航">
-      <view class="logo-area" title="回到首页" aria-label="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
+    <div class="sidebar" role="navigation" aria-label="工作台导航">
+      <div class="logo-area" title="回到首页" aria-label="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
         <BrandLogo size="28px" />
-      </view>
+      </div>
 
-      <view class="nav-menu">
-        <view
+      <div class="nav-menu">
+        <div
           class="active-capsule-indicator"
           :style="{
             transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * 52 : 0}px)`,
             opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
           }"
         >
-          <view class="nav-active-bar"></view>
-          <view class="capsule-inner"></view>
-        </view>
+          <div class="nav-active-bar"></div>
+          <div class="capsule-inner"></div>
+        </div>
 
-        <view
+        <div
           v-for="(item, index) in navItems"
           :key="item.path"
           class="nav-item"
@@ -34,11 +34,11 @@
             size="20px"
             :color="displayIndex === index ? '#556B3D' : '#7A7A75'"
           />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <view class="sidebar-footer">
-        <view
+      <div class="sidebar-footer">
+        <div
           class="sidebar-avatar-entry"
           :class="{ 'is-active': displayIndex === -1 }"
           role="button"
@@ -46,10 +46,10 @@
           aria-label="个人中心"
           @click="navigate('/pages/tablet/profile/index')"
         >
-          <view class="sidebar-avatar">
-            <text>{{ userInitial }}</text>
-          </view>
-          <view
+          <div class="sidebar-avatar">
+            <span>{{ userInitial }}</span>
+          </div>
+          <div
             class="avatar-sync-badge"
             :class="syncBadgeClass"
             role="button"
@@ -57,13 +57,13 @@
             aria-label="同步状态"
             @click.stop="syncStore.syncNow()"
           >
-            <view class="avatar-sync-dot"></view>
-          </view>
-        </view>
-      </view>
-    </view>
+            <div class="avatar-sync-dot"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <view
+    <div
       class="main-content"
       :class="{
         'is-entering-down': isEntering && slideDir === 'down',
@@ -76,10 +76,10 @@
       }"
     >
       <slot></slot>
-    </view>
+    </div>
 
     <slot name="modal"></slot>
-  </view>
+  </div>
 </template>
 
 <script setup lang="ts">

@@ -1,9 +1,9 @@
 <template>
-  <view class="app-header-container" :class="{ 'with-border': showBorder }">
-    <view class="status-bar-placeholder"></view>
-    <view class="app-header-bar">
-      <view class="header-left">
-        <view
+  <div class="app-header-container" :class="{ 'with-border': showBorder }">
+    <div class="status-bar-placeholder"></div>
+    <div class="app-header-bar">
+      <div class="header-left">
+        <div
           v-if="effectiveShowBack"
           class="icon-btn back-btn"
           role="button"
@@ -11,16 +11,16 @@
           @click="handleBack"
         >
           <LineIcon name="back" size="18px" color="var(--text-primary)" />
-        </view>
-        <view v-if="title" class="title-group">
-          <text class="header-title-left">{{ title }}</text>
-        </view>
+        </div>
+        <div v-if="title" class="title-group">
+          <span class="header-title-left">{{ title }}</span>
+        </div>
         <slot name="left"></slot>
-      </view>
+      </div>
 
-      <view class="header-right">
+      <div class="header-right">
         <slot name="right">
-          <view
+          <div
             v-if="rightIcon"
             class="icon-btn right-action-btn"
             role="button"
@@ -28,11 +28,11 @@
             @click="handleRightClick"
           >
             <LineIcon :name="rightIcon" size="18px" color="var(--text-primary)" />
-          </view>
+          </div>
         </slot>
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

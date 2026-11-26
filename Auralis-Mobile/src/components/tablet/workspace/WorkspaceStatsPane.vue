@@ -1,280 +1,280 @@
 <template>
-  <scroll-view scroll-y :show-scrollbar="false" class="stats-pane-scroll">
-    <view class="stats-pane">
-      <view class="stats-header">
-        <view class="stats-title-group">
-          <view class="stats-title-row">
-            <text class="stats-title">学科统计</text>
-            <text class="range-badge num-tabular">近 {{ days }} 天</text>
-          </view>
-          <text class="stats-subtitle">追踪学科学习进展、记忆保持与持续学习轨迹</text>
-        </view>
+  <div class="stats-pane-scroll zen-scroll-y">
+    <div class="stats-pane">
+      <div class="stats-header">
+        <div class="stats-title-group">
+          <div class="stats-title-row">
+            <span class="stats-title">学科统计</span>
+            <span class="range-badge num-tabular">近 {{ days }} 天</span>
+          </div>
+          <span class="stats-subtitle">追踪学科学习进展、记忆保持与持续学习轨迹</span>
+        </div>
 
-        <view class="stats-controls">
-          <view class="ui-segmented compact-seg" role="tablist">
-            <view
+        <div class="stats-controls">
+          <div class="ui-segmented compact-seg" role="tablist">
+            <div
               class="ui-seg-item compact-seg-item num-tabular"
               :class="{ active: days === 7 }"
               role="tab"
               :aria-selected="days === 7"
               @click="days = 7"
             >
-              <text>7 天</text>
-            </view>
-            <view
+              <span>7 天</span>
+            </div>
+            <div
               class="ui-seg-item compact-seg-item num-tabular"
               :class="{ active: days === 30 }"
               role="tab"
               :aria-selected="days === 30"
               @click="days = 30"
             >
-              <text>30 天</text>
-            </view>
-          </view>
+              <span>30 天</span>
+            </div>
+          </div>
 
-          <view class="ui-icon-btn sm" role="button" aria-label="刷新统计" @click="loadStats">
+          <div class="ui-icon-btn sm" role="button" aria-label="刷新统计" @click="loadStats">
             <LineIcon name="refresh" size="14px" color="var(--text-secondary)" />
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
 
-      <view v-if="loading && !stats" class="stats-skeletons">
-        <view class="skeleton-hero ui-shimmer"></view>
-        <view class="skeleton-trend ui-shimmer"></view>
-      </view>
+      <div v-if="loading && !stats" class="stats-skeletons">
+        <div class="skeleton-hero ui-shimmer"></div>
+        <div class="skeleton-trend ui-shimmer"></div>
+      </div>
 
-      <view v-else-if="loadError && !stats" class="stats-notice is-error" role="alert">
-        <text class="notice-text">{{ loadError }}</text>
-        <button class="ui-btn ui-btn-secondary sm" @click="loadStats">重试</button>
-      </view>
+      <div v-else-if="loadError && !stats" class="stats-notice is-error" role="alert">
+        <span class="notice-text">{{ loadError }}</span>
+        <button type="button" class="ui-btn ui-btn-secondary sm" @click="loadStats">重试</button>
+      </div>
 
       <template v-else-if="stats">
-        <view v-if="loadError" class="stats-notice is-error" role="alert">
-          <text class="notice-text">刷新失败，当前展示上次数据：{{ loadError }}</text>
-          <button class="ui-btn ui-btn-secondary sm" @click="loadStats">重试</button>
-        </view>
+        <div v-if="loadError" class="stats-notice is-error" role="alert">
+          <span class="notice-text">刷新失败，当前展示上次数据：{{ loadError }}</span>
+          <button type="button" class="ui-btn ui-btn-secondary sm" @click="loadStats">重试</button>
+        </div>
 
         <!-- Hero Card -->
-        <view class="hero-card zen-card">
-          <view class="hero-left">
-            <view class="hero-subject-row">
-              <view class="hero-subject-icon">
+        <div class="hero-card zen-card">
+          <div class="hero-left">
+            <div class="hero-subject-row">
+              <div class="hero-subject-icon">
                 <LineIcon name="book" size="18px" color="var(--color-sage-ink)" />
-              </view>
-              <view class="hero-subject-meta">
-                <text class="hero-subject-name">{{ subjectName || '当前学科' }}</text>
-                <text class="hero-subject-sub num-tabular">
+              </div>
+              <div class="hero-subject-meta">
+                <span class="hero-subject-name">{{ subjectName || '当前学科' }}</span>
+                <span class="hero-subject-sub num-tabular">
                   知识库 {{ overview.activeKnowledgeBlockCount }} 个知识块 · 资料 {{ totalSources }} 份
-                </text>
-              </view>
-            </view>
+                </span>
+              </div>
+            </div>
 
-            <view class="mastery-display">
-              <text class="mastery-value num-tabular">{{ masteredPercent }}<text class="mastery-unit">%</text></text>
-              <view class="mastery-text-group">
-                <text class="mastery-label">学科掌握度</text>
-                <text class="mastery-fraction num-tabular">
+            <div class="mastery-display">
+              <span class="mastery-value num-tabular">{{ masteredPercent }}<span class="mastery-unit">%</span></span>
+              <div class="mastery-text-group">
+                <span class="mastery-label">学科掌握度</span>
+                <span class="mastery-fraction num-tabular">
                   已掌握 {{ overview.masteredCount }} / {{ overview.activeKnowledgeBlockCount }} 知识块
-                </text>
-              </view>
-            </view>
+                </span>
+              </div>
+            </div>
 
-            <view v-if="masteryProportions.total > 0" class="mastery-track-wrap">
-              <view class="mastery-track">
-                <view
+            <div v-if="masteryProportions.total > 0" class="mastery-track-wrap">
+              <div class="mastery-track">
+                <div
                   v-if="masteryProportions.pendingPct > 0"
                   class="track-seg is-learning"
                   :style="{ width: `${masteryProportions.pendingPct}%` }"
-                ></view>
-                <view
+                ></div>
+                <div
                   v-if="masteryProportions.reviewingPct > 0"
                   class="track-seg is-reviewing"
                   :style="{ width: `${masteryProportions.reviewingPct}%` }"
-                ></view>
-                <view
+                ></div>
+                <div
                   v-if="masteryProportions.masteredPct > 0"
                   class="track-seg is-mastered"
                   :style="{ width: `${masteryProportions.masteredPct}%` }"
-                ></view>
-              </view>
-              <view class="track-legend num-tabular">
-                <view class="legend-item">
-                  <view class="legend-dot is-learning"></view>
-                  <text>待学习 {{ overview.pendingLearningCount }} ({{ masteryProportions.pendingPct }}%)</text>
-                </view>
-                <view class="legend-item">
-                  <view class="legend-dot is-reviewing"></view>
-                  <text>待复习 {{ overview.reviewingCount }} ({{ masteryProportions.reviewingPct }}%)</text>
-                </view>
-                <view class="legend-item">
-                  <view class="legend-dot is-mastered"></view>
-                  <text>已掌握 {{ overview.masteredCount }} ({{ masteryProportions.masteredPct }}%)</text>
-                </view>
-              </view>
-            </view>
-          </view>
+                ></div>
+              </div>
+              <div class="track-legend num-tabular">
+                <div class="legend-item">
+                  <div class="legend-dot is-learning"></div>
+                  <span>待学习 {{ overview.pendingLearningCount }} ({{ masteryProportions.pendingPct }}%)</span>
+                </div>
+                <div class="legend-item">
+                  <div class="legend-dot is-reviewing"></div>
+                  <span>待复习 {{ overview.reviewingCount }} ({{ masteryProportions.reviewingPct }}%)</span>
+                </div>
+                <div class="legend-item">
+                  <div class="legend-dot is-mastered"></div>
+                  <span>已掌握 {{ overview.masteredCount }} ({{ masteryProportions.masteredPct }}%)</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-          <view class="hero-right">
-            <text class="actions-heading">当前行动</text>
+          <div class="hero-right">
+            <span class="actions-heading">当前行动</span>
 
-            <view
+            <div
               class="action-card is-review"
               :class="{ 'is-urgent': overview.dueReviewCount > 0 }"
               role="button"
               @click="emit('open-review')"
             >
-              <view class="action-left">
-                <view class="action-icon is-review">
+              <div class="action-left">
+                <div class="action-icon is-review">
                   <LineIcon name="clock" size="16px" color="var(--color-warning-ink)" />
-                </view>
-                <view class="action-meta">
-                  <view class="action-title-row">
-                    <text class="action-title">待复习</text>
-                    <text class="action-tag num-tabular" :class="{ 'is-urgent': overview.dueReviewCount > 0 }">
+                </div>
+                <div class="action-meta">
+                  <div class="action-title-row">
+                    <span class="action-title">待复习</span>
+                    <span class="action-tag num-tabular" :class="{ 'is-urgent': overview.dueReviewCount > 0 }">
                       {{ overview.dueReviewCount > 0 ? `今日到期 ${overview.dueReviewCount}` : '暂无今日到期' }}
-                    </text>
-                  </view>
-                  <text class="action-desc">巩固并保持记忆提取节奏</text>
-                </view>
-              </view>
-              <view class="action-right">
-                <text class="action-count num-tabular">{{ overview.reviewingCount }}</text>
+                    </span>
+                  </div>
+                  <span class="action-desc">巩固并保持记忆提取节奏</span>
+                </div>
+              </div>
+              <div class="action-right">
+                <span class="action-count num-tabular">{{ overview.reviewingCount }}</span>
                 <LineIcon name="chevron-right" size="13px" color="var(--text-muted)" />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="action-card is-learn" role="button" @click="emit('open-review')">
-              <view class="action-left">
-                <view class="action-icon is-learn">
+            <div class="action-card is-learn" role="button" @click="emit('open-review')">
+              <div class="action-left">
+                <div class="action-icon is-learn">
                   <LineIcon name="book" size="16px" color="var(--color-sage-ink)" />
-                </view>
-                <view class="action-meta">
-                  <text class="action-title">待学习</text>
-                  <text class="action-desc">初次理解与吸收新概念</text>
-                </view>
-              </view>
-              <view class="action-right">
-                <text class="action-count num-tabular">{{ overview.pendingLearningCount }}</text>
+                </div>
+                <div class="action-meta">
+                  <span class="action-title">待学习</span>
+                  <span class="action-desc">初次理解与吸收新概念</span>
+                </div>
+              </div>
+              <div class="action-right">
+                <span class="action-count num-tabular">{{ overview.pendingLearningCount }}</span>
                 <LineIcon name="chevron-right" size="13px" color="var(--text-muted)" />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="action-card is-mastered" role="button" @click="emit('open-review')">
-              <view class="action-left">
-                <view class="action-icon is-mastered">
+            <div class="action-card is-mastered" role="button" @click="emit('open-review')">
+              <div class="action-left">
+                <div class="action-icon is-mastered">
                   <LineIcon name="check" size="16px" color="var(--color-sage-ink)" />
-                </view>
-                <view class="action-meta">
-                  <text class="action-title">已掌握</text>
-                  <text class="action-desc">随时可发起抽查自测</text>
-                </view>
-              </view>
-              <view class="action-right">
-                <text class="action-count num-tabular">{{ overview.masteredCount }}</text>
+                </div>
+                <div class="action-meta">
+                  <span class="action-title">已掌握</span>
+                  <span class="action-desc">随时可发起抽查自测</span>
+                </div>
+              </div>
+              <div class="action-right">
+                <span class="action-count num-tabular">{{ overview.masteredCount }}</span>
                 <LineIcon name="chevron-right" size="13px" color="var(--text-muted)" />
-              </view>
-            </view>
-          </view>
-        </view>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Activity & Trend -->
-        <view class="trend-card zen-card">
-          <view class="section-head">
-            <view>
-              <text class="section-title">学习活力与走势</text>
-              <text class="section-caption">近 {{ days }} 天每日有效复习与学习完成频次</text>
-            </view>
-          </view>
+        <div class="trend-card zen-card">
+          <div class="section-head">
+            <div>
+              <span class="section-title">学习活力与走势</span>
+              <span class="section-caption">近 {{ days }} 天每日有效复习与学习完成频次</span>
+            </div>
+          </div>
 
-          <view class="kpi-ribbon">
-            <view class="kpi-cell">
-              <text class="kpi-label">今日复习</text>
-              <text class="kpi-value num-tabular">{{ todayReviewEvents }} 次</text>
-            </view>
-            <view class="kpi-cell">
-              <text class="kpi-label">{{ days }} 天累计复习</text>
-              <text class="kpi-value num-tabular">{{ totals.events }} 次</text>
-            </view>
-            <view class="kpi-cell">
-              <text class="kpi-label">{{ days }} 天完成学习</text>
-              <text class="kpi-value num-tabular">{{ totals.learningCompletions }} 次</text>
-            </view>
-          </view>
+          <div class="kpi-ribbon">
+            <div class="kpi-cell">
+              <span class="kpi-label">今日复习</span>
+              <span class="kpi-value num-tabular">{{ todayReviewEvents }} 次</span>
+            </div>
+            <div class="kpi-cell">
+              <span class="kpi-label">{{ days }} 天累计复习</span>
+              <span class="kpi-value num-tabular">{{ totals.events }} 次</span>
+            </div>
+            <div class="kpi-cell">
+              <span class="kpi-label">{{ days }} 天完成学习</span>
+              <span class="kpi-value num-tabular">{{ totals.learningCompletions }} 次</span>
+            </div>
+          </div>
 
-          <view class="chart-row">
-            <view
+          <div class="chart-row">
+            <div
               v-for="day in dailyItems"
               :key="day.date"
               class="chart-col"
               :class="{ 'is-today': day.date === todayKey }"
             >
-              <text class="chart-val num-tabular">{{ day.activity }}</text>
-              <view class="chart-groove">
-                <view class="chart-bar" :style="{ height: `${barHeight(day.activity)}%` }"></view>
-              </view>
-              <text class="chart-date num-tabular">
+              <span class="chart-val num-tabular">{{ day.activity }}</span>
+              <div class="chart-groove">
+                <div class="chart-bar" :style="{ height: `${barHeight(day.activity)}%` }"></div>
+              </div>
+              <span class="chart-date num-tabular">
                 {{ day.date === todayKey ? '今' : day.shortDate }}
-              </text>
-            </view>
-          </view>
-        </view>
+              </span>
+            </div>
+          </div>
+        </div>
 
         <!-- Supporting Grid -->
-        <view class="support-grid">
-          <view class="support-card zen-card">
-            <view class="support-head">
-              <text class="support-title">资源与沉淀</text>
-              <text class="support-badge num-tabular">共 {{ totalSources }} 份资料</text>
-            </view>
-            <view class="metric-rows">
-              <view class="metric-row">
-                <text class="metric-label">文件资料</text>
-                <text class="metric-val num-tabular">{{ overview.fileSourceCount }}</text>
-              </view>
-              <view class="metric-row">
-                <text class="metric-label">文本 / 链接</text>
-                <text class="metric-val num-tabular">{{ overview.textSourceCount }} / {{ overview.urlSourceCount }}</text>
-              </view>
-              <view class="metric-row">
-                <text class="metric-label">评分分布（认 / 模 / 忘）</text>
-                <text class="metric-val num-tabular">
+        <div class="support-grid">
+          <div class="support-card zen-card">
+            <div class="support-head">
+              <span class="support-title">资源与沉淀</span>
+              <span class="support-badge num-tabular">共 {{ totalSources }} 份资料</span>
+            </div>
+            <div class="metric-rows">
+              <div class="metric-row">
+                <span class="metric-label">文件资料</span>
+                <span class="metric-val num-tabular">{{ overview.fileSourceCount }}</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">文本 / 链接</span>
+                <span class="metric-val num-tabular">{{ overview.textSourceCount }} / {{ overview.urlSourceCount }}</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">评分分布（认 / 模 / 忘）</span>
+                <span class="metric-val num-tabular">
                   {{ ratingCounts.goodCount + ratingCounts.easyCount }} / {{ ratingCounts.hardCount }} / {{ ratingCounts.againCount }}
-                </text>
-              </view>
-            </view>
-          </view>
+                </span>
+              </div>
+            </div>
+          </div>
 
-          <view class="support-card zen-card">
-            <view class="support-head">
-              <text class="support-title">关联任务</text>
-              <text class="support-badge num-tabular">完成率 {{ taskCompletionRate }}%</text>
-            </view>
-            <view class="task-chips">
-              <view class="task-chip">
-                <text class="task-chip-label">待办</text>
-                <text class="task-chip-num num-tabular">{{ overview.todoTaskCount }}</text>
-              </view>
-              <view class="task-chip">
-                <text class="task-chip-label">进行中</text>
-                <text class="task-chip-num num-tabular">{{ overview.inProgressTaskCount }}</text>
-              </view>
-              <view class="task-chip">
-                <text class="task-chip-label">已完成</text>
-                <text class="task-chip-num num-tabular">{{ overview.doneTaskCount }}</text>
-              </view>
-              <view class="task-chip">
-                <text class="task-chip-label">已取消</text>
-                <text class="task-chip-num num-tabular">{{ overview.cancelledTaskCount }}</text>
-              </view>
-            </view>
-            <view class="task-progress-track">
-              <view class="task-progress-fill" :style="{ width: `${taskCompletionRate}%` }"></view>
-            </view>
-          </view>
-        </view>
+          <div class="support-card zen-card">
+            <div class="support-head">
+              <span class="support-title">关联任务</span>
+              <span class="support-badge num-tabular">完成率 {{ taskCompletionRate }}%</span>
+            </div>
+            <div class="task-chips">
+              <div class="task-chip">
+                <span class="task-chip-label">待办</span>
+                <span class="task-chip-num num-tabular">{{ overview.todoTaskCount }}</span>
+              </div>
+              <div class="task-chip">
+                <span class="task-chip-label">进行中</span>
+                <span class="task-chip-num num-tabular">{{ overview.inProgressTaskCount }}</span>
+              </div>
+              <div class="task-chip">
+                <span class="task-chip-label">已完成</span>
+                <span class="task-chip-num num-tabular">{{ overview.doneTaskCount }}</span>
+              </div>
+              <div class="task-chip">
+                <span class="task-chip-label">已取消</span>
+                <span class="task-chip-num num-tabular">{{ overview.cancelledTaskCount }}</span>
+              </div>
+            </div>
+            <div class="task-progress-track">
+              <div class="task-progress-fill" :style="{ width: `${taskCompletionRate}%` }"></div>
+            </div>
+          </div>
+        </div>
       </template>
-    </view>
-  </scroll-view>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

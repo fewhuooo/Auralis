@@ -1,114 +1,114 @@
 <template>
-  <view class="mobile-part-list">
+  <div class="mobile-part-list">
     <template v-for="(part, index) in effectiveParts" :key="part.kind === 'block' ? part.componentId : part.id">
-      <view v-if="part.kind === 'text'" class="mobile-part-text">
+      <div v-if="part.kind === 'text'" class="mobile-part-text">
         <MarkdownText
           :content="getRenderedText(part, index)"
           :streaming="isPartActivelyStreaming(index)"
         />
-      </view>
+      </div>
 
-      <view
+      <div
         v-else-if="part.component === 'steps' || part.component === 'compare' || part.component === 'roadmap' || part.component === 'chart'"
         class="viz-card"
         :class="`viz-card--${part.component}`"
       >
-        <view v-if="textField(part.meta, 'title') || textField(part.meta, 'description')" class="viz-card-header">
-          <text v-if="textField(part.meta, 'title')" class="viz-card-title">{{ textField(part.meta, 'title') }}</text>
-          <text v-if="textField(part.meta, 'description')" class="viz-card-desc">{{ textField(part.meta, 'description') }}</text>
-        </view>
+        <div v-if="textField(part.meta, 'title') || textField(part.meta, 'description')" class="viz-card-header">
+          <span v-if="textField(part.meta, 'title')" class="viz-card-title">{{ textField(part.meta, 'title') }}</span>
+          <span v-if="textField(part.meta, 'description')" class="viz-card-desc">{{ textField(part.meta, 'description') }}</span>
+        </div>
 
-        <view v-if="part.items.length === 0 && (part.state === 'GENERATING' || streaming || busy)" class="viz-skeleton">
-          <view class="viz-skeleton-bar"></view>
-          <view class="viz-skeleton-bar is-short"></view>
-        </view>
+        <div v-if="part.items.length === 0 && (part.state === 'GENERATING' || streaming || busy)" class="viz-skeleton">
+          <div class="viz-skeleton-bar"></div>
+          <div class="viz-skeleton-bar is-short"></div>
+        </div>
 
-        <view v-else-if="part.items.length === 0 && part.state === 'INVALID'" class="viz-invalid-note">
-          <text>内容生成未完成或格式异常</text>
-        </view>
+        <div v-else-if="part.items.length === 0 && part.state === 'INVALID'" class="viz-invalid-note">
+          <span>内容生成未完成或格式异常</span>
+        </div>
 
-        <view v-else-if="part.component === 'steps'" class="viz-steps">
-          <view
+        <div v-else-if="part.component === 'steps'" class="viz-steps">
+          <div
             v-for="(item, itemIdx) in part.items"
             :key="`${part.componentId}-step-${itemIdx}`"
             class="viz-step-row"
           >
-            <view class="viz-step-rail">
-              <view class="viz-step-badge num-tabular">{{ itemIdx + 1 }}</view>
-              <view v-if="itemIdx < part.items.length - 1 || part.state === 'GENERATING'" class="viz-step-line"></view>
-            </view>
-            <view class="viz-step-body">
-              <text class="viz-step-title">{{ textField(item, 'title') }}</text>
-              <view v-if="textField(item, 'description')" class="viz-step-detail">
+            <div class="viz-step-rail">
+              <div class="viz-step-badge num-tabular">{{ itemIdx + 1 }}</div>
+              <div v-if="itemIdx < part.items.length - 1 || part.state === 'GENERATING'" class="viz-step-line"></div>
+            </div>
+            <div class="viz-step-body">
+              <span class="viz-step-title">{{ textField(item, 'title') }}</span>
+              <div v-if="textField(item, 'description')" class="viz-step-detail">
                 <MarkdownText :content="textField(item, 'description')" />
-              </view>
-            </view>
-          </view>
-          <view v-if="part.state === 'GENERATING'" class="viz-step-row">
-            <view class="viz-step-rail">
-              <view class="viz-step-badge is-generating">
-                <view class="viz-pulse-dot"></view>
-              </view>
-            </view>
-            <view class="viz-step-body">
-              <view class="viz-skeleton-bar is-short"></view>
-            </view>
-          </view>
-        </view>
+              </div>
+            </div>
+          </div>
+          <div v-if="part.state === 'GENERATING'" class="viz-step-row">
+            <div class="viz-step-rail">
+              <div class="viz-step-badge is-generating">
+                <div class="viz-pulse-dot"></div>
+              </div>
+            </div>
+            <div class="viz-step-body">
+              <div class="viz-skeleton-bar is-short"></div>
+            </div>
+          </div>
+        </div>
 
-        <view v-else-if="part.component === 'compare'" class="viz-compare">
-          <view
+        <div v-else-if="part.component === 'compare'" class="viz-compare">
+          <div
             v-for="(item, dimIdx) in part.items"
             :key="`${part.componentId}-dim-${dimIdx}`"
             class="viz-compare-dim"
           >
-            <text class="viz-compare-dim-title">{{ textField(item, 'title') }}</text>
-            <view class="viz-compare-entries">
-              <view
+            <span class="viz-compare-dim-title">{{ textField(item, 'title') }}</span>
+            <div class="viz-compare-entries">
+              <div
                 v-for="(entry, entryIdx) in entriesOf(item)"
                 :key="`${part.componentId}-entry-${dimIdx}-${entryIdx}`"
                 class="viz-compare-entry"
               >
-                <text class="viz-compare-label">{{ entry.label }}</text>
-                <view class="viz-compare-text">
+                <span class="viz-compare-label">{{ entry.label }}</span>
+                <div class="viz-compare-text">
                   <MarkdownText :content="entry.text" />
-                </view>
-              </view>
-            </view>
-          </view>
-          <view v-if="part.state === 'GENERATING'" class="viz-skeleton-bar is-tall"></view>
-        </view>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="part.state === 'GENERATING'" class="viz-skeleton-bar is-tall"></div>
+        </div>
 
-        <view v-else-if="part.component === 'roadmap'" class="viz-roadmap">
-          <view
+        <div v-else-if="part.component === 'roadmap'" class="viz-roadmap">
+          <div
             v-for="(item, nodeIdx) in part.items"
             :key="`${part.componentId}-route-${nodeIdx}`"
             class="viz-roadmap-row"
             :class="{ 'is-current': booleanField(item, 'current') }"
           >
-            <view class="viz-step-rail">
-              <view class="viz-roadmap-node num-tabular" :class="{ 'is-current': booleanField(item, 'current') }">
+            <div class="viz-step-rail">
+              <div class="viz-roadmap-node num-tabular" :class="{ 'is-current': booleanField(item, 'current') }">
                 {{ nodeIdx + 1 }}
-              </view>
-              <view v-if="nodeIdx < part.items.length - 1 || part.state === 'GENERATING'" class="viz-step-line"></view>
-            </view>
-            <view class="viz-roadmap-card" :class="{ 'is-current': booleanField(item, 'current') }">
-              <view class="viz-roadmap-top">
-                <text class="viz-roadmap-title">{{ textField(item, 'title') }}</text>
-                <text v-if="textField(item, 'tag')" class="viz-roadmap-tag">{{ textField(item, 'tag') }}</text>
-                <text v-if="booleanField(item, 'current')" class="viz-roadmap-current">目前位置</text>
-              </view>
-              <view v-if="textField(item, 'description')" class="viz-step-detail">
+              </div>
+              <div v-if="nodeIdx < part.items.length - 1 || part.state === 'GENERATING'" class="viz-step-line"></div>
+            </div>
+            <div class="viz-roadmap-card" :class="{ 'is-current': booleanField(item, 'current') }">
+              <div class="viz-roadmap-top">
+                <span class="viz-roadmap-title">{{ textField(item, 'title') }}</span>
+                <span v-if="textField(item, 'tag')" class="viz-roadmap-tag">{{ textField(item, 'tag') }}</span>
+                <span v-if="booleanField(item, 'current')" class="viz-roadmap-current">目前位置</span>
+              </div>
+              <div v-if="textField(item, 'description')" class="viz-step-detail">
                 <MarkdownText :content="textField(item, 'description')" />
-              </view>
-            </view>
-          </view>
-        </view>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <view v-else-if="part.component === 'chart'" class="viz-chart">
+        <div v-else-if="part.component === 'chart'" class="viz-chart">
           <template v-if="textField(part.meta, 'chartType') === 'proportion'">
-            <view v-if="proportionTotal(part) > 0" class="viz-proportion-track">
-              <view
+            <div v-if="proportionTotal(part) > 0" class="viz-proportion-track">
+              <div
                 v-for="(item, sliceIdx) in part.items"
                 :key="`${part.componentId}-seg-${sliceIdx}`"
                 class="viz-proportion-seg"
@@ -116,49 +116,49 @@
                   width: `${proportionPercent(part, sliceIdx)}%`,
                   backgroundColor: chartColor(sliceIdx),
                 }"
-              ></view>
-            </view>
-            <view class="viz-legend-list">
-              <view
+              ></div>
+            </div>
+            <div class="viz-legend-list">
+              <div
                 v-for="(item, sliceIdx) in part.items"
                 :key="`${part.componentId}-leg-${sliceIdx}`"
                 class="viz-legend-row"
               >
-                <view class="viz-legend-left">
-                  <view class="viz-legend-swatch" :style="{ backgroundColor: chartColor(sliceIdx) }"></view>
-                  <text class="viz-legend-label">{{ textField(item, 'label') }}</text>
-                </view>
-                <text class="viz-legend-value num-tabular">
+                <div class="viz-legend-left">
+                  <div class="viz-legend-swatch" :style="{ backgroundColor: chartColor(sliceIdx) }"></div>
+                  <span class="viz-legend-label">{{ textField(item, 'label') }}</span>
+                </div>
+                <span class="viz-legend-value num-tabular">
                   {{ numberField(item, 'value') }}{{ textField(part.meta, 'unit') }}
                   ({{ Math.round(proportionPercent(part, sliceIdx)) }}%)
-                </text>
-              </view>
-            </view>
+                </span>
+              </div>
+            </div>
           </template>
-          <view v-else class="viz-bars">
-            <view
+          <div v-else class="viz-bars">
+            <div
               v-for="(item, barIdx) in part.items"
               :key="`${part.componentId}-bar-${barIdx}`"
               class="viz-bar-row"
             >
-              <view class="viz-bar-top">
-                <text class="viz-bar-label">{{ textField(item, 'label') }}</text>
-                <text class="viz-bar-value num-tabular">
+              <div class="viz-bar-top">
+                <span class="viz-bar-label">{{ textField(item, 'label') }}</span>
+                <span class="viz-bar-value num-tabular">
                   {{ numberField(item, 'value') }}{{ textField(part.meta, 'unit') }}
-                </text>
-              </view>
-              <view class="viz-bar-track">
-                <view
+                </span>
+              </div>
+              <div class="viz-bar-track">
+                <div
                   class="viz-bar-fill"
                   :style="{ width: `${barPercent(part, barIdx)}%` }"
-                ></view>
-              </view>
-            </view>
-          </view>
-        </view>
-      </view>
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <view
+      <div
         v-else
         class="activity-card"
         :class="{
@@ -166,24 +166,24 @@
           'is-invalid': part.state === 'INVALID',
         }"
       >
-        <view class="activity-header">
-          <text class="activity-pill">{{ activityStatusLabel(part) }}</text>
-        </view>
+        <div class="activity-header">
+          <span class="activity-pill">{{ activityStatusLabel(part) }}</span>
+        </div>
 
-        <view class="activity-question">
+        <div class="activity-question">
           <MarkdownText
             v-if="textField(part.meta, 'question')"
             :content="textField(part.meta, 'question')"
             :streaming="part.state === 'GENERATING'"
           />
-          <view v-else-if="part.state === 'GENERATING'" class="viz-skeleton">
-            <view class="viz-skeleton-bar"></view>
-          </view>
-          <text v-else class="viz-invalid-note">题目未完整生成</text>
-        </view>
+          <div v-else-if="part.state === 'GENERATING'" class="viz-skeleton">
+            <div class="viz-skeleton-bar"></div>
+          </div>
+          <span v-else class="viz-invalid-note">题目未完整生成</span>
+        </div>
 
-        <view v-if="part.component === 'quiz' && part.state !== 'SUBMITTED'" class="quiz-options">
-          <view
+        <div v-if="part.component === 'quiz' && part.state !== 'SUBMITTED'" class="quiz-options">
+          <div
             v-for="(opt, optIdx) in part.items"
             :key="`${part.componentId}-opt-${optIdx}`"
             class="quiz-option"
@@ -194,33 +194,33 @@
             role="button"
             @click="selectQuizOption(part, textField(opt, 'key'))"
           >
-            <view class="quiz-badge" :class="{ 'is-selected': isOptionSelected(part, textField(opt, 'key')) }">
+            <div class="quiz-badge" :class="{ 'is-selected': isOptionSelected(part, textField(opt, 'key')) }">
               <LineIcon
                 v-if="isOptionSelected(part, textField(opt, 'key'))"
                 name="check"
                 size="12px"
                 color="#FFFFFF"
               />
-              <text v-else>{{ textField(opt, 'key') }}</text>
-            </view>
-            <text class="quiz-option-text">{{ textField(opt, 'text') }}</text>
-          </view>
+              <span v-else>{{ textField(opt, 'key') }}</span>
+            </div>
+            <span class="quiz-option-text">{{ textField(opt, 'text') }}</span>
+          </div>
 
           <template v-if="part.state === 'GENERATING'">
-            <view
+            <div
               v-for="slotKey in quizPlaceholderSlots(part)"
               :key="`${part.componentId}-slot-${slotKey}`"
               class="quiz-option is-placeholder"
             >
-              <view class="quiz-badge is-placeholder">
-                <text>{{ slotKey }}</text>
-              </view>
-              <view class="viz-skeleton-bar is-short"></view>
-            </view>
+              <div class="quiz-badge is-placeholder">
+                <span>{{ slotKey }}</span>
+              </div>
+              <div class="viz-skeleton-bar is-short"></div>
+            </div>
           </template>
-        </view>
+        </div>
 
-        <view
+        <div
           v-else-if="part.component === 'question' && part.state !== 'SUBMITTED' && !readOnly && part.state !== 'INVALID'"
           class="question-answer-box"
         >
@@ -229,42 +229,42 @@
             :value="questionDraftText(part)"
             :placeholder="textField(part.meta, 'placeholder') || '写下你的思考与回答…'"
             :maxlength="2000"
-            auto-height
             :disabled="part.state !== 'READY'"
             @input="onQuestionInput(part, $event)"
           />
-        </view>
+        </div>
 
-        <view v-if="part.state === 'SUBMITTED'" class="activity-submitted-box">
-          <text class="submitted-label">你的作答记录</text>
-          <text
+        <div v-if="part.state === 'SUBMITTED'" class="activity-submitted-box">
+          <span class="submitted-label">你的作答记录</span>
+          <span
             v-for="(line, lineIdx) in submittedAnswerLines(part)"
             :key="`${part.componentId}-ans-${lineIdx}`"
             class="submitted-item"
-          >{{ line }}</text>
-        </view>
+          >{{ line }}</span>
+        </div>
 
-        <view class="activity-footer">
-          <text class="activity-tip">{{ activityStateMessage(part) }}</text>
-          <view
+        <div class="activity-footer">
+          <span class="activity-tip">{{ activityStateMessage(part) }}</span>
+          <div
             v-if="part.state === 'READY' && !readOnly"
             class="activity-submit-btn"
             :class="{ disabled: !canSubmitActivity(part) }"
             role="button"
             @click="submitActivity(part)"
           >
-            <text>提交回答</text>
-          </view>
-        </view>
-      </view>
+            <span>提交回答</span>
+          </div>
+        </div>
+      </div>
     </template>
-  </view>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
+import { syncTextareaAutoHeight } from '@/utils/domHelpers'
 import {
   createMobileActivitySubmission,
   getMobileChartRatios,
@@ -501,6 +501,7 @@ function questionDraftText(block: MobileChatBlockPart): string {
 
 function onQuestionInput(block: MobileChatBlockPart, event: unknown) {
   if (props.readOnly || block.state !== 'READY') return
+  syncTextareaAutoHeight(event)
   const payload = event as { detail?: { value?: string }; target?: { value?: string } }
   const val = typeof payload?.detail?.value === 'string'
     ? payload.detail.value
