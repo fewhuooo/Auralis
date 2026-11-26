@@ -38,6 +38,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { canNavigateBack, navigateBack, reLaunch, redirectTo } from '@/platform/navigation'
 import { useLayoutStore } from '@/store/useLayoutStore'
 
 const props = defineProps({
@@ -87,27 +88,22 @@ function handleBack() {
   emit('back-click')
   layoutStore.triggerReturn(360)
 
-  try {
-    const pages = getCurrentPages()
-    if (pages.length > 1) {
-      uni.navigateBack()
-      return
-    }
-  } catch {
-    // Ignore page stack inspection failures
+  if (canNavigateBack()) {
+    navigateBack()
+    return
   }
 
   const returnTarget = layoutStore.consumeReturnRoute() || props.backUrl
   if (returnTarget) {
     if (topLevelRoutes.some(route => returnTarget.includes(route.replace('/pages/mobile/', '')))) {
-      uni.reLaunch({ url: returnTarget })
+      reLaunch(returnTarget)
       return
     }
-    uni.redirectTo({ url: returnTarget })
+    redirectTo(returnTarget)
     return
   }
 
-  uni.reLaunch({ url: '/pages/mobile/home/index' })
+  reLaunch('/pages/mobile/home/index')
 }
 
 function handleRightClick() {

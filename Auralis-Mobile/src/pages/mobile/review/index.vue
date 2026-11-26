@@ -348,12 +348,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
 import { reviewApi } from '@/api/reviewApi'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { useMobileLifecycleReview } from '@/composables/useMobileLifecycleReview'
+import { onPageLoad } from '@/platform/lifecycle'
+import { canNavigateBack, navigateBack, redirectTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -533,7 +534,7 @@ const milestoneSubtitle = computed(() => {
   return '可先在学习页新建或同步知识块，完成首次学习后即可进入复习与自测'
 })
 
-onLoad((query) => {
+onPageLoad((query) => {
   const parsed = parseMobileReviewQuery(query)
   initialMode.value = parsed.mode
   initialGroupSize.value = parsed.groupSize
@@ -609,12 +610,11 @@ function handleReloadAfterConflict() {
 
 function handleBack() {
   layoutStore.triggerReturn(360)
-  const pages = getCurrentPages()
-  if (pages.length > 1) {
-    uni.navigateBack()
+  if (canNavigateBack()) {
+    navigateBack()
     return
   }
-  uni.redirectTo({ url: '/pages/mobile/learn/index' })
+  redirectTo('/pages/mobile/learn/index')
 }
 </script>
 

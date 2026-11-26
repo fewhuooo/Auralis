@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
-import { onHide, onLaunch, onShow } from '@dcloudio/uni-app'
+import { ensureFeedbackHost } from '@/platform/feedback'
+import { onAppHide, onAppLaunch, onAppShow } from '@/platform/lifecycle'
 import { connectRealtimeSync, disconnectRealtimeSync } from '@/api/sync'
 import { localDb } from '@/services/localDb'
 import { cursorKeyForAuth } from '@/services/syncController'
@@ -56,7 +57,8 @@ async function startAuthenticatedRuntime() {
   return promise
 }
 
-onLaunch(async () => {
+onAppLaunch(async () => {
+  void ensureFeedbackHost()
   const authStore = useAuthStore()
 
   watch(
@@ -84,7 +86,7 @@ onLaunch(async () => {
   }
 })
 
-onShow(() => {
+onAppShow(() => {
   const authStore = useAuthStore()
   const focusStore = useFocusStore()
   if (!authStore.isAuthenticated) return
@@ -94,7 +96,7 @@ onShow(() => {
   void connectRealtimeSync()
 })
 
-onHide(() => {
+onAppHide(() => {
   disconnectRealtimeSync()
 })
 </script>

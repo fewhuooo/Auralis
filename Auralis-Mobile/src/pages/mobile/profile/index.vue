@@ -599,6 +599,8 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -704,16 +706,16 @@ async function handleSyncNow() {
 
   if (syncStore.lastError) {
     syncFeedbackLabel.value = '✕ 同步失败'
-    uni.showToast({ title: '同步未完成', icon: 'none' })
+    showToast('同步未完成')
   } else if (syncStore.conflicts.length > 0) {
     syncFeedbackLabel.value = '存在冲突'
-    uni.showToast({ title: '存在未处理同步冲突', icon: 'none' })
+    showToast('存在未处理同步冲突')
   } else if (focusStore.pendingOutboxCount > 0 || syncStore.pendingMutationCount > 0) {
     syncFeedbackLabel.value = '部分待传'
-    uni.showToast({ title: '仍有本地记录保存在此设备，可稍后重试', icon: 'none' })
+    showToast('仍有本地记录保存在此设备，可稍后重试')
   } else {
     syncFeedbackLabel.value = '✓ 已同步'
-    uni.showToast({ title: '同步完成', icon: 'none' })
+    showToast('同步完成')
   }
 
   syncFeedbackTimer = setTimeout(() => {
@@ -728,10 +730,7 @@ function handleToggleAutoSync() {
   if (next) {
     void focusStore.flushPendingSessions(false)
   }
-  uni.showToast({
-    title: next ? '自动同步已开启' : '自动同步已暂停',
-    icon: 'none',
-  })
+  showToast(next ? '自动同步已开启' : '自动同步已暂停')
 }
 
 // === 显示名称编辑 ===
@@ -748,7 +747,7 @@ async function submitDisplayName() {
   if (savingName.value) return
   const trimmed = nameDraft.value.trim()
   if (!trimmed) {
-    uni.showToast({ title: '请输入名称', icon: 'none' })
+    showToast('请输入名称')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -761,10 +760,10 @@ async function submitDisplayName() {
     if (generation !== authStore.getLoginGeneration()) return
     authStore.syncUserProfile(updatedUser)
     showNameSheet.value = false
-    uni.showToast({ title: '已更新', icon: 'none' })
+    showToast('已更新')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '更新失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '更新失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       savingName.value = false
@@ -860,7 +859,7 @@ function ensureSavedForProbe(chatModel?: string): boolean {
   })) {
     return true
   }
-  uni.showToast({ title: '请先保存 AI 配置后再检测或测试', icon: 'none' })
+  showToast('请先保存 AI 配置后再检测或测试')
   return false
 }
 
@@ -875,16 +874,16 @@ async function fetchModelsForProvider() {
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
     availableModels.value = res.models || []
     if (availableModels.value.length === 0) {
-      uni.showToast({ title: '未拉取到可用模型', icon: 'none' })
+      showToast('未拉取到可用模型')
       return
     }
     if (!customChatModel.value.trim()) {
       customChatModel.value = availableModels.value[0]
     }
-    uni.showToast({ title: `检测到 ${availableModels.value.length} 个模型`, icon: 'none' })
+    showToast(`检测到 ${availableModels.value.length} 个模型`)
   } catch (err) {
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '拉取失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '拉取失败')
   } finally {
     if (probeGen === aiConnectionGeneration && authGen === authStore.getLoginGeneration()) {
       detectingModels.value = false
@@ -903,13 +902,10 @@ async function testProviderConnection() {
   try {
     const res = await aiApi.testConnection(provider)
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
-    uni.showToast({
-      title: res.reachable ? `连接正常 (${res.chatModel || provider})` : '连接不可达',
-      icon: 'none',
-    })
+    showToast(res.reachable ? `连接正常 (${res.chatModel || provider})` : '连接不可达')
   } catch (err) {
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '测试失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '测试失败')
   } finally {
     if (probeGen === aiConnectionGeneration && authGen === authStore.getLoginGeneration()) {
       testingConnection.value = false
@@ -927,14 +923,14 @@ async function saveAiSettings() {
     model: customChatModel.value,
   })
   if (validationError) {
-    uni.showToast({ title: validationError, icon: 'none' })
+    showToast(validationError)
     return
   }
 
   const generation = authStore.getLoginGeneration()
   const key = customApiKey.value.trim()
   if (!currentProviderSetting.value?.hasApiKey && !key) {
-    uni.showToast({ title: '首次配置该服务商请填写 API Key', icon: 'none' })
+    showToast('首次配置该服务商请填写 API Key')
     return
   }
   const effectiveBaseUrl = effectiveAiBaseUrl.value
@@ -958,10 +954,10 @@ async function saveAiSettings() {
       customBaseUrl.value = updated.baseUrl ?? effectiveBaseUrl
       customChatModel.value = updated.chatModel ?? effectiveModel
     }
-    uni.showToast({ title: 'AI 配置已保存', icon: 'none' })
+    showToast('AI 配置已保存')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       savingAi.value = false
@@ -1020,7 +1016,7 @@ async function submitPasswordChange() {
     pwdForm.newPassword = ''
     pwdForm.confirmPassword = ''
     showPasswordSheet.value = false
-    uni.showToast({ title: '密码已修改', icon: 'none' })
+    showToast('密码已修改')
     await authStore.refreshAccessToken().catch(() => false)
     if (generation !== authStore.getLoginGeneration()) return
     await useAuthApi.me().then((me) => {
@@ -1080,10 +1076,10 @@ async function revokeDevice(sessionId: string) {
     await useAuthApi.revokeSession(sessionId)
     if (generation !== authStore.getLoginGeneration()) return
     sessionsList.value = sessionsList.value.filter(item => item.id !== sessionId)
-    uni.showToast({ title: '设备已下线', icon: 'none' })
+    showToast('设备已下线')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败')
   } finally {
     if (generation === authStore.getLoginGeneration() && revokingSessionId.value === sessionId) {
       revokingSessionId.value = null
@@ -1099,10 +1095,10 @@ async function revokeAllOthers() {
     await useAuthApi.revokeOtherSessions()
     if (generation !== authStore.getLoginGeneration()) return
     sessionsList.value = sessionsList.value.filter(isCurrentSession)
-    uni.showToast({ title: '已下线其他设备', icon: 'none' })
+    showToast('已下线其他设备')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       revokingAllOthers.value = false
@@ -1111,33 +1107,25 @@ async function revokeAllOthers() {
 }
 
 // === 数据重置与注销账户 ===
-function handleResetOfflineData() {
+async function handleResetOfflineData() {
   if (syncStore.isResettingOffline || syncStore.isSyncing) return
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '清除本地离线数据',
     content: '将清空本地离线数据与未同步草稿，并重新同步云端完整数据。确认重置？',
     confirmText: '重置离线数据',
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      try {
-        await syncStore.resetOfflineData()
-        if (generation !== authStore.getLoginGeneration()) return
-        void metricsRef.value?.reload()
-        uni.showToast({
-          title: syncStore.lastError ? '本地数据已重置，同步暂未完成' : '离线数据已重置并同步',
-          icon: 'none',
-        })
-      } catch (err) {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({
-          title: err instanceof Error ? err.message : '重置失败，请稍后重试',
-          icon: 'none',
-        })
-      }
-    },
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await syncStore.resetOfflineData()
+    if (generation !== authStore.getLoginGeneration()) return
+    void metricsRef.value?.reload()
+    showToast(syncStore.lastError ? '本地数据已重置，同步暂未完成' : '离线数据已重置并同步')
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '重置失败，请稍后重试')
+  }
 }
 
 const showDeleteAccountSheet = ref(false)
@@ -1167,8 +1155,8 @@ async function submitDeleteAccount() {
     showDeleteAccountSheet.value = false
     authStore.clearSession()
     const refId = res.id ? String(res.id).slice(0, 8) : '已生成'
-    uni.showToast({ title: `注销申请已受理（${refId}）`, icon: 'none' })
-    uni.reLaunch({ url: '/pages/mobile/login/index' })
+    showToast(`注销申请已受理（${refId}）`)
+    reLaunch('/pages/mobile/login/index')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
     deleteAccountError.value = err instanceof Error ? err.message : '密码错误或网络异常，无法注销账户'
@@ -1179,24 +1167,23 @@ async function submitDeleteAccount() {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '退出登录',
     content: '确定要退出当前设备的登录状态吗？',
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      try {
-        await authStore.logout()
-      } catch {
-        uni.showToast({ title: '登出请求未完成，本地会话已清除', icon: 'none' })
-      }
-      if (!authStore.isAuthenticated) {
-        uni.reLaunch({ url: '/pages/mobile/login/index' })
-      }
-    },
+    confirmText: '确定',
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await authStore.logout()
+  } catch {
+    showToast('登出请求未完成，本地会话已清除')
+  }
+  if (!authStore.isAuthenticated) {
+    reLaunch('/pages/mobile/login/index')
+  }
 }
 
 function closeAllSheets() {

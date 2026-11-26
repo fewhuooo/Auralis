@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { getCurrentRoutePath, redirectTo } from '@/platform/navigation'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 
@@ -71,8 +72,7 @@ function getIndexByUrl(path: string): number {
 }
 
 function resolveCurrentRoute(): string {
-  const pages = getCurrentPages()
-  return pages.length > 0 ? '/' + (pages[pages.length - 1].route || '') : ''
+  return getCurrentRoutePath()
 }
 
 onMounted(() => {
@@ -133,8 +133,7 @@ function navigateWithTransition(url: string, dir: 'left' | 'right', nowRoute: st
       }
       return
     }
-    uni.redirectTo({
-      url,
+    redirectTo(url, {
       complete: () => {
         hasPendingExit = false
         layoutStore.clearExit()

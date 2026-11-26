@@ -364,7 +364,6 @@
 
 <script setup lang="ts">
 import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
 import { aiApi, type ConversationView } from '@/api/aiApi'
 import {
   chatWithAI,
@@ -380,6 +379,8 @@ import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
 import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageLoad } from '@/platform/lifecycle'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
@@ -747,10 +748,7 @@ async function openScopeMenu() {
 }
 
 function notifyScopeLocked() {
-  uni.showToast({
-    title: '当前对话范围已锁定，切换范围可点击左侧开启新对话',
-    icon: 'none',
-  })
+  showToast('当前对话范围已锁定，切换范围可点击左侧开启新对话')
 }
 
 function selectScope(subjectId: string | null) {
@@ -812,7 +810,7 @@ function resetChatState() {
 
 function startNewChat() {
   if (isTyping.value || isStopping.value) {
-    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    showToast('请先停止当前回答')
     return
   }
   resetChatState()
@@ -901,7 +899,7 @@ function scheduleRunPolling(
 
 async function switchConversation(conversationId: string) {
   if (isTyping.value || isStopping.value) {
-    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    showToast('请先停止当前回答')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -956,31 +954,29 @@ async function switchConversation(conversationId: string) {
       }
     }
     if (isConversationUnsupported.value && messages.value.length > 0) {
-      uni.showToast({ title: '旧版对话仅供查看，请开启新对话继续提问', icon: 'none' })
+      showToast('旧版对话仅供查看，请开启新对话继续提问')
     }
     scrollToBottom(true)
   } catch {
     if (generation !== authStore.getLoginGeneration() || viewToken !== activeViewToken) return
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    showToast('加载失败')
   }
 }
 
-function confirmDeleteConversation(conversationId: string, baseVersion: number) {
+async function confirmDeleteConversation(conversationId: string, baseVersion: number) {
   if ((isTyping.value || isStopping.value) && currentConversationId.value === conversationId) {
-    uni.showToast({ title: '请先停止当前回答', icon: 'none' })
+    showToast('请先停止当前回答')
     return
   }
-  uni.showModal({
+  const generation = authStore.getLoginGeneration()
+  const confirmed = await confirmDialog({
     title: '删除对话',
     content: '删除后无法恢复该对话记录',
     confirmText: '删除',
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (res.confirm) {
-        void deleteConversation(conversationId, baseVersion)
-      }
-    },
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  void deleteConversation(conversationId, baseVersion)
 }
 
 async function syncConversationMeta(conversationId: string, generation: symbol) {
@@ -1029,10 +1025,10 @@ async function deleteConversation(conversationId: string, baseVersion: number) {
     if (currentConversationId.value === conversationId) {
       resetChatState()
     }
-    uni.showToast({ title: '已删除', icon: 'none' })
+    showToast('已删除')
   } catch {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '删除失败', icon: 'none' })
+    showToast('删除失败')
   }
 }
 
@@ -1057,7 +1053,7 @@ async function ensureConversation(seedTitle: string, generation: symbol, isCurre
 
 async function copyText(text: string) {
   const ok = await copyTextWithFallback(text)
-  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
+  showToast(ok ? '已复制' : '复制失败，请手动复制')
 }
 
 function copyAssistantMessage(msg: MobileChatMessage) {
@@ -1332,7 +1328,7 @@ async function runStreamIntoSlot(params: {
 
 async function sendMessage() {
   if (isConversationUnsupported.value) {
-    uni.showToast({ title: '旧版对话仅供查看，请开启新对话继续提问', icon: 'none' })
+    showToast('旧版对话仅供查看，请开启新对话继续提问')
     return
   }
   const text = query.value.trim()
@@ -1522,7 +1518,7 @@ onBeforeUnmount(() => {
   abortLocalStream = null
 })
 
-onLoad((options) => {
+onPageLoad((options) => {
   if (options?.subjectId) {
     const incomingSubjectId = safeDecodeQueryParam(options.subjectId).trim()
     if (incomingSubjectId && !isScopeLocked.value) {

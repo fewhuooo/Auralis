@@ -198,7 +198,9 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageLoad } from '@/platform/lifecycle'
+import { canNavigateBack, navigateBack, redirectTo } from '@/platform/navigation'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
@@ -338,15 +340,11 @@ const floatingShellStyle = computed(() => {
 })
 
 function goBack() {
-  try {
-    if (getCurrentPages().length > 1) {
-      uni.navigateBack()
-      return
-    }
-  } catch {
-    // Fallback to subject hall when launched directly
+  if (canNavigateBack()) {
+    navigateBack()
+    return
   }
-  uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+  redirectTo('/pages/tablet/subject-hall/index')
 }
 
 function captureFence() {
@@ -744,7 +742,7 @@ async function handleSubmitUpload(payload: { file: LocalUploadFile; title: strin
     const toastTitle = payload.subjectId === fence.subjectId || !targetSubjectName
       ? '已上传，等待解析'
       : `已上传至《${targetSubjectName}》`
-    uni.showToast({ title: toastTitle, icon: 'none' })
+    showToast(toastTitle)
   } catch (error) {
     if (!isFenceValid(fence, false)) return
     uploadProgress.value = 0
@@ -755,53 +753,52 @@ async function handleSubmitUpload(payload: { file: LocalUploadFile; title: strin
   }
 }
 
-function handleDeleteSource(source: SourceView) {
+async function handleDeleteSource(source: SourceView) {
   if (!source.id) return
   const fence = captureFence()
   const activeScope = localDataScope.current()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除资料',
     content: `确定删除《${source.title || '未命名资料'}》吗？`,
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || !source.id || !isFenceValid(fence, false)) return
-      try {
-        await sourceApi.delete(source.id, source.version ?? 0)
-        if (!isFenceValid(fence, false)) return
-        await localDb.deleteSourceFile(source.id).catch(() => {})
-        if (!isFenceValid(fence, false)) return
-        // #ifdef H5
-        if (source.assetId) {
-          void deleteCachedDocument(activeScope, source.assetId)
-        }
-        // #endif
-        const wasSelected = selectedSourceId.value === source.id
-        if (wasSelected) {
-          selectedSourceId.value = null
-          clearPreview()
-        }
-        await loadSources()
-        if (!isFenceValid(fence, false)) return
-        if (wasSelected) {
-          const nextSource = sources.value[0]
-          if (nextSource?.id) {
-            selectedSourceId.value = nextSource.id
-            centerView.value = 'preview'
-            void loadSourcePreview()
-          } else if (centerView.value === 'preview') {
-            centerView.value = 'onboarding'
-          }
-        }
-        await Promise.all([subjectStore.loadSubjects(), loadSubjectOverview()])
-        if (!isFenceValid(fence, false)) return
-        uni.showToast({ title: '已删除', icon: 'none' })
-      } catch (error) {
-        if (!isFenceValid(fence, false)) return
-        const msg = error instanceof Error && error.message ? error.message : '删除资料失败'
-        uni.showToast({ title: msg, icon: 'none' })
-      }
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || !source.id || !isFenceValid(fence, false)) return
+  try {
+    await sourceApi.delete(source.id, source.version ?? 0)
+    if (!isFenceValid(fence, false)) return
+    await localDb.deleteSourceFile(source.id).catch(() => {})
+    if (!isFenceValid(fence, false)) return
+    // #ifdef H5
+    if (source.assetId) {
+      void deleteCachedDocument(activeScope, source.assetId)
+    }
+    // #endif
+    const wasSelected = selectedSourceId.value === source.id
+    if (wasSelected) {
+      selectedSourceId.value = null
+      clearPreview()
+    }
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+    if (wasSelected) {
+      const nextSource = sources.value[0]
+      if (nextSource?.id) {
+        selectedSourceId.value = nextSource.id
+        centerView.value = 'preview'
+        void loadSourcePreview()
+      } else if (centerView.value === 'preview') {
+        centerView.value = 'onboarding'
+      }
+    }
+    await Promise.all([subjectStore.loadSubjects(), loadSubjectOverview()])
+    if (!isFenceValid(fence, false)) return
+    showToast('已删除')
+  } catch (error) {
+    if (!isFenceValid(fence, false)) return
+    const msg = error instanceof Error && error.message ? error.message : '删除资料失败'
+    showToast(msg)
+  }
 }
 
 function openBlockDetail(block: KnowledgeBlock) {
@@ -827,7 +824,7 @@ async function handleSaveBlockModal(payload: { title: string; color: string; pre
   const title = payload.title.trim()
   const preview = payload.preview.trim()
   if (!title || !preview) {
-    uni.showToast({ title: '请填写标题与正文内容', icon: 'none' })
+    showToast('请填写标题与正文内容')
     return
   }
 
@@ -848,7 +845,7 @@ async function handleSaveBlockModal(payload: { title: string; color: string; pre
       if (!isFenceValid(fence, false)) return
       blockDialogVisible.value = false
       blockDialogMode.value = 'view'
-      uni.showToast({ title: '知识块已更新', icon: 'none' })
+      showToast('知识块已更新')
       return
     }
 
@@ -866,11 +863,11 @@ async function handleSaveBlockModal(payload: { title: string; color: string; pre
     blockDialogVisible.value = false
     blockDialogMode.value = 'view'
     centerView.value = 'blocks'
-    uni.showToast({ title: '已创建知识块', icon: 'none' })
+    showToast('已创建知识块')
   } catch (error) {
     if (!isFenceValid(fence, false)) return
     const msg = error instanceof Error && error.message ? error.message : '保存知识块失败'
-    uni.showToast({ title: msg, icon: 'none' })
+    showToast(msg)
   } finally {
     if (fence.generation === authStore.getLoginGeneration() && fence.userId === authStore.user?.id) {
       submittingBlock.value = false
@@ -884,30 +881,29 @@ watch([activeBlock, blockDialogMode], ([block, mode]) => {
   }
 })
 
-function handleDeleteBlock(block: KnowledgeBlock) {
+async function handleDeleteBlock(block: KnowledgeBlock) {
   const fence = captureFence()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除知识块',
     content: `确定删除知识块“${block.title}”吗？`,
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || !isFenceValid(fence, false)) return
-      try {
-        await blockStore.removeBlock(block.id)
-        if (!isFenceValid(fence, false)) return
-        if (activeBlockId.value === block.id) {
-          activeBlockId.value = ''
-          blockDialogVisible.value = false
-          blockDialogMode.value = 'view'
-        }
-        uni.showToast({ title: '已删除知识块', icon: 'none' })
-      } catch (error) {
-        if (!isFenceValid(fence, false)) return
-        const msg = error instanceof Error && error.message ? error.message : '删除知识块失败'
-        uni.showToast({ title: msg, icon: 'none' })
-      }
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || !isFenceValid(fence, false)) return
+  try {
+    await blockStore.removeBlock(block.id)
+    if (!isFenceValid(fence, false)) return
+    if (activeBlockId.value === block.id) {
+      activeBlockId.value = ''
+      blockDialogVisible.value = false
+      blockDialogMode.value = 'view'
+    }
+    showToast('已删除知识块')
+  } catch (error) {
+    if (!isFenceValid(fence, false)) return
+    const msg = error instanceof Error && error.message ? error.message : '删除知识块失败'
+    showToast(msg)
+  }
 }
 
 function openAiFloating() {
@@ -1065,7 +1061,7 @@ async function reloadAll() {
   void loadAllOverviews()
 }
 
-onLoad((options) => {
+onPageLoad((options) => {
   const incomingId = typeof options?.id === 'string' && options.id
     ? options.id
     : (typeof options?.subjectId === 'string' && options.subjectId ? options.subjectId : '')
@@ -1122,7 +1118,7 @@ onMounted(async () => {
     if (!subjectId.value) {
       const fallbackId = subjectStore.activeSubjectId || subjectStore.subjects[0]?.id || ''
       if (!fallbackId) {
-        uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+        redirectTo('/pages/tablet/subject-hall/index')
         return
       }
       subjectId.value = fallbackId

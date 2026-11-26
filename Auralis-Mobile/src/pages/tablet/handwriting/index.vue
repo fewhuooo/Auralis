@@ -74,8 +74,10 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { hideLoading, showLoading, showToast } from '@/platform/feedback'
+import { onPageLoad } from '@/platform/lifecycle'
+import { canNavigateBack, navigateBack, redirectTo } from '@/platform/navigation'
 import { HandwritingEngine, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
 import { uuidv7 } from '@/utils/uuid'
@@ -111,7 +113,7 @@ const viewportStyle = computed(() => ({
   transform: `translate(${notebook.value.viewport.x}px, ${notebook.value.viewport.y}px) scale(${notebook.value.viewport.scale})`
 }))
 
-onLoad((options) => {
+onPageLoad((options) => {
   if (options?.id) {
     notebookId.value = options.id
   }
@@ -321,14 +323,14 @@ const exportPNG = async () => {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    uni.showToast({ title: '导出失败', icon: 'none' })
+    showToast('导出失败')
   }
 }
 
 const exportPDF = async () => {
   if (!canvasRef.value) return
   try {
-    uni.showLoading({ title: '生成中...' })
+    showLoading('生成中...')
     const { default: jsPDF } = await import('jspdf')
     const pdf = new jsPDF('p', 'pt', 'a4')
     // Get image data from canvas
@@ -339,24 +341,20 @@ const exportPDF = async () => {
     
     pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
     pdf.save(`${notebook.value.title}.pdf`)
-    uni.hideLoading()
+    hideLoading()
   } catch (e) {
-    uni.hideLoading()
-    uni.showToast({ title: '生成 PDF 失败', icon: 'none' })
+    hideLoading()
+    showToast('生成 PDF 失败')
   }
 }
 
 const goBack = () => {
   save()
-  try {
-    if (getCurrentPages().length > 1) {
-      uni.navigateBack()
-      return
-    }
-  } catch {
-    // Fallback to redirect when history stack cannot be inspected
+  if (canNavigateBack()) {
+    navigateBack()
+    return
   }
-  uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+  redirectTo('/pages/tablet/subject-hall/index')
 }
 </script>
 

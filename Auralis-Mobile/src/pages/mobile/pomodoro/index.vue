@@ -137,11 +137,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { onHide, onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
 import TaskSelectSheet from '@/components/TaskSelectSheet.vue'
+import { showToast } from '@/platform/feedback'
+import { onPageHide, onPageShow } from '@/platform/lifecycle'
 import {
   formatFocusClockDateTime,
   resolveDefaultFocusTask,
@@ -297,15 +298,15 @@ watch(
 onMounted(() => {
   void syncFocusState()
 })
-onShow(() => {
+onPageShow(() => {
   void syncFocusState()
 })
-onHide(stopClock)
+onPageHide(stopClock)
 onUnmounted(stopClock)
 
 function openTaskPicker() {
   if (focusStore.isTaskLocked) {
-    uni.showToast({ title: '本轮专注结束后可重新选择任务', icon: 'none' })
+    showToast('本轮专注结束后可重新选择任务')
     return
   }
   showTaskSheet.value = true
@@ -338,7 +339,7 @@ async function completeBoundTask() {
     ) {
       return
     }
-    uni.showToast({ title: '已标记完成', icon: 'none' })
+    showToast('已标记完成')
     focusStore.dismissCompletedTaskPrompt()
   } catch (err) {
     if (
@@ -348,10 +349,7 @@ async function completeBoundTask() {
     ) {
       return
     }
-    uni.showToast({
-      title: err instanceof Error ? err.message : '标记完成失败，请重试',
-      icon: 'none',
-    })
+    showToast(err instanceof Error ? err.message : '标记完成失败，请重试')
   } finally {
     if (
       generation === authStore.getLoginGeneration()

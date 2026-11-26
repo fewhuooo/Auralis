@@ -3,7 +3,19 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const scanRoots = ['src/api', 'src/store', 'src/services', 'src/pages', 'src/config', 'src/components', 'src/App.vue']
+const scanRoots = [
+  'src/api',
+  'src/store',
+  'src/services',
+  'src/pages',
+  'src/config',
+  'src/components',
+  'src/platform',
+  'src/composables',
+  'src/utils',
+  'src/App.vue',
+  'src/main.ts',
+]
 const ignored = new Set([
   'src/api/generated/schema.ts',
   'src/services/localDb.ts',
@@ -15,6 +27,28 @@ const forbidden = [
   { label: 'access token in websocket URL', pattern: /(?:connectSocket|WebSocket)[^\n]{0,160}[?&]token=/ },
   { label: 'legacy sync cursor', pattern: /\b(?:afterId|lastMutationId|truncated)\b/ },
   { label: 'legacy AI endpoint', pattern: /\/api\/ai\/chat\b/ },
+]
+const scopedForbidden = [
+  {
+    label: 'WeChat mini-program conditional compilation',
+    pattern: /MP-WEIXIN|mp-weixin/,
+    allow: new Set(),
+  },
+  {
+    label: '@dcloudio/uni-app import outside platform/lifecycle.ts',
+    pattern: /@dcloudio\/uni-app/,
+    allow: new Set(['src/platform/lifecycle.ts']),
+  },
+  {
+    label: 'uni.* runtime call outside platform/navigation.ts',
+    pattern: /\buni\.(?!createSelectorQuery\b)/,
+    allow: new Set(['src/platform/navigation.ts']),
+  },
+  {
+    label: 'getCurrentPages() call outside platform/navigation.ts',
+    pattern: /\bgetCurrentPages\s*\(/,
+    allow: new Set(['src/platform/navigation.ts']),
+  },
 ]
 
 async function collect(path) {
@@ -56,6 +90,11 @@ for (const file of files) {
   sources.set(displayPath, source)
   for (const rule of forbidden) {
     if (rule.pattern.test(source)) violations.push(`${displayPath}: ${rule.label}`)
+  }
+  for (const rule of scopedForbidden) {
+    if (!rule.allow.has(displayPath) && rule.pattern.test(source)) {
+      violations.push(`${displayPath}: ${rule.label}`)
+    }
   }
 }
 

@@ -6,7 +6,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const source = readFileSync(resolve(root, 'src/components/tablet/TabletLayout.vue'), 'utf8')
 
 const redirectDelay = source.match(
-  /setTimeout\(\s*\(\)\s*=>\s*\{\s*uni\.redirectTo\(\{\s*url:\s*path\s*\}\)\s*\}\s*,\s*(\d+)\s*\)/m,
+  /setTimeout\(\s*\(\)\s*=>\s*\{\s*redirectTo\(\s*path\s*\)\s*\}\s*,\s*(\d+)\s*\)/m,
 )
 
 if (!redirectDelay) {

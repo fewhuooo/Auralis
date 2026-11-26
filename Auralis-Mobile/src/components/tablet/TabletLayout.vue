@@ -87,6 +87,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
+import { getCurrentRoutePath, reLaunch, redirectTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -106,14 +107,9 @@ const getIndexByUrl = (path: string) => {
 }
 
 const getInitialRouteInfo = () => {
-  try {
-    const pages = getCurrentPages()
-    if (pages && pages.length > 0) {
-      const route = '/' + (pages[pages.length - 1].route || '')
-      return { path: route, idx: getIndexByUrl(route) }
-    }
-  } catch {
-    // Ignore route lookup error
+  const route = getCurrentRoutePath()
+  if (route) {
+    return { path: route, idx: getIndexByUrl(route) }
   }
   return { path: '', idx: 0 }
 }
@@ -174,10 +170,9 @@ let exitResetTimer: ReturnType<typeof setTimeout> | null = null
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
-  const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+  const nowRoute = getCurrentRoutePath()
   if (!nowRoute.includes('/login') && !authStore.isAuthenticated) {
-    uni.reLaunch({ url: '/pages/tablet/login/index' })
+    reLaunch('/pages/tablet/login/index')
     return
   }
   const targetIdx = getIndexByUrl(nowRoute)
@@ -214,8 +209,7 @@ onUnmounted(() => {
 })
 
 const navigate = (path: string) => {
-  const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+  const nowRoute = getCurrentRoutePath()
   if (nowRoute === path || currentPath.value === path || isExiting.value) return
 
   const targetIndex = getIndexByUrl(path)
@@ -233,7 +227,7 @@ const navigate = (path: string) => {
   if (redirectTimer) clearTimeout(redirectTimer)
   if (exitResetTimer) clearTimeout(exitResetTimer)
   void preloadRoute(path)
-  redirectTimer = setTimeout(() => { uni.redirectTo({ url: path }) }, 160)
+  redirectTimer = setTimeout(() => { redirectTo(path) }, 160)
   exitResetTimer = setTimeout(() => {
     exitResetTimer = null
     isExiting.value = false

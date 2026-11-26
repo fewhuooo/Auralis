@@ -219,6 +219,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import type { SourceView } from '@/api/sourceApi'
+import { showToast } from '@/platform/feedback'
 import type { KnowledgeBlock } from '@/store/useBlockStore'
 import {
   BLOCK_THEME_COLORS,
@@ -362,7 +363,7 @@ function handleSave() {
   const title = draftTitle.value.trim()
   const preview = draftContent.value.trim()
   if (!title || !preview) {
-    uni.showToast({ title: '请填写标题与正文内容', icon: 'none' })
+    showToast('请填写标题与正文内容')
     return
   }
   emit('save', {
@@ -377,12 +378,12 @@ async function handleCopy() {
   if (!text) return
   const ok = await copyTextWithFallback(text)
   if (!ok) {
-    uni.showToast({ title: '复制失败，请手动复制', icon: 'none' })
+    showToast('复制失败，请手动复制')
     return
   }
   clearCopiedState()
   copied.value = true
-  uni.showToast({ title: '已复制到剪贴板', icon: 'none' })
+  showToast('已复制到剪贴板')
   copiedTimer = setTimeout(() => {
     copiedTimer = null
     copied.value = false

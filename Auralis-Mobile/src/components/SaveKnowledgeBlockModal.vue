@@ -90,6 +90,7 @@
 import { computed, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { showToast } from '@/platform/feedback'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -194,7 +195,7 @@ async function createQuickSubject() {
   if (creatingSubject.value || saving.value) return
   const name = quickSubjectName.value.trim()
   if (!name) {
-    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    showToast('请输入学科名称')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -208,10 +209,10 @@ async function createQuickSubject() {
     } else {
       resolveDefaultSubject()
     }
-    uni.showToast({ title: '已创建学科', icon: 'none' })
+    showToast('已创建学科')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '创建学科失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '创建学科失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       creatingSubject.value = false
@@ -223,13 +224,13 @@ async function confirmSave() {
   if (saving.value) return
   const targetSubject = subjectStore.subjects.find(s => s.id === selectedSubjectId.value)
   if (!targetSubject) {
-    uni.showToast({ title: '请先选择所属学科', icon: 'none' })
+    showToast('请先选择所属学科')
     return
   }
   const trimmedTitle = title.value.trim()
   const trimmedPreview = content.value.trim()
   if (!trimmedTitle || !trimmedPreview) {
-    uni.showToast({ title: '请填写标题和正文内容', icon: 'none' })
+    showToast('请填写标题和正文内容')
     return
   }
 
@@ -245,11 +246,11 @@ async function confirmSave() {
       color: '',
     })
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '已存入知识库', icon: 'success' })
+    showToast({ title: '已存入知识库', tone: 'success' })
     emit('saved')
   } catch {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+    showToast('保存失败，请重试')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       saving.value = false

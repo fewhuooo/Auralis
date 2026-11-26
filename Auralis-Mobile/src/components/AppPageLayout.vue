@@ -26,6 +26,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import AppTabBar from '@/components/AppTabBar.vue'
+import { getCurrentRoutePath, reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 
@@ -68,24 +69,18 @@ watch(() => props.disableAnimation, (newVal) => {
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
-  let route = ''
-  try {
-    const pages = getCurrentPages()
-    route = pages.length > 0 ? '/' + (pages[pages.length - 1]?.route || '') : ''
-    currentRoute.value = route
-    if (!route.includes('/login') && !authStore.isAuthenticated) {
-      uni.reLaunch({ url: '/pages/mobile/login/index' })
-      return
+  const route = getCurrentRoutePath()
+  currentRoute.value = route
+  if (route && !route.includes('/login') && !authStore.isAuthenticated) {
+    reLaunch('/pages/mobile/login/index')
+    return
+  }
+  if (route && !props.animOrigin) {
+    if (route.includes('profile')) {
+      animOrigin.value = 'slide-right'
+    } else if (route.includes('ai-search')) {
+      animOrigin.value = 'bottom-right'
     }
-    if (!props.animOrigin) {
-      if (route.includes('profile')) {
-        animOrigin.value = 'slide-right'
-      } else if (route.includes('ai-search')) {
-        animOrigin.value = 'bottom-right'
-      }
-    }
-  } catch {
-    // Ignore runtime route inspection failure
   }
 
   if (props.animOrigin) {

@@ -113,10 +113,11 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useAuthForm } from '@/composables/useAuthForm'
+import { onPageShow } from '@/platform/lifecycle'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 
 const authStore = useAuthStore()
@@ -125,12 +126,12 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 function redirectIfAuthenticated() {
   if (authStore.isAuthenticated) {
-    uni.reLaunch({ url: '/pages/mobile/home/index' })
+    reLaunch('/pages/mobile/home/index')
   }
 }
 
 onMounted(redirectIfAuthenticated)
-onShow(redirectIfAuthenticated)
+onPageShow(redirectIfAuthenticated)
 </script>
 
 <style scoped>

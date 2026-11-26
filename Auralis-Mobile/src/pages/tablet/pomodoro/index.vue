@@ -148,10 +148,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { onHide, onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { showToast } from '@/platform/feedback'
+import { onPageHide, onPageShow } from '@/platform/lifecycle'
 import {
   formatFocusClockDateTime,
   formatFocusScheduledTime,
@@ -287,7 +288,7 @@ async function syncFocusState() {
 function toggleTaskDropdown() {
   if (focusStore.isTaskLocked) {
     showTaskDropdown.value = false
-    uni.showToast({ title: '本轮专注结束后可重新选择任务', icon: 'none' })
+    showToast('本轮专注结束后可重新选择任务')
     return
   }
   showTaskDropdown.value = !showTaskDropdown.value
@@ -321,7 +322,7 @@ async function completeBoundTask() {
     ) {
       return
     }
-    uni.showToast({ title: '已标记完成', icon: 'none' })
+    showToast('已标记完成')
     focusStore.dismissCompletedTaskPrompt()
   } catch (error) {
     if (
@@ -329,10 +330,7 @@ async function completeBoundTask() {
       && userId === authStore.user?.id
       && serverDeviceId === authStore.serverDeviceId
     ) {
-      uni.showToast({
-        title: error instanceof Error ? error.message : '标记完成失败，请重试',
-        icon: 'none',
-      })
+      showToast(error instanceof Error ? error.message : '标记完成失败，请重试')
     }
   } finally {
     completingTask.value = false
@@ -375,10 +373,10 @@ watch(
 onMounted(() => {
   void syncFocusState()
 })
-onShow(() => {
+onPageShow(() => {
   void syncFocusState()
 })
-onHide(stopClock)
+onPageHide(stopClock)
 onUnmounted(stopClock)
 </script>
 

@@ -586,6 +586,9 @@ import type { OverviewResultView } from '@/api/overviewApi'
 import type { SourceView } from '@/api/sourceApi'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
 import type { KnowledgeBlock } from '@/store/useBlockStore'
+import { previewImage, showToast } from '@/platform/feedback'
+import { navigateTo } from '@/platform/navigation'
+import { openExternalUrl } from '@/platform/opener'
 import { resolveBlockSourceLabel } from '@/utils/blockSyncMapper'
 import { plainMarkdownExcerpt } from '@/utils/markdown'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
@@ -696,11 +699,11 @@ async function copyActiveOverview() {
   if (!activeOverviewCopyText.value) return
   const ok = await copyTextWithFallback(activeOverviewCopyText.value)
   if (!ok) {
-    uni.showToast({ title: '复制失败，请手动复制', icon: 'none' })
+    showToast('复制失败，请手动复制')
     return
   }
   copiedOverview.value = true
-  uni.showToast({ title: '已复制', icon: 'none' })
+  showToast('已复制')
   if (copiedOverviewTimer) clearTimeout(copiedOverviewTimer)
   copiedOverviewTimer = setTimeout(() => {
     copiedOverview.value = false
@@ -840,7 +843,7 @@ let copiedResetTimer: ReturnType<typeof setTimeout> | null = null
 
 async function copyLink(text: string, toastTitle: string) {
   const ok = await copyTextWithFallback(text)
-  uni.showToast({ title: ok ? toastTitle : '复制失败，请手动复制', icon: 'none' })
+  showToast(ok ? toastTitle : '复制失败，请手动复制')
 }
 
 async function copyBlockCard(block: KnowledgeBlock) {
@@ -849,7 +852,7 @@ async function copyBlockCard(block: KnowledgeBlock) {
     : block.title
   const ok = await copyTextWithFallback(content)
   if (!ok) {
-    uni.showToast({ title: '复制失败，请手动复制', icon: 'none' })
+    showToast('复制失败，请手动复制')
     return
   }
   copiedBlockId.value = block.id
@@ -861,7 +864,7 @@ async function copyBlockCard(block: KnowledgeBlock) {
 }
 
 function previewImageUrl(url: string) {
-  uni.previewImage({ urls: [url], current: url })
+  previewImage(url)
 }
 
 function openActiveDocument() {
@@ -869,44 +872,27 @@ function openActiveDocument() {
     openDocument(props.previewUrl)
     return
   }
-  // #ifdef H5
-  if (props.previewBuffer && typeof window !== 'undefined' && typeof URL !== 'undefined') {
+  if (props.previewBuffer && typeof URL !== 'undefined') {
     const blob = new Blob([props.previewBuffer.slice(0)], {
       type: props.previewMimeType || 'application/octet-stream',
     })
     const blobUrl = URL.createObjectURL(blob)
-    window.open(blobUrl, '_blank', 'noopener')
+    if (!openExternalUrl(blobUrl)) {
+      URL.revokeObjectURL(blobUrl)
+      return
+    }
     setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
   }
-  // #endif
 }
 
 function openDocument(url: string) {
-  // #ifdef H5
-  if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener')
-    return
+  if (!openExternalUrl(url)) {
+    void copyLink(url, '已复制链接')
   }
-  // #endif
-  uni.downloadFile({
-    url,
-    success: (res) => {
-      if (res.statusCode >= 200 && res.statusCode < 300 && res.tempFilePath) {
-        uni.openDocument({
-          filePath: res.tempFilePath,
-          showMenu: true,
-          fail: () => { void copyLink(url, '已复制链接') },
-        })
-        return
-      }
-      void copyLink(url, '已复制链接')
-    },
-    fail: () => { void copyLink(url, '已复制链接') },
-  })
 }
 
 function openHandwritingNotebook() {
-  uni.navigateTo({ url: '/pages/tablet/handwriting/index' })
+  navigateTo('/pages/tablet/handwriting/index')
 }
 
 onBeforeUnmount(() => {

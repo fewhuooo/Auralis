@@ -252,6 +252,7 @@ import {
   reduceMobileChatPartEvent,
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
+import { showToast } from '@/platform/feedback'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { uuidv7 } from '@/utils/uuid'
 import { buildWorkspaceReadingContext } from '@/utils/workspaceChatScope'
@@ -653,7 +654,7 @@ function scheduleRunPolling(
 
 async function copyText(text: string) {
   const ok = await copyTextWithFallback(text)
-  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
+  showToast(ok ? '已复制' : '复制失败，请手动复制')
 }
 
 function copyAssistantMessage(msg: MobileChatMessage) {

@@ -575,13 +575,15 @@
 
 <script setup lang="ts">
 import { computed, getCurrentInstance, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import { ApiProblemError } from '@/api/protocol'
 import { reviewApi, type ReviewState } from '@/api/reviewApi'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageShow } from '@/platform/lifecycle'
+import { navigateTo } from '@/platform/navigation'
 import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
@@ -1012,7 +1014,7 @@ async function createQuickSubject() {
   if (creatingQuickSubject.value) return
   const name = quickSubjectName.value.trim()
   if (!name) {
-    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    showToast('请输入学科名称')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -1026,10 +1028,10 @@ async function createQuickSubject() {
       subjectStore.setActiveSubject(createdId)
     }
     await refreshPageData()
-    uni.showToast({ title: '已创建学科', icon: 'none' })
+    showToast('已创建学科')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '创建学科失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '创建学科失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       creatingQuickSubject.value = false
@@ -1193,7 +1195,7 @@ function startStudyMode(mode: MobileStudyMode) {
   if (mode === 'self-test' && !canStartSelfTest.value) return
   subjectStore.setActiveSubject(subject.id)
   void preloadRoute('/pages/mobile/review/index')
-  uni.navigateTo({ url: buildMobileReviewUrl(subject.id, mode, groupSize.value) })
+  navigateTo(buildMobileReviewUrl(subject.id, mode, groupSize.value))
 }
 
 function handleRightPlanCardClick() {
@@ -1206,7 +1208,7 @@ function handleRightPlanCardClick() {
     return
   }
   if (hasLoadedReviewStates.value) {
-    uni.showToast({ title: '完成初学后即可自由自测', icon: 'none' })
+    showToast('完成初学后即可自由自测')
   }
 }
 
@@ -1230,7 +1232,7 @@ async function copyReadingBlock() {
   const payload = block.preview ? `${block.title}\n\n${block.preview}` : block.title
   const ok = await copyTextWithFallback(payload)
   if (!ok) {
-    uni.showToast({ title: '复制失败，请长按正文复制', icon: 'none' })
+    showToast('复制失败，请长按正文复制')
     return
   }
   copiedReading.value = true
@@ -1318,7 +1320,7 @@ async function submitBlockModal() {
     showBlockModal.value = false
     await subjectStore.loadSubjects()
     if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-    uni.showToast({ title: editingBlockId.value ? '已保存修改' : '已保存知识块', icon: 'none' })
+    showToast(editingBlockId.value ? '已保存修改' : '已保存知识块')
     void loadDueCounts()
     if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
   } catch (err) {
@@ -1331,31 +1333,31 @@ async function submitBlockModal() {
   }
 }
 
-function confirmDeleteBlock(block: KnowledgeBlock) {
+async function confirmDeleteBlock(block: KnowledgeBlock) {
   if (blockStore.updatingBlockIds.includes(block.id)) return
   const generation = authStore.getLoginGeneration()
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除知识块',
     content: `确定删除「${block.title}」？删除后将同步移除。`,
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (!res.confirm || !isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-      void blockStore.removeBlock(block.id).then(async () => {
-        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-        if (readingBlockId.value === block.id) closeReader()
-        await subjectStore.loadSubjects()
-        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-        uni.showToast({ title: '已删除', icon: 'none' })
-        void loadDueCounts()
-        if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
-      }).catch(() => {
-        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-        uni.showToast({ title: '删除失败，请重试', icon: 'none' })
-      })
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || !isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+  try {
+    await blockStore.removeBlock(block.id)
+    if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+    if (readingBlockId.value === block.id) closeReader()
+    await subjectStore.loadSubjects()
+    if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+    showToast('已删除')
+    void loadDueCounts()
+    if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
+  } catch {
+    if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+    showToast('删除失败，请重试')
+  }
 }
 
 watch(
@@ -1424,7 +1426,7 @@ watch(
   },
 )
 
-onShow(() => {
+onPageShow(() => {
   if (!hasShownOnce) {
     hasShownOnce = true
     return

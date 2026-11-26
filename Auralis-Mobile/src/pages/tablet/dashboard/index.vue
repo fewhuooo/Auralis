@@ -340,13 +340,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageShow } from '@/platform/lifecycle'
+import { navigateTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
@@ -408,7 +410,7 @@ async function toggleTaskItem(id: string) {
   if (taskStore.updatingTaskIds.includes(id)) return
   const task = taskStore.allTasks.find(item => item.id === id)
   if (isScheduledCompletionLocked(task, nowClock.value)) {
-    uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
+    showToast('任务时段已结束，完成状态不可取消')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -416,7 +418,7 @@ async function toggleTaskItem(id: string) {
     await taskStore.toggleTaskComplete(id)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败，请重试')
   }
 }
 
@@ -425,27 +427,28 @@ async function unscheduleTaskItem(id: string) {
   try {
     await taskStore.unscheduleTask(id)
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '已移回待办', icon: 'none' })
+    showToast('已移回待办')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '移回失败，请重试', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '移回失败，请重试')
   }
 }
 
-function confirmDeleteTodo(id: string, title: string) {
+async function confirmDeleteTodo(id: string, title: string) {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除待办',
     content: `确定删除「${title}」？`,
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      void taskStore.removeTask(id).catch((err) => {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
-      })
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await taskStore.removeTask(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '删除失败，请重试')
+  }
 }
 
 const DURATION_OPTIONS = [
@@ -554,11 +557,11 @@ async function submitCreateTask() {
   const title = taskForm.name.trim()
   const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
   if (!title) {
-    uni.showToast({ title: '请输入名称', icon: 'none' })
+    showToast('请输入名称')
     return
   }
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
 
@@ -571,10 +574,7 @@ async function submitCreateTask() {
       durationMinutes: taskForm.duration,
     })
     if (overlap) {
-      uni.showToast({
-        title: `与日程「${overlap.name}」时段冲突，请调整时间或关闭按时段排期`,
-        icon: 'none',
-      })
+      showToast(`与日程「${overlap.name}」时段冲突，请调整时间或关闭按时段排期`)
       return
     }
   }
@@ -596,10 +596,10 @@ async function submitCreateTask() {
     taskForm.name = ''
     taskForm.dueDateKey = ''
     showCreateModal.value = false
-    uni.showToast({ title: scheduledAt ? '已加入日程' : '已加入待办', icon: 'none' })
+    showToast(scheduledAt ? '已加入日程' : '已加入待办')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       savingTask.value = false
@@ -608,12 +608,12 @@ async function submitCreateTask() {
 }
 
 function openSubjectWorkspace(subjectId: string) {
-  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${subjectId}` })
+  navigateTo(`/pages/tablet/workspace/index?id=${subjectId}`)
 }
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
-onShow(() => {
+onPageShow(() => {
   syncClock()
   void subjectStore.loadSubjects()
 })

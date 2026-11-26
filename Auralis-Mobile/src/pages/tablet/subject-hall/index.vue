@@ -203,6 +203,8 @@ import { storeToRefs } from 'pinia'
 import LineIcon from '@/components/LineIcon.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { navigateTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
@@ -294,14 +296,14 @@ async function handleSave() {
       })
       if (generation !== authStore.getLoginGeneration()) return
       showModal.value = false
-      uni.showToast({ title: '已更新', icon: 'none' })
+      showToast('已更新')
       return
     }
 
     const newId = await subjectStore.addSubject(trimmedName, formData.description.trim(), formData.icon)
     if (generation !== authStore.getLoginGeneration()) return
     showModal.value = false
-    uni.showToast({ title: '已创建', icon: 'none' })
+    showToast('已创建')
     enterWorkspace(newId)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
@@ -313,28 +315,26 @@ async function handleSave() {
   }
 }
 
-function handleDeleteSubject(subj: Subject) {
+async function handleDeleteSubject(subj: Subject) {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除学科',
     content: `确定删除「${subj.name}」吗？`,
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      try {
-        await subjectStore.deleteSubject(subj.id)
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: '已删除', icon: 'none' })
-      } catch (err) {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: err instanceof Error ? err.message : '删除失败', icon: 'none' })
-      }
-    },
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await subjectStore.deleteSubject(subj.id)
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast('已删除')
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '删除失败')
+  }
 }
 
 function enterWorkspace(id: string) {
-  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${id}` })
+  navigateTo(`/pages/tablet/workspace/index?id=${id}`)
 }
 
 const hydrated = ref(false)

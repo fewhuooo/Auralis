@@ -336,12 +336,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageShow } from '@/platform/lifecycle'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -424,7 +425,7 @@ async function toggleComplete(id: string) {
   if (taskStore.updatingTaskIds.includes(id)) return
   const task = taskStore.allTasks.find(item => item.id === id)
   if (isScheduledCompletionLocked(task, nowClock.value)) {
-    uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
+    showToast('任务时段已结束，完成状态不可取消')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -432,24 +433,25 @@ async function toggleComplete(id: string) {
     await taskStore.toggleTaskComplete(id)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败，请重试')
   }
 }
 
-function confirmDeleteTask(id: string, title: string) {
+async function confirmDeleteTask(id: string, title: string) {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除待办',
     content: `确定要删除「${title}」吗？`,
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      void taskStore.removeTask(id).catch((err) => {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
-      })
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await taskStore.removeTask(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '删除失败，请重试')
+  }
 }
 
 type CaptureMode = 'task' | 'block' | 'upload'
@@ -598,12 +600,12 @@ async function submitInlineSubject() {
   if (creatingSubject.value) return
   const trimmed = newSubjectName.value.trim()
   if (!trimmed) {
-    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    showToast('请输入学科名称')
     return
   }
   const duplicate = subjectStore.subjects.some(item => item.name.trim().toLowerCase() === trimmed.toLowerCase())
   if (duplicate) {
-    uni.showToast({ title: '已存在同名学科', icon: 'none' })
+    showToast('已存在同名学科')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -615,10 +617,10 @@ async function submitInlineSubject() {
     blockForm.subjectId = id
     uploadForm.subjectId = id
     newSubjectName.value = ''
-    uni.showToast({ title: `已创建「${trimmed}」`, icon: 'none' })
+    showToast(`已创建「${trimmed}」`)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '创建失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '创建失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       creatingSubject.value = false
@@ -634,12 +636,12 @@ async function submitTask() {
   if (submittingCapture.value) return
   const title = taskForm.name.trim()
   if (!title) {
-    uni.showToast({ title: '请输入任务名称', icon: 'none' })
+    showToast('请输入任务名称')
     return
   }
   const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -658,10 +660,10 @@ async function submitTask() {
     taskForm.name = ''
     taskForm.dueDateKey = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: '已加入待办', icon: 'none' })
+    showToast('已加入待办')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       submittingCapture.value = false
@@ -675,11 +677,11 @@ async function submitQuickBlock() {
   const content = blockForm.content.trim()
   const subject = subjectStore.subjects.find(item => item.id === blockForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
   if (!title || !content) {
-    uni.showToast({ title: '请填写标题和内容', icon: 'none' })
+    showToast('请填写标题和内容')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -697,10 +699,10 @@ async function submitQuickBlock() {
     blockForm.title = ''
     blockForm.content = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: '已保存知识块', icon: 'none' })
+    showToast('已保存知识块')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       submittingCapture.value = false
@@ -719,7 +721,7 @@ async function chooseFileToUpload() {
     if (!uploadForm.title.trim()) uploadForm.title = file.name
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '选择失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '选择失败')
   }
 }
 
@@ -727,17 +729,17 @@ async function submitFileUpload() {
   if (submittingCapture.value) return
   const subject = subjectStore.subjects.find(item => item.id === uploadForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
   if (!uploadForm.file) {
-    uni.showToast({ title: '请选择文件', icon: 'none' })
+    showToast('请选择文件')
     return
   }
   try {
     validateUploadFile(uploadForm.file)
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '不支持的文件格式', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '不支持的文件格式')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -759,10 +761,10 @@ async function submitFileUpload() {
     uploadForm.file = null
     uploadForm.title = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: `已归入「${subject.name}」`, icon: 'none' })
+    showToast(`已归入「${subject.name}」`)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '上传失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '上传失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       submittingCapture.value = false
@@ -861,7 +863,7 @@ watch(
   },
 )
 
-onShow(syncClockToWeek)
+onPageShow(syncClockToWeek)
 
 onMounted(async () => {
   clockTimer = setInterval(syncClockToWeek, 30000)

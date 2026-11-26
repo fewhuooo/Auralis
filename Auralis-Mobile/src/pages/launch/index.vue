@@ -10,6 +10,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import BrandLogo from '@/components/BrandLogo.vue'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useDeviceStore } from '@/store/useDeviceStore'
 
@@ -29,7 +30,7 @@ onMounted(async () => {
     ? (isTablet ? '/pages/tablet/dashboard/index' : '/pages/mobile/home/index')
     : (isTablet ? '/pages/tablet/login/index' : '/pages/mobile/login/index')
 
-  uni.reLaunch({ url: target })
+  reLaunch(target)
 })
 </script>
 

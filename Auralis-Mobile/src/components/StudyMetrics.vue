@@ -63,6 +63,7 @@
 import { onScopeDispose, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { statsApi } from '@/api/statsApi'
+import { getStorageItem, setStorageItem } from '@/platform/storage'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -100,9 +101,9 @@ function metricsCacheKey(userId: string | undefined, deviceId: string | undefine
 function readCachedMetrics(userId: string | undefined, deviceId: string | undefined): ReturnType<typeof studyMetrics> | null {
   if (!userId) return null
   try {
-    const raw = uni.getStorageSync(metricsCacheKey(userId, deviceId))
+    const raw = getStorageItem(metricsCacheKey(userId, deviceId))
     if (!raw) return null
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed) || parsed.length !== 5) return null
     return parsed as ReturnType<typeof studyMetrics>
   } catch {
@@ -117,7 +118,7 @@ function writeCachedMetrics(
 ) {
   if (!userId) return
   try {
-    uni.setStorageSync(metricsCacheKey(userId, deviceId), JSON.stringify(value))
+    setStorageItem(metricsCacheKey(userId, deviceId), JSON.stringify(value))
   } catch {
     // Ignore storage write failures cleanly
   }
