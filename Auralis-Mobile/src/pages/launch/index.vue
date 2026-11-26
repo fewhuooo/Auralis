@@ -1,10 +1,10 @@
 <template>
-  <view class="launch-page">
-    <view class="launch-aura"></view>
-    <view class="launch-mark">
+  <div class="launch-page">
+    <div class="launch-aura"></div>
+    <div class="launch-mark">
       <BrandLogo size="50px" />
-    </view>
-  </view>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

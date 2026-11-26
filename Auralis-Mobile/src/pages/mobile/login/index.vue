@@ -1,42 +1,42 @@
 <template>
-  <view class="login-viewport">
-    <view class="login-page">
-      <view class="side-shape" aria-hidden="true"></view>
+  <div class="login-viewport">
+    <div class="login-page">
+      <div class="side-shape" aria-hidden="true"></div>
 
-      <view class="login-inner">
-        <view class="brand-header">
+      <div class="login-inner">
+        <div class="brand-header">
           <BrandLogo size="32px" />
-          <text class="brand-title">AURALIS</text>
-        </view>
+          <span class="brand-title">AURALIS</span>
+        </div>
 
-        <view v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
-          <view
+        <div v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
+          <div
             class="ui-seg-item"
             :class="{ active: mode === 'login', 'is-disabled': pending }"
             role="tab"
             :aria-selected="mode === 'login'"
             @click="show('login')"
           >
-            <text>登录</text>
-          </view>
-          <view
+            <span>登录</span>
+          </div>
+          <div
             class="ui-seg-item"
             :class="{ active: mode === 'register', 'is-disabled': pending }"
             role="tab"
             :aria-selected="mode === 'register'"
             @click="show('register')"
           >
-            <text>注册</text>
-          </view>
-        </view>
-        <view v-else class="reset-header">
-          <view class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
+            <span>注册</span>
+          </div>
+        </div>
+        <div v-else class="reset-header">
+          <div class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
             <LineIcon name="back" size="16px" color="var(--text-primary)" />
-          </view>
-          <text class="form-heading">重置密码</text>
-        </view>
+          </div>
+          <span class="form-heading">重置密码</span>
+        </div>
 
-        <view class="form-stack">
+        <div class="form-stack">
           <input
             v-if="mode !== 'reset'"
             class="ui-input"
@@ -44,7 +44,7 @@
             :maxlength="mode === 'login' ? 254 : 64"
             :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
             :disabled="pending"
-            @confirm="submit"
+            @keydown="handleEnterKey($event, submit)"
           />
 
           <template v-if="mode !== 'login'">
@@ -54,61 +54,63 @@
               :maxlength="254"
               placeholder="邮箱"
               :disabled="pending"
-              @confirm="submit"
+              @keydown="handleEnterKey($event, submit)"
             />
-            <view class="code-field">
+            <div class="code-field">
               <input
                 class="code-input"
                 v-model="form.emailCode"
-                type="number"
-                :maxlength="6"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
                 placeholder="验证码"
                 :disabled="pending"
-                @confirm="submit"
+                @keydown="handleEnterKey($event, submit)"
               />
               <button
+                type="button"
                 class="code-button"
-                :loading="sending"
+                :class="{ 'is-loading': sending }"
                 :disabled="sendDisabled"
                 @click="sendCode"
               >
                 {{ sending ? '发送中' : sendLabel }}
               </button>
-            </view>
+            </div>
           </template>
 
           <input
             class="ui-input"
             v-model="form.password"
-            password
+            type="password"
             :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
             :disabled="pending"
-            @confirm="submit"
+            @keydown="handleEnterKey($event, submit)"
           />
 
           <input
             v-if="mode !== 'login'"
             class="ui-input"
             v-model="form.confirmPassword"
-            password
+            type="password"
             placeholder="确认密码"
             :disabled="pending"
-            @confirm="submit"
+            @keydown="handleEnterKey($event, submit)"
           />
-        </view>
+        </div>
 
-        <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
+        <span v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</span>
 
-        <button class="submit-btn" role="button" :loading="submitting" :disabled="pending" @click="submit">
+        <button type="button" class="submit-btn" :class="{ 'is-loading': submitting }" role="button" :disabled="pending" @click="submit">
           {{ actionLabel }}
         </button>
 
-        <view v-if="mode === 'login'" class="auth-footer">
-          <text class="link-btn" role="button" @click="show('reset')">忘记密码</text>
-        </view>
-      </view>
-    </view>
-  </view>
+        <div v-if="mode === 'login'" class="auth-footer">
+          <span class="link-btn" role="button" @click="show('reset')">忘记密码</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -119,6 +121,7 @@ import { useAuthForm } from '@/composables/useAuthForm'
 import { onPageShow } from '@/platform/lifecycle'
 import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
+import { handleEnterKey } from '@/utils/domHelpers'
 
 const authStore = useAuthStore()
 const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
