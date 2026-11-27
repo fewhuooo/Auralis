@@ -394,13 +394,13 @@ onUnmounted(stopClock)
 
 .main-content {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1520px;
   margin: 0 auto;
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 32px 28px;
-  gap: 48px;
+  padding: clamp(16px, 2.6vh, 32px) clamp(18px, 2.4vw, 32px);
+  gap: clamp(20px, 3.2vw, 48px);
   box-sizing: border-box;
 }
 
@@ -802,7 +802,7 @@ onUnmounted(stopClock)
   }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 780px) {
   .t-pomodoro {
     overflow-y: auto;
   }
@@ -826,4 +826,20 @@ onUnmounted(stopClock)
     padding-bottom: 20px;
   }
 }
+
+/* #ifdef APP-TABLET */
+.panel-card {
+  padding: 18px 20px;
+  border-radius: 18px;
+}
+
+.task-selector-trigger {
+  height: 44px;
+  padding: 0 16px;
+}
+
+.stat-val {
+  font-size: 32px;
+}
+/* #endif */
 </style>

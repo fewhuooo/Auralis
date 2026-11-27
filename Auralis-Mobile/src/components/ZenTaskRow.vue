@@ -359,7 +359,49 @@ const showTrailingSlot = computed(() => (
   }
 
   .task-row.is-pending .row-title {
-    font-size: 12px;
+    font-size: 12.5px;
   }
 }
+
+/* #ifdef APP-TABLET */
+.task-row {
+  padding: 8px 10px;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+.task-row.is-pending {
+  padding: 6px 9px;
+  gap: 6px;
+  border-radius: 9px;
+}
+
+.check-circle {
+  width: 16px;
+  height: 16px;
+}
+
+.task-row.is-pending .check-circle {
+  width: 14px;
+  height: 14px;
+}
+
+.row-title {
+  font-size: 12.5px;
+}
+
+.task-row.is-pending .row-title {
+  font-size: 12px;
+}
+
+.row-icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.task-row.is-pending .row-icon-btn {
+  width: 22px;
+  height: 22px;
+}
+/* #endif */
 </style>

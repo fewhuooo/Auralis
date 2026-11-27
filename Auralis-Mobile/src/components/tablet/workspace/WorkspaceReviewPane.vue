@@ -724,10 +724,10 @@ const milestoneSubtitle = computed(() => {
 
 .review-pane {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1520px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 24px 32px 48px;
+  padding: clamp(16px, 2vw, 24px) clamp(18px, 2.5vw, 32px) 48px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -756,7 +756,7 @@ const milestoneSubtitle = computed(() => {
 }
 
 .dashboard-wrap {
-  width: min(92%, 1120px);
+  width: min(94%, 1320px);
   margin: 8px auto 16px;
   display: flex;
   flex-direction: column;

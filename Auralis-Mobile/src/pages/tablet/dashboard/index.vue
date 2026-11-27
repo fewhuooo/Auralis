@@ -664,8 +664,8 @@ onUnmounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 16px;
-  gap: 14px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   background-color: transparent;
   box-sizing: border-box;
   overflow: hidden;
@@ -678,7 +678,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
   height: 100%;
-  padding: 22px 24px;
+  padding: clamp(14px, 1.8vw, 24px) clamp(16px, 2vw, 26px);
   box-sizing: border-box;
 }
 
@@ -687,7 +687,7 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--tablet-panel-gap);
   height: 100%;
 }
 
@@ -811,7 +811,7 @@ onUnmounted(() => {
 .subjects-card {
   flex: 1;
   min-height: 0;
-  padding: 20px 22px;
+  padding: clamp(14px, 1.6vw, 22px);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1392,7 +1392,18 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
-@media (max-width: 900px) {
+@media (min-width: 1360px) {
+  .left-column {
+    flex: 6.4;
+  }
+
+  .right-column {
+    flex: 3.6;
+    max-width: 480px;
+  }
+}
+
+@media (max-width: 760px) {
   .t-dashboard {
     flex-direction: column;
     overflow-y: auto;
@@ -1412,4 +1423,69 @@ onUnmounted(() => {
     max-height: 420px;
   }
 }
+
+/* #ifdef APP-TABLET */
+.left-column {
+  padding: 14px 18px;
+  gap: 10px;
+}
+
+.greeting-title {
+  font-size: 19px;
+}
+
+.todo-fab-add-btn {
+  width: 30px;
+  height: 30px;
+}
+
+.task-section {
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 12px;
+}
+
+.empty-slot {
+  height: 32px;
+}
+
+.card-stack {
+  gap: 6px;
+}
+
+.subjects-card {
+  padding: 13px 15px;
+  gap: 9px;
+}
+
+.metrics-panel {
+  padding: 11px;
+}
+
+.panel-title {
+  font-size: 13.5px;
+}
+
+.subject-list {
+  gap: 6px;
+}
+
+.subject-row {
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.sub-icon-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.sub-name {
+  font-size: 12.5px;
+}
+/* #endif */
 </style>

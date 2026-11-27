@@ -56,7 +56,21 @@ async function startAuthenticatedRuntime() {
   return promise
 }
 
+function lockClientOrientation(): void {
+  // #ifdef APP-TABLET
+  if (typeof plus !== 'undefined' && plus.screen?.lockOrientation) {
+    plus.screen.lockOrientation('landscape')
+  }
+  // #endif
+  // #ifdef APP-PHONE
+  if (typeof plus !== 'undefined' && plus.screen?.lockOrientation) {
+    plus.screen.lockOrientation('portrait-primary')
+  }
+  // #endif
+}
+
 onLaunch(async () => {
+  lockClientOrientation()
   const authStore = useAuthStore()
 
   watch(
@@ -85,6 +99,7 @@ onLaunch(async () => {
 })
 
 onShow(() => {
+  lockClientOrientation()
   const authStore = useAuthStore()
   const focusStore = useFocusStore()
   if (!authStore.isAuthenticated) return

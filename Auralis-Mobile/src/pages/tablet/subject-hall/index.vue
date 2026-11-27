@@ -374,7 +374,7 @@ onMounted(async () => {
 .t-subject-hall {
   width: 100%;
   height: 100%;
-  padding: 16px 20px;
+  padding: var(--tablet-shell-pad);
   background-color: transparent;
   overflow-y: auto;
   box-sizing: border-box;
@@ -382,10 +382,10 @@ onMounted(async () => {
 
 .hall-content {
   width: 100%;
-  max-width: 1360px;
+  max-width: 1680px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 28px 32px;
+  padding: clamp(18px, 2.2vw, 32px);
   border-radius: 20px;
   box-sizing: border-box;
 }
@@ -487,8 +487,8 @@ onMounted(async () => {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(230px, 21vw, 280px), 1fr));
+  gap: clamp(12px, 1.4vw, 20px);
 }
 
 .subject-card {
@@ -933,4 +933,45 @@ onMounted(async () => {
     width: 100%;
   }
 }
+
+/* #ifdef APP-TABLET */
+.hall-content {
+  padding: 16px 20px;
+  border-radius: 16px;
+}
+
+.hall-header {
+  margin-bottom: 16px;
+}
+
+.page-title {
+  font-size: 19px;
+}
+
+.grid {
+  grid-template-columns: repeat(auto-fill, minmax(206px, 1fr));
+  gap: 12px;
+}
+
+.subject-card {
+  padding: 14px 16px;
+  min-height: 128px;
+  gap: 8px;
+  border-radius: 14px;
+}
+
+.s-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.s-name {
+  font-size: 14.5px;
+}
+
+.s-desc {
+  font-size: 12px;
+}
+/* #endif */
 </style>

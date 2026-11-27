@@ -363,4 +363,47 @@ defineExpose({
   height: 12px;
   margin-top: 6px;
 }
+
+/* #ifdef APP-TABLET */
+.bento-grid {
+  gap: 7px;
+}
+
+.bento-tile {
+  padding: 9px 12px;
+  border-radius: 12px;
+}
+
+.bento-tile.is-featured {
+  padding: 10px 14px;
+}
+
+.featured-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.tile-main {
+  gap: 2px;
+}
+
+.metric-value {
+  font-size: 17px;
+}
+
+.bento-tile.is-featured .metric-value {
+  font-size: 22px;
+}
+
+.pc-stat-cell {
+  padding: 9px 11px;
+  gap: 6px;
+  border-radius: 12px;
+}
+
+.pc-stat-value {
+  font-size: 17px;
+}
+/* #endif */
 </style>

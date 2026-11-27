@@ -56,16 +56,25 @@ try {
     throw "Expected build output directory not found: $outDir"
   }
 
+  $jsFiles = Get-ChildItem -Path $outDir -Recurse -File -Filter '*.js' | Where-Object {
+    $_.FullName -notmatch '\\static\\file-viewer\\vendor\\'
+  }
   $expectLocal8080 = ($trimmedApi -match '^(?:https?://)?(?:localhost|127\.0\.0\.1):8080$') -or ($trimmedWs -match '^(?:wss?://)?(?:localhost|127\.0\.0\.1):8080$')
   if (-not $expectLocal8080) {
-    $jsFiles = Get-ChildItem -Path $outDir -Recurse -File -Filter '*.js' | Where-Object {
-      $_.FullName -notmatch '\\static\\file-viewer\\vendor\\'
-    }
     foreach ($file in $jsFiles) {
       $hit = Select-String -LiteralPath $file.FullName -Pattern '(?:localhost|127\.0\.0\.1):8080' -Quiet
       if ($hit) {
         throw "Found leaked localhost/127.0.0.1:8080 in built output: $($file.FullName)"
       }
+    }
+  }
+  foreach ($file in $jsFiles) {
+    if ($file.FullName -match '\\static\\file-viewer\\') {
+      continue
+    }
+    $unicodePropHit = Select-String -LiteralPath $file.FullName -Pattern '\\[pP]\{[A-Za-z_=-]+\}' -Quiet
+    if ($unicodePropHit) {
+      throw "Found unlowered Unicode property escape regex in built output: $($file.FullName)"
     }
   }
 
@@ -80,6 +89,10 @@ try {
     }
     if ($appConfig -notmatch 'pages/mobile/') {
       throw 'app-phone build is missing pages/mobile/ routes'
+    }
+    $builtManifest = Get-Content -LiteralPath (Join-Path $outDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($builtManifest.screenOrientation -notcontains 'portrait-primary' -or $builtManifest.screenOrientation -contains 'landscape-primary') {
+      throw 'app-phone manifest must lock portrait-primary orientation'
     }
   } elseif ($Target -eq 'app-tablet') {
     $runtimeBundle = Join-Path $viewerDir 'auralis-viewer-runtime.iife.js'
@@ -96,6 +109,10 @@ try {
     }
     if ($appConfig -notmatch 'pages/tablet/') {
       throw 'app-tablet build is missing pages/tablet/ routes'
+    }
+    $builtManifest = Get-Content -LiteralPath (Join-Path $outDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($builtManifest.screenOrientation -notcontains 'landscape-primary' -or $builtManifest.screenOrientation -contains 'portrait-primary') {
+      throw 'app-tablet manifest must lock landscape orientation'
     }
   } elseif ($Target -eq 'mp-weixin') {
     if (Test-Path -LiteralPath $viewerDir) {

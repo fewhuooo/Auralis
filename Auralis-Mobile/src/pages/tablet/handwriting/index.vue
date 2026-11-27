@@ -310,6 +310,7 @@ const resetViewport = () => {
 }
 
 const exportPNG = async () => {
+  // #ifdef H5
   if (!engine) return
   try {
     const blob = await engine.exportToPNG()
@@ -323,9 +324,14 @@ const exportPNG = async () => {
   } catch (e) {
     uni.showToast({ title: '导出失败', icon: 'none' })
   }
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前客户端暂不支持导出 PNG/PDF', icon: 'none' })
+  // #endif
 }
 
 const exportPDF = async () => {
+  // #ifdef H5
   if (!canvasRef.value) return
   try {
     uni.showLoading({ title: '生成中...' })
@@ -344,6 +350,10 @@ const exportPDF = async () => {
     uni.hideLoading()
     uni.showToast({ title: '生成 PDF 失败', icon: 'none' })
   }
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前客户端暂不支持导出 PNG/PDF', icon: 'none' })
+  // #endif
 }
 
 const goBack = () => {

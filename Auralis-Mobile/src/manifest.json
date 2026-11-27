@@ -1,8 +1,8 @@
 {
     "name" : "Auralis",
-    "appid" : "",
-    "description" : "Auralis 专注学习与知识编排",
-    "versionName" : "1.0.0",
+    "appid" : "__UNI__1B1B611",
+    "description" : "Auralis",
+    "versionName" : "0.1.0",
     "versionCode" : "100",
     "transformPx" : false,
     "h5" : {
@@ -13,6 +13,9 @@
         "usingComponents" : true,
         "nvueStyleCompiler" : "uni-app",
         "compilerVersion" : 3,
+        "compatible" : {
+            "ignoreVersion" : true
+        },
         "splashscreen" : {
             "alwaysShowBeforeRender" : true,
             "waiting" : true,
@@ -42,7 +45,9 @@
                 ]
             },
             /* ios打包配置 */
-            "ios" : {},
+            "ios" : {
+                "dSYMs" : false
+            },
             /* SDK配置 */
             "sdkConfigs" : {}
         }
@@ -66,8 +71,8 @@
     "mp-toutiao" : {
         "usingComponents" : true
     },
-    "uniStatistics": {  
-        "enable": false
+    "uniStatistics" : {
+        "enable" : false
     },
     "vueVersion" : "3"
 }

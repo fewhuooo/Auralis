@@ -299,7 +299,7 @@ const focusStore = useFocusStore()
   box-sizing: border-box;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 780px) {
   .timer-core {
     padding-top: 46px;
     padding-bottom: 12px;
@@ -310,4 +310,36 @@ const focusStore = useFocusStore()
     left: 4px;
   }
 }
+
+@media (max-height: 640px) {
+  .phase-status {
+    margin-top: 12px;
+  }
+
+  .progress-dots {
+    margin-top: 10px;
+  }
+
+  .controls {
+    margin-top: 16px;
+    gap: 20px;
+  }
+
+  .main-btn {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* #ifdef APP-TABLET */
+.controls {
+  margin-top: 18px;
+  gap: 20px;
+}
+
+.main-btn {
+  width: 62px;
+  height: 62px;
+}
+/* #endif */
 </style>

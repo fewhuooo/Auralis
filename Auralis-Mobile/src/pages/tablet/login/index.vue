@@ -152,7 +152,8 @@ onShow(redirectIfAuthenticated)
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: clamp(14px, 2.4vh, 28px) clamp(16px, 2.5vw, 32px);
+  padding-top: calc((var(--status-bar-height, 0px) / var(--tablet-viewport-scale, 1)) + clamp(14px, 2.4vh, 28px));
   background:
     radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
     radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
@@ -162,9 +163,9 @@ onShow(redirectIfAuthenticated)
 
 .login-wrapper {
   display: flex;
-  width: 100%;
-  max-width: 880px;
-  min-height: 540px;
+  width: min(860px, 84vw, calc(100vw - 32px));
+  min-height: min(490px, calc(100vh - (var(--status-bar-height, 0px) / var(--tablet-viewport-scale, 1)) - 36px));
+  max-height: calc(100vh - (var(--status-bar-height, 0px) / var(--tablet-viewport-scale, 1)) - 28px);
   background-color: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -176,13 +177,13 @@ onShow(redirectIfAuthenticated)
 }
 
 .brand-side {
-  width: 360px;
+  width: clamp(250px, 39%, 360px);
   background: linear-gradient(155deg, #F7F2EB 0%, #EFE8DC 100%);
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 44px 44px 48px;
+  padding: clamp(24px, 4vh, 44px) clamp(24px, 3.2vw, 44px);
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
   box-sizing: border-box;
@@ -228,7 +229,7 @@ onShow(redirectIfAuthenticated)
 }
 
 .brand-wordmark {
-  font-size: 46px;
+  font-size: clamp(32px, 3.6vw, 46px);
   font-weight: 800;
   color: var(--text-primary);
   line-height: 0.95;
@@ -252,8 +253,9 @@ onShow(redirectIfAuthenticated)
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 36px 40px;
+  padding: clamp(20px, 3.5vh, 36px) clamp(24px, 3.5vw, 40px);
   background-color: var(--color-bg-primary);
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
@@ -426,6 +428,27 @@ onShow(redirectIfAuthenticated)
 }
 /* #endif */
 
+@media (max-height: 640px) {
+  .auth-toggle,
+  .reset-header {
+    margin-bottom: 16px;
+  }
+
+  .form-stack {
+    gap: 10px;
+  }
+
+  .submit-btn {
+    margin-top: 14px;
+    height: 42px;
+    line-height: 42px;
+  }
+
+  .footer-links {
+    margin-top: 12px;
+  }
+}
+
 @media (max-width: 760px) {
   .brand-side {
     display: none;
@@ -439,4 +462,35 @@ onShow(redirectIfAuthenticated)
     padding: 32px 24px;
   }
 }
+
+/* #ifdef APP-TABLET */
+.login-wrapper {
+  width: min(720px, 76vw, calc(100vw - 32px));
+  min-height: min(420px, calc(100vh - (var(--status-bar-height, 0px) / var(--tablet-viewport-scale, 1)) - 48px));
+  border-radius: 22px;
+}
+
+.brand-side {
+  width: clamp(220px, 38%, 300px);
+  padding: clamp(20px, 3.2vh, 34px) clamp(20px, 2.6vw, 34px);
+}
+
+.brand-wordmark {
+  font-size: clamp(28px, 3vw, 36px);
+}
+
+.form-side {
+  padding: clamp(18px, 3vh, 28px) clamp(20px, 2.8vw, 32px);
+}
+
+.login-box {
+  max-width: 280px;
+}
+
+.submit-btn {
+  height: 38px;
+  line-height: 38px;
+  font-size: 13px;
+}
+/* #endif */
 </style>

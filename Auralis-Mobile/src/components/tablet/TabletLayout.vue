@@ -12,7 +12,7 @@
         <view
           class="active-capsule-indicator"
           :style="{
-            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * 52 : 0}px)`,
+            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * navItemStepPx : 0}px)`,
             opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
           }"
         >
@@ -167,6 +167,11 @@ const navItems = [
   { path: '/pages/tablet/ai-search/index', icon: 'sparkles', label: 'AI 助手' },
 ]
 
+let navItemStepPx = 52
+// #ifdef APP-TABLET
+navItemStepPx = 44
+// #endif
+
 let stopSiblingPreload: (() => void) | null = null
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 let exitResetTimer: ReturnType<typeof setTimeout> | null = null
@@ -251,16 +256,20 @@ const navigate = (path: string) => {
   display: flex;
   width: 100vw;
   height: 100vh;
+  padding-top: calc(var(--status-bar-height, 0px) / var(--tablet-viewport-scale, 1));
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   background:
     radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
     radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
     linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   overflow: hidden;
   position: relative;
+  box-sizing: border-box;
 }
 
 .sidebar {
-  width: 68px;
+  width: var(--tablet-sidebar-width);
   height: 100%;
   background-color: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -536,6 +545,55 @@ const navigate = (path: string) => {
   bottom: -100px;
   left: 16%;
 }
+
+@media (max-height: 660px) {
+  .logo-area {
+    padding: 14px 0 12px;
+    margin-bottom: 10px;
+  }
+
+  .sidebar-footer {
+    padding: 10px 0 12px;
+  }
+}
+
+/* #ifdef APP-TABLET */
+.logo-area {
+  padding: 12px 0 10px;
+  margin-bottom: 10px;
+}
+
+.nav-menu {
+  gap: 6px;
+}
+
+.active-capsule-indicator {
+  height: 38px;
+}
+
+.nav-active-bar {
+  top: 10px;
+  height: 18px;
+}
+
+.capsule-inner,
+.nav-item {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.sidebar-footer {
+  padding: 10px 0 12px;
+}
+
+.sidebar-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+/* #endif */
 
 /* #ifdef H5 */
 .tablet-layout {

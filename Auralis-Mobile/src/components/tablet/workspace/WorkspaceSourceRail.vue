@@ -136,7 +136,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .tier2-drawer.is-open {
-  width: 272px;
+  width: clamp(220px, 21vw, 300px);
   opacity: 1;
   border-width: 1px;
   pointer-events: auto;
@@ -144,7 +144,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .drawer-content {
-  width: 272px;
+  width: clamp(220px, 21vw, 300px);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -423,4 +423,19 @@ const subjectOverviewSubtitle = computed(() => {
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+
+/* #ifdef APP-TABLET */
+.tier2-drawer.is-open,
+.drawer-content {
+  width: clamp(204px, 18.5vw, 256px);
+}
+
+.drawer-header {
+  height: 42px;
+}
+
+.drawer-item {
+  padding: 8px 8px 8px 11px;
+}
+/* #endif */
 </style>

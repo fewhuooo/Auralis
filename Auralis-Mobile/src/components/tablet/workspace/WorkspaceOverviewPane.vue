@@ -145,12 +145,12 @@ const paperMetaLabel = computed(() => {
 }
 
 .reader-body-wrap {
-  padding: 24px 34px 88px;
+  padding: clamp(16px, 2.2vw, 28px) clamp(18px, 2.8vw, 36px) 84px;
   box-sizing: border-box;
 }
 
 .paper-skeletons {
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto;
   padding: 28px 34px;
   border-radius: 16px;
@@ -219,7 +219,7 @@ const paperMetaLabel = computed(() => {
 }
 
 .inline-warning-bar {
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto 14px;
   padding: 9px 14px;
   border-radius: 10px;
@@ -250,7 +250,7 @@ const paperMetaLabel = computed(() => {
 }
 
 .overview-paper {
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto;
   padding: 28px 34px 34px;
   border-radius: 16px;

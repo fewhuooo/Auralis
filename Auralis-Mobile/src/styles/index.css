@@ -156,8 +156,9 @@ page,
   /* Shell Metrics */
   --phone-header-height: 52px;
   --tabbar-clearance: calc(96px + env(safe-area-inset-bottom));
-  --tablet-sidebar-width: 68px;
-  --tablet-panel-gap: 14px;
+  --tablet-sidebar-width: clamp(56px, 5.2vw, 72px);
+  --tablet-panel-gap: clamp(10px, 1.15vw, 18px);
+  --tablet-shell-pad: clamp(10px, 1.35vw, 20px);
 
   --color-pomodoro: #8B9A6E;
   --color-pomodoro-glow: rgba(139, 154, 110, 0.24);
@@ -169,6 +170,82 @@ page,
   --hw-lasso-bg: rgba(139, 154, 110, 0.12);
   --hw-lasso-border: var(--color-zen-sage);
 }
+
+/* #ifdef APP-TABLET */
+page,
+:root {
+  --tablet-viewport-scale: 0.85;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 13px;
+  --text-md: 13.5px;
+  --text-lg: 15px;
+  --text-xl: 17.5px;
+  --text-2xl: 20px;
+  --text-display: clamp(19px, 2vw, 24px);
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12.5px;
+  --font-size-base: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 17.5px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 23px;
+
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-card: 14px;
+
+  --tablet-sidebar-width: clamp(50px, 4.2vw, 58px);
+  --tablet-panel-gap: clamp(8px, 0.85vw, 14px);
+  --tablet-shell-pad: clamp(8px, 0.95vw, 14px);
+}
+
+.zen-panel {
+  border-radius: 16px;
+}
+
+.zen-card,
+.ui-surface {
+  border-radius: 14px;
+}
+
+.ui-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
+.ui-btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+.ui-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.ui-icon-btn.sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.ui-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+.ui-seg-item {
+  height: 30px;
+  font-size: 12px;
+}
+/* #endif */
 
 html {
   -webkit-font-smoothing: antialiased;
@@ -605,7 +682,7 @@ uni-button::after {
   40% { opacity: 1; transform: scale(1.15); }
 }
 
-/* #ifdef H5 */
+/* #ifdef H5 || APP-PLUS */
 html,
 body,
 uni-app,

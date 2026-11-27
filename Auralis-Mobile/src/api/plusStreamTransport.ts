@@ -101,7 +101,7 @@ export function runIncrementalXhrSse(
 
       if (xhr.readyState === 4) {
         if (xhr.status === 0) {
-          queueMicrotask(() => {
+          void Promise.resolve().then(() => {
             if (settled) return
             settled = true
             reject(new Error('Network Error'))

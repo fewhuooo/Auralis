@@ -1114,7 +1114,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .ai-panel {
   position: relative;
-  width: 320px;
+  width: clamp(276px, 25vw, 380px);
   height: 100%;
   flex-shrink: 0;
   border-radius: var(--radius-card);
@@ -1557,7 +1557,7 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .ai-panel {
     width: 100%;
     height: 360px;
@@ -1568,4 +1568,10 @@ onBeforeUnmount(() => {
     height: 0;
   }
 }
+
+/* #ifdef APP-TABLET */
+.ai-panel {
+  width: clamp(260px, 23vw, 336px);
+}
+/* #endif */
 </style>

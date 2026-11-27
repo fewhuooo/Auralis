@@ -41,7 +41,7 @@
     "build:quickapp-webview-union": "uni build -p quickapp-webview-union",
     "type-check": "vue-tsc --noEmit",
     "check:r4-mobile": "node scripts/check-r4-mobile.mjs",
-    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs scripts/r4-device-id-naming.test.mjs scripts/r4-device-detect.test.mjs scripts/r4-app-native-upload.test.mjs scripts/r4-app-stream.test.mjs scripts/r4-native-document-cache.test.mjs scripts/r4-due-review.test.mjs scripts/r4-task-focus.test.mjs scripts/r4-mobile-focus-page.test.mjs scripts/r4-mobile-profile.test.mjs scripts/r4-markdown-math.test.mjs scripts/r4-mobile-ai.test.mjs scripts/r4-local-persistence.test.mjs scripts/r4-tablet-upload-subject.test.mjs",
+    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs scripts/r4-device-id-naming.test.mjs scripts/r4-device-detect.test.mjs scripts/r4-app-native-upload.test.mjs scripts/r4-app-stream.test.mjs scripts/r4-app-regex-compat.test.mjs scripts/r4-native-document-cache.test.mjs scripts/r4-due-review.test.mjs scripts/r4-task-focus.test.mjs scripts/r4-mobile-focus-page.test.mjs scripts/r4-mobile-profile.test.mjs scripts/r4-markdown-math.test.mjs scripts/r4-mobile-ai.test.mjs scripts/r4-local-persistence.test.mjs scripts/r4-tablet-upload-subject.test.mjs",
     "test:tablet": "node --experimental-strip-types scripts/tablet-feature-flags.test.ts && node --experimental-strip-types scripts/tablet-note-model.test.ts && node --experimental-strip-types scripts/tablet-note-repository-core.test.ts"
   },
   "uni-app": {

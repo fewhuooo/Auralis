@@ -1408,8 +1408,8 @@ onUnmounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 14px 18px 18px;
-  gap: 16px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   overflow: hidden;
   box-sizing: border-box;
   background-color: transparent;
@@ -1431,9 +1431,9 @@ onUnmounted(() => {
 }
 
 .studio-left {
-  flex: 3.8;
-  min-width: 340px;
-  max-width: 450px;
+  flex: 3.6;
+  min-width: clamp(270px, 28vw, 340px);
+  max-width: 480px;
 }
 
 .studio-right {
@@ -1457,8 +1457,8 @@ onUnmounted(() => {
 }
 
 .studio-right-inner {
-  padding: 26px 32px;
-  max-width: 960px;
+  padding: clamp(18px, 2.2vw, 30px) clamp(20px, 2.6vw, 34px);
+  max-width: 1120px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -2496,7 +2496,7 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 760px) {
   .profile-studio {
     flex-direction: column;
     overflow-y: auto;
@@ -2515,4 +2515,43 @@ onUnmounted(() => {
     height: auto;
   }
 }
+
+/* #ifdef APP-TABLET */
+.studio-left {
+  min-width: clamp(248px, 25vw, 310px);
+  max-width: 400px;
+}
+
+.studio-left-inner {
+  padding: 14px;
+  gap: 10px;
+}
+
+.studio-right-inner {
+  padding: 18px 22px;
+  gap: 14px;
+}
+
+.settings-title {
+  font-size: 20px;
+}
+
+.user-profile-card {
+  padding: 14px 16px;
+}
+
+.user-avatar {
+  width: 46px;
+  height: 46px;
+}
+
+.avatar-initial {
+  font-size: 18px;
+}
+
+.settings-row {
+  padding: 10px 16px;
+  min-height: 44px;
+}
+/* #endif */
 </style>

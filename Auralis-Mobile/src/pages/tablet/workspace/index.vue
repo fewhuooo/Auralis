@@ -1240,7 +1240,7 @@ watch(
   width: 100%;
   height: 100%;
   background: transparent;
-  padding: 12px 14px;
+  padding: clamp(8px, 1vw, 14px) clamp(10px, 1.15vw, 16px);
   box-sizing: border-box;
   display: flex;
   align-items: stretch;
@@ -1248,10 +1248,10 @@ watch(
 }
 
 .tier1-strip {
-  width: 72px;
+  width: clamp(58px, 5.4vw, 72px);
   height: 100%;
   flex-shrink: 0;
-  margin-right: 10px;
+  margin-right: clamp(8px, 0.8vw, 12px);
   padding: 18px 0 16px;
   border-radius: 16px;
   display: flex;
@@ -1371,10 +1371,10 @@ watch(
   position: fixed;
   right: 22px;
   bottom: 22px;
-  width: 376px;
+  width: clamp(320px, 31vw, 440px);
   max-width: calc(100vw - 32px);
-  height: min(72vh, 620px);
-  min-height: 400px;
+  height: min(74vh, 680px);
+  min-height: min(360px, 60vh);
   z-index: 1080;
   border-radius: 18px;
   box-shadow: 0 18px 46px rgba(28, 28, 26, 0.14), 0 4px 14px rgba(45, 55, 40, 0.06);
@@ -1407,4 +1407,38 @@ watch(
     height: min(78vh, 620px);
   }
 }
+
+/* #ifdef APP-TABLET */
+.t-workspace {
+  padding: 8px 10px;
+}
+
+.tier1-strip {
+  width: 54px;
+  margin-right: 8px;
+  padding: 12px 0;
+  border-radius: 14px;
+}
+
+.tier1-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  gap: 3px;
+}
+
+.tier1-btn-text {
+  font-size: 10.5px;
+}
+
+.subject-mini-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.ai-floating-shell {
+  width: clamp(300px, 28vw, 390px);
+}
+/* #endif */
 </style>

@@ -6,8 +6,41 @@ import uni from "@dcloudio/vite-plugin-uni";
 
 const isH5 = !process.env.UNI_PLATFORM || process.env.UNI_PLATFORM === "h5";
 
-function createAppVariantManifestPlugin(customScript: string | undefined): Plugin | null {
-  if (customScript !== "app-phone" && customScript !== "app-tablet") return null;
+type AppVariant = "app-phone" | "app-tablet";
+
+function resolveAppTargetFromEnv(): string | undefined {
+  if (process.env.VITE_APP_TARGET) {
+    return process.env.VITE_APP_TARGET;
+  }
+  const rawDefine = process.env.UNI_CUSTOM_DEFINE;
+  if (!rawDefine) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(rawDefine) as { VITE_APP_TARGET?: unknown };
+    return typeof parsed.VITE_APP_TARGET === "string" ? parsed.VITE_APP_TARGET : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveAppVariant(): AppVariant | null {
+  const customScript = process.env.UNI_CUSTOM_SCRIPT;
+  if (customScript === "app-phone" || customScript === "app-tablet") {
+    return customScript;
+  }
+  const platform = process.env.UNI_PLATFORM;
+  if (platform !== "app" && platform !== "app-plus") {
+    return null;
+  }
+  const target = resolveAppTargetFromEnv();
+  if (target === "phone") return "app-phone";
+  if (target === "tablet") return "app-tablet";
+  return null;
+}
+
+function createAppVariantManifestPlugin(variant: AppVariant | null): Plugin | null {
+  if (!variant) return null;
   return {
     name: "auralis-app-variant-manifest",
     closeBundle() {
@@ -19,7 +52,7 @@ function createAppVariantManifestPlugin(customScript: string | undefined): Plugi
       const plus = (manifest.plus as Record<string, unknown> | undefined) ?? {};
       const distribute = (plus.distribute as Record<string, unknown> | undefined) ?? {};
       const apple = (distribute.apple as Record<string, unknown> | undefined) ?? {};
-      if (customScript === "app-phone") {
+      if (variant === "app-phone") {
         manifest.name = "Auralis";
         manifest["@platforms"] = ["android", "iPhone"];
         manifest.screenOrientation = ["portrait-primary"];
@@ -30,8 +63,6 @@ function createAppVariantManifestPlugin(customScript: string | undefined): Plugi
         manifest.screenOrientation = [
           "landscape-primary",
           "landscape-secondary",
-          "portrait-primary",
-          "portrait-secondary",
         ];
         apple.devices = "ipad";
       }
@@ -39,6 +70,20 @@ function createAppVariantManifestPlugin(customScript: string | undefined): Plugi
       plus.distribute = distribute;
       manifest.plus = plus;
       fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+      if (variant === "app-tablet") {
+        const viewHtmlPath = path.resolve(outputDir, "__uniappview.html");
+        if (fs.existsSync(viewHtmlPath)) {
+          const html = fs.readFileSync(viewHtmlPath, "utf8");
+          const updatedHtml = html.replace(
+            "initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0",
+            "initial-scale=0.85, maximum-scale=0.85, minimum-scale=0.85",
+          );
+          if (updatedHtml !== html) {
+            fs.writeFileSync(viewHtmlPath, updatedHtml, "utf8");
+          }
+        }
+      }
     },
   };
 }
@@ -68,7 +113,7 @@ function createPackagedPptFallbackPlugin(): Plugin {
   };
 }
 
-function createAppInlineDynamicImportsPlugin(): Plugin | null {
+function createAppInlineDynamicImportsPlugin(banner?: string): Plugin | null {
   if (process.env.UNI_PLATFORM !== "app" || process.env.UNI_COMPILER !== "vue") {
     return null;
   }
@@ -79,14 +124,22 @@ function createAppInlineDynamicImportsPlugin(): Plugin | null {
       if (output && !Array.isArray(output) && output.format === "iife") {
         delete output.manualChunks;
         output.inlineDynamicImports = true;
+        if (banner) {
+          const prevBanner = output.banner;
+          output.banner = typeof prevBanner === "function"
+            ? async (chunk) => `${banner}\n${await prevBanner(chunk)}`
+            : prevBanner
+              ? `${banner}\n${prevBanner}`
+              : banner;
+        }
       }
     },
   };
 }
 
-function createTabletViewerRuntimePlugin(): Plugin | null {
+function createTabletViewerRuntimePlugin(variant: AppVariant | null): Plugin | null {
   if (
-    process.env.UNI_CUSTOM_SCRIPT !== "app-tablet"
+    variant !== "app-tablet"
     || process.env.UNI_COMPILER !== "vue"
   ) {
     return null;
@@ -130,15 +183,37 @@ export default defineConfig(async () => {
   }
 
   const appPlugins: Plugin[] = [];
-  const variantManifestPlugin = createAppVariantManifestPlugin(process.env.UNI_CUSTOM_SCRIPT);
+  if (!isH5) {
+    const compatScriptPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "scripts/unicode-property-regex-compat.mjs",
+    );
+    const { createUnicodePropertyRegexCompatPlugin } = await import(
+      /* @vite-ignore */ pathToFileURL(compatScriptPath).href
+    );
+    appPlugins.push(createUnicodePropertyRegexCompatPlugin());
+  }
+  const appVariant = resolveAppVariant();
+  const variantManifestPlugin = createAppVariantManifestPlugin(appVariant);
   if (variantManifestPlugin) {
     appPlugins.push(variantManifestPlugin);
   }
-  const inlineDynamicImportsPlugin = createAppInlineDynamicImportsPlugin();
+  let appBanner: string | undefined;
+  if (process.env.UNI_PLATFORM === "app" && process.env.UNI_COMPILER === "vue") {
+    const polyfillPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "scripts/app-text-encoding-polyfill.mjs",
+    );
+    const { createTextEncodingPolyfillBanner } = await import(
+      /* @vite-ignore */ pathToFileURL(polyfillPath).href
+    );
+    appBanner = createTextEncodingPolyfillBanner();
+  }
+  const inlineDynamicImportsPlugin = createAppInlineDynamicImportsPlugin(appBanner);
   if (inlineDynamicImportsPlugin) {
     appPlugins.push(inlineDynamicImportsPlugin);
   }
-  const tabletViewerPlugin = createTabletViewerRuntimePlugin();
+  const tabletViewerPlugin = createTabletViewerRuntimePlugin(appVariant);
   if (tabletViewerPlugin) {
     appPlugins.push(tabletViewerPlugin);
   }

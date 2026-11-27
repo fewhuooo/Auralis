@@ -1549,15 +1549,15 @@ onLoad((options) => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 14px;
-  gap: 14px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   background-color: transparent;
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .history-card {
-  width: 260px;
+  width: clamp(208px, 21vw, 300px);
   flex-shrink: 0;
   height: 100%;
   background-color: var(--color-bg-tertiary, #FAF7F2);
@@ -1787,7 +1787,7 @@ onLoad((options) => {
 
 .welcome-inner {
   width: 100%;
-  max-width: 680px;
+  max-width: min(760px, 100%);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1897,7 +1897,7 @@ onLoad((options) => {
 
 .chat-stream {
   width: 100%;
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto;
   padding: 20px 28px 36px;
   box-sizing: border-box;
@@ -2040,7 +2040,7 @@ onLoad((options) => {
 .input-dock-inner {
   position: relative;
   width: 100%;
-  max-width: 780px;
+  max-width: min(920px, 100%);
   margin: 0 auto;
 }
 
@@ -2439,4 +2439,57 @@ onLoad((options) => {
     padding: 6px 16px 14px;
   }
 }
+
+/* #ifdef APP-TABLET */
+.history-card {
+  width: clamp(194px, 18vw, 248px);
+  border-radius: 16px;
+}
+
+.history-header-row {
+  padding: 14px 14px 10px;
+}
+
+.history-new-btn {
+  height: 34px;
+  font-size: 12.5px;
+}
+
+.history-item {
+  padding: 8px 10px;
+}
+
+.history-title {
+  font-size: 12.5px;
+}
+
+.chat-card {
+  border-radius: 16px;
+}
+
+.chat-header {
+  height: 44px;
+  padding: 0 18px;
+}
+
+.welcome-title {
+  font-size: 21px;
+}
+
+.starter-card {
+  padding: 11px 14px;
+}
+
+.starter-card-title {
+  font-size: 13.5px;
+}
+
+.user-text {
+  font-size: 13.5px;
+}
+
+.composer-textarea {
+  font-size: 13.5px;
+}
+/* #endif */
 </style>
