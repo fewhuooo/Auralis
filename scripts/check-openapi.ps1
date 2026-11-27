@@ -43,7 +43,9 @@ try {
             throw "Tracked generated schema not found: $tracked"
         }
 
-        if ((Get-Content -LiteralPath $generated -Raw) -cne (Get-Content -LiteralPath $tracked -Raw)) {
+        $generatedContent = (Get-Content -LiteralPath $generated -Raw) -replace "`r`n", "`n"
+        $trackedContent = (Get-Content -LiteralPath $tracked -Raw) -replace "`r`n", "`n"
+        if ($generatedContent -cne $trackedContent) {
             throw "Generated OpenAPI schema is stale for $target. Run scripts/generate-openapi-sdk.ps1."
         }
     }

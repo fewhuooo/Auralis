@@ -61,7 +61,7 @@ Auralis/
 
 | 路径 | 用途与整理边界 |
 | --- | --- |
-| 应用 `node_modules/`、根 `.pnpm-store/` | 已安装依赖及包缓存；移动或清空可能破坏本机命令和依赖解析 |
+| 应用 `node_modules/` | 已安装依赖目录；移动或清空可能破坏本机命令和依赖解析 |
 | 根 `.ocr-runtime/` | OCR 打包使用的 Python 运行环境与依赖 |
 | 根或应用 `build/`、应用 `dist/`、Server `target/`、Tauri `target/target-*` | 构建中间物和产物；先确认没有构建或运行进程使用，再按所属工具清理 |
 | PC `public/file-viewer/`、Tauri `binaries/` 中的生成内容 | 文件预览与 OCR 桌面运行/打包资源，遵循生成脚本与资源清单管理 |

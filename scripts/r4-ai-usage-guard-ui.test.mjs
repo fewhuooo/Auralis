@@ -197,18 +197,23 @@ test('Quota error helpers and retry/reset parsing stay bounded', () => {
 
 test('PC and Mobile/Tablet Profile consumers use fenced usage loading and show reserved usage as estimated', async () => {
   const read = (relative) => readFile(path.join(__dirname, relative), 'utf8')
-  const [pc, mobile, tablet, composable] = await Promise.all([
+  const [pc, pcMessages, mobile, tablet, composable] = await Promise.all([
     read('../Auralis-PC/src/views/Profile/index.vue'),
+    read('../Auralis-PC/src/views/Profile/profileMessages.ts'),
     read('../Auralis-Mobile/src/pages/mobile/profile/index.vue'),
     read('../Auralis-Mobile/src/pages/tablet/profile/index.vue'),
     read('../Auralis-Mobile/src/utils/useAiUsage.ts'),
   ])
   assert.match(pc, /isCurrentUsageRequest/)
+  assert.match(pc, /profileMessages\.reservedEstimation/)
+  assert.match(pc, /profileMessages\.(?:retry|refresh)/)
+  assert.match(pcMessages, /在途预留为估算值/)
+  assert.match(pcMessages, /重试|刷新/)
   assert.match(mobile, /useAiUsage/)
   assert.match(tablet, /useAiUsage/)
   assert.match(composable, /isCurrentUsageRequest/)
-  for (const content of [pc, mobile, tablet]) {
-    assert.match(content, /在途预留为估算值/)
+  for (const content of [mobile, tablet]) {
+    assert.match(content, /在途预留（估算）|在途预留为估算值/)
     assert.match(content, /重试|刷新/)
   }
 })

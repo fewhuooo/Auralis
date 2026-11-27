@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const compose = await readFile(new URL('../docker-compose.yml', import.meta.url), 'utf8');
+const compose = (await readFile(new URL('../docker-compose.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 test('MinIO healthcheck verifies an isolated object write/read/delete cycle', () => {
   const minioService = compose.match(/  minio:\n([\s\S]*?)(?=\n  minio-init:)/)?.[1] ?? '';
