@@ -1,6 +1,9 @@
 # Ensure OCR dictionary preserves LF line endings across platforms
 Auralis-PC/ocr-sidecar/resources/ppocr_keys_v1.txt text eol=lf
 
+# Ensure Android Gradle wrapper preserves LF line endings across platforms (Tauri CLI writes LF on build)
+Auralis-Mobile/src-tauri/gen/android/gradlew text eol=lf
+
 # Preserve archived working-tree bytes and their recorded SHA-256 values
 docs/archive/snapshots/maintenance-2026-11-13/** -text -whitespace
 docs/archive/snapshots/maintenance-2026-11-15/** -text -whitespace
