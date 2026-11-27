@@ -2,6 +2,7 @@
   <div
     class="task-row zen-card"
     :class="{
+      'is-tablet-target': isTabletTarget,
       'is-completed': task.status === 'completed',
       'is-scheduled': mode === 'scheduled',
       'is-pending': mode === 'pending',
@@ -74,8 +75,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { getAppTarget } from '@/router/target'
 import type { Task } from '@/store/useTaskStore'
 import { formatLocalTimeHHmm, formatShortDate } from '@/utils/dateKey'
+
+const isTabletTarget = getAppTarget() === 'tablet'
 
 const props = defineProps<{
   task: Task
@@ -375,42 +379,42 @@ const showTrailingSlot = computed(() => (
   }
 }
 
-:global(html[data-app-target='tablet']) .task-row {
+.task-row.is-tablet-target {
   padding: 8px 10px;
   gap: 8px;
   border-radius: 10px;
 }
 
-:global(html[data-app-target='tablet']) .task-row.is-pending {
+.task-row.is-tablet-target.is-pending {
   padding: 6px 9px;
   gap: 6px;
   border-radius: 9px;
 }
 
-:global(html[data-app-target='tablet']) .check-circle {
+.task-row.is-tablet-target .check-circle {
   width: 16px;
   height: 16px;
 }
 
-:global(html[data-app-target='tablet']) .task-row.is-pending .check-circle {
+.task-row.is-tablet-target.is-pending .check-circle {
   width: 14px;
   height: 14px;
 }
 
-:global(html[data-app-target='tablet']) .row-title {
+.task-row.is-tablet-target .row-title {
   font-size: 12.5px;
 }
 
-:global(html[data-app-target='tablet']) .task-row.is-pending .row-title {
+.task-row.is-tablet-target.is-pending .row-title {
   font-size: 12px;
 }
 
-:global(html[data-app-target='tablet']) .row-icon-btn {
+.task-row.is-tablet-target .row-icon-btn {
   width: 24px;
   height: 24px;
 }
 
-:global(html[data-app-target='tablet']) .task-row.is-pending .row-icon-btn {
+.task-row.is-tablet-target.is-pending .row-icon-btn {
   width: 22px;
   height: 22px;
 }

@@ -2,6 +2,7 @@
   <div
     class="week-card"
     :class="{
+      'is-tablet-target': isTabletTarget,
       'zen-card': !frameless,
       'is-frameless': frameless,
       'is-compact': !showHeader && !frameless,
@@ -37,7 +38,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { getAppTarget } from '@/router/target'
 import { pad2, type WeekDayDescriptor } from '@/utils/dateKey'
+
+const isTabletTarget = getAppTarget() === 'tablet'
 
 const props = defineProps<{
   modelValue: string
@@ -195,25 +199,25 @@ const monthTitle = computed(() => {
   opacity: 1;
 }
 
-:global(html[data-app-target='tablet']) .week-nav {
+.week-card.is-tablet-target .week-nav {
   min-height: 18px;
 }
 
-:global(html[data-app-target='tablet']) .week-day {
+.week-card.is-tablet-target .week-day {
   gap: 2px;
   padding: 2px 0;
 }
 
-:global(html[data-app-target='tablet']) .w-label {
+.week-card.is-tablet-target .w-label {
   font-size: 10px;
 }
 
-:global(html[data-app-target='tablet']) .w-num-circle {
+.week-card.is-tablet-target .w-num-circle {
   width: 28px;
   height: 28px;
 }
 
-:global(html[data-app-target='tablet']) .w-num {
+.week-card.is-tablet-target .w-num {
   font-size: 12.5px;
 }
 </style>

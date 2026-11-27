@@ -1,5 +1,5 @@
 <template>
-  <div class="study-metrics">
+  <div class="study-metrics" :class="{ 'is-tablet-target': isTabletTarget }">
     <div v-if="error && !metrics" class="metrics-error" :class="{ 'zen-card': variant === 'bento', 'pc-sub-box': variant === 'pc' }">
       <span class="status-text">统计暂不可用</span>
       <div class="ui-btn ui-btn-secondary retry-btn" role="button" @click="load">重试</div>
@@ -64,11 +64,14 @@ import { onScopeDispose, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { statsApi } from '@/api/statsApi'
 import { getStorageItem, setStorageItem } from '@/platform/storage'
+import { getAppTarget } from '@/router/target'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { detectLocalTimeZone, getCurrentWeekBounds } from '@/utils/dateKey'
 import { studyMetrics } from '@/utils/studyMetrics'
+
+const isTabletTarget = getAppTarget() === 'tablet'
 
 withDefaults(defineProps<{
   variant?: 'bento' | 'pc'
@@ -365,44 +368,44 @@ defineExpose({
   margin-top: 6px;
 }
 
-:global(html[data-app-target='tablet']) .bento-grid {
+.study-metrics.is-tablet-target .bento-grid {
   gap: 7px;
 }
 
-:global(html[data-app-target='tablet']) .bento-tile {
+.study-metrics.is-tablet-target .bento-tile {
   padding: 9px 12px;
   border-radius: 12px;
 }
 
-:global(html[data-app-target='tablet']) .bento-tile.is-featured {
+.study-metrics.is-tablet-target .bento-tile.is-featured {
   padding: 10px 14px;
 }
 
-:global(html[data-app-target='tablet']) .featured-mark {
+.study-metrics.is-tablet-target .featured-mark {
   width: 30px;
   height: 30px;
   border-radius: 9px;
 }
 
-:global(html[data-app-target='tablet']) .tile-main {
+.study-metrics.is-tablet-target .tile-main {
   gap: 2px;
 }
 
-:global(html[data-app-target='tablet']) .metric-value {
+.study-metrics.is-tablet-target .metric-value {
   font-size: 17px;
 }
 
-:global(html[data-app-target='tablet']) .bento-tile.is-featured .metric-value {
+.study-metrics.is-tablet-target .bento-tile.is-featured .metric-value {
   font-size: 22px;
 }
 
-:global(html[data-app-target='tablet']) .pc-stat-cell {
+.study-metrics.is-tablet-target .pc-stat-cell {
   padding: 9px 11px;
   gap: 6px;
   border-radius: 12px;
 }
 
-:global(html[data-app-target='tablet']) .pc-stat-value {
+.study-metrics.is-tablet-target .pc-stat-value {
   font-size: 17px;
 }
 </style>
