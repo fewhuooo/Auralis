@@ -1,23 +1,23 @@
 <template>
-  <view class="ai-panel zen-panel" :class="{ 'is-floating': floating }">
-    <view
+  <div class="ai-panel zen-panel" :class="{ 'is-floating': floating }">
+    <div
       class="ai-header"
       :class="{ 'is-draggable': floating }"
       @mousedown="onHeaderMouseDown"
       @touchstart="onHeaderTouchStart"
     >
-      <view class="ai-scope-pill" :title="isSourceScoped ? (selectedSource?.title || '当前资料') : '全学科资料'">
+      <div class="ai-scope-pill" :title="isSourceScoped ? (selectedSource?.title || '当前资料') : '全学科资料'">
         <LineIcon
           :name="isSourceScoped ? 'file-text' : 'sparkles'"
           size="14px"
           color="var(--color-zen-sage)"
         />
-        <text class="ai-scope-text">
+        <span class="ai-scope-text">
           {{ isSourceScoped ? (selectedSource?.title || '当前资料') : '全学科资料' }}
-        </text>
-      </view>
-      <view class="ai-header-actions" @mousedown.stop @touchstart.stop>
-        <view
+        </span>
+      </div>
+      <div class="ai-header-actions" @mousedown.stop @touchstart.stop>
+        <div
           class="ai-header-btn"
           role="button"
           title="开启新对话"
@@ -25,8 +25,8 @@
           @click="resetConversation"
         >
           <LineIcon name="rotate" size="14px" color="var(--text-secondary)" />
-        </view>
-        <view
+        </div>
+        <div
           v-if="floating"
           class="ai-header-btn"
           role="button"
@@ -35,60 +35,58 @@
           @click="emit('close')"
         >
           <LineIcon name="close" size="14px" color="var(--text-secondary)" />
-        </view>
-      </view>
-    </view>
+        </div>
+      </div>
+    </div>
 
-    <view v-if="messages.length === 0" class="welcome-stage">
-      <view class="welcome-inner">
-        <view class="welcome-hero">
-          <text class="welcome-title">想先攻克哪部分？</text>
-          <text class="welcome-subtitle">{{ welcomeSubtitle }}</text>
-        </view>
-        <view class="starter-section">
-          <view v-if="preSendError" class="pre-send-error" role="alert">
+    <div v-if="messages.length === 0" class="welcome-stage">
+      <div class="welcome-inner">
+        <div class="welcome-hero">
+          <span class="welcome-title">想先攻克哪部分？</span>
+          <span class="welcome-subtitle">{{ welcomeSubtitle }}</span>
+        </div>
+        <div class="starter-section">
+          <div v-if="preSendError" class="pre-send-error" role="alert">
             <LineIcon name="alert" size="13px" color="var(--color-danger)" />
-            <text class="pre-send-error-text">{{ preSendError }}</text>
-          </view>
-          <view class="starter-cards">
-            <view
+            <span class="pre-send-error-text">{{ preSendError }}</span>
+          </div>
+          <div class="starter-cards">
+            <div
               v-for="item in presetQuestions"
               :key="item.label"
               class="starter-card"
               role="button"
               @click="submitStarterPrompt(item.prompt)"
             >
-              <text class="starter-card-title">{{ item.label }}</text>
-              <text class="starter-card-hint">{{ item.hint }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
+              <span class="starter-card-title">{{ item.label }}</span>
+              <span class="starter-card-hint">{{ item.hint }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <scroll-view
+    <div
       v-else
-      scroll-y
-      :show-scrollbar="false"
-      class="chat-scroll"
-      :scroll-into-view="scrollTargetId"
+      ref="chatScrollRef"
+      class="chat-scroll zen-scroll-y"
       @scroll="handleChatScroll"
       @wheel="handleChatWheel"
       @touchstart="handleChatTouchStart"
       @touchmove="handleChatTouchMove"
     >
-      <view class="chat-messages">
-        <view
+      <div class="chat-messages">
+        <div
           v-for="(msg, index) in messages"
           :key="msg.id"
           class="msg-row"
           :class="msg.role"
         >
-          <view v-if="msg.role === 'user'" class="user-bubble">
-            <text class="user-text">{{ msg.content }}</text>
-          </view>
+          <div v-if="msg.role === 'user'" class="user-bubble">
+            <span class="user-text">{{ msg.content }}</span>
+          </div>
 
-          <view v-else class="assistant-bubble">
+          <div v-else class="assistant-bubble">
             <MobileChatProcessArea
               :reasoning="msg.reasoningText"
               :tools="msg.tools"
@@ -113,23 +111,23 @@
               @text-progress="handleStreamingTextProgress"
             />
 
-            <view v-if="msg.status === 'failed'" class="assistant-error-banner" role="alert">
+            <div v-if="msg.status === 'failed'" class="assistant-error-banner" role="alert">
               <LineIcon name="alert" size="13px" color="var(--color-danger)" />
-              <text class="assistant-error-text">{{ msg.errorMessage || '回复生成失败，请重试。' }}</text>
-            </view>
+              <span class="assistant-error-text">{{ msg.errorMessage || '回复生成失败，请重试。' }}</span>
+            </div>
 
-            <text
+            <span
               v-else-if="msg.status === 'cancelled' && !hasVisibleAssistantContent(msg)"
               class="assistant-status-note"
             >
               已停止生成
-            </text>
+            </span>
 
-            <view
+            <div
               v-if="msg.status !== 'streaming' && !drainingMessageIds[msg.id] && (hasCopyableContent(msg) || msg.status === 'failed' || msg.status === 'cancelled')"
               class="assistant-footer"
             >
-              <view
+              <div
                 v-if="hasCopyableContent(msg)"
                 class="footer-action-chip"
                 role="button"
@@ -137,9 +135,9 @@
                 @click="copyAssistantMessage(msg)"
               >
                 <LineIcon name="copy" size="12px" color="var(--text-muted)" />
-                <text class="footer-action-label">复制</text>
-              </view>
-              <view
+                <span class="footer-action-label">复制</span>
+              </div>
+              <div
                 v-if="isLastAssistantMessage(msg.id) && !isTyping && !isStopping && (msg.originatingKind !== 'activity_submission' || Boolean((msg.status === 'failed' || msg.status === 'cancelled') && msg.runId))"
                 class="footer-action-chip"
                 role="button"
@@ -147,9 +145,9 @@
                 @click="regenerateAssistantMessage(msg.id)"
               >
                 <LineIcon name="refresh" size="12px" color="var(--text-muted)" />
-                <text class="footer-action-label">{{ msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成' }}</text>
-              </view>
-              <view
+                <span class="footer-action-label">{{ msg.status === 'failed' || msg.status === 'cancelled' ? '重试' : '重新生成' }}</span>
+              </div>
+              <div
                 v-if="hasCopyableContent(msg)"
                 class="footer-action-chip"
                 role="button"
@@ -157,40 +155,41 @@
                 @click="openSaveBlockModal(msg)"
               >
                 <LineIcon name="plus" size="12px" color="var(--text-muted)" />
-                <text class="footer-action-label">存块</text>
-              </view>
-              <text v-if="msg.status === 'cancelled'" class="assistant-status-note">已停止</text>
-            </view>
-          </view>
-        </view>
+                <span class="footer-action-label">存块</span>
+              </div>
+              <span v-if="msg.status === 'cancelled'" class="assistant-status-note">已停止</span>
+            </div>
+          </div>
+        </div>
 
-        <view :id="anchorId" class="scroll-anchor"></view>
-      </view>
-    </scroll-view>
+        <div class="scroll-anchor"></div>
+      </div>
+    </div>
 
-    <view class="composer-box">
-      <view
+    <div class="composer-box">
+      <div
         v-if="autoScrollLocked && messages.length > 0"
         class="scroll-resume-pill"
         role="button"
         aria-label="回到最新"
         @click="resumeAutoScroll"
       >
-        <view v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></view>
-        <text class="scroll-resume-text">↓ 回到最新</text>
-      </view>
+        <div v-if="isTyping" class="scroll-resume-dot" aria-hidden="true"></div>
+        <span class="scroll-resume-text">↓ 回到最新</span>
+      </div>
 
-      <view class="input-capsule">
+      <div class="input-capsule">
         <textarea
+          ref="composerInputRef"
           v-model="query"
           class="composer-input"
+          rows="1"
           :maxlength="2000"
-          auto-height
           placeholder="问问 Auralis AI..."
-          @input="onQueryInput"
-          @confirm="sendMessage"
+          @input="handleQueryInput"
+          @keydown="handleEnterKey($event, sendMessage, { allowShiftNewline: true, preventDefault: true })"
         />
-        <view
+        <div
           v-if="isTyping || isStopping"
           class="stop-btn"
           :class="{ disabled: isStopping }"
@@ -198,9 +197,9 @@
           aria-label="停止生成"
           @click="stopGeneration"
         >
-          <view class="stop-square"></view>
-        </view>
-        <view
+          <div class="stop-square"></div>
+        </div>
+        <div
           v-else
           class="send-btn"
           :class="{ 'is-ready': Boolean(query.trim() && subjectId) }"
@@ -213,14 +212,14 @@
             size="15px"
             :color="query.trim() && subjectId ? '#FFFFFF' : 'var(--color-zen-sage)'"
           />
-        </view>
-      </view>
-    </view>
-  </view>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MobileChatPartList from '@/components/MobileChatPartList.vue'
 import MobileChatProcessArea from '@/components/MobileChatProcessArea.vue'
@@ -252,6 +251,8 @@ import {
   reduceMobileChatPartEvent,
   type MobileChatActivityAnswer,
 } from '@/utils/mobileChatParts'
+import { showToast } from '@/platform/feedback'
+import { handleEnterKey, resetTextareaHeight, syncTextareaAutoHeight } from '@/utils/domHelpers'
 import { copyTextWithFallback } from '@/utils/mobileLearning'
 import { uuidv7 } from '@/utils/uuid'
 import { buildWorkspaceReadingContext } from '@/utils/workspaceChatScope'
@@ -284,13 +285,23 @@ function onHeaderTouchStart(event: unknown) {
 }
 
 const authStore = useAuthStore()
-const instanceProxy = getCurrentInstance()?.proxy
+const chatScrollRef = ref<HTMLElement | null>(null)
+const composerInputRef = ref<HTMLElement | null>(null)
 
 const currentConversationId = ref('')
 const messages = ref<MobileChatMessage[]>([])
 const query = ref('')
 const isTyping = ref(false)
 const isStopping = ref(false)
+
+watch(
+  query,
+  (val) => {
+    if (!val) {
+      void nextTick(() => resetTextareaHeight(composerInputRef.value))
+    }
+  },
+)
 
 watch(
   () => isTyping.value || isStopping.value,
@@ -300,8 +311,6 @@ watch(
 const activeRunId = ref('')
 const activeAttemptId = ref('')
 const preSendError = ref('')
-const scrollTargetId = ref('')
-const anchorId = 'workspace-ai-bottom'
 const autoScrollLocked = ref(false)
 const drainingMessageIds = ref<Record<string, boolean>>({})
 
@@ -398,20 +407,11 @@ function setMessageDraining(msgId: string, draining: boolean) {
   }
 }
 
-function measureChatViewport(): Promise<number> {
-  if (chatViewportHeight > 0) return Promise.resolve(chatViewportHeight)
-  return new Promise((resolve) => {
-    const queryBuilder = instanceProxy
-      ? uni.createSelectorQuery().in(instanceProxy)
-      : uni.createSelectorQuery()
-    queryBuilder.select('.chat-scroll').boundingClientRect((rect) => {
-      const box = Array.isArray(rect) ? rect[0] : rect
-      if (box && typeof box.height === 'number' && box.height > 0) {
-        chatViewportHeight = box.height
-      }
-      resolve(chatViewportHeight)
-    }).exec()
-  })
+function measureChatViewport(): number {
+  if (chatScrollRef.value && chatScrollRef.value.clientHeight > 0) {
+    chatViewportHeight = chatScrollRef.value.clientHeight
+  }
+  return chatViewportHeight
 }
 
 function scrollToBottom(force = false) {
@@ -421,12 +421,14 @@ function scrollToBottom(force = false) {
     touchPullUpDetected = false
   }
   if (scrollTimer) return
-  void measureChatViewport()
+  measureChatViewport()
   nextTick(() => {
     programmaticScrollUntil = Date.now() + 180
-    scrollTargetId.value = anchorId
+    const el = chatScrollRef.value
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
     scrollTimer = setTimeout(() => {
-      scrollTargetId.value = ''
       scrollTimer = null
     }, 90)
   })
@@ -472,13 +474,16 @@ function handleChatWheel(event: unknown) {
   }
 }
 
-function handleChatScroll(event: unknown) {
-  const payload = event as { detail?: { scrollTop?: number; scrollHeight?: number } }
-  const scrollTop = Number(payload?.detail?.scrollTop ?? 0)
-  const scrollHeight = Number(payload?.detail?.scrollHeight ?? 0)
+function handleChatScroll(event: Event) {
+  const el = (event.currentTarget as HTMLElement | null) ?? chatScrollRef.value
+  if (!el) return
+  if (el.clientHeight > 0) {
+    chatViewportHeight = el.clientHeight
+  }
+  const scrollTop = el.scrollTop
+  const scrollHeight = el.scrollHeight
   const isProgrammatic = Date.now() < programmaticScrollUntil
   if (chatViewportHeight <= 0) {
-    void measureChatViewport()
     prevScrollTop = scrollTop
     return
   }
@@ -494,6 +499,11 @@ function handleChatScroll(event: unknown) {
   if (!decision.locked) {
     touchPullUpDetected = false
   }
+}
+
+function handleQueryInput(event: unknown) {
+  syncTextareaAutoHeight(event, 96)
+  onQueryInput()
 }
 
 function onQueryInput() {
@@ -653,7 +663,7 @@ function scheduleRunPolling(
 
 async function copyText(text: string) {
   const ok = await copyTextWithFallback(text)
-  uni.showToast({ title: ok ? '已复制' : '复制失败，请手动复制', icon: 'none' })
+  showToast(ok ? '已复制' : '复制失败，请手动复制')
 }
 
 function copyAssistantMessage(msg: MobileChatMessage) {
@@ -1114,7 +1124,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .ai-panel {
   position: relative;
-  width: 320px;
+  width: clamp(260px, 23vw, 336px);
   height: 100%;
   flex-shrink: 0;
   border-radius: var(--radius-card);
@@ -1295,13 +1305,11 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-/* #ifdef H5 */
 .starter-card:hover {
   border-color: #D7D0C2;
   box-shadow: 0 4px 14px rgba(72, 62, 46, 0.06);
   transform: translateY(-1px);
 }
-/* #endif */
 
 .starter-card:active {
   transform: scale(0.988);
@@ -1479,13 +1487,11 @@ onBeforeUnmount(() => {
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
 }
 
-/* #ifdef H5 */
 .input-capsule:focus-within {
   border-color: var(--color-zen-sage);
   background: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0, 0, 0, 0.05);
 }
-/* #endif */
 
 .composer-input {
   flex: 1;
@@ -1553,11 +1559,11 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1180px) {
   .ai-panel {
-    width: 288px;
+    width: clamp(260px, 23vw, 336px);
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .ai-panel {
     width: 100%;
     height: 360px;

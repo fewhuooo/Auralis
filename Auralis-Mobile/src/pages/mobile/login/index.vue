@@ -1,42 +1,47 @@
 <template>
-  <view class="login-viewport">
-    <view class="login-page">
-      <view class="side-shape" aria-hidden="true"></view>
+  <div class="login-viewport">
+    <div class="login-page">
+      <div class="side-shape" aria-hidden="true"></div>
 
-      <view class="login-inner">
-        <view class="brand-header">
+      <div class="login-inner">
+        <div class="brand-header">
           <BrandLogo size="32px" />
-          <text class="brand-title">AURALIS</text>
-        </view>
+          <span class="brand-title">AURALIS</span>
+        </div>
 
-        <view v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
-          <view
+        <div v-if="mode !== 'reset'" class="ui-segmented mode-switch" role="tablist">
+          <div
+            class="auth-seg-thumb"
+            :class="{ 'is-register': mode === 'register' }"
+            aria-hidden="true"
+          ></div>
+          <div
             class="ui-seg-item"
             :class="{ active: mode === 'login', 'is-disabled': pending }"
             role="tab"
             :aria-selected="mode === 'login'"
             @click="show('login')"
           >
-            <text>登录</text>
-          </view>
-          <view
+            <span>登录</span>
+          </div>
+          <div
             class="ui-seg-item"
             :class="{ active: mode === 'register', 'is-disabled': pending }"
             role="tab"
             :aria-selected="mode === 'register'"
             @click="show('register')"
           >
-            <text>注册</text>
-          </view>
-        </view>
-        <view v-else class="reset-header">
-          <view class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
+            <span>注册</span>
+          </div>
+        </div>
+        <div v-else class="reset-header">
+          <div class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
             <LineIcon name="back" size="16px" color="var(--text-primary)" />
-          </view>
-          <text class="form-heading">重置密码</text>
-        </view>
+          </div>
+          <span class="form-heading">重置密码</span>
+        </div>
 
-        <view class="form-stack">
+        <div class="form-stack">
           <input
             v-if="mode !== 'reset'"
             class="ui-input"
@@ -44,7 +49,7 @@
             :maxlength="mode === 'login' ? 254 : 64"
             :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
             :disabled="pending"
-            @confirm="submit"
+            @keydown="handleEnterKey($event, submit)"
           />
 
           <template v-if="mode !== 'login'">
@@ -54,70 +59,74 @@
               :maxlength="254"
               placeholder="邮箱"
               :disabled="pending"
-              @confirm="submit"
+              @keydown="handleEnterKey($event, submit)"
             />
-            <view class="code-field">
+            <div class="code-field">
               <input
                 class="code-input"
                 v-model="form.emailCode"
-                type="number"
-                :maxlength="6"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
                 placeholder="验证码"
                 :disabled="pending"
-                @confirm="submit"
+                @keydown="handleEnterKey($event, submit)"
               />
               <button
+                type="button"
                 class="code-button"
-                :loading="sending"
+                :class="{ 'is-loading': sending }"
                 :disabled="sendDisabled"
                 @click="sendCode"
               >
                 {{ sending ? '发送中' : sendLabel }}
               </button>
-            </view>
+            </div>
           </template>
 
           <input
             class="ui-input"
             v-model="form.password"
-            password
+            type="password"
             :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
             :disabled="pending"
-            @confirm="submit"
+            @keydown="handleEnterKey($event, submit)"
           />
 
           <input
             v-if="mode !== 'login'"
             class="ui-input"
             v-model="form.confirmPassword"
-            password
+            type="password"
             placeholder="确认密码"
             :disabled="pending"
-            @confirm="submit"
+            @keydown="handleEnterKey($event, submit)"
           />
-        </view>
+        </div>
 
-        <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
+        <span v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</span>
 
-        <button class="submit-btn" role="button" :loading="submitting" :disabled="pending" @click="submit">
+        <button type="button" class="submit-btn" :class="{ 'is-loading': submitting }" role="button" :disabled="pending" @click="submit">
           {{ actionLabel }}
         </button>
 
-        <view v-if="mode === 'login'" class="auth-footer">
-          <text class="link-btn" role="button" @click="show('reset')">忘记密码</text>
-        </view>
-      </view>
-    </view>
-  </view>
+        <div v-if="mode === 'login'" class="auth-footer">
+          <span class="link-btn" role="button" @click="show('reset')">忘记密码</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useAuthForm } from '@/composables/useAuthForm'
+import { onPageShow } from '@/platform/lifecycle'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
+import { handleEnterKey } from '@/utils/domHelpers'
 
 const authStore = useAuthStore()
 const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
@@ -125,12 +134,12 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 function redirectIfAuthenticated() {
   if (authStore.isAuthenticated) {
-    uni.reLaunch({ url: '/pages/mobile/home/index' })
+    reLaunch('/pages/mobile/home/index')
   }
 }
 
 onMounted(redirectIfAuthenticated)
-onShow(redirectIfAuthenticated)
+onPageShow(redirectIfAuthenticated)
 </script>
 
 <style scoped>
@@ -147,7 +156,6 @@ onShow(redirectIfAuthenticated)
 .login-page {
   position: relative;
   width: 100%;
-  max-width: 440px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -173,7 +181,7 @@ onShow(redirectIfAuthenticated)
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 340px;
+  max-width: 360px;
   margin: 0 auto;
   animation: uiFadeUp 0.36s var(--ease-out) both;
 }
@@ -194,7 +202,40 @@ onShow(redirectIfAuthenticated)
 }
 
 .mode-switch {
+  position: relative;
   margin-bottom: 22px;
+}
+
+.auth-seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 9px) / 2);
+  border-radius: 9px;
+  background: var(--accent-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 2px 10px rgba(118, 135, 88, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 0;
+  transition: transform 0.24s var(--ease-spring);
+}
+
+.auth-seg-thumb.is-register {
+  transform: translateX(calc(100% + 3px));
+}
+
+.mode-switch .ui-seg-item {
+  position: relative;
+  z-index: 1;
+}
+
+.mode-switch .ui-seg-item.active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: #FFFFFF;
 }
 
 .ui-seg-item.is-disabled {
@@ -237,13 +278,11 @@ onShow(redirectIfAuthenticated)
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* #ifdef H5 */
 .code-field:focus-within {
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
-/* #endif */
 
 .code-input {
   flex: 1;
@@ -266,9 +305,16 @@ onShow(redirectIfAuthenticated)
   font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.14s ease, transform 0.14s var(--ease-out);
+}
+
+.code-button:active:not([disabled]) {
+  opacity: 0.72;
+  transform: scale(0.95);
 }
 
 .code-button[disabled] {
@@ -323,16 +369,22 @@ onShow(redirectIfAuthenticated)
   color: var(--text-muted);
   padding: 4px 10px;
   cursor: pointer;
+  transition: opacity 0.14s ease, color 0.14s ease;
 }
 
-/* #ifdef H5 */
+.link-btn:active {
+  opacity: 0.7;
+  color: var(--text-primary);
+}
+
 .login-viewport,
 .login-page {
   min-height: 100dvh;
 }
 
-@media (min-width: 540px) {
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
   .login-page {
+    max-width: 440px;
     background-color: var(--glass-bg);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
@@ -341,5 +393,4 @@ onShow(redirectIfAuthenticated)
     box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
   }
 }
-/* #endif */
 </style>

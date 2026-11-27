@@ -8,9 +8,25 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+node_modules/.tmp
 .DS_Store
 dist
+dist-phone
+dist-tablet
+public-tablet/file-viewer
 *.local
+
+# Tauri / Android build artifacts
+src-tauri/target
+src-tauri/gen/schemas
+src-tauri/gen/android/.gradle
+src-tauri/gen/android/app/build
+src-tauri/gen/android/app/src/main/assets
+src-tauri/gen/android/app/src/main/jniLibs
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/.kotlin
+src-tauri/gen/android/app/.cxx
+src-tauri/gen/android/app/tauri.properties
 
 # Editor directories and files
 .idea
@@ -19,3 +35,10 @@ dist
 *.njsproj
 *.sln
 *.sw?
+
+# Android signing secrets & local release outputs
+*.jks
+*.keystore
+*.p12
+src-tauri/gen/android/keystore.properties
+release-artifacts/

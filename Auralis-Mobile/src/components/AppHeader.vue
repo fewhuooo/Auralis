@@ -1,9 +1,9 @@
 <template>
-  <view class="app-header-container" :class="{ 'with-border': showBorder }">
-    <view class="status-bar-placeholder"></view>
-    <view class="app-header-bar" :style="headerBarStyle">
-      <view class="header-left">
-        <view
+  <div class="app-header-container" :class="{ 'with-border': showBorder }">
+    <div class="status-bar-placeholder"></div>
+    <div class="app-header-bar">
+      <div class="header-left">
+        <div
           v-if="effectiveShowBack"
           class="icon-btn back-btn"
           role="button"
@@ -11,16 +11,16 @@
           @click="handleBack"
         >
           <LineIcon name="back" size="18px" color="var(--text-primary)" />
-        </view>
-        <view v-if="title" class="title-group">
-          <text class="header-title-left">{{ title }}</text>
-        </view>
+        </div>
+        <div v-if="title" class="title-group">
+          <span class="header-title-left">{{ title }}</span>
+        </div>
         <slot name="left"></slot>
-      </view>
+      </div>
 
-      <view class="header-right">
+      <div class="header-right">
         <slot name="right">
-          <view
+          <div
             v-if="rightIcon"
             class="icon-btn right-action-btn"
             role="button"
@@ -28,16 +28,17 @@
             @click="handleRightClick"
           >
             <LineIcon :name="rightIcon" size="18px" color="var(--text-primary)" />
-          </view>
+          </div>
         </slot>
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { canNavigateBack, navigateBack, reLaunch, redirectTo } from '@/platform/navigation'
 import { useLayoutStore } from '@/store/useLayoutStore'
 
 const props = defineProps({
@@ -76,27 +77,6 @@ const emit = defineEmits(['back-click', 'right-click'])
 const layoutStore = useLayoutStore()
 const effectiveShowBack = computed(() => props.showBack || props.showBackButton)
 
-const headerBarStyle = computed(() => {
-  // #ifdef MP-WEIXIN
-  try {
-    const info = uni.getSystemInfoSync()
-    const menuRect = (uni as unknown as {
-      getMenuButtonBoundingClientRect?: () => { left: number }
-    }).getMenuButtonBoundingClientRect?.()
-    if (menuRect && info.windowWidth > menuRect.left) {
-      const reservePx = Math.max(96, Math.round(info.windowWidth - menuRect.left + 12))
-      return { paddingRight: `${reservePx}px` }
-    }
-  } catch {
-    // Fallback to default Mini Program capsule spacing
-  }
-  return { paddingRight: '104px' }
-  // #endif
-  // #ifndef MP-WEIXIN
-  return {}
-  // #endif
-})
-
 const topLevelRoutes = [
   '/pages/mobile/home/index',
   '/pages/mobile/learn/index',
@@ -108,27 +88,22 @@ function handleBack() {
   emit('back-click')
   layoutStore.triggerReturn(360)
 
-  try {
-    const pages = getCurrentPages()
-    if (pages.length > 1) {
-      uni.navigateBack()
-      return
-    }
-  } catch {
-    // Ignore page stack inspection failures
+  if (canNavigateBack()) {
+    navigateBack()
+    return
   }
 
   const returnTarget = layoutStore.consumeReturnRoute() || props.backUrl
   if (returnTarget) {
     if (topLevelRoutes.some(route => returnTarget.includes(route.replace('/pages/mobile/', '')))) {
-      uni.reLaunch({ url: returnTarget })
+      reLaunch(returnTarget)
       return
     }
-    uni.redirectTo({ url: returnTarget })
+    redirectTo(returnTarget)
     return
   }
 
-  uni.reLaunch({ url: '/pages/mobile/home/index' })
+  reLaunch('/pages/mobile/home/index')
 }
 
 function handleRightClick() {

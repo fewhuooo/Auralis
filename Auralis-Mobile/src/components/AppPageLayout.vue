@@ -1,7 +1,7 @@
 <template>
-  <view class="mobile-viewport-shell">
-    <view class="layout-container" :class="{ 'has-tabbar': showTabBar }">
-      <view
+  <div class="mobile-viewport-shell">
+    <div class="layout-container" :class="{ 'has-tabbar': showTabBar }">
+      <div
         class="page-layer"
         :class="{
           'is-entering-right': isEntering && slideDir === 'right',
@@ -15,17 +15,18 @@
         }"
       >
         <slot></slot>
-      </view>
+      </div>
 
       <AppTabBar v-if="showTabBar" />
       <slot name="overlay"></slot>
-    </view>
-  </view>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import AppTabBar from '@/components/AppTabBar.vue'
+import { getCurrentRoutePath, reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 
@@ -68,24 +69,18 @@ watch(() => props.disableAnimation, (newVal) => {
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
-  let route = ''
-  try {
-    const pages = getCurrentPages()
-    route = pages.length > 0 ? '/' + (pages[pages.length - 1]?.route || '') : ''
-    currentRoute.value = route
-    if (!route.includes('/login') && !authStore.isAuthenticated) {
-      uni.reLaunch({ url: '/pages/mobile/login/index' })
-      return
+  const route = getCurrentRoutePath()
+  currentRoute.value = route
+  if (route && !route.includes('/login') && !authStore.isAuthenticated) {
+    reLaunch('/pages/mobile/login/index')
+    return
+  }
+  if (route && !props.animOrigin) {
+    if (route.includes('profile')) {
+      animOrigin.value = 'slide-right'
+    } else if (route.includes('ai-search')) {
+      animOrigin.value = 'bottom-right'
     }
-    if (!props.animOrigin) {
-      if (route.includes('profile')) {
-        animOrigin.value = 'slide-right'
-      } else if (route.includes('ai-search')) {
-        animOrigin.value = 'bottom-right'
-      }
-    }
-  } catch {
-    // Ignore runtime route inspection failure
   }
 
   if (props.animOrigin) {
@@ -193,12 +188,11 @@ onMounted(() => {
   background: transparent;
 }
 
-/* #ifdef H5 */
 .mobile-viewport-shell {
   height: 100dvh;
 }
 
-@media (min-width: 540px) {
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
   .layout-container {
     max-width: 440px;
     margin: 0 auto;
@@ -207,5 +201,4 @@ onMounted(() => {
     box-shadow: 0 0 0 1px rgba(45, 55, 40, 0.05), 0 0 40px rgba(45, 55, 40, 0.045);
   }
 }
-/* #endif */
 </style>

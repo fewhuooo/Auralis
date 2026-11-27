@@ -1,6 +1,6 @@
 # Auralis 系统架构
 
-更新时间：2026-11-16
+更新时间：2026-11-27
 
 文档状态：现行系统架构
 
@@ -17,7 +17,8 @@ flowchart LR
   PC["PC：Vue + Tauri"] --> API["Server：Spring Boot / Modulith"]
   PC --> Local["本机 SQLite / 文件缓存"]
   PC --> OCR["Rust 任务控制 / OCR Sidecar"]
-  Mobile["Mobile / Tablet：Uni-app"] --> API
+  Mobile["Mobile / Tablet：Vue + Tauri 2 (Android)"] --> API
+  Mobile --> MLocal["端侧 SQLite / IndexedDB 缓存"]
   API --> PG[(PostgreSQL + pgvector)]
   API --> Objects[(MinIO)]
   API --> Provider["外部 AI Provider"]
@@ -26,7 +27,7 @@ flowchart LR
   Events --> Mobile
 ```
 
-PC 是 Windows x64 Tauri 客户端，Web 模式用于内部开发。Mobile 与 Tablet 共用 Uni-app 工程，页面和布局独立；微信小程序只包含手机体验。Server 管理认证、资源归属、同步、文件摄入、AI 调用与正式结果。客户端不直接访问数据库或服务端密钥；对象上传通过服务端签发、限定资源和用途的预签名 URL 完成。
+PC 是 Windows x64 Tauri 客户端，Web 模式用于内部开发。Mobile 与 Tablet 共用 `Auralis-Mobile` 工程（Vue 3 + Vite + Tauri 2），构建时按 `VITE_APP_TARGET` 拆分为两个独立 Android 应用（竖屏 `Auralis` 与横屏 `Auralis HD`），各自只包含本端路由与资源；微信小程序与 Mobile H5 已退出发布范围。Server 管理认证、资源归属、同步、文件摄入、AI 调用与正式结果。客户端不直接访问数据库或服务端密钥；对象上传通过服务端签发、限定资源和用途的预签名 URL 完成。
 
 | 组件 | 职责 | 详细说明 |
 | --- | --- | --- |
@@ -80,7 +81,7 @@ Tauri SQL 插件使用单连接池，JS 队列串行处理跨调用事务；Rust
 
 Review 使用独立生命周期接口、状态、不可变回执和历史，不扩展核心 Sync 资源。服务端按 subject → knowledge → review state 锁序核对版本、正文 hash 和因果目标；正文修改使旧复习资格失效。PC 持久保存复习投影和独立 outbox，在知识块同步收敛后顺序补传；进程内轮次不是正式业务状态。
 
-Focus 以稳定 session ID 独立幂等上传，不生成 ReviewEvent。Stats 依当前 owner 和时区聚合权威记录，不能在服务器已计入后重复叠加本机 pending。Mobile 的 Review 页面尚未全部迁移到现行生命周期 API，不能由共享 SDK 存在推断客户端已接通。
+Focus 以稳定 session ID 独立幂等上传，不生成 ReviewEvent。Stats 依当前 owner 和时区聚合权威记录，不能在服务器已计入后重复叠加本机 pending。Mobile 与 Tablet 复习页面均已接入现行生命周期 API（`useMobileLifecycleReview`），离线待确认命令按用户与设备范围持久化并支持幂等重试；物理真机与多设备并发仍须单独验收。
 
 ### 文件上传、解析与摄入
 

@@ -6,14 +6,46 @@ export interface PreloadBridge {
   }) => unknown
 }
 
+export type RouteChunkLoader = () => Promise<unknown>
+
+const registeredRouteLoaders = new Map<string, RouteChunkLoader>()
+
 export function normalizeRoutePath(url: string): string {
   const clean = url.split('?')[0]?.trim() || ''
   if (!clean) return ''
   return clean.startsWith('/') ? clean : `/${clean}`
 }
 
+export function registerRouteChunkLoaders(loaders: Record<string, RouteChunkLoader>): void {
+  registeredRouteLoaders.clear()
+  for (const [path, loader] of Object.entries(loaders)) {
+    const normalized = normalizeRoutePath(path)
+    if (normalized) registeredRouteLoaders.set(normalized, loader)
+  }
+}
+
+function defaultBridgeProvider(): PreloadBridge | undefined {
+  if (registeredRouteLoaders.size === 0) return undefined
+  return {
+    preloadPage(options) {
+      const loader = registeredRouteLoaders.get(normalizeRoutePath(options.url))
+      if (!loader) {
+        options.complete?.()
+        return
+      }
+      void loader().then(
+        () => options.complete?.(),
+        () => {
+          options.fail?.()
+          options.complete?.()
+        },
+      )
+    },
+  }
+}
+
 export function createRoutePreloader(
-  getUni: () => PreloadBridge | undefined = () => (typeof uni !== 'undefined' ? uni : undefined),
+  getBridge: () => PreloadBridge | undefined = defaultBridgeProvider,
 ) {
   const preloaded = new Set<string>()
   const inFlight = new Map<string, Promise<void>>()
@@ -25,7 +57,7 @@ export function createRoutePreloader(
     const existing = inFlight.get(path)
     if (existing) return existing
 
-    const bridge = getUni()
+    const bridge = getBridge()
     if (!bridge || typeof bridge.preloadPage !== 'function') {
       preloaded.add(path)
       return Promise.resolve()

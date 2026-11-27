@@ -1,7 +1,9 @@
 import { onMounted, onUnmounted } from 'vue'
+import { registerBackHandler } from '../platform/backButton.ts'
 
 export function useEscapeKey(isActive: () => boolean, onEscape: () => void): void {
-  // #ifdef H5
+  let unregisterBack: (() => void) | null = null
+
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key !== 'Escape') return
     if (!isActive()) return
@@ -13,12 +15,18 @@ export function useEscapeKey(isActive: () => boolean, onEscape: () => void): voi
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', handleKeyDown)
     }
+    unregisterBack = registerBackHandler(() => {
+      if (!isActive()) return false
+      onEscape()
+      return true
+    })
   })
 
   onUnmounted(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', handleKeyDown)
     }
+    unregisterBack?.()
+    unregisterBack = null
   })
-  // #endif
 }

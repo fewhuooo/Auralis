@@ -1,54 +1,59 @@
 <template>
-  <view class="login-page">
-    <view class="login-wrapper">
-      <view class="brand-side">
-        <view class="brand-grid" aria-hidden="true"></view>
-        <view class="brand-orbit brand-orbit--outer" aria-hidden="true"></view>
-        <view class="brand-orbit brand-orbit--inner" aria-hidden="true"></view>
-        <view class="brand-top">
+  <div class="login-page">
+    <div class="login-wrapper">
+      <div class="brand-side">
+        <div class="brand-grid" aria-hidden="true"></div>
+        <div class="brand-orbit brand-orbit--outer" aria-hidden="true"></div>
+        <div class="brand-orbit brand-orbit--inner" aria-hidden="true"></div>
+        <div class="brand-top">
           <BrandLogo size="36px" />
-        </view>
-        <view class="brand-content">
-          <text class="brand-wordmark">AURALIS</text>
-        </view>
-        <view class="side-shape" aria-hidden="true"></view>
-      </view>
+        </div>
+        <div class="brand-content">
+          <span class="brand-wordmark">AURALIS</span>
+        </div>
+        <div class="side-shape" aria-hidden="true"></div>
+      </div>
 
-      <view class="form-side">
-        <view class="login-box">
-          <view class="compact-brand">
+      <div class="form-side">
+        <div class="login-box">
+          <div class="compact-brand">
             <BrandLogo size="30px" />
-            <text class="compact-wordmark">AURALIS</text>
-          </view>
+            <span class="compact-wordmark">AURALIS</span>
+          </div>
 
-          <view v-if="mode !== 'reset'" class="ui-segmented auth-toggle" role="tablist">
-            <view
+          <div v-if="mode !== 'reset'" class="ui-segmented auth-toggle" role="tablist">
+            <div
+              class="auth-seg-thumb"
+              :class="{ 'is-register': mode === 'register' }"
+              aria-hidden="true"
+            ></div>
+            <div
               class="ui-seg-item"
               :class="{ active: mode === 'login', 'is-disabled': pending }"
               role="tab"
               :aria-selected="mode === 'login'"
               @click="show('login')"
             >
-              <text>登录</text>
-            </view>
-            <view
+              <span>登录</span>
+            </div>
+            <div
               class="ui-seg-item"
               :class="{ active: mode === 'register', 'is-disabled': pending }"
               role="tab"
               :aria-selected="mode === 'register'"
               @click="show('register')"
             >
-              <text>注册</text>
-            </view>
-          </view>
-          <view v-else class="reset-header">
-            <view class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
+              <span>注册</span>
+            </div>
+          </div>
+          <div v-else class="reset-header">
+            <div class="ui-icon-btn" role="button" aria-label="返回登录" @click="show('login')">
               <LineIcon name="back" size="16px" color="var(--text-primary)" />
-            </view>
-            <text class="form-title">重置密码</text>
-          </view>
+            </div>
+            <span class="form-title">重置密码</span>
+          </div>
 
-          <view class="form-stack">
+          <div class="form-stack">
             <input
               v-if="mode !== 'reset'"
               class="ui-input"
@@ -56,7 +61,7 @@
               :maxlength="mode === 'login' ? 254 : 64"
               :placeholder="mode === 'login' ? '用户名或邮箱' : '用户名'"
               :disabled="pending"
-              @confirm="submit"
+              @keydown="handleEnterKey($event, submit)"
             />
 
             <template v-if="mode !== 'login'">
@@ -66,71 +71,75 @@
                 :maxlength="254"
                 placeholder="邮箱"
                 :disabled="pending"
-                @confirm="submit"
+                @keydown="handleEnterKey($event, submit)"
               />
-              <view class="code-field">
+              <div class="code-field">
                 <input
                   class="code-input"
                   v-model="form.emailCode"
-                  type="number"
-                  :maxlength="6"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="6"
                   placeholder="验证码"
                   :disabled="pending"
-                  @confirm="submit"
+                  @keydown="handleEnterKey($event, submit)"
                 />
                 <button
+                  type="button"
                   class="code-button"
-                  :loading="sending"
+                  :class="{ 'is-loading': sending }"
                   :disabled="sendDisabled"
                   @click="sendCode"
                 >
                   {{ sending ? '发送中' : sendLabel }}
                 </button>
-              </view>
+              </div>
             </template>
 
             <input
               class="ui-input"
               v-model="form.password"
-              password
+              type="password"
               :placeholder="mode === 'login' ? '密码' : mode === 'reset' ? '新密码' : '设置密码'"
               :disabled="pending"
-              @confirm="submit"
+              @keydown="handleEnterKey($event, submit)"
             />
 
             <input
               v-if="mode !== 'login'"
               class="ui-input"
               v-model="form.confirmPassword"
-              password
+              type="password"
               placeholder="确认密码"
               :disabled="pending"
-              @confirm="submit"
+              @keydown="handleEnterKey($event, submit)"
             />
-          </view>
+          </div>
 
-          <text v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</text>
+          <span v-if="feedback" class="auth-feedback" aria-live="polite">{{ feedback }}</span>
 
-          <button class="submit-btn ui-btn ui-btn-primary" role="button" :loading="submitting" :disabled="pending" @click="submit">
+          <button type="button" class="submit-btn ui-btn ui-btn-primary" :class="{ 'is-loading': submitting }" role="button" :disabled="pending" @click="submit">
             {{ actionLabel }}
           </button>
 
-          <view v-if="mode === 'login'" class="footer-links">
-            <text class="footer-link" role="button" @click="show('reset')">忘记密码</text>
-          </view>
-        </view>
-      </view>
-    </view>
-  </view>
+          <div v-if="mode === 'login'" class="footer-links">
+            <span class="footer-link" role="button" @click="show('reset')">忘记密码</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useAuthForm } from '@/composables/useAuthForm'
+import { onPageShow } from '@/platform/lifecycle'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
+import { handleEnterKey } from '@/utils/domHelpers'
 
 const authStore = useAuthStore()
 const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLabel, sendDisabled, show, sendCode, submit }
@@ -138,12 +147,12 @@ const { mode, form, feedback, pending, submitting, sending, actionLabel, sendLab
 
 function redirectIfAuthenticated() {
   if (authStore.isAuthenticated) {
-    uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
+    reLaunch('/pages/tablet/dashboard/index')
   }
 }
 
 onMounted(redirectIfAuthenticated)
-onShow(redirectIfAuthenticated)
+onPageShow(redirectIfAuthenticated)
 </script>
 
 <style scoped>
@@ -152,7 +161,7 @@ onShow(redirectIfAuthenticated)
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: clamp(14px, 2.4vh, 28px) clamp(16px, 2.5vw, 32px);
   background:
     radial-gradient(88% 42% at 88% 8%, rgba(139, 154, 110, 0.13) 0%, transparent 66%),
     radial-gradient(76% 40% at 10% 72%, rgba(200, 155, 109, 0.10) 0%, transparent 64%),
@@ -162,13 +171,13 @@ onShow(redirectIfAuthenticated)
 
 .login-wrapper {
   display: flex;
-  width: 100%;
-  max-width: 880px;
-  min-height: 540px;
+  width: min(720px, 76vw, calc(100vw - 32px));
+  min-height: min(420px, calc(100vh - 48px));
+  max-height: calc(100vh - 28px);
   background-color: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-radius: 28px;
+  border-radius: 22px;
   overflow: hidden;
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
@@ -176,13 +185,13 @@ onShow(redirectIfAuthenticated)
 }
 
 .brand-side {
-  width: 360px;
+  width: clamp(220px, 38%, 300px);
   background: linear-gradient(155deg, #F7F2EB 0%, #EFE8DC 100%);
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 44px 44px 48px;
+  padding: clamp(20px, 3.2vh, 34px) clamp(20px, 2.6vw, 34px);
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
   box-sizing: border-box;
@@ -228,7 +237,7 @@ onShow(redirectIfAuthenticated)
 }
 
 .brand-wordmark {
-  font-size: 46px;
+  font-size: clamp(28px, 3vw, 36px);
   font-weight: 800;
   color: var(--text-primary);
   line-height: 0.95;
@@ -250,16 +259,18 @@ onShow(redirectIfAuthenticated)
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 36px 40px;
+  padding: clamp(18px, 3vh, 28px) clamp(20px, 2.8vw, 32px);
   background-color: var(--color-bg-primary);
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
 .login-box {
   width: 100%;
-  max-width: 320px;
+  max-width: 280px;
+  margin: auto 0;
 }
 
 .compact-brand {
@@ -278,7 +289,40 @@ onShow(redirectIfAuthenticated)
 }
 
 .auth-toggle {
+  position: relative;
   margin-bottom: 24px;
+}
+
+.auth-seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 9px) / 2);
+  border-radius: 9px;
+  background: var(--accent-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 2px 10px rgba(118, 135, 88, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 0;
+  transition: transform 0.24s var(--ease-spring);
+}
+
+.auth-seg-thumb.is-register {
+  transform: translateX(calc(100% + 3px));
+}
+
+.auth-toggle .ui-seg-item {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-toggle .ui-seg-item.active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: #FFFFFF;
 }
 
 .ui-seg-item.is-disabled {
@@ -321,13 +365,11 @@ onShow(redirectIfAuthenticated)
   transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* #ifdef H5 */
 .code-field:focus-within {
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
-/* #endif */
 
 .code-input {
   flex: 1;
@@ -354,6 +396,12 @@ onShow(redirectIfAuthenticated)
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.14s ease, transform 0.14s var(--ease-out);
+}
+
+.code-button:active:not([disabled]) {
+  opacity: 0.72;
+  transform: scale(0.95);
 }
 
 .code-button[disabled] {
@@ -375,12 +423,12 @@ onShow(redirectIfAuthenticated)
   margin: 20px 0 0;
   padding: 0;
   width: 100%;
-  height: 44px;
-  line-height: 44px;
+  height: 38px;
+  line-height: 38px;
   background: var(--accent-gradient);
   color: #FFFFFF;
   border-radius: 12px;
-  font-size: 14.5px;
+  font-size: 13px;
   font-weight: var(--font-weight-semibold);
   display: flex;
   align-items: center;
@@ -416,15 +464,44 @@ onShow(redirectIfAuthenticated)
   transition: color 0.16s ease;
 }
 
-.footer-link:hover {
+.footer-link:hover,
+.footer-link:active {
   color: var(--text-primary);
 }
 
-/* #ifdef H5 */
+.footer-link:active {
+  opacity: 0.75;
+}
+
 .login-page {
   min-height: 100dvh;
 }
-/* #endif */
+
+.login-wrapper {
+  min-height: min(420px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 28px);
+}
+
+@media (max-height: 640px) {
+  .auth-toggle,
+  .reset-header {
+    margin-bottom: 16px;
+  }
+
+  .form-stack {
+    gap: 10px;
+  }
+
+  .submit-btn {
+    margin-top: 14px;
+    height: 38px;
+    line-height: 38px;
+  }
+
+  .footer-links {
+    margin-top: 12px;
+  }
+}
 
 @media (max-width: 760px) {
   .brand-side {

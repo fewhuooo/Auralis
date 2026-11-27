@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
+import { isNetworkOnline, subscribeNetworkStatus } from '@/platform/network'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
 import { useAuthStore } from './useAuthStore'
@@ -55,18 +56,7 @@ export const useBlockStore = defineStore('block', () => {
       && fence.serverDeviceId === auth.serverDeviceId
   }
 
-  const checkOnline = async (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      uni.getNetworkType({
-        success: (res) => {
-          resolve(res.networkType !== 'none')
-        },
-        fail: () => {
-          resolve(true)
-        }
-      })
-    })
-  }
+  const checkOnline = async (): Promise<boolean> => isNetworkOnline()
 
   const loadLocalBlocks = async (subject?: string, subjectId?: string) => {
     const auth = useAuthStore()
@@ -220,8 +210,8 @@ export const useBlockStore = defineStore('block', () => {
   }
 
   // Set up reactive sync listener on network status change
-  uni.onNetworkStatusChange((res) => {
-    if (res.isConnected) {
+  subscribeNetworkStatus((online) => {
+    if (online) {
       console.log('[Mobile Store] Network re-established. Auto-syncing blocks...')
       syncPendingChanges()
     }

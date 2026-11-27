@@ -1,6 +1,7 @@
 import { computed, onUnmounted, reactive, ref } from 'vue'
 import { useAuthApi } from '@/api/useAuthApi'
 import { ApiProblemError } from '@/api/protocol'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 
 type AuthMode = 'login' | 'register' | 'reset'
@@ -127,7 +128,7 @@ export function useAuthForm(homeRoute: string) {
       }
       if (mode.value === 'login') await auth.login({ username, password })
       else await auth.register({ username, email, emailCode, password })
-      uni.reLaunch({ url: homeRoute })
+      reLaunch(homeRoute)
     } catch (error) {
       const fallback = mode.value === 'login' ? '登录失败，请检查输入或网络连接。' : '提交失败，请检查输入后重试。'
       feedback.value = messageFrom(error, fallback)

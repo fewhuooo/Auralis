@@ -7,6 +7,9 @@ import {
   phaseDurationSeconds,
   type PersistedFocusState,
 } from '@/services/focusController'
+import { showToast } from '@/platform/feedback'
+import { triggerHapticFeedback } from '@/platform/haptics'
+import { getStorageItem, setStorageItem } from '@/platform/storage'
 import { localDataScope } from '@/services/localDataScope'
 import { readAutoSyncPreference } from '@/services/syncPreferences'
 import { toLocalDateKey } from '@/utils/dateKey'
@@ -18,8 +21,8 @@ export const useFocusStore = defineStore('focus', () => {
 
   const controller = createFocusController({
     storage: {
-      get: key => uni.getStorageSync(key),
-      set: (key, value) => uni.setStorageSync(key, value),
+      get: key => getStorageItem(key) ?? '',
+      set: (key, value) => setStorageItem(key, String(value)),
     },
     getScope: () => localDataScope.current(),
     now: () => Date.now(),
@@ -97,7 +100,7 @@ export const useFocusStore = defineStore('focus', () => {
 
   async function flushPendingSessions(manual = false) {
     if (flushing || !auth.isAuthenticated) return
-    if (!manual && !readAutoSyncPreference({ get: key => uni.getStorageSync(key) })) {
+    if (!manual && !readAutoSyncPreference({ get: key => getStorageItem(key) ?? '' })) {
       pendingOutboxCount.value = controller.readOutbox().length
       return
     }
@@ -121,15 +124,8 @@ export const useFocusStore = defineStore('focus', () => {
         lastCompletedTask.value = result.completedTaskInfo
       }
       if (emitFeedback) {
-        try {
-          uni.vibrateLong({})
-        } catch {
-          // Ignore environments without vibration
-        }
-        uni.showToast({
-          title: result.completedFocusRound ? '专注完成，休息一下' : '休息结束，准备开始专注',
-          icon: 'none',
-        })
+        triggerHapticFeedback()
+        showToast(result.completedFocusRound ? '专注完成，休息一下' : '休息结束，准备开始专注')
       }
       if (result.completedFocusRound) {
         void flushPendingSessions()

@@ -1,6 +1,6 @@
 # Auralis 当前状态
 
-更新时间：2026-11-25
+更新时间：2026-11-27
 
 文档状态：现行状态快照
 
@@ -22,14 +22,14 @@
 | Overview | Markdown v2：CLEAN → OUTLINE → SUMMARY；超容量自动分批；文件和学科直接入口支持三种模式，正式保存保留 CAS/来源修订校验 | 11-13 有定向回归、真实文件生成及学科桌面保存回读记录；持久后台作业按用户要求退役；复杂材料质量和完整桌面走查仍开放 |
 | Chat | 原生工具与公开 parts；会话读取范围绑定、Catalog/定向检索、来源总览读取、UNKNOWN 显式恢复、12 轮/20 次工具上限；2026-11-19 新增 `ChatToolPresentation` 在 `tool.*`/SSE 与 `toolTrace` 输出中文工具名与安全摘要 `label` 并收敛思考提示词，全端统一交叉时间轴与排版规范 | 11-19 Server 定向 8 个测试类（`ChatAgentProtocolPublicationTests` 等）Maven 测试通过；11-20 `auralis-backend` 容器已重建并 `healthy`；真实登录态下 Provider 流式重放、取消/断流真实链路仍待验收 |
 | Server 核心 | Identity、Subject、Source/Asset、Knowledge、Task、Review、Stats、Sync/Realtime 与 AI 服务已实现 | 11-16 最近全量 884/884、打包通过；随后 11-19 Chat 工具展示与提示词定向 8 个测试类通过；不等于部署或生产验收 |
-| Mobile / Tablet | Uni-app 端共享鉴权、同步、资料、Stats 与协议 1 Chat；2026-11-17～20 完成禅意样式与双端学习全生命周期迁移、并发及过期任务锁定收口与全端 AI 过程流对齐；2026-11-23～24 完成平板工作区 `@file-viewer/core` + `localDocumentCache` 离线缓存、平板首页/专注/AI/设置对齐 PC、`source_files`/`ai_overview_cache`/`review_states_cache`/`subject_stats_cache` 本地先读后刷、两轮持久化与跨账号隔离审计修复（同步块编辑保真 `sourceFileId`、直切账号 WebSocket 重建、手机四页隔离与上传落盘、`useAiUsage` 非闪烁续期、AI 停止流令牌防覆盖、剪贴板统一降级与孤立死代码清理）；2026-11-25 结合本地 Docker 后端完成平板 H5 逐页联调收口：学科总览先查 `statuses` 批量状态消除 404、`WorkspaceKnowledgeBlockModal` 1:1 对齐 PC（5 色标记与 Markdown/LaTeX 实时预览）、AI 浮窗改用无文字圆形 Auralis 标识按钮并精简对齐 PC 及左对齐双行引导卡、`WorkspaceReviewPane` 规划页与轮次复习卡片 1:1 对齐 PC | 11-25 `vue-tsc --noEmit`、`check:r4-mobile`（85 文件）、`test:r4-mobile`（129/129）、`test:tablet` 全部退出码 0（11-24 已通过 `build:h5` 与 `build:mp-weixin`）；用户已在本地 H5 + Docker 后端完成平板主流程逐页试测；微信开发者工具、真机（手机与平板）、真实 MinIO 跨域直传与多设备并发冲突验收仍开放 |
+| Mobile / Tablet | Vue 3.5 + Vite 8 + Pinia 3 + vue-router 4 + Tauri 2 双目标 Android 原生客户端（竖屏手机 **Auralis** `com.auralis.mobile` 7 路由 + 横屏平板 **Auralis HD** `com.auralis.hd` 8 路由）；2026-11-26～27 完成 Uni-app 原地迁移：`src/platform/` 适配层 + `tauri-plugin-sql` 真 SQLite + `MainActivity.kt` 返回键/WindowInsets/前后台桥接 + `touchFeedback.ts` 委托按压动效 + 原生 `1.0` 视口与平板紧凑令牌（微信小程序与 Mobile H5 已退出发布范围，原 Uni-app 快照已归档） | 11-27 基于提交 `3dc3285` 通过 `vue-tsc -b`、`check:r4-mobile`（138 文件）、`test:r4-mobile`（152/152）、`test:tablet`、`check-tablet-sidebar-transition.mjs`、`build:phone`/`build:tablet` 与双端 Debug / Release-unsigned APK 构建；MuMu 15（Android 15）完成手机登录全宽/滑块与平板仪表盘/学科页清晰 `1.0` 视口实测；物理手机与横屏平板真机全流程、正式签名包、真实 MinIO 直传与多设备并发同步仍开放 |
 | 基础设施 | Compose 使用 PostgreSQL/pgvector、MinIO、backend/frontend；平台生成与 Embedding 配置分组 | 11-12/13 有本机部署健康和部分真实生成记录；生产凭据、异常专项、监控、备份恢复及发布演练未由这些记录关闭 |
 
-## Mobile / Tablet：设计范围确认
+## Mobile / Tablet：设计范围与迁移收口（2026-11-27）
 
-2026-11-16 已确认三端职责：PC 集中管理资料、知识结构和任务编排；手机随身执行；平板保留完整学习能力，结合阅读、AI、学习复习、触控和分屏。本地手写采用自动保存的自由画布，支持手动导出，不进入云同步。详见[产品需求](../project/ProductRequirements.md#跨端职责)和[交互目标](../project/FrontendDesign.md#mobile--tablet-已确认交互目标)。
+2026-11-16 已确认三端职责：PC 集中管理资料、知识结构和任务编排；手机随身执行；平板保留完整学习能力，结合阅读、AI、学习复习、触控和分屏。本地手写采用自动保存的自由画布（继续隐藏保留），支持手动导出，不进入云同步。详见[产品需求](../project/ProductRequirements.md#跨端职责)和[交互目标](../project/FrontendDesign.md#mobile--tablet-已确认交互目标)。
 
-本轮仅整理设计与源码差距，未修改业务代码或启用手写入口；任务日期、复习、资料、AI、知识编辑和专注差距见[模块说明](../modules/FrontendMobileTablet.md#已确认目标与实现差距)。未新增自动测试、构建或真机验收结论。
+2026-11-26～27 已完成从 Uni-app 到 **Vue 3 + Vite + Tauri 2（Android 双独立包 `Auralis` / `Auralis HD`）** 的阶段 0～5 全量迁移与 MuMu 15 比例/动效/清晰度收口（`6219ea8`、`77f452f`、`aeb40ce`、`76c5585`、`3dc3285`）；不迁移 Uni-app 旧本地数据，原 Uni-app 历史代码与快照已完整归档至 `D:\CodeBase\Archive\Auralis-Mobile-uniapp-20261127\` 与 Git 标签 `archive/mobile-uniapp-20261127`。现行结构、命令与剩余边界见[模块说明](../modules/FrontendMobileTablet.md#已确认目标与收口状态)。
 
 ## PC：近期结果
 

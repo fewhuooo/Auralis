@@ -1,12 +1,12 @@
 <template>
-  <view
+  <div
     class="brand-logo"
     :style="{
       width: size,
       height: size,
       backgroundImage: `url('${logoUrl}')`,
     }"
-  ></view>
+  ></div>
 </template>
 
 <script setup lang="ts">

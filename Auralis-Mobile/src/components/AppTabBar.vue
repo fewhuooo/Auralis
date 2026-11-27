@@ -1,17 +1,17 @@
 <template>
-  <view class="app-bar-shell">
-    <view class="app-bar-scrim" aria-hidden="true"></view>
-    <view class="app-bar-container" role="navigation" aria-label="主导航">
-      <view class="app-tabbar-float" role="tablist">
-        <view
+  <div class="app-bar-shell">
+    <div class="app-bar-scrim" aria-hidden="true"></div>
+    <div class="app-bar-container" role="navigation" aria-label="主导航">
+      <div class="app-tabbar-float" role="tablist">
+        <div
           class="active-pill-indicator"
           :class="{ 'animate-pill': isAnimatePill }"
           :style="{ transform: `translateX(${displayIndex * 100}%)` }"
         >
-          <view class="pill-inner"></view>
-        </view>
+          <div class="pill-inner"></div>
+        </div>
 
-        <view
+        <div
           v-for="(item, idx) in tabItems"
           :key="item.path"
           class="tab-item"
@@ -25,25 +25,26 @@
             size="19px"
             :color="displayIndex === idx ? '#556B3D' : '#7A7A75'"
           />
-          <text class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</text>
-        </view>
-      </view>
+          <span class="tab-label" :class="{ 'is-active': displayIndex === idx }">{{ item.label }}</span>
+        </div>
+      </div>
 
-      <view
+      <div
         class="app-ai-float"
         role="button"
         aria-label="AI 助手"
         @click="goToAi"
       >
         <LineIcon name="sparkles" size="21px" color="#FFFFFF" />
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { getCurrentRoutePath, redirectTo } from '@/platform/navigation'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 
@@ -71,8 +72,7 @@ function getIndexByUrl(path: string): number {
 }
 
 function resolveCurrentRoute(): string {
-  const pages = getCurrentPages()
-  return pages.length > 0 ? '/' + (pages[pages.length - 1].route || '') : ''
+  return getCurrentRoutePath()
 }
 
 onMounted(() => {
@@ -133,8 +133,7 @@ function navigateWithTransition(url: string, dir: 'left' | 'right', nowRoute: st
       }
       return
     }
-    uni.redirectTo({
-      url,
+    redirectTo(url, {
       complete: () => {
         hasPendingExit = false
         layoutStore.clearExit()
@@ -175,8 +174,13 @@ function goToAi() {
   right: 0;
   bottom: 0;
   margin: 0 auto;
-  max-width: 440px;
   z-index: var(--z-index-tabbar, 800);
+}
+
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
+  .app-bar-shell {
+    max-width: 440px;
+  }
 }
 
 .app-bar-scrim {
@@ -200,6 +204,8 @@ function goToAi() {
   pointer-events: none;
   position: relative;
   z-index: 1;
+  max-width: 560px;
+  margin: 0 auto;
   padding: 0 20px calc(14px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;

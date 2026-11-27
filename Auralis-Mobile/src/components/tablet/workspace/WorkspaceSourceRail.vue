@@ -1,9 +1,9 @@
 <template>
   <aside class="tier2-drawer zen-panel" :class="{ 'is-open': open }">
-    <view class="drawer-content">
-      <view class="drawer-header">
-        <text class="drawer-title">学习资料</text>
-        <view
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <span class="drawer-title">学习资料</span>
+        <div
           class="drawer-add-btn"
           :class="{ 'is-busy': uploading }"
           role="button"
@@ -11,45 +11,45 @@
           @click="!uploading && emit('upload')"
         >
           <LineIcon name="plus" size="14px" color="#FFFFFF" />
-        </view>
-      </view>
+        </div>
+      </div>
 
       <!-- 置顶固定入口：学科总览 -->
-      <view
+      <div
         class="drawer-subject-entry"
         :class="{ 'is-active': subjectOverviewActive }"
         role="button"
         @click="emit('select-subject-overview')"
       >
-        <view class="drawer-subject-badge">
+        <div class="drawer-subject-badge">
           <LineIcon name="book" size="14px" color="var(--color-sage-ink)" />
-        </view>
-        <view class="drawer-subject-meta">
-          <text class="drawer-subject-title">学科总览</text>
-          <text class="drawer-subject-sub num-tabular">{{ subjectOverviewSubtitle }}</text>
-        </view>
-      </view>
+        </div>
+        <div class="drawer-subject-meta">
+          <span class="drawer-subject-title">学科总览</span>
+          <span class="drawer-subject-sub num-tabular">{{ subjectOverviewSubtitle }}</span>
+        </div>
+      </div>
 
-      <view class="drawer-divider-row">
-        <text class="drawer-divider-label num-tabular">资料文件 · {{ sources.length }}</text>
-      </view>
+      <div class="drawer-divider-row">
+        <span class="drawer-divider-label num-tabular">资料文件 · {{ sources.length }}</span>
+      </div>
 
-      <view v-if="loadingSources && sources.length === 0" class="drawer-skeletons">
-        <view v-for="n in 4" :key="n" class="drawer-skeleton ui-shimmer"></view>
-      </view>
+      <div v-if="loadingSources && sources.length === 0" class="drawer-skeletons">
+        <div v-for="n in 4" :key="n" class="drawer-skeleton ui-shimmer"></div>
+      </div>
 
-      <view v-else-if="sourcesError && sources.length === 0" class="drawer-state is-error">
-        <text class="state-msg">{{ sourcesError }}</text>
-        <button class="ui-btn ui-btn-secondary sm" @click="emit('refresh-sources')">重试</button>
-      </view>
+      <div v-else-if="sourcesError && sources.length === 0" class="drawer-state is-error">
+        <span class="state-msg">{{ sourcesError }}</span>
+        <button type="button" class="ui-btn ui-btn-secondary sm" @click="emit('refresh-sources')">重试</button>
+      </div>
 
-      <view v-else-if="sources.length === 0" class="drawer-state">
-        <text class="state-msg">暂无学习资料</text>
-      </view>
+      <div v-else-if="sources.length === 0" class="drawer-state">
+        <span class="state-msg">暂无学习资料</span>
+      </div>
 
-      <scroll-view v-else scroll-y :show-scrollbar="false" class="drawer-scroll">
-        <view class="drawer-list">
-          <view
+      <div v-else class="drawer-scroll zen-scroll-y">
+        <div class="drawer-list">
+          <div
             v-for="src in sources"
             :key="src.id"
             class="drawer-item"
@@ -57,31 +57,31 @@
             role="button"
             @click="src.id && emit('select-source', src)"
           >
-            <view class="drawer-item-body">
-              <view class="drawer-item-name-row">
-                <view
+            <div class="drawer-item-body">
+              <div class="drawer-item-name-row">
+                <div
                   class="status-dot"
                   :class="`tone-${getSourceStatusMeta(src.ingestionStatus).tone}`"
-                ></view>
-                <text class="drawer-item-name">{{ src.title || '未命名资料' }}</text>
-              </view>
-              <text class="drawer-item-meta num-tabular">
+                ></div>
+                <span class="drawer-item-name">{{ src.title || '未命名资料' }}</span>
+              </div>
+              <span class="drawer-item-meta num-tabular">
                 {{ src.ingestionStatus !== 'READY' ? `${getSourceStatusMeta(src.ingestionStatus).label} · ` : '' }}{{ formatBytes(src.assetSizeBytes) || '未知大小' }}
-              </text>
-            </view>
+              </span>
+            </div>
 
-            <view
+            <div
               class="drawer-item-delete"
               role="button"
               aria-label="删除资料"
               @click.stop="emit('delete-source', src)"
             >
               <LineIcon name="close" size="13px" color="var(--text-muted)" />
-            </view>
-          </view>
-        </view>
-      </scroll-view>
-    </view>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </aside>
 </template>
 
@@ -136,7 +136,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .tier2-drawer.is-open {
-  width: 272px;
+  width: clamp(204px, 18.5vw, 256px);
   opacity: 1;
   border-width: 1px;
   pointer-events: auto;
@@ -144,7 +144,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .drawer-content {
-  width: 272px;
+  width: clamp(204px, 18.5vw, 256px);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -152,7 +152,7 @@ const subjectOverviewSubtitle = computed(() => {
 }
 
 .drawer-header {
-  height: 50px;
+  height: 42px;
   padding: 0 14px 0 16px;
   display: flex;
   align-items: center;
@@ -207,6 +207,11 @@ const subjectOverviewSubtitle = computed(() => {
 
 .drawer-subject-entry:hover {
   background: var(--color-bg-tertiary);
+}
+
+.drawer-subject-entry:active {
+  background: var(--color-bg-tertiary);
+  transform: scale(0.985);
 }
 
 .drawer-subject-entry.is-active {
@@ -292,7 +297,7 @@ const subjectOverviewSubtitle = computed(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px 10px 13px;
+  padding: 8px 8px 8px 11px;
   border-radius: 12px;
   cursor: pointer;
   transition: background-color 0.16s ease;
@@ -300,6 +305,11 @@ const subjectOverviewSubtitle = computed(() => {
 
 .drawer-item:hover {
   background: var(--color-bg-tertiary);
+}
+
+.drawer-item:active {
+  background: var(--color-bg-tertiary);
+  transform: scale(0.985);
 }
 
 .drawer-item.is-active {
@@ -392,6 +402,12 @@ const subjectOverviewSubtitle = computed(() => {
 .drawer-item-delete:hover {
   opacity: 1;
   background: var(--color-danger-bg);
+}
+
+.drawer-item-delete:active {
+  opacity: 1;
+  background: var(--color-danger-bg);
+  transform: scale(0.9);
 }
 
 .drawer-skeletons {

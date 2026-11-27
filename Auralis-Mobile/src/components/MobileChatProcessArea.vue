@@ -1,49 +1,49 @@
 <template>
-  <view
+  <div
     v-if="showProcessBlock"
     class="process-block"
   >
-    <view
+    <div
       class="process-toggle"
       :class="{ 'is-static': !hasExpandableBody }"
       role="button"
       :aria-expanded="isOpen"
       @click="handleToggle"
     >
-      <view
+      <div
         class="process-dot"
         :class="{
           'is-streaming': isThinkingActive,
           'is-error': errorHighlight,
         }"
-      ></view>
-      <text
+      ></div>
+      <span
         class="process-summary"
         :class="{ 'is-shimmer': isThinkingActive }"
-      >{{ summaryText }}</text>
+      >{{ summaryText }}</span>
       <LineIcon
         v-if="hasExpandableBody"
         :name="isOpen ? 'chevron-up' : 'chevron-down'"
         size="13px"
         color="var(--text-muted)"
       />
-    </view>
+    </div>
 
-    <view v-if="isOpen && hasExpandableBody" class="process-body">
+    <div v-if="isOpen && hasExpandableBody" class="process-body">
       <template v-for="group in visibleTimelineGroups" :key="group.id">
-        <rich-text
+        <div
           v-if="group.kind === 'reasoning'"
           class="reasoning-rich-text"
-          :nodes="group.nodes"
-        />
-        <view v-else class="process-tool-steps">
-          <view
+          v-html="group.nodes"
+        ></div>
+        <div v-else class="process-tool-steps">
+          <div
             v-for="tool in group.tools"
             :key="tool.id"
             class="process-tool-step"
             :class="`is-${tool.status.toLowerCase()}`"
           >
-            <view class="tool-step-icon" aria-hidden="true">
+            <div class="tool-step-icon" aria-hidden="true">
               <LineIcon
                 v-if="tool.status === 'COMPLETED'"
                 name="check"
@@ -56,19 +56,19 @@
                 size="12px"
                 color="#9C500C"
               />
-              <view v-else class="tool-dot is-running"></view>
-            </view>
-            <view class="tool-step-text">
-              <text class="tool-step-label">{{ formatAiToolLabel(tool.name, tool.label) }}</text>
-              <text v-if="tool.status === 'FAILED'" class="tool-step-failed">· 未完成</text>
-            </view>
-          </view>
-        </view>
+              <div v-else class="tool-dot is-running"></div>
+            </div>
+            <div class="tool-step-text">
+              <span class="tool-step-label">{{ formatAiToolLabel(tool.name, tool.label) }}</span>
+              <span v-if="tool.status === 'FAILED'" class="tool-step-failed">· 未完成</span>
+            </div>
+          </div>
+        </div>
       </template>
 
-      <view v-if="isReasoningStreaming" class="process-cursor-dot" aria-hidden="true"></view>
-    </view>
-  </view>
+      <div v-if="isReasoningStreaming" class="process-cursor-dot" aria-hidden="true"></div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

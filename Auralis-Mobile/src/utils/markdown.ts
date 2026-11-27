@@ -1,3 +1,5 @@
+import DOMPurify from 'dompurify'
+import katex from 'katex'
 import { Marked, Renderer } from 'marked'
 
 function escapeHtml(raw: string): string {
@@ -208,87 +210,39 @@ function readUnbracedToken(input: string, start: number): { value: string; nextI
   return { value: first, nextIndex: start + 1 }
 }
 
-function transformMathInnerHtml(rawTex: string): string {
-  let out = ''
-  let i = 0
-  while (i < rawTex.length) {
-    if (rawTex.startsWith('\\frac', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
-      const firstStart = skipSpaces(rawTex, i + 5)
-      const numGroup = readBraceGroup(rawTex, firstStart)
-      if (numGroup) {
-        const secondStart = skipSpaces(rawTex, numGroup.nextIndex)
-        const denGroup = readBraceGroup(rawTex, secondStart)
-        if (denGroup) {
-          const numHtml = transformMathInnerHtml(numGroup.content.trim())
-          const denHtml = transformMathInnerHtml(denGroup.content.trim())
-          out += `<span style="display:inline-block;vertical-align:middle;text-align:center;line-height:1.15;font-size:0.88em;padding:0 3px;"><span style="display:block;border-bottom:1px solid rgba(28,28,26,0.52);padding:0 2px 1px;">${numHtml}</span><span style="display:block;padding:1px 2px 0;">${denHtml}</span></span>`
-          i = denGroup.nextIndex
-          continue
-        }
-      }
-    }
-
-    if (rawTex.startsWith('\\sqrt', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
-      const argStart = skipSpaces(rawTex, i + 5)
-      const radGroup = readBraceGroup(rawTex, argStart)
-      if (radGroup) {
-        out += `√<span style="border-top:1px solid rgba(28,28,26,0.52);padding:0 2px;">${transformMathInnerHtml(radGroup.content.trim())}</span>`
-        i = radGroup.nextIndex
-        continue
-      }
-    }
-
-    if (rawTex.startsWith('\\text', i) && !/[a-zA-Z]/.test(rawTex[i + 5] || '')) {
-      const argStart = skipSpaces(rawTex, i + 5)
-      const txtGroup = readBraceGroup(rawTex, argStart)
-      if (txtGroup) {
-        out += `<span style="font-family:var(--font-family-base,sans-serif);font-style:normal;">${escapeHtml(txtGroup.content)}</span>`
-        i = txtGroup.nextIndex
-        continue
-      }
-    }
-
-    if (rawTex[i] === '^' || rawTex[i] === '_') {
-      const tag = rawTex[i] === '^' ? 'sup' : 'sub'
-      const next = skipSpaces(rawTex, i + 1)
-      const grp = readBraceGroup(rawTex, next)
-      if (grp) {
-        out += `<${tag} style="font-size:0.74em;font-style:normal;line-height:0;">${transformMathInnerHtml(grp.content.trim())}</${tag}>`
-        i = grp.nextIndex
-        continue
-      }
-      if (next < rawTex.length) {
-        const token = readUnbracedToken(rawTex, next)
-        out += `<${tag} style="font-size:0.74em;font-style:normal;line-height:0;">${escapeHtml(token.value)}</${tag}>`
-        i = token.nextIndex
-        continue
-      }
-    }
-
-    if (rawTex[i] === '\\') {
-      const match = rawTex.slice(i).match(/^\\(?:[a-zA-Z]+|[,;{}])/)
-      if (match) {
-        const replaced = lookupTexSymbol(match[0])
-        if (replaced !== undefined) {
-          out += escapeHtml(replaced)
-          i += match[0].length
-          continue
-        }
-      }
-    }
-
-    out += escapeHtml(rawTex[i])
-    i++
+function renderMathHtml(tex: string, displayMode: boolean): string {
+  const normalized = tex.trim()
+  if (!normalized) return ''
+  try {
+    const rendered = katex.renderToString(normalized, {
+      displayMode,
+      throwOnError: false,
+    })
+    return displayMode ? `<div class="katex-display-wrapper">${rendered}</div>` : rendered
+  } catch {
+    return escapeHtml(tex)
   }
-  return out
 }
 
-function renderMathHtml(tex: string, display: boolean): string {
-  const inner = transformMathInnerHtml(tex.trim())
-  if (display) {
-    return `<div style="margin:10px 0;padding:10px 14px;background-color:#F4EFE6;border:1px solid rgba(28,28,26,0.06);border-radius:10px;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;color:#1C1C1A;overflow-x:auto;">${inner}</div>`
+function sanitizeHtml(dirtyHtml: string): string {
+  if (typeof window !== 'undefined' && typeof DOMPurify?.sanitize === 'function') {
+    return DOMPurify.sanitize(dirtyHtml, {
+      USE_PROFILES: { mathMl: true, svg: true, html: true },
+      ADD_TAGS: [
+        'span',
+        'math', 'semantics', 'mrow', 'munder', 'mover', 'munderover',
+        'msub', 'msup', 'msubsup', 'mfrac', 'msqrt', 'mroot',
+        'mi', 'mo', 'mn', 'mtext', 'mspace', 'annotation',
+        'svg', 'path', 'g', 'line', 'rect', 'circle',
+      ],
+      ADD_ATTR: [
+        'class',
+        'xmlns', 'viewBox', 'preserveAspectRatio', 'd', 'style', 'aria-hidden',
+        'width', 'height', 'encoding', 'display',
+      ],
+    })
   }
-  return `<span style="font-family:Georgia,'Times New Roman',serif;font-style:italic;color:#1C1C1A;padding:0 1px;">${inner}</span>`
+  return dirtyHtml
 }
 
 function mapScriptPlain(text: string, table: Record<string, string>, fallbackPrefix: string): string {
@@ -598,7 +552,8 @@ function parseStyledMarkdownSegment(markdownSegment: string, mutedReasoning = fa
       mathTokens.push(renderMathHtml(inner, false))
       return token
     })
-    .replace(/\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$/g, (_all, inner: string) => {
+    .replace(/\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$/g, (all, inner: string) => {
+      if (/^\d+(?:[.,]\d+)?$/.test(inner.trim())) return all
       const token = `${mathPrefix}${mathTokens.length}@@`
       mathTokens.push(renderMathHtml(inner, false))
       return token
@@ -622,7 +577,7 @@ function buildStreamingDraftHtml(draft: StreamingBlockDraft): string {
   return `<div style="min-height:72px;margin:10px 0;padding:10px 12px;border-radius:10px;background-color:#F4EFE6;border:1px solid #EAE6DD;box-sizing:border-box;"><div style="font-size:11px;font-weight:600;color:#556B3D;margin-bottom:5px;">${label}</div><pre style="margin:0;padding:0;font-family:var(--font-family-mono, monospace);font-size:12px;line-height:1.55;color:#7A7A75;white-space:pre-wrap;word-break:break-word;">${escapeHtml(draft.raw)}${STREAM_CURSOR_DOT_HTML}</pre></div>`
 }
 
-/** Renders Markdown + LaTeX into safe rich-text HTML, with optional streaming stabilization and muted reasoning style. */
+/** Renders Markdown + LaTeX into sanitized KaTeX/DOMPurify HTML, with optional streaming stabilization and muted reasoning style. */
 export function renderMarkdownHtml(markdownText: string, options?: RenderMarkdownOptions): string {
   const mutedReasoning = Boolean(options?.mutedReasoning)
   const isStreaming = Boolean(options?.isStreaming) && !mutedReasoning
@@ -632,13 +587,13 @@ export function renderMarkdownHtml(markdownText: string, options?: RenderMarkdow
 
   if (!markdownText) {
     return isStreaming
-      ? `<div style="${wrapperStyle}">${STREAM_CURSOR_DOT_HTML}</div>`
+      ? sanitizeHtml(`<div style="${wrapperStyle}">${STREAM_CURSOR_DOT_HTML}</div>`)
       : ''
   }
 
   if (!isStreaming) {
     const styled = parseStyledMarkdownSegment(markdownText, mutedReasoning)
-    return `<div style="${wrapperStyle}">${styled}</div>`
+    return sanitizeHtml(`<div style="${wrapperStyle}">${styled}</div>`)
   }
 
   const { stablePrefix, draft } = extractStreamingBlockDraft(markdownText)
@@ -656,7 +611,7 @@ export function renderMarkdownHtml(markdownText: string, options?: RenderMarkdow
   if (!body) {
     body = STREAM_CURSOR_DOT_HTML
   }
-  return `<div style="${wrapperStyle}">${body}</div>`
+  return sanitizeHtml(`<div style="${wrapperStyle}">${body}</div>`)
 }
 
 export function plainMarkdownExcerpt(raw: string): string {

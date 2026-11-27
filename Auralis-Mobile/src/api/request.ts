@@ -1,4 +1,5 @@
 import { getRuntimeConfig } from '@/config/runtime'
+import { sendHttpRequest } from '@/platform/http'
 import { createRequestExecutor, type CoreRequestOptions } from './requestCore'
 
 export interface AuthSessionBridge {
@@ -26,9 +27,7 @@ export function request<T = unknown>(options: RequestOptions): Promise<T> {
   const config = getRuntimeConfig()
   const execute = createRequestExecutor({
     apiBaseUrl: config.apiBaseUrl,
-    request: (requestOptions) => {
-      uni.request(requestOptions as UniApp.RequestOptions)
-    },
+    request: sendHttpRequest,
     getAccessToken: () => authSessionBridge.getAccessToken(),
     getLoginGeneration: () => authSessionBridge.getLoginGeneration(),
     refreshAccessToken: () => authSessionBridge.refreshAccessToken(),

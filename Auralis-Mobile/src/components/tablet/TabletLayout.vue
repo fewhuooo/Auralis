@@ -1,26 +1,26 @@
 <template>
-  <view class="tablet-layout">
-    <view class="bg-glow bg-glow--1" aria-hidden="true"></view>
-    <view class="bg-glow bg-glow--2" aria-hidden="true"></view>
+  <div class="tablet-layout">
+    <div class="bg-glow bg-glow--1" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--2" aria-hidden="true"></div>
 
-    <view class="sidebar" role="navigation" aria-label="工作台导航">
-      <view class="logo-area" title="回到首页" aria-label="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
+    <div class="sidebar" role="navigation" aria-label="工作台导航">
+      <div class="logo-area" title="回到首页" aria-label="回到首页" @click="navigate('/pages/tablet/dashboard/index')">
         <BrandLogo size="28px" />
-      </view>
+      </div>
 
-      <view class="nav-menu">
-        <view
+      <div class="nav-menu">
+        <div
           class="active-capsule-indicator"
           :style="{
-            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * 52 : 0}px)`,
+            transform: `translateY(${displayIndex >= 0 && displayIndex < navItems.length ? displayIndex * navItemStepPx : 0}px)`,
             opacity: displayIndex >= 0 && displayIndex < navItems.length ? 1 : 0,
           }"
         >
-          <view class="nav-active-bar"></view>
-          <view class="capsule-inner"></view>
-        </view>
+          <div class="nav-active-bar"></div>
+          <div class="capsule-inner"></div>
+        </div>
 
-        <view
+        <div
           v-for="(item, index) in navItems"
           :key="item.path"
           class="nav-item"
@@ -34,11 +34,11 @@
             size="20px"
             :color="displayIndex === index ? '#556B3D' : '#7A7A75'"
           />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <view class="sidebar-footer">
-        <view
+      <div class="sidebar-footer">
+        <div
           class="sidebar-avatar-entry"
           :class="{ 'is-active': displayIndex === -1 }"
           role="button"
@@ -46,10 +46,10 @@
           aria-label="个人中心"
           @click="navigate('/pages/tablet/profile/index')"
         >
-          <view class="sidebar-avatar">
-            <text>{{ userInitial }}</text>
-          </view>
-          <view
+          <div class="sidebar-avatar">
+            <span>{{ userInitial }}</span>
+          </div>
+          <div
             class="avatar-sync-badge"
             :class="syncBadgeClass"
             role="button"
@@ -57,13 +57,13 @@
             aria-label="同步状态"
             @click.stop="syncStore.syncNow()"
           >
-            <view class="avatar-sync-dot"></view>
-          </view>
-        </view>
-      </view>
-    </view>
+            <div class="avatar-sync-dot"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <view
+    <div
       class="main-content"
       :class="{
         'is-entering-down': isEntering && slideDir === 'down',
@@ -76,10 +76,10 @@
       }"
     >
       <slot></slot>
-    </view>
+    </div>
 
     <slot name="modal"></slot>
-  </view>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -87,6 +87,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BrandLogo from '@/components/BrandLogo.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
+import { getCurrentRoutePath, reLaunch, redirectTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -106,14 +107,9 @@ const getIndexByUrl = (path: string) => {
 }
 
 const getInitialRouteInfo = () => {
-  try {
-    const pages = getCurrentPages()
-    if (pages && pages.length > 0) {
-      const route = '/' + (pages[pages.length - 1].route || '')
-      return { path: route, idx: getIndexByUrl(route) }
-    }
-  } catch {
-    // Ignore route lookup error
+  const route = getCurrentRoutePath()
+  if (route) {
+    return { path: route, idx: getIndexByUrl(route) }
   }
   return { path: '', idx: 0 }
 }
@@ -157,6 +153,8 @@ const syncBadgeClass = computed(() => {
   return 'status-connected'
 })
 
+const navItemStepPx = 44
+
 const navItems = [
   { path: '/pages/tablet/dashboard/index', icon: 'home', label: '首页' },
   { path: '/pages/tablet/subject-hall/index', icon: 'book', label: '学科' },
@@ -174,10 +172,9 @@ let exitResetTimer: ReturnType<typeof setTimeout> | null = null
 onMounted(() => {
   slideDir.value = layoutStore.getSlideDirection()
 
-  const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+  const nowRoute = getCurrentRoutePath()
   if (!nowRoute.includes('/login') && !authStore.isAuthenticated) {
-    uni.reLaunch({ url: '/pages/tablet/login/index' })
+    reLaunch('/pages/tablet/login/index')
     return
   }
   const targetIdx = getIndexByUrl(nowRoute)
@@ -214,8 +211,7 @@ onUnmounted(() => {
 })
 
 const navigate = (path: string) => {
-  const pages = getCurrentPages()
-  const nowRoute = pages.length > 0 ? '/' + pages[pages.length - 1].route : ''
+  const nowRoute = getCurrentRoutePath()
   if (nowRoute === path || currentPath.value === path || isExiting.value) return
 
   const targetIndex = getIndexByUrl(path)
@@ -233,7 +229,7 @@ const navigate = (path: string) => {
   if (redirectTimer) clearTimeout(redirectTimer)
   if (exitResetTimer) clearTimeout(exitResetTimer)
   void preloadRoute(path)
-  redirectTimer = setTimeout(() => { uni.redirectTo({ url: path }) }, 160)
+  redirectTimer = setTimeout(() => { redirectTo(path) }, 160)
   exitResetTimer = setTimeout(() => {
     exitResetTimer = null
     isExiting.value = false
@@ -257,10 +253,11 @@ const navigate = (path: string) => {
     linear-gradient(180deg, #F6F2EA 0%, #EFEBE2 100%);
   overflow: hidden;
   position: relative;
+  box-sizing: border-box;
 }
 
 .sidebar {
-  width: 68px;
+  width: var(--tablet-sidebar-width);
   height: 100%;
   background-color: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -279,13 +276,13 @@ const navigate = (path: string) => {
 
 .logo-area {
   width: 100%;
-  padding: 20px 0 16px;
+  padding: 12px 0 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-bottom: 1px solid rgba(45, 55, 40, 0.06);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   cursor: pointer;
   transition: transform 0.2s var(--ease-out);
 }
@@ -304,7 +301,7 @@ const navigate = (path: string) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
 }
 
@@ -313,7 +310,7 @@ const navigate = (path: string) => {
   top: 0;
   left: 0;
   right: 0;
-  height: 44px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -325,25 +322,25 @@ const navigate = (path: string) => {
 .nav-active-bar {
   position: absolute;
   left: 0;
-  top: 12px;
+  top: 10px;
   width: 3.5px;
-  height: 20px;
+  height: 18px;
   background: var(--accent-gradient);
   border-radius: 0 4px 4px 0;
   box-shadow: 0 0 8px rgba(139, 154, 110, 0.55);
 }
 
 .capsule-inner {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   background-color: rgba(139, 154, 110, 0.16);
 }
 
 .nav-item {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -363,7 +360,7 @@ const navigate = (path: string) => {
 
 .sidebar-footer {
   width: 100%;
-  padding: 14px 0 18px;
+  padding: 10px 0 12px;
   border-top: 1px solid rgba(45, 55, 40, 0.06);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   display: flex;
@@ -381,14 +378,14 @@ const navigate = (path: string) => {
 }
 
 .sidebar-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 700;
   color: #FFFFFF;
   box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
@@ -399,6 +396,11 @@ const navigate = (path: string) => {
 .sidebar-avatar-entry.is-active .sidebar-avatar {
   transform: scale(1.06);
   box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.28);
+}
+
+.sidebar-avatar-entry:active .sidebar-avatar {
+  transform: scale(0.93);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 2px 8px rgba(139, 154, 110, 0.2);
 }
 
 .avatar-sync-badge {
@@ -413,6 +415,11 @@ const navigate = (path: string) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: transform 0.16s var(--ease-out);
+}
+
+.avatar-sync-badge:active {
+  transform: scale(0.88);
 }
 
 .avatar-sync-dot {
@@ -537,9 +544,18 @@ const navigate = (path: string) => {
   left: 16%;
 }
 
-/* #ifdef H5 */
 .tablet-layout {
   height: 100dvh;
 }
-/* #endif */
+
+@media (max-height: 660px) {
+  .logo-area {
+    padding: 10px 0 8px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-footer {
+    padding: 8px 0 10px;
+  }
+}
 </style>

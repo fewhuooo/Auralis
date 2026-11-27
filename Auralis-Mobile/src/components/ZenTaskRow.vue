@@ -1,15 +1,16 @@
 <template>
-  <view
+  <div
     class="task-row zen-card"
     :class="{
+      'is-tablet-target': isTabletTarget,
       'is-completed': task.status === 'completed',
       'is-scheduled': mode === 'scheduled',
       'is-pending': mode === 'pending',
     }"
   >
-    <view v-if="mode === 'pending'" class="todo-accent-bar" aria-hidden="true"></view>
+    <div v-if="mode === 'pending'" class="todo-accent-bar" aria-hidden="true"></div>
 
-    <view
+    <div
       class="check-circle"
       :class="{
         checked: task.status === 'completed',
@@ -22,31 +23,31 @@
       @click="task.id && emit('toggle', task.id)"
     >
       <LineIcon v-if="task.status === 'completed'" name="check" size="11px" color="#FFFFFF" />
-    </view>
+    </div>
 
-    <view class="row-info" :class="{ locked }" @click="task.id && emit('toggle', task.id)">
-      <view v-if="mode === 'pending'" class="pending-title-flow">
-        <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
-        <view v-if="task.dueAt" class="meta-ddl num-tabular" :class="{ overdue: isOverdue }">
+    <div class="row-info" :class="{ locked }" @click="task.id && emit('toggle', task.id)">
+      <div v-if="mode === 'pending'" class="pending-title-flow">
+        <span class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</span>
+        <div v-if="task.dueAt" class="meta-ddl num-tabular" :class="{ overdue: isOverdue }">
           <LineIcon name="calendar" size="10px" :color="task.status === 'completed' ? 'var(--text-muted)' : (isOverdue ? 'var(--color-danger)' : 'var(--color-warning-ink)')" />
-          <text>{{ formatShortDate(task.dueAt) }}</text>
-        </view>
-      </view>
+          <span>{{ formatShortDate(task.dueAt) }}</span>
+        </div>
+      </div>
       <template v-else>
-        <view class="scheduled-meta-row num-tabular">
-          <text class="scheduled-time-pill">{{ startLabel }} · {{ task.duration || 30 }}m</text>
-          <text v-if="task.subject" class="scheduled-subject-pill">{{ task.subject }}</text>
-        </view>
-        <text class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</text>
+        <div class="scheduled-meta-row num-tabular">
+          <span class="scheduled-time-pill">{{ startLabel }} · {{ task.duration || 30 }}m</span>
+          <span v-if="task.subject" class="scheduled-subject-pill">{{ task.subject }}</span>
+        </div>
+        <span class="row-title" :class="{ strike: task.status === 'completed' }">{{ task.name }}</span>
       </template>
-    </view>
+    </div>
 
-    <view v-if="showTrailingSlot" class="row-actions">
-      <text v-if="mode === 'pending' && task.subject" class="todo-subject-pill">
+    <div v-if="showTrailingSlot" class="row-actions">
+      <span v-if="mode === 'pending' && task.subject" class="todo-subject-pill">
         {{ task.subject }}
-      </text>
+      </span>
 
-      <view
+      <div
         v-if="!hideScheduleActions && mode === 'scheduled' && task.id && task.status !== 'completed'"
         class="row-icon-btn"
         role="button"
@@ -55,9 +56,9 @@
         @click.stop="emit('unschedule', task.id)"
       >
         <LineIcon name="close" size="13px" color="var(--text-muted)" />
-      </view>
+      </div>
 
-      <view
+      <div
         v-if="mode === 'pending' && task.id"
         class="row-icon-btn"
         role="button"
@@ -66,16 +67,19 @@
         @click.stop="emit('delete', task.id, task.name)"
       >
         <LineIcon name="trash" size="13px" color="var(--text-muted)" />
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
+import { getAppTarget } from '@/router/target'
 import type { Task } from '@/store/useTaskStore'
 import { formatLocalTimeHHmm, formatShortDate } from '@/utils/dateKey'
+
+const isTabletTarget = getAppTarget() === 'tablet'
 
 const props = defineProps<{
   task: Task
@@ -115,6 +119,7 @@ const showTrailingSlot = computed(() => (
   background-color: var(--glass-sub-bg);
   backdrop-filter: var(--glass-blur-soft);
   -webkit-backdrop-filter: var(--glass-blur-soft);
+  cursor: pointer;
   transition: border-color 0.18s ease, transform 0.16s var(--ease-out), box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
@@ -134,6 +139,11 @@ const showTrailingSlot = computed(() => (
 
 .task-row:hover {
   border-color: rgba(139, 154, 110, 0.45);
+}
+
+.task-row:active {
+  border-color: rgba(139, 154, 110, 0.45);
+  transform: scale(0.985);
 }
 
 .task-row.is-completed {
@@ -339,6 +349,12 @@ const showTrailingSlot = computed(() => (
   background-color: rgba(28, 28, 26, 0.05);
 }
 
+.row-icon-btn:active {
+  opacity: 1;
+  background-color: rgba(28, 28, 26, 0.08);
+  transform: scale(0.9);
+}
+
 @media (max-width: 390px) {
   .task-row {
     padding: 10px 11px;
@@ -359,7 +375,47 @@ const showTrailingSlot = computed(() => (
   }
 
   .task-row.is-pending .row-title {
-    font-size: 12px;
+    font-size: 12.5px;
   }
+}
+
+.task-row.is-tablet-target {
+  padding: 8px 10px;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+.task-row.is-tablet-target.is-pending {
+  padding: 6px 9px;
+  gap: 6px;
+  border-radius: 9px;
+}
+
+.task-row.is-tablet-target .check-circle {
+  width: 16px;
+  height: 16px;
+}
+
+.task-row.is-tablet-target.is-pending .check-circle {
+  width: 14px;
+  height: 14px;
+}
+
+.task-row.is-tablet-target .row-title {
+  font-size: 12.5px;
+}
+
+.task-row.is-tablet-target.is-pending .row-title {
+  font-size: 12px;
+}
+
+.task-row.is-tablet-target .row-icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.task-row.is-tablet-target.is-pending .row-icon-btn {
+  width: 22px;
+  height: 22px;
 }
 </style>

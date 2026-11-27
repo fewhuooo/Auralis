@@ -1,54 +1,54 @@
 <template>
   <TabletLayout>
-    <view class="t-pomodoro" @click="showTaskDropdown = false">
-      <view class="main-content">
-        <view class="left-column">
+    <div class="t-pomodoro" @click="showTaskDropdown = false">
+      <div class="main-content">
+        <div class="left-column">
           <TimerCore :date-text="clockText.dateText" :time-text="clockText.timeText" />
-        </view>
+        </div>
 
-        <view class="right-column">
+        <div class="right-column">
           <!-- Card 1: 当前专注 -->
-          <view class="panel-card top-card">
-            <view class="card-header">
-              <text class="card-title">当前专注</text>
-              <text class="card-sub-hint">
+          <div class="panel-card top-card">
+            <div class="card-header">
+              <span class="card-title">当前专注</span>
+              <span class="card-sub-hint">
                 {{ focusStore.isTaskLocked ? '本轮专注结束后可重新选择任务' : '选择要专注的任务，或开启自由专注' }}
-              </text>
-            </view>
+              </span>
+            </div>
 
-            <view class="task-selector-wrap" @click.stop>
-              <view
+            <div class="task-selector-wrap" @click.stop>
+              <div
                 class="task-selector-trigger"
                 :class="{ 'is-open': showTaskDropdown, 'is-locked': focusStore.isTaskLocked }"
                 role="button"
                 aria-label="选择专注任务"
                 @click="toggleTaskDropdown"
               >
-                <text class="selector-value-text">{{ displayedTask.name }}</text>
+                <span class="selector-value-text">{{ displayedTask.name }}</span>
                 <LineIcon
                   v-if="focusStore.isTaskLocked"
                   name="lock"
                   size="15px"
                   color="var(--text-muted, #7A7A75)"
                 />
-                <view v-else class="selector-chevron" :class="{ 'is-open': showTaskDropdown }">
+                <div v-else class="selector-chevron" :class="{ 'is-open': showTaskDropdown }">
                   <LineIcon name="chevron-down" size="15px" color="var(--text-muted, #7A7A75)" />
-                </view>
-              </view>
+                </div>
+              </div>
 
-              <view v-if="showTaskDropdown && !focusStore.isTaskLocked" class="task-dropdown-panel">
-                <scroll-view scroll-y :show-scrollbar="false" class="task-dropdown-scroll">
-                  <view
+              <div v-if="showTaskDropdown && !focusStore.isTaskLocked" class="task-dropdown-panel">
+                <div class="task-dropdown-scroll zen-scroll-y">
+                  <div
                     class="task-option-item"
                     :class="{ 'is-selected': !focusStore.selectedTaskId }"
                     role="button"
                     @click="selectTaskOption(null)"
                   >
-                    <text class="task-option-name">自由学习</text>
-                    <text class="task-option-badge is-free-badge">随时开启专注</text>
-                  </view>
+                    <span class="task-option-name">自由学习</span>
+                    <span class="task-option-badge is-free-badge">随时开启专注</span>
+                  </div>
 
-                  <view
+                  <div
                     v-for="task in scheduledTasks"
                     :key="task.id"
                     class="task-option-item"
@@ -56,17 +56,17 @@
                     role="button"
                     @click="selectTaskOption(task)"
                   >
-                    <text class="task-option-name">{{ task.name || '未命名任务' }}</text>
-                    <text class="task-option-badge num-tabular">
+                    <span class="task-option-name">{{ task.name || '未命名任务' }}</span>
+                    <span class="task-option-badge num-tabular">
                       {{ formatFocusScheduledTime(task.scheduledAt, nowMs) }}
-                    </text>
-                  </view>
+                    </span>
+                  </div>
 
-                  <view v-if="pendingTasks.length > 0" class="dropdown-group-label">
-                    <text>待办清单</text>
-                  </view>
+                  <div v-if="pendingTasks.length > 0" class="dropdown-group-label">
+                    <span>待办清单</span>
+                  </div>
 
-                  <view
+                  <div
                     v-for="task in pendingTasks"
                     :key="task.id"
                     class="task-option-item"
@@ -74,26 +74,26 @@
                     role="button"
                     @click="selectTaskOption(task)"
                   >
-                    <text class="task-option-name">{{ task.name || '未命名任务' }}</text>
-                    <text class="task-option-badge num-tabular">{{ task.duration || 30 }}m</text>
-                  </view>
-                </scroll-view>
-              </view>
-            </view>
+                    <span class="task-option-name">{{ task.name || '未命名任务' }}</span>
+                    <span class="task-option-badge num-tabular">{{ task.duration || 30 }}m</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-            <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
-              <view class="banner-info">
-                <text class="banner-title">{{ displayedTask.name }}</text>
-                <view class="banner-meta-row">
-                  <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
-                  <text class="banner-desc">{{ displayedTask.bannerDesc }}</text>
-                </view>
-              </view>
-            </view>
+            <div class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
+              <div class="banner-info">
+                <span class="banner-title">{{ displayedTask.name }}</span>
+                <div class="banner-meta-row">
+                  <span class="banner-status-tag">{{ displayedTask.statusTag }}</span>
+                  <span class="banner-desc">{{ displayedTask.bannerDesc }}</span>
+                </div>
+              </div>
+            </div>
 
-            <view v-if="focusStore.lastCompletedTask" class="complete-prompt">
-              <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
-              <view class="complete-prompt-actions">
+            <div v-if="focusStore.lastCompletedTask" class="complete-prompt">
+              <span class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</span>
+              <div class="complete-prompt-actions">
                 <button
                   type="button"
                   class="prompt-btn is-secondary"
@@ -106,52 +106,53 @@
                   :disabled="completingTask"
                   @click="completeBoundTask"
                 >{{ completingTask ? '保存中…' : '标记完成' }}</button>
-              </view>
-            </view>
-          </view>
+              </div>
+            </div>
+          </div>
 
           <!-- Card 2: 今日专注看板 -->
-          <view class="panel-card middle-card">
-            <view class="card-header">
-              <text class="card-title">今日专注看板</text>
-              <text class="card-sub-hint">今日累计专注数据，暂停与休息不计入时长</text>
-            </view>
+          <div class="panel-card middle-card">
+            <div class="card-header">
+              <span class="card-title">今日专注看板</span>
+              <span class="card-sub-hint">今日累计专注数据，暂停与休息不计入时长</span>
+            </div>
 
-            <view class="stats-container">
-              <view class="stat-col">
-                <text class="stat-val num-tabular">{{ focusStore.todayRounds }}</text>
-                <view class="stat-label-row">
+            <div class="stats-container">
+              <div class="stat-col">
+                <span class="stat-val num-tabular">{{ focusStore.todayRounds }}</span>
+                <div class="stat-label-row">
                   <LineIcon name="check" size="15px" color="#8B9A6E" />
-                  <text class="stat-label">今日番茄</text>
-                </view>
-              </view>
+                  <span class="stat-label">今日番茄</span>
+                </div>
+              </div>
 
-              <view class="stat-divider"></view>
+              <div class="stat-divider"></div>
 
-              <view class="stat-col">
-                <view class="val-wrapper">
-                  <text class="stat-val num-tabular">{{ todayFocusMinutesText }}</text>
-                  <text class="stat-unit">m</text>
-                </view>
-                <view class="stat-label-row">
+              <div class="stat-col">
+                <div class="val-wrapper">
+                  <span class="stat-val num-tabular">{{ todayFocusMinutesText }}</span>
+                  <span class="stat-unit">m</span>
+                </div>
+                <div class="stat-label-row">
                   <LineIcon name="fire" size="15px" color="#8B9A6E" />
-                  <text class="stat-label">专注时长</text>
-                </view>
-              </view>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
+                  <span class="stat-label">专注时长</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { onHide, onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { showToast } from '@/platform/feedback'
+import { onPageHide, onPageShow } from '@/platform/lifecycle'
 import {
   formatFocusClockDateTime,
   formatFocusScheduledTime,
@@ -287,7 +288,7 @@ async function syncFocusState() {
 function toggleTaskDropdown() {
   if (focusStore.isTaskLocked) {
     showTaskDropdown.value = false
-    uni.showToast({ title: '本轮专注结束后可重新选择任务', icon: 'none' })
+    showToast('本轮专注结束后可重新选择任务')
     return
   }
   showTaskDropdown.value = !showTaskDropdown.value
@@ -321,7 +322,7 @@ async function completeBoundTask() {
     ) {
       return
     }
-    uni.showToast({ title: '已标记完成', icon: 'none' })
+    showToast('已标记完成')
     focusStore.dismissCompletedTaskPrompt()
   } catch (error) {
     if (
@@ -329,10 +330,7 @@ async function completeBoundTask() {
       && userId === authStore.user?.id
       && serverDeviceId === authStore.serverDeviceId
     ) {
-      uni.showToast({
-        title: error instanceof Error ? error.message : '标记完成失败，请重试',
-        icon: 'none',
-      })
+      showToast(error instanceof Error ? error.message : '标记完成失败，请重试')
     }
   } finally {
     completingTask.value = false
@@ -375,10 +373,10 @@ watch(
 onMounted(() => {
   void syncFocusState()
 })
-onShow(() => {
+onPageShow(() => {
   void syncFocusState()
 })
-onHide(stopClock)
+onPageHide(stopClock)
 onUnmounted(stopClock)
 </script>
 
@@ -394,13 +392,13 @@ onUnmounted(stopClock)
 
 .main-content {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1520px;
   margin: 0 auto;
   height: 100%;
   display: flex;
   flex-direction: row;
-  padding: 32px 28px;
-  gap: 48px;
+  padding: clamp(16px, 2.6vh, 32px) clamp(18px, 2.4vw, 32px);
+  gap: clamp(20px, 3.2vw, 48px);
   box-sizing: border-box;
 }
 
@@ -426,9 +424,9 @@ onUnmounted(stopClock)
 
 .panel-card {
   background: var(--color-bg-primary, #F7F2EB);
-  border-radius: 24px;
+  border-radius: 18px;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 26px 28px;
+  padding: 18px 20px;
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.02),
     0 12px 30px -4px rgba(0, 0, 0, 0.05),
@@ -481,8 +479,8 @@ onUnmounted(stopClock)
 
 .task-selector-trigger {
   width: 100%;
-  height: 52px;
-  padding: 0 20px;
+  height: 44px;
+  padding: 0 16px;
   border-radius: var(--radius-full);
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -498,6 +496,11 @@ onUnmounted(stopClock)
 
 .task-selector-trigger:hover:not(.is-locked) {
   border-color: rgba(139, 154, 110, 0.5);
+}
+
+.task-selector-trigger:active:not(.is-locked) {
+  border-color: rgba(139, 154, 110, 0.6);
+  transform: scale(0.985);
 }
 
 .task-selector-trigger.is-open {
@@ -569,7 +572,7 @@ onUnmounted(stopClock)
   gap: 12px;
   cursor: pointer;
   box-sizing: border-box;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.14s var(--ease-out);
 }
 
 .task-option-item:last-child {
@@ -578,6 +581,11 @@ onUnmounted(stopClock)
 
 .task-option-item:hover {
   background: rgba(139, 154, 110, 0.10);
+}
+
+.task-option-item:active {
+  background: rgba(139, 154, 110, 0.16);
+  transform: scale(0.985);
 }
 
 .task-option-item.is-selected {
@@ -768,7 +776,7 @@ onUnmounted(stopClock)
 }
 
 .stat-val {
-  font-size: 40px;
+  font-size: 32px;
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1;
@@ -802,7 +810,7 @@ onUnmounted(stopClock)
   }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 780px) {
   .t-pomodoro {
     overflow-y: auto;
   }

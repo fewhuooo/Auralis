@@ -1,6 +1,6 @@
 # Auralis 路线规划与发布前门禁
 
-更新时间：2026-11-24
+更新时间：2026-11-27
 
 文档状态：现行路线与门禁
 
@@ -24,20 +24,24 @@
 | --- | --- | --- |
 | 1 | 已知 correctness 与类型/测试门禁问题 | 按问题登记的证据和关闭条件处理剩余类型与测试门禁；知识块会话发布已有源码修复，持久后台 Overview job 已退役；Mobile 类型阻断已处理，独立复习和平板工作区复习的真机验收继续跟踪 |
 | 2 | 身份、资料与数据恢复 | 验证注册/重置/会话撤销、账号隔离、上传解析、删除、冲突、离线队列与恢复；保留失败证据 |
-| 3 | PC 与跨端主流程 | Tauri、H5、微信、Tablet 分端验收，再验证双设备同步、排期、复习与 Chat 恢复 |
+| 3 | PC 与跨端主流程 | PC Tauri、Android 手机 App（Auralis）与平板 App（Auralis HD）分端验收，再验证双设备同步、排期、复习与 Chat 恢复 |
 | 4 | AI 与外部依赖质量 | 验证现行 Markdown Overview、Chat 原生工具、检索与来源、真实 Provider 异常和用量；自动测试不替代质量样例 |
 | 5 | 候选发布 | 按本页「部署测试前门禁（R0–R6）」收口配置、制品、安全、监控、备份恢复和回滚 |
 | 6 | 后续能力 | 手写和其他平台按已确认产品范围独立排期，不能擅自扩大当前发布范围 |
 
 ### Mobile / Tablet 设计落地顺序
 
-已确认范围见[产品需求](../project/ProductRequirements.md#跨端职责)，当前差距见[模块说明](../modules/FrontendMobileTablet.md#已确认目标与实现差距)。按独立可验证阶段推进：
+已确认范围见[产品需求](../project/ProductRequirements.md#跨端职责)，当前差距与边界见[模块说明](../modules/FrontendMobileTablet.md#已确认目标与收口状态)。按独立可验证阶段推进：
 
 1. 统一任务日期、学习复习生命周期和数据范围，覆盖手机及平板独立与内嵌入口。
 2. 打通手机资料采集、PC 整理与平板阅读，接入真实文件和正式总览。
 3. 完成平板资料伴读、知识内容编辑和来源回跳，以及专注实际计时与统计。
 4. 完成本地自由画布及分屏学习，验证自动保存、账号隔离、导出与真机书写。
 5. 收口手机导航、平板学习首页与触控体验，并逐端验收。
+
+### Mobile / Tablet 技术栈迁移（已完成）
+
+2026-11-26～27 已将 `Auralis-Mobile` 从 Uni-app 重构为 Vue 3 + Vite + Tauri 2，拆分为 Android 手机 App（`Auralis`，`com.auralis.mobile`）与平板 App（`Auralis HD`，`com.auralis.hd`）两个独立原生应用；微信小程序与 Mobile H5 退出发布范围，iOS 与移动端 Rust 共享层不做；原 Uni-app 历史归档至 `D:\CodeBase\Archive\Auralis-Mobile-uniapp-20261127\` 与 Git 标签 `archive/mobile-uniapp-20261127`。迁移方案已归档至[移动端 Tauri 2 迁移方案](../archive/design-and-plans/plans/frontend/2026-11-26-mobile-tauri-migration.md)，现行架构、命令与限制见[Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)。
 
 ### 优先级定义
 
@@ -92,18 +96,18 @@
 
 ### Mobile / Tablet
 
-- **目标**：让手机与平板在不跨端跳转、数据来源清楚、登录正确和触控可用的前提下完成主流程验收。具体页面与边界见[Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)。
-- **已知前提**：手机端 8 个页面（含启动分流）、Tablet 8 个页面已注册；`#ifndef MP-WEIXIN` 将 Tablet 页面排除在微信产物外；设备标识统一使用请求 `clientDeviceKey` 与服务端返回的 `serverDeviceId`，不保留旧 `deviceId` 兼容字段；Realtime ticket 不带请求体且须携带有效 Bearer access token。
+- **目标**：让 Android 手机 App（`Auralis`，`com.auralis.mobile`）与平板 App（`Auralis HD`，`com.auralis.hd`）在不跨端跳转、数据来源清楚、登录正确和触控可用的前提下完成主流程验收。具体页面与边界见[Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)。
+- **已知前提**：手机端 7 个页面、平板端 8 个页面已按 `VITE_APP_TARGET=phone|tablet` 分别打包并移除 `pages/launch` 启动页与微信/H5 构建分支；设备标识统一使用请求 `clientDeviceKey` 与服务端返回的 `serverDeviceId`，不保留旧 `deviceId` 兼容字段；Realtime ticket 不带请求体且须携带有效 Bearer access token。
 - **有序收口任务**：
-  1. 验证 launch 分流、手机/Tablet 内部导航和 401 登录回退。
-  2. 验证 `VITE_API_BASE_URL`、`VITE_WS_BASE_URL` 在模拟器/真机上的连通性；微信环境强制 HTTPS/WSS。
-  3. 逐页收口 local-only、Sync、AI、Asset、Stats 与 Review 数据来源。
-  4. 验收 Home 新建日程、Timeline 排期、Pomodoro、Review、Stats。
-  5. 验收 Mobile AI 输入、流式/失败状态和上下文。
-  6. 验收 TabletLayout 导航、AI modal、Dashboard 多栏和 workspace 总结栏。
-  7. 运行并维护侧栏切换脚本（`node scripts\check-tablet-sidebar-transition.mjs`）和 `test:tablet`，按实际行为缺口补齐验证。
-  8. 在微信开发者工具、手机和横屏平板完成真实交互记录。
-- **验证与完成定义**：`Auralis-Mobile` 执行 `npm.cmd run type-check`、`npm.cmd run check:r4-mobile`、`npm.cmd run test:r4-mobile`、`npm.cmd run test:tablet`、`node scripts\check-tablet-sidebar-transition.mjs`、`npm.cmd run build:h5` 与 `npm.cmd run build:mp-weixin`；手机与 Tablet 只在本端导航，微信产物不含 Tablet 页面，H5、微信与平板真机均有独立证据。
+  1. 验证双端各自根路由、内部导航、Android 系统返回键与 401 登录回退。
+  2. 验证 `VITE_API_BASE_URL`、`VITE_WS_BASE_URL`、`network_security_config.xml` 与服务端 CORS（`http://tauri.localhost`）在模拟器/真机上的连通性；正式发行版强制 HTTPS/WSS。
+  3. 逐页收口 `tauri-plugin-sql` 本地库、Sync、AI、Asset、Stats 与 Review 数据来源，验证 `close()` 与登录世代围栏。
+  4. 验收 Home 新建日程/待办/上传、Pomodoro、Review 生命周期、Stats 与全局触控反馈。
+  5. 验收 Mobile AI 输入、流式/失败状态与上下文。
+  6. 验收 TabletLayout 导航、AI 浮窗、Dashboard 多栏、workspace 文档阅读（IndexedDB 缓存）与总览/复习面板。
+  7. 运行并维护侧栏切换脚本（`node scripts/check-tablet-sidebar-transition.mjs`）、`test:r4-mobile`（含 `node:sqlite` 与 `touchFeedback` 测试）和 `test:tablet`，按实际行为缺口补齐验证。
+  8. 在物理 Android 手机与横屏平板真机完成真实交互、软键盘、清澈比例与长时间运行记录。
+- **验证与完成定义**：`Auralis-Mobile` 执行 `npm run type-check`、`npm run check:r4-mobile`、`npm run test:r4-mobile`、`npm run test:tablet`、`node scripts/check-tablet-sidebar-transition.mjs`、`npm run build:phone`、`npm run build:tablet` 与 `scripts/build-mobile-release.ps1`；手机与平板只包含本端路由，双端各自在物理真机留存独立验收证据。
 
 ### AI 与 RAG
 
@@ -171,7 +175,7 @@
 
 R0–R6 与原任务 ID 保留，便于旧交接定位。下表是候选版本进入受控部署测试前须核对的门禁，不表示实现未开始，也不继承早期勾选状态为当前通过。每个候选须绑定同一 commit、工作树差异、目标平台、环境、完整命令及退出码、人工证据、剩余风险和负责人；P0 必须关闭，保留 P1 须有明确接受记录及补偿措施，P2 可排入后续优化。
 
-候选范围包括 PC Web/Tauri、Mobile H5、微信与 Tablet 主工作区（实际发布组合在 R0 确认）。Tablet 手写云同步、其他小程序平台、旧 Server 数据自动迁移、跨实例事件 Broker、AI 自动执行领域写操作不纳入本清单范围。本文不授权部署、重启、删除数据或更改凭据；实际操作按[部署指南](../operations/Deployment.md)与[Runbook](../operations/Runbook.md)执行。
+候选范围包括 Windows x64 PC Tauri、Android 手机 App（Auralis）与 Android 平板 App（Auralis HD）（实际发布组合在 R0 确认；PC Web、Mobile H5 与微信小程序已退出发布范围）。Tablet 手写云同步、iOS / 小程序平台、旧 Server 数据自动迁移、跨实例事件 Broker、AI 自动执行领域写操作不纳入本清单范围。本文不授权部署、重启、删除数据或更改凭据；实际操作按[部署指南](../operations/Deployment.md)与[Runbook](../operations/Runbook.md)执行。
 
 ### R0：范围与工作基线
 
@@ -222,10 +226,10 @@ R0–R6 与原任务 ID 保留，便于旧交接定位。下表是候选版本�
 | R4-01 | PC 现行登录守卫与会话隔离、环境配置、`/ws/events` + ticket、重连与退出行为；守卫和新实时协议已有源码，重点验证当前行为 |
 | R4-02 | PC 页面/Store/仓储使用现行契约；user/device 隔离、outbox、删除、上传和 AI 上下文无旧数据越界 |
 | R4-03 | Tauri 本地 SQL、文件/keyring/网络权限、安装升级卸载、数据保留及异常恢复；打包通过不等于实机可用 |
-| R4-04 | Mobile 类型检查、Tablet 测试、H5/微信构建使用当前依赖；Review 类型漂移等问题以问题登记为准，旧通过记录不覆盖新失败 |
-| R4-05 | Mobile/微信真实 API、用户隔离、冲突/reset 与实时协议；逐端核对 Review 生命周期、Chat 范围和恢复能力 |
-| R4-06 | 微信 AppID、HTTPS/WSS/上传域名、权限、包体与至少一台真机流程 |
-| R4-07 | Tablet 主工作区契约、横屏触控/键盘/缩放/前后台；手写开关与本地能力边界如实标明 |
+| R4-04 | Mobile / Tablet（Vue 3 + Vite + Tauri 2 双包）通过 `type-check`、`check:r4-mobile`、`node:sqlite` 与平台适配回归（`test:r4-mobile` / `test:tablet`）及双端 Vite / Android 构建，不含已退役 Uni-app / 微信代码 |
+| R4-05 | Android 手机与平板连接真实 API、本地 SQLite、用户隔离、冲突/reset 与 `/ws/events` 实时协议；逐端核对 Review 生命周期、Chat 范围和恢复能力 |
+| R4-06 | Android 双目标正式 Release 签名、HTTPS/WSS 与 `network_security_config.xml` 收口、服务端 `http://tauri.localhost` CORS、APK 体积基线与双端物理真机主流程 |
+| R4-07 | Tablet 主工作区契约、横屏触控/键盘/原生 1.0 视口比例/前后台及文档阅读器（IndexedDB 缓存）；手写开关与本地能力边界如实标明 |
 | G4 | 选定客户端的类型/构建/协议与真实主路径符合当前 API，模块/契约回写齐全 |
 
 ### R5：跨端与人工验收
@@ -237,7 +241,7 @@ R0–R6 与原任务 ID 保留，便于旧交接定位。下表是候选版本�
 | R5-03 | 双设备首次/增量同步、断网编辑、重复提交、版本冲突、重连、过期 cursor/reset 及墓碑一致性 |
 | R5-04 | 按现行 Review 生命周期验证初选/核对/纠正/重放/恢复、有效历史和统计；Task 状态与日期统计正确，不要求恢复旧 due/events 写入 |
 | R5-05 | 有/无/冲突资料和用户隔离、引用质量、Overview 多批内容、Chat 工具及取消恢复；记录延迟、用量、失败率，日志脱敏 |
-| R5-06 | PC/Tauri/H5/微信/Tablet 按目标设备覆盖视觉、输入、权限、文件、网络、横屏触控与长时间使用，保留版本/日期/设备证据 |
+| R5-06 | Windows x64 PC Tauri、Android 手机 App（Auralis）与 Android 平板 App（Auralis HD）按目标设备覆盖视觉清晰度、触控动效、输入、权限、文件、网络、横屏分屏与长时间使用，保留版本/日期/设备证据 |
 | G5 | 身份、资料、同步核心场景通过，其他保留项有明确接受记录；无未关闭安全、隔离或数据丢失 P0 |
 
 ### R6：候选交付与放行

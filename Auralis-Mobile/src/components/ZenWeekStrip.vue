@@ -1,18 +1,19 @@
 <template>
-  <view
+  <div
     class="week-card"
     :class="{
+      'is-tablet-target': isTabletTarget,
       'zen-card': !frameless,
       'is-frameless': frameless,
       'is-compact': !showHeader && !frameless,
     }"
   >
-    <view v-if="showHeader" class="week-nav">
-      <text class="week-month num-tabular">{{ monthTitle }}</text>
-    </view>
+    <div v-if="showHeader" class="week-nav">
+      <span class="week-month num-tabular">{{ monthTitle }}</span>
+    </div>
 
-    <view class="week-strip">
-      <view
+    <div class="week-strip">
+      <div
         v-for="day in days"
         :key="day.dateKey"
         class="week-day"
@@ -25,19 +26,22 @@
         :aria-pressed="modelValue === day.dateKey"
         @click="emit('update:modelValue', day.dateKey)"
       >
-        <text class="w-label">{{ day.weekdayLabel }}</text>
-        <view class="w-num-circle">
-          <text class="w-num num-tabular">{{ day.dayNumber }}</text>
-        </view>
-        <view class="w-dot" :class="{ visible: scheduledDates.has(day.dateKey) }"></view>
-      </view>
-    </view>
-  </view>
+        <span class="w-label">{{ day.weekdayLabel }}</span>
+        <div class="w-num-circle">
+          <span class="w-num num-tabular">{{ day.dayNumber }}</span>
+        </div>
+        <div class="w-dot" :class="{ visible: scheduledDates.has(day.dateKey) }"></div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { getAppTarget } from '@/router/target'
 import { pad2, type WeekDayDescriptor } from '@/utils/dateKey'
+
+const isTabletTarget = getAppTarget() === 'tablet'
 
 const props = defineProps<{
   modelValue: string
@@ -193,5 +197,27 @@ const monthTitle = computed(() => {
 
 .w-dot.visible {
   opacity: 1;
+}
+
+.week-card.is-tablet-target .week-nav {
+  min-height: 18px;
+}
+
+.week-card.is-tablet-target .week-day {
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.week-card.is-tablet-target .w-label {
+  font-size: 10px;
+}
+
+.week-card.is-tablet-target .w-num-circle {
+  width: 28px;
+  height: 28px;
+}
+
+.week-card.is-tablet-target .w-num {
+  font-size: 12.5px;
 }
 </style>

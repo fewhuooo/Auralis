@@ -1,58 +1,55 @@
 <template>
   <AppPageLayout>
-    <view class="learn-page">
-      <view class="status-bar-spacer"></view>
+    <div class="learn-page">
+      <div class="status-bar-spacer"></div>
 
-      <view class="top-bar">
-        <view class="masthead-main-row">
-          <text class="page-title">学习</text>
-          <view v-if="syncStore.isSyncing" class="sync-dot" aria-label="同步中"></view>
-        </view>
-        <text class="masthead-subtitle num-tabular">
+      <div class="top-bar">
+        <div class="masthead-main-row">
+          <span class="page-title">学习</span>
+          <div v-if="syncStore.isSyncing" class="sync-dot" aria-label="同步中"></div>
+        </div>
+        <span class="masthead-subtitle num-tabular">
           {{ subjectStore.subjects.length }} 门学科 · {{ totalBlockCount }} 个知识块
-        </text>
-      </view>
+        </span>
+      </div>
 
-      <view v-if="subjectStore.subjects.length === 0" class="learn-empty-stage">
-        <view class="empty-hall-card zen-card">
-          <view class="empty-halo">
+      <div v-if="subjectStore.subjects.length === 0" class="learn-empty-stage">
+        <div class="empty-hall-card zen-card">
+          <div class="empty-halo">
             <LineIcon name="book" size="24px" color="var(--color-sage-ink)" />
-          </view>
-          <text class="empty-title">暂无学科空间</text>
-          <text class="empty-subtitle">可在此直接创建第一门学科，或等待其他端同步</text>
-          <view class="empty-quick-create">
+          </div>
+          <span class="empty-title">暂无学科空间</span>
+          <span class="empty-subtitle">可在此直接创建第一门学科，或等待其他端同步</span>
+          <div class="empty-quick-create">
             <input
               v-model="quickSubjectName"
               class="ui-input empty-quick-input"
               maxlength="20"
               placeholder="输入学科名称…"
               :disabled="creatingQuickSubject"
-              @confirm="createQuickSubject"
+              @keydown="handleEnterKey($event, createQuickSubject)"
             />
             <button
+              type="button"
               class="ui-btn ui-btn-primary empty-quick-btn"
-              :loading="creatingQuickSubject"
+              :class="{ 'is-loading': creatingQuickSubject }"
               :disabled="creatingQuickSubject || !quickSubjectName.trim()"
               @click="createQuickSubject"
             >
               创建
             </button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
 
       <template v-else>
-        <view class="subject-strip-wrap">
-          <scroll-view
-            scroll-x
-            scroll-with-animation
-            :scroll-left="stripScrollLeft"
-            :show-scrollbar="false"
-            class="subject-strip-scroll"
-            @scroll="onSubjectStripScroll"
+        <div ref="stripWrapRef" class="subject-strip-wrap">
+          <div
+            ref="stripScrollRef"
+            class="subject-strip-scroll zen-scroll-x"
           >
-            <view class="subject-strip">
-              <view
+            <div class="subject-strip">
+              <div
                 v-for="(sub, idx) in subjectStore.subjects"
                 :id="`subject-pill-${idx}`"
                 :key="sub.id"
@@ -68,18 +65,18 @@
                   size="14px"
                   :color="sub.id === activeSubjectId ? '#FFFFFF' : '#556B3D'"
                 />
-                <text class="subject-pill-name">{{ sub.name }}</text>
-                <text
+                <span class="subject-pill-name">{{ sub.name }}</span>
+                <span
                   v-if="(badgeCountMap[sub.id] ?? 0) > 0"
                   class="subject-pill-badge num-tabular"
                 >
                   {{ formatBadgeCount(badgeCountMap[sub.id]) }}
-                </text>
-              </view>
-            </view>
-          </scroll-view>
+                </span>
+              </div>
+            </div>
+          </div>
 
-          <view
+          <div
             class="subject-expand-btn"
             :class="{ 'is-open': showSubjectPicker }"
             role="button"
@@ -92,31 +89,31 @@
               size="15px"
               color="var(--color-sage-ink)"
             />
-          </view>
-        </view>
+          </div>
+        </div>
 
-        <view class="learn-content">
-          <view class="plan-card">
-            <view class="plan-top-row">
-              <view class="plan-subject-meta">
-                <view class="hero-icon-badge">
+        <div class="learn-content">
+          <div class="plan-card">
+            <div class="plan-top-row">
+              <div class="plan-subject-meta">
+                <div class="hero-icon-badge">
                   <LineIcon
                     :name="resolveSubjectIcon(activeSubject?.icon)"
                     size="14px"
                     color="var(--color-sage-ink)"
                   />
-                </view>
-                <text class="hero-subject-name">{{ activeSubject?.name || '当前学科' }}</text>
-              </view>
+                </div>
+                <span class="hero-subject-name">{{ activeSubject?.name || '当前学科' }}</span>
+              </div>
 
-              <view class="mastery-pill num-tabular">
-                <view class="mastery-dot"></view>
-                <text v-if="!hasLoadedReviewStates && statesLoading">同步状态中…</text>
-                <text v-else>掌握 {{ heroSummary.masteryPercent }}% · {{ heroSummary.masteredCount }}/{{ heroSummary.blockCount }}</text>
-              </view>
-            </view>
+              <div class="mastery-pill num-tabular">
+                <div class="mastery-dot"></div>
+                <span v-if="!hasLoadedReviewStates && statesLoading">同步状态中…</span>
+                <span v-else>掌握 {{ heroSummary.masteryPercent }}% · {{ heroSummary.masteredCount }}/{{ heroSummary.blockCount }}</span>
+              </div>
+            </div>
 
-            <view
+            <div
               class="distribution-track"
               role="progressbar"
               :aria-valuenow="heroSummary.masteryPercent"
@@ -124,47 +121,47 @@
               aria-valuemax="100"
             >
               <template v-if="heroSummary.blockCount > 0">
-                <view
+                <div
                   v-if="heroSummary.pendingLearningCount > 0"
                   class="dist-seg dist-learning"
                   :style="{ width: `${heroSummary.distributionPercents.learning}%` }"
-                ></view>
-                <view
+                ></div>
+                <div
                   v-if="heroSummary.reviewingCount > 0"
                   class="dist-seg dist-reviewing"
                   :style="{ width: `${heroSummary.distributionPercents.reviewing}%` }"
-                ></view>
-                <view
+                ></div>
+                <div
                   v-if="heroSummary.masteredCount > 0"
                   class="dist-seg dist-mastered"
                   :style="{ width: `${heroSummary.distributionPercents.mastered}%` }"
-                ></view>
+                ></div>
               </template>
-            </view>
+            </div>
 
-            <view class="plan-action-grid">
-              <view
+            <div class="plan-action-grid">
+              <div
                 class="plan-tile tile-learn"
                 :class="{ 'is-idle': !canStartLearning }"
                 role="button"
                 aria-label="进入学习"
                 @click="startStudyMode('learn')"
               >
-                <view class="tile-head">
-                  <text class="tile-label tile-label-learn">待学习</text>
+                <div class="tile-head">
+                  <span class="tile-label tile-label-learn">待学习</span>
                   <LineIcon
                     name="arrow-right"
                     size="14px"
                     :color="canStartLearning ? '#4B5F36' : 'var(--text-muted)'"
                   />
-                </view>
-                <view class="tile-metric-row">
-                  <text class="tile-number tile-number-learn num-tabular">{{ hasLoadedReviewStates ? heroSummary.pendingLearningCount : '—' }}</text>
-                </view>
-                <text class="tile-hint num-tabular">{{ learnTileHint }}</text>
-              </view>
+                </div>
+                <div class="tile-metric-row">
+                  <span class="tile-number tile-number-learn num-tabular">{{ hasLoadedReviewStates ? heroSummary.pendingLearningCount : '—' }}</span>
+                </div>
+                <span class="tile-hint num-tabular">{{ learnTileHint }}</span>
+              </div>
 
-              <view
+              <div
                 class="plan-tile tile-review"
                 :class="{ 'is-selftest-mode': !canStartReview }"
                 role="button"
@@ -172,86 +169,86 @@
                 @click="handleRightPlanCardClick"
               >
                 <template v-if="canStartReview">
-                  <view class="tile-head">
-                    <text class="tile-label tile-label-review">待复习</text>
+                  <div class="tile-head">
+                    <span class="tile-label tile-label-review">待复习</span>
                     <LineIcon name="arrow-right" size="14px" color="var(--color-warning-ink)" />
-                  </view>
-                  <view class="tile-metric-row">
-                    <text class="tile-number num-tabular">{{ heroSummary.dueReviewCount }}</text>
-                  </view>
-                  <view class="tile-foot-row">
-                    <text class="tile-hint num-tabular">{{ reviewTileHint }}</text>
-                    <text
+                  </div>
+                  <div class="tile-metric-row">
+                    <span class="tile-number num-tabular">{{ heroSummary.dueReviewCount }}</span>
+                  </div>
+                  <div class="tile-foot-row">
+                    <span class="tile-hint num-tabular">{{ reviewTileHint }}</span>
+                    <span
                       v-if="canStartSelfTest"
                       class="tile-inline-action"
                       role="button"
                       @click.stop="startStudyMode('self-test')"
                     >
                       自由自测
-                    </text>
-                  </view>
+                    </span>
+                  </div>
                 </template>
                 <template v-else>
-                  <view class="tile-head">
-                    <text class="tile-label tile-label-muted num-tabular">待复习 {{ hasLoadedReviewStates ? 0 : '—' }}</text>
+                  <div class="tile-head">
+                    <span class="tile-label tile-label-muted num-tabular">待复习 {{ hasLoadedReviewStates ? 0 : '—' }}</span>
                     <LineIcon
                       name="rotate"
                       size="13px"
                       :color="canStartSelfTest ? 'var(--color-sage-ink)' : 'var(--text-muted)'"
                     />
-                  </view>
-                  <view class="tile-metric-row">
-                    <text class="tile-action-title" :class="{ 'is-muted': !canStartSelfTest }">自由自测</text>
-                  </view>
-                  <text class="tile-hint num-tabular">{{ selfTestTileHint }}</text>
+                  </div>
+                  <div class="tile-metric-row">
+                    <span class="tile-action-title" :class="{ 'is-muted': !canStartSelfTest }">自由自测</span>
+                  </div>
+                  <span class="tile-hint num-tabular">{{ selfTestTileHint }}</span>
                 </template>
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="plan-footer-row">
-              <view class="group-size-inline" role="group" aria-label="每组数量">
-                <text class="group-inline-label">每组</text>
-                <text
+            <div class="plan-footer-row">
+              <div class="group-size-inline" role="group" aria-label="每组数量">
+                <span class="group-inline-label">每组</span>
+                <span
                   class="group-inline-opt num-tabular"
                   :class="{ active: groupSize === 5 }"
                   role="button"
                   @click="groupSize = 5"
                 >
                   5 个
-                </text>
-                <text class="group-inline-sep" aria-hidden="true">/</text>
-                <text
+                </span>
+                <span class="group-inline-sep" aria-hidden="true">/</span>
+                <span
                   class="group-inline-opt num-tabular"
                   :class="{ active: groupSize === 10 }"
                   role="button"
                   @click="groupSize = 10"
                 >
                   10 个
-                </text>
-              </view>
+                </span>
+              </div>
 
-              <view
+              <div
                 v-if="statesError"
                 class="hero-retry-link"
                 role="button"
                 @click="retrySubjectReviewState"
               >
                 <LineIcon name="refresh" size="12px" color="var(--color-sage-ink)" />
-                <text>复习状态加载失败，重试</text>
-              </view>
-            </view>
-          </view>
+                <span>复习状态加载失败，重试</span>
+              </div>
+            </div>
+          </div>
 
-          <view class="blocks-panel">
-            <view class="blocks-toolbar">
-              <view class="search-box">
+          <div class="blocks-panel">
+            <div class="blocks-toolbar">
+              <div class="search-box">
                 <LineIcon name="search" size="14px" color="var(--text-muted)" />
                 <input
                   v-model="searchQuery"
                   class="search-input"
                   placeholder="搜索当前学科知识块…"
                 />
-                <view
+                <div
                   v-if="searchQuery"
                   class="search-clear"
                   role="button"
@@ -259,45 +256,45 @@
                   @click="searchQuery = ''"
                 >
                   <LineIcon name="close" size="12px" color="var(--text-muted)" />
-                </view>
-              </view>
+                </div>
+              </div>
 
-              <view
+              <div
                 class="add-block-btn"
                 role="button"
                 aria-label="新建知识块"
                 @click="openCreateBlockModal"
               >
                 <LineIcon name="plus" size="16px" color="var(--color-sage-ink)" />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view v-if="filteredBlocks.length === 0" class="blocks-empty">
-              <text class="empty-whisper">
+            <div v-if="filteredBlocks.length === 0" class="blocks-empty">
+              <span class="empty-whisper">
                 {{ searchQuery.trim() ? '无匹配知识块' : '当前学科暂无知识块' }}
-              </text>
-              <view
+              </span>
+              <div
                 v-if="searchQuery.trim()"
                 class="ui-btn ui-btn-secondary empty-small-btn"
                 role="button"
                 @click="searchQuery = ''"
               >
-                <text>清空搜索</text>
-              </view>
-              <view
+                <span>清空搜索</span>
+              </div>
+              <div
                 v-else
                 class="ui-btn ui-btn-primary empty-small-btn"
                 role="button"
                 @click="openCreateBlockModal"
               >
                 <LineIcon name="plus" size="14px" color="#FFFFFF" />
-                <text>新建知识块</text>
-              </view>
-            </view>
+                <span>新建知识块</span>
+              </div>
+            </div>
 
-            <scroll-view v-else scroll-y :show-scrollbar="false" class="blocks-scroll">
-              <view class="blocks-list">
-                <view
+            <div v-else class="blocks-scroll zen-scroll-y">
+              <div class="blocks-list">
+                <div
                   v-for="item in filteredBlocks"
                   :key="item.id"
                   class="block-card"
@@ -305,83 +302,83 @@
                   :aria-label="`阅读知识块 ${item.title}`"
                   @click="openReader(item.id)"
                 >
-                  <view class="block-card-head">
-                    <text class="block-card-title">{{ item.title }}</text>
-                    <text
+                  <div class="block-card-head">
+                    <span class="block-card-title">{{ item.title }}</span>
+                    <span
                       v-if="hasLoadedReviewStates"
                       class="stage-pill"
                       :class="`tone-${stageForBlock(item.id).tone}`"
                     >
                       {{ stageForBlock(item.id).label }}
-                    </text>
-                  </view>
+                    </span>
+                  </div>
 
-                  <text class="block-card-excerpt">{{ excerptForBlock(item.preview) }}</text>
+                  <span class="block-card-excerpt">{{ excerptForBlock(item.preview) }}</span>
 
-                  <view class="block-card-foot">
-                    <text class="block-card-meta num-tabular">{{ formatBlockMeta(item.source, item.time) }}</text>
-                    <view class="block-read-more">
-                      <text>全文</text>
+                  <div class="block-card-foot">
+                    <span class="block-card-meta num-tabular">{{ formatBlockMeta(item.source, item.time) }}</span>
+                    <div class="block-read-more">
+                      <span>全文</span>
                       <LineIcon name="chevron-right" size="12px" color="var(--color-sage-ink)" />
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </scroll-view>
-          </view>
-        </view>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </template>
-    </view>
+    </div>
 
     <template #overlay>
-      <view
+      <div
         v-if="readingBlock"
         class="zen-sheet-mask learn-sheet-mask"
         @click="closeReader"
       >
-        <view
+        <div
           class="zen-sheet-body reader-sheet-panel"
           role="dialog"
           aria-modal="true"
           :aria-label="readingBlock.title"
           @click.stop
         >
-          <view class="sheet-drag-bar" aria-hidden="true"></view>
+          <div class="sheet-drag-bar" aria-hidden="true"></div>
 
-          <view class="reader-head">
-            <view class="reader-head-main">
-              <view class="reader-tags">
-                <text class="reader-subject-pill">{{ readingBlock.subject || activeSubject?.name }}</text>
-                <text
+          <div class="reader-head">
+            <div class="reader-head-main">
+              <div class="reader-tags">
+                <span class="reader-subject-pill">{{ readingBlock.subject || activeSubject?.name }}</span>
+                <span
                   v-if="hasLoadedReviewStates"
                   class="stage-pill"
                   :class="`tone-${stageForBlock(readingBlock.id).tone}`"
                 >
                   {{ stageForBlock(readingBlock.id).label }}
-                </text>
-              </view>
-              <text class="reader-title">{{ readingBlock.title }}</text>
-              <text
+                </span>
+              </div>
+              <span class="reader-title">{{ readingBlock.title }}</span>
+              <span
                 v-if="formatBlockMeta(readingBlock.source, readingBlock.time)"
                 class="reader-meta num-tabular"
               >
                 {{ formatBlockMeta(readingBlock.source, readingBlock.time) }}
-              </text>
-            </view>
+              </span>
+            </div>
 
-            <view class="sheet-close-btn" role="button" aria-label="关闭" @click="closeReader">
+            <div class="sheet-close-btn" role="button" aria-label="关闭" @click="closeReader">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <scroll-view scroll-y :show-scrollbar="false" class="reader-body-scroll">
-            <view class="reader-body-inner">
+          <div class="reader-body-scroll zen-scroll-y">
+            <div class="reader-body-inner">
               <MarkdownText :content="readingBlock.preview || ''" />
-            </view>
-          </scroll-view>
+            </div>
+          </div>
 
-          <view class="reader-actions">
-            <view
+          <div class="reader-actions">
+            <div
               class="ui-btn ui-btn-secondary reader-copy-btn"
               role="button"
               @click="copyReadingBlock"
@@ -391,20 +388,20 @@
                 size="14px"
                 color="var(--color-sage-ink)"
               />
-              <text>{{ copiedReading ? '已复制' : '复制全文' }}</text>
-            </view>
+              <span>{{ copiedReading ? '已复制' : '复制全文' }}</span>
+            </div>
 
-            <view
+            <div
               class="ui-btn ui-btn-secondary reader-edit-btn"
               :class="{ 'is-disabled': isReadingBlockBusy }"
               role="button"
               @click="openEditBlockModal(readingBlock)"
             >
               <LineIcon name="edit" size="14px" color="var(--text-primary)" />
-              <text>编辑</text>
-            </view>
+              <span>编辑</span>
+            </div>
 
-            <view
+            <div
               class="ui-btn ui-btn-danger reader-delete-btn"
               :class="{ 'is-disabled': isReadingBlockBusy }"
               role="button"
@@ -412,17 +409,17 @@
               @click="confirmDeleteBlock(readingBlock)"
             >
               <LineIcon name="trash" size="14px" color="var(--color-danger)" />
-            </view>
-          </view>
-        </view>
-      </view>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <view
+      <div
         v-if="showSubjectPicker"
         class="subject-dropdown-mask"
         @click="closeSubjectPicker"
       >
-        <view
+        <div
           class="subject-dropdown-panel"
           :style="{ marginTop: `${subjectDropdownTop}px` }"
           role="dialog"
@@ -430,19 +427,19 @@
           aria-label="全部学科"
           @click.stop
         >
-          <view class="picker-head">
-            <view class="picker-title-row">
-              <text class="picker-title">全部学科</text>
-              <text class="picker-count-pill num-tabular">{{ subjectStore.subjects.length }} 门</text>
-            </view>
-            <view class="sheet-close-btn" role="button" aria-label="收起" @click="closeSubjectPicker">
+          <div class="picker-head">
+            <div class="picker-title-row">
+              <span class="picker-title">全部学科</span>
+              <span class="picker-count-pill num-tabular">{{ subjectStore.subjects.length }} 门</span>
+            </div>
+            <div class="sheet-close-btn" role="button" aria-label="收起" @click="closeSubjectPicker">
               <LineIcon name="chevron-up" size="15px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <scroll-view scroll-y :show-scrollbar="false" class="subject-picker-scroll">
-            <view class="subject-grid">
-              <view
+          <div class="subject-picker-scroll zen-scroll-y">
+            <div class="subject-grid">
+              <div
                 v-for="sub in subjectStore.subjects"
                 :key="sub.id"
                 class="subject-grid-card"
@@ -452,8 +449,8 @@
                 :aria-label="`选择学科 ${sub.name}`"
                 @click="selectSubjectFromPicker(sub.id)"
               >
-                <view class="subject-grid-top">
-                  <view
+                <div class="subject-grid-top">
+                  <div
                     class="subject-grid-icon"
                     :class="{ active: sub.id === activeSubjectId }"
                   >
@@ -462,70 +459,70 @@
                       size="14px"
                       :color="sub.id === activeSubjectId ? '#FFFFFF' : '#556B3D'"
                     />
-                  </view>
+                  </div>
 
-                  <view class="subject-grid-indicators">
-                    <text
+                  <div class="subject-grid-indicators">
+                    <span
                       v-if="(badgeCountMap[sub.id] ?? 0) > 0"
                       class="subject-grid-badge num-tabular"
                     >
                       {{ formatBadgeCount(badgeCountMap[sub.id]) }}
-                    </text>
-                    <view
+                    </span>
+                    <div
                       v-if="sub.id === activeSubjectId"
                       class="subject-grid-check"
                     >
                       <LineIcon name="check" size="11px" color="#FFFFFF" />
-                    </view>
-                  </view>
-                </view>
+                    </div>
+                  </div>
+                </div>
 
-                <text class="subject-grid-name">{{ sub.name }}</text>
-                <text class="subject-grid-meta num-tabular">
+                <span class="subject-grid-name">{{ sub.name }}</span>
+                <span class="subject-grid-meta num-tabular">
                   {{ subjectBlockCountMap[sub.id] ?? sub.blockCount ?? 0 }} 个知识块
-                </text>
-              </view>
-            </view>
-          </scroll-view>
-        </view>
-      </view>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <view
+      <div
         v-if="showBlockModal"
         class="zen-modal-mask learn-modal-mask"
         @click="closeBlockModal"
       >
-        <view
+        <div
           class="zen-modal-body learn-modal-card"
           role="dialog"
           aria-modal="true"
           :aria-label="editingBlockId ? '编辑知识块' : '新建知识块'"
           @click.stop
         >
-          <view class="modal-head">
-            <text class="modal-title">
+          <div class="modal-head">
+            <span class="modal-title">
               {{ editingBlockId ? '编辑知识块' : `新建知识块 · ${activeSubject?.name || ''}` }}
-            </text>
-            <view class="sheet-close-btn" role="button" aria-label="关闭" @click="closeBlockModal">
+            </span>
+            <div class="sheet-close-btn" role="button" aria-label="关闭" @click="closeBlockModal">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
-            <view class="field-group">
-              <text class="field-label">标题</text>
+          <div class="modal-form">
+            <div class="field-group">
+              <span class="field-label">标题</span>
               <input
                 v-model="blockForm.title"
                 class="ui-input"
                 maxlength="120"
                 placeholder="请输入知识块标题…"
                 :disabled="savingBlock"
-                @confirm="submitBlockModal"
+                @keydown="handleEnterKey($event, submitBlockModal)"
               />
-            </view>
+            </div>
 
-            <view class="field-group">
-              <text class="field-label">正文内容（支持 Markdown / 公式）</text>
+            <div class="field-group">
+              <span class="field-label">正文内容（支持 Markdown / 公式）</span>
               <textarea
                 v-model="blockForm.preview"
                 class="ui-textarea learn-textarea"
@@ -533,25 +530,26 @@
                 placeholder="记录核心概念、公式或要点…"
                 :disabled="savingBlock"
               />
-            </view>
+            </div>
 
-            <view class="field-group">
-              <text class="field-label">来源说明（可选）</text>
+            <div class="field-group">
+              <span class="field-label">来源说明（可选）</span>
               <input
                 v-model="blockForm.source"
                 class="ui-input"
                 maxlength="80"
                 placeholder="可选，如教材章节或资料名"
                 :disabled="savingBlock"
-                @confirm="submitBlockModal"
+                @keydown="handleEnterKey($event, submitBlockModal)"
               />
-            </view>
+            </div>
 
-            <text v-if="blockModalError" class="modal-error">{{ blockModalError }}</text>
-          </view>
+            <span v-if="blockModalError" class="modal-error">{{ blockModalError }}</span>
+          </div>
 
-          <view class="modal-foot">
+          <div class="modal-foot">
             <button
+              type="button"
               class="ui-btn ui-btn-secondary modal-capsule-btn"
               :disabled="savingBlock"
               @click="closeBlockModal"
@@ -559,34 +557,38 @@
               取消
             </button>
             <button
+              type="button"
               class="ui-btn ui-btn-primary modal-capsule-btn"
-              :loading="savingBlock"
+              :class="{ 'is-loading': savingBlock }"
               :disabled="savingBlock || !canSubmitBlock"
               @click="submitBlockModal"
             >
               {{ savingBlock ? '保存中…' : editingBlockId ? '保存修改' : '保存知识块' }}
             </button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
     </template>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ApiProblemError } from '@/api/protocol'
 import { reviewApi, type ReviewState } from '@/api/reviewApi'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageShow } from '@/platform/lifecycle'
+import { navigateTo } from '@/platform/navigation'
 import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
+import { handleEnterKey } from '@/utils/domHelpers'
 import { plainMarkdownExcerpt } from '@/utils/markdown'
 import {
   buildMobileReviewUrl,
@@ -604,24 +606,15 @@ import {
 import { preloadRoute, scheduleSiblingPreload } from '@/utils/pagePreload'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
 
-interface SelectorRectResult {
-  left?: number
-  width?: number
-  bottom?: number
-}
-
-interface SelectorScrollResult {
-  scrollLeft?: number
-  scrollWidth?: number
-}
-
 const EMPTY_DUE_IDS = new Set<string>()
 
-const componentInstance = getCurrentInstance()
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
 const syncStore = useSyncStore()
+
+const stripWrapRef = ref<HTMLElement | null>(null)
+const stripScrollRef = ref<HTMLElement | null>(null)
 
 const selectedSubjectId = ref('')
 const groupSize = ref<MobileGroupSize>(5)
@@ -632,7 +625,6 @@ const statesLoading = ref(false)
 const statesError = ref('')
 const showSubjectPicker = ref(false)
 const subjectDropdownTop = ref(120)
-const stripScrollLeft = ref(0)
 
 const readingBlockId = ref('')
 const copiedReading = ref(false)
@@ -656,10 +648,8 @@ let subjectReviewReqId = 0
 let lastAuthScope = ''
 let hasShownOnce = false
 let refreshInFlight: { scope: string; promise: Promise<void> } | null = null
-let lastObservedScrollLeft = 0
 let stripScrollTimer: ReturnType<typeof setTimeout> | null = null
 let isPageUnmounted = false
-let stripScrollSeq = 0
 
 function scopeKeyForAuth(): string {
   return `${authStore.user?.id || 'anon'}:${authStore.serverDeviceId || 'dev'}`
@@ -1012,7 +1002,7 @@ async function createQuickSubject() {
   if (creatingQuickSubject.value) return
   const name = quickSubjectName.value.trim()
   if (!name) {
-    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    showToast('请输入学科名称')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -1026,10 +1016,10 @@ async function createQuickSubject() {
       subjectStore.setActiveSubject(createdId)
     }
     await refreshPageData()
-    uni.showToast({ title: '已创建学科', icon: 'none' })
+    showToast('已创建学科')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '创建学科失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '创建学科失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       creatingQuickSubject.value = false
@@ -1053,98 +1043,51 @@ function clearStripScrollTimer() {
   }
 }
 
-function onSubjectStripScroll(event: unknown) {
-  if (!event || typeof event !== 'object') return
-  const detail = (event as { detail?: { scrollLeft?: unknown } }).detail
-  const scrollLeft = Number(detail?.scrollLeft)
-  if (Number.isFinite(scrollLeft)) {
-    lastObservedScrollLeft = Math.max(0, scrollLeft)
-  }
-}
-
 function scrollActiveSubjectToStart() {
   if (isPageUnmounted || !activeSubjectId.value) return
   const activeIdx = subjectStore.subjects.findIndex(item => item.id === activeSubjectId.value)
-  if (activeIdx < 0 || typeof uni.createSelectorQuery !== 'function') return
+  const containerEl = stripScrollRef.value
+  if (activeIdx < 0 || !containerEl) return
 
-  const seq = ++stripScrollSeq
-  const baseQuery = uni.createSelectorQuery()
-  const query = componentInstance?.proxy && typeof baseQuery.in === 'function'
-    ? baseQuery.in(componentInstance.proxy)
-    : baseQuery
+  const containerRect = containerEl.getBoundingClientRect()
+  const pillEl = containerEl.querySelector(`#subject-pill-${activeIdx}`) as HTMLElement | null
+  const firstPillEl = containerEl.querySelector('#subject-pill-0') as HTMLElement | null
+  const pillRect = pillEl?.getBoundingClientRect() ?? null
+  const firstPillRect = firstPillEl?.getBoundingClientRect() ?? null
+  if (!pillRect || containerRect.width <= 0 || pillRect.width <= 0) return
 
-  query.select('.subject-strip-scroll').boundingClientRect()
-  query.select('.subject-strip-scroll').scrollOffset(() => {})
-  query.select(`#subject-pill-${activeIdx}`).boundingClientRect()
-  query.select('#subject-pill-0').boundingClientRect()
-  query.exec((res: unknown) => {
-    if (isPageUnmounted || seq !== stripScrollSeq || !Array.isArray(res)) return
-    const containerRect = res[0] as SelectorRectResult | null | undefined
-    const scrollInfo = res[1] as SelectorScrollResult | null | undefined
-    const pillRect = res[2] as SelectorRectResult | null | undefined
-    const firstPillRect = res[3] as SelectorRectResult | null | undefined
-    if (
-      !containerRect
-      || !pillRect
-      || typeof containerRect.left !== 'number'
-      || typeof containerRect.width !== 'number'
-      || typeof pillRect.left !== 'number'
-      || typeof pillRect.width !== 'number'
-      || containerRect.width <= 0
-      || pillRect.width <= 0
-    ) {
-      return
-    }
+  if (containerRect.bottom > 0) {
+    subjectDropdownTop.value = Math.max(88, Math.round(containerRect.bottom + 6))
+  }
 
-    if (typeof containerRect.bottom === 'number' && containerRect.bottom > 0) {
-      subjectDropdownTop.value = Math.max(88, Math.round(containerRect.bottom + 6))
-    }
-
-    const currentScrollLeft = typeof scrollInfo?.scrollLeft === 'number'
-      ? scrollInfo.scrollLeft
-      : lastObservedScrollLeft
-    const maxScrollLeft = typeof scrollInfo?.scrollWidth === 'number'
-      ? Math.max(0, scrollInfo.scrollWidth - containerRect.width)
-      : undefined
-    const leadingInset = firstPillRect && typeof firstPillRect.left === 'number'
-      ? Math.max(0, (firstPillRect.left - containerRect.left) + currentScrollLeft)
-      : 20
-    const target = computeLeadingScrollLeft({
-      containerLeft: containerRect.left,
-      containerWidth: containerRect.width,
-      currentScrollLeft,
-      itemLeft: pillRect.left,
-      leadingInset,
-      maxScrollLeft,
-    })
-
-    if (Math.abs(currentScrollLeft - target) < 2) return
-    if (Math.abs(stripScrollLeft.value - target) < 0.5) {
-      stripScrollLeft.value = currentScrollLeft
-      void nextTick(() => {
-        if (isPageUnmounted || seq !== stripScrollSeq) return
-        stripScrollLeft.value = target
-      })
-      return
-    }
-    stripScrollLeft.value = target
+  const currentScrollLeft = containerEl.scrollLeft
+  const maxScrollLeft = Math.max(0, containerEl.scrollWidth - containerRect.width)
+  const leadingInset = firstPillRect
+    ? Math.max(0, (firstPillRect.left - containerRect.left) + currentScrollLeft)
+    : 20
+  const target = computeLeadingScrollLeft({
+    containerLeft: containerRect.left,
+    containerWidth: containerRect.width,
+    currentScrollLeft,
+    itemLeft: pillRect.left,
+    leadingInset,
+    maxScrollLeft,
   })
+
+  if (Math.abs(currentScrollLeft - target) < 2) return
+  if (typeof containerEl.scrollTo === 'function') {
+    containerEl.scrollTo({ left: target, behavior: 'smooth' })
+    return
+  }
+  containerEl.scrollLeft = target
 }
 
 function measureSubjectDropdownTop() {
-  if (isPageUnmounted || typeof uni.createSelectorQuery !== 'function') return
-  const baseQuery = uni.createSelectorQuery()
-  const query = componentInstance?.proxy && typeof baseQuery.in === 'function'
-    ? baseQuery.in(componentInstance.proxy)
-    : baseQuery
-  query.select('.subject-strip-wrap').boundingClientRect()
-  query.exec((res: unknown) => {
-    if (isPageUnmounted || !Array.isArray(res)) return
-    const rect = res[0] as SelectorRectResult | null | undefined
-    if (rect && typeof rect.bottom === 'number' && rect.bottom > 0) {
-      subjectDropdownTop.value = Math.max(88, Math.round(rect.bottom + 6))
-    }
-  })
+  if (isPageUnmounted) return
+  const rect = stripWrapRef.value?.getBoundingClientRect()
+  if (rect && rect.bottom > 0) {
+    subjectDropdownTop.value = Math.max(88, Math.round(rect.bottom + 6))
+  }
 }
 
 function scheduleStripAlign(delayMs = 40) {
@@ -1193,7 +1136,7 @@ function startStudyMode(mode: MobileStudyMode) {
   if (mode === 'self-test' && !canStartSelfTest.value) return
   subjectStore.setActiveSubject(subject.id)
   void preloadRoute('/pages/mobile/review/index')
-  uni.navigateTo({ url: buildMobileReviewUrl(subject.id, mode, groupSize.value) })
+  navigateTo(buildMobileReviewUrl(subject.id, mode, groupSize.value))
 }
 
 function handleRightPlanCardClick() {
@@ -1206,7 +1149,7 @@ function handleRightPlanCardClick() {
     return
   }
   if (hasLoadedReviewStates.value) {
-    uni.showToast({ title: '完成初学后即可自由自测', icon: 'none' })
+    showToast('完成初学后即可自由自测')
   }
 }
 
@@ -1230,7 +1173,7 @@ async function copyReadingBlock() {
   const payload = block.preview ? `${block.title}\n\n${block.preview}` : block.title
   const ok = await copyTextWithFallback(payload)
   if (!ok) {
-    uni.showToast({ title: '复制失败，请长按正文复制', icon: 'none' })
+    showToast('复制失败，请长按正文复制')
     return
   }
   copiedReading.value = true
@@ -1318,7 +1261,7 @@ async function submitBlockModal() {
     showBlockModal.value = false
     await subjectStore.loadSubjects()
     if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-    uni.showToast({ title: editingBlockId.value ? '已保存修改' : '已保存知识块', icon: 'none' })
+    showToast(editingBlockId.value ? '已保存修改' : '已保存知识块')
     void loadDueCounts()
     if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
   } catch (err) {
@@ -1331,31 +1274,31 @@ async function submitBlockModal() {
   }
 }
 
-function confirmDeleteBlock(block: KnowledgeBlock) {
+async function confirmDeleteBlock(block: KnowledgeBlock) {
   if (blockStore.updatingBlockIds.includes(block.id)) return
   const generation = authStore.getLoginGeneration()
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除知识块',
     content: `确定删除「${block.title}」？删除后将同步移除。`,
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (!res.confirm || !isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-      void blockStore.removeBlock(block.id).then(async () => {
-        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-        if (readingBlockId.value === block.id) closeReader()
-        await subjectStore.loadSubjects()
-        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-        uni.showToast({ title: '已删除', icon: 'none' })
-        void loadDueCounts()
-        if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
-      }).catch(() => {
-        if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
-        uni.showToast({ title: '删除失败，请重试', icon: 'none' })
-      })
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || !isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+  try {
+    await blockStore.removeBlock(block.id)
+    if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+    if (readingBlockId.value === block.id) closeReader()
+    await subjectStore.loadSubjects()
+    if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+    showToast('已删除')
+    void loadDueCounts()
+    if (selectedSubjectId.value) void loadActiveSubjectReview(selectedSubjectId.value)
+  } catch {
+    if (!isSameAuthSnapshot(generation, userId, serverDeviceId)) return
+    showToast('删除失败，请重试')
+  }
 }
 
 watch(
@@ -1377,9 +1320,9 @@ watch(
       editingBlockId.value = ''
       blockModalError.value = ''
       selectedSubjectId.value = ''
-      ++stripScrollSeq
-      stripScrollLeft.value = 0
-      lastObservedScrollLeft = 0
+      if (stripScrollRef.value) {
+        stripScrollRef.value.scrollLeft = 0
+      }
       clearStripScrollTimer()
       if (authStore.isAuthenticated) {
         void refreshPageData()
@@ -1424,7 +1367,7 @@ watch(
   },
 )
 
-onShow(() => {
+onPageShow(() => {
   if (!hasShownOnce) {
     hasShownOnce = true
     return
@@ -1448,7 +1391,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   isPageUnmounted = true
-  ++stripScrollSeq
   clearStripScrollTimer()
   stopReviewPreload?.()
   stopReviewPreload = null
@@ -2169,7 +2111,6 @@ onUnmounted(() => {
   bottom: 0;
   left: 0;
   margin: 0 auto;
-  max-width: 440px;
   padding: 0 20px 24px;
   background-color: rgba(28, 28, 26, 0.24);
   backdrop-filter: blur(10px) saturate(140%);
@@ -2182,8 +2123,16 @@ onUnmounted(() => {
   animation: dropdownMaskIn 0.18s ease-out both;
 }
 
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
+  .subject-dropdown-mask {
+    max-width: 440px;
+  }
+}
+
 .subject-dropdown-panel {
   width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
   max-height: 64vh;
   max-height: 64dvh;
   padding: 16px 16px 14px;

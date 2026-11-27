@@ -1,5 +1,5 @@
 <template>
-  <view
+  <div
     class="pomodoro-ring"
     :class="{ 'is-running': isRunning }"
     :style="{
@@ -10,7 +10,6 @@
     :aria-label="ariaLabel || '专注计时盘'"
     @click="$emit('center-click')"
   >
-    <!-- #ifdef H5 -->
     <svg class="ring-svg" viewBox="0 0 100 100" aria-hidden="true">
       <circle
         cx="50"
@@ -35,22 +34,17 @@
         :class="{ 'is-running': isRunning, 'is-break': isBreak }"
       />
     </svg>
-    <!-- #endif -->
 
-    <!-- #ifndef H5 -->
-    <view class="ring-conic-track" :style="{ background: ringBackground }"></view>
-    <!-- #endif -->
-
-    <view class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill, 'is-large': large }">
-      <text v-if="isBreak && !showBottomPill" class="break-kicker">休息</text>
-      <view class="time-container">
-        <text class="time-text num-tabular">{{ formattedTime }}</text>
-      </view>
-      <view v-if="showBottomPill" class="ring-pill" :class="{ 'is-pulsing': isRunning }" aria-hidden="true">
-        <view class="pill-dot" :style="{ backgroundColor: color }"></view>
-      </view>
-      <view v-else-if="cycleCount !== undefined" class="dial-cycles" aria-hidden="true">
-        <view
+    <div class="ring-inner" :class="{ 'is-running': isRunning, 'has-bottom-pill': showBottomPill, 'is-large': large }">
+      <span v-if="isBreak && !showBottomPill" class="break-kicker">休息</span>
+      <div class="time-container">
+        <span class="time-text num-tabular">{{ formattedTime }}</span>
+      </div>
+      <div v-if="showBottomPill" class="ring-pill" :class="{ 'is-pulsing': isRunning }" aria-hidden="true">
+        <div class="pill-dot" :style="{ backgroundColor: color }"></div>
+      </div>
+      <div v-else-if="cycleCount !== undefined" class="dial-cycles" aria-hidden="true">
+        <div
           v-for="idx in 4"
           :key="idx"
           class="dial-dot"
@@ -58,10 +52,10 @@
             'is-filled': (cycleCount % 4) >= idx || (cycleCount > 0 && cycleCount % 4 === 0),
             'is-break': isBreak,
           }"
-        ></view>
-      </view>
-    </view>
-  </view>
+        ></div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -92,11 +86,6 @@ const progressRatio = computed(() => (
 
 const dashOffset = computed(() => circumference * (1 - progressRatio.value))
 
-const ringBackground = computed(() => {
-  const deg = Math.round(progressRatio.value * 3600) / 10
-  return `conic-gradient(${props.color} ${deg}deg, rgba(139, 154, 110, 0.14) ${deg}deg)`
-})
-
 const formattedTime = computed(() => {
   const clamped = Math.max(0, Math.floor(props.remainingSeconds))
   const mins = Math.floor(clamped / 60)
@@ -125,7 +114,6 @@ const formattedTime = computed(() => {
   transform: scale(0.985);
 }
 
-/* #ifdef H5 */
 .ring-svg {
   position: absolute;
   inset: 0;
@@ -150,16 +138,6 @@ const formattedTime = computed(() => {
 
 .progress-circle.is-running.is-break {
   filter: drop-shadow(0 0 6px rgba(200, 155, 109, 0.45));
-}
-/* #endif */
-
-.ring-conic-track {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  box-sizing: border-box;
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
 }
 
 .ring-inner {

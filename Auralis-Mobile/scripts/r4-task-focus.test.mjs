@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { createFocusApi } from '../src/api/focusApi.ts'
 import { ApiProblemError } from '../src/api/protocol.ts'
 import { createFocusController, outboxKeyForScope } from '../src/services/focusController.ts'
+import { installLocalDbTestEnv } from './test-helpers/nodeSqliteTauriMock.mjs'
 import {
   buildSyncedBlockRecord,
   fromServerBlockPayload,
@@ -322,14 +323,9 @@ test('useTaskStore retains checked-off home todos until unchecked, deleted, sche
     get serverDeviceId() { return mockDeviceId.value },
     getLoginGeneration: () => generation,
   }
-  globalThis.uni = {
-    onNetworkStatusChange() {},
-    getNetworkType({ success }) { success({ networkType: 'wifi' }) },
-  }
   context.after(() => {
     delete globalThis.__taskTestDb
     delete globalThis.__taskTestAuth
-    delete globalThis.uni
   })
 
   const loader = registerHooks({
@@ -392,13 +388,13 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
   const storage = new Map()
   const scope = 'user-1:dev-1'
   storage.set('auralis.settings.autoSync', 'false')
-  storage.set(outboxKeyForScope(scope), [{
+  storage.set(outboxKeyForScope(scope), JSON.stringify([{
     clientSessionId: 'sess-1',
     startedAt: '2026-11-18T08:00:00Z',
     endedAt: '2026-11-18T08:25:00Z',
     durationSeconds: 1500,
     dateKey: '2026-11-18',
-  }])
+  }]))
 
   let recorded = 0
   const gen = Symbol('gen')
@@ -415,12 +411,16 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
       return {}
     },
   }
-  globalThis.uni = {
-    getStorageSync: (key) => storage.get(key) ?? '',
-    setStorageSync: (key, val) => { storage.set(key, val) },
-    vibrateLong: () => {},
-    showToast: () => {},
-  }
+  const hadOwnStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
+  const prevStorage = globalThis.localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, val) => { storage.set(key, String(val)) },
+      removeItem: (key) => { storage.delete(key) },
+    },
+  })
 
   const mocks = new Map([
     ['@/api/focusApi', 'export const focusApi = globalThis.__focusStoreApi;'],
@@ -444,7 +444,11 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
     loader.deregister()
     delete globalThis.__focusStoreAuth
     delete globalThis.__focusStoreApi
-    delete globalThis.uni
+    if (hadOwnStorage) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage })
+    } else {
+      delete globalThis.localStorage
+    }
   })
 
   const { useFocusStore } = await import('../src/store/useFocusStore.ts?focus-autosync-test')
@@ -463,53 +467,21 @@ test('useFocusStore.flushPendingSessions respects autoSync setting unless trigge
   assert.equal(store.pendingOutboxCount, 0)
 })
 
-test('localDb H5 preserves numeric-string task positions, heals numeric cache rows, and excludes CANCELLED tasks', async (context) => {
-  const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: (key) => storage.get(key) ?? '',
-    setStorageSync: (key, val) => { storage.set(key, val) },
-  }
-
-  const loader = registerHooks({
-    resolve(specifier, ctx, nextResolve) {
-      if (specifier.startsWith('@/')) {
-        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, ctx)
-      }
-      if (specifier.startsWith('./') && !specifier.endsWith('.ts') && ctx.parentURL?.includes('Auralis-Mobile')) {
-        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
-      }
-      return nextResolve(specifier, ctx)
-    },
-  })
-
-  context.after(() => {
-    loader.deregister()
-    delete globalThis.uni
-  })
+test('localDb preserves numeric-string task positions and excludes CANCELLED tasks', async (context) => {
+  installLocalDbTestEnv(context)
 
   const { localDataScope } = await import('../src/services/localDataScope.ts?localdb-pos-test')
   const { localDb } = await import('../src/services/localDb.ts?localdb-pos-test')
 
-  const scope = localDataScope.activate('user-seed', 'dev-1')
-  storage.set(`auralis:local:${scope}:task_blocks`, JSON.stringify([
-    {
-      id: 't-legacy',
-      name: 'Legacy Numeric Pos Todo',
-      subject: 'Math',
-      desc: '',
-      duration: 30,
-      status: 'pending',
-      scheduled_at: null,
-      due_at: null,
-      sync_status: 'synced',
-      is_deleted: 0,
-      sync_version: 1,
-      position: 3,
-      subject_id: 's-1',
-    },
-  ]))
-
+  localDataScope.activate('user-seed', 'dev-1')
   await localDb.init()
+  await localDb.executeSql(
+    `INSERT INTO task_blocks (
+      id, name, subject, desc, duration, status, scheduled_at, due_at,
+      sync_status, is_deleted, sync_version, position, subject_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ['t-legacy', 'Legacy Numeric Pos Todo', 'Math', '', 30, 'pending', null, null, 'synced', 0, 1, 3, 's-1'],
+  )
 
   const scheduledIso = combineLocalDateAndTime('2026-11-20', '09:00')
   const payloads = [
@@ -554,47 +526,19 @@ test('localDb H5 preserves numeric-string task positions, heals numeric cache ro
   )
 })
 
-test('localDb coalesces pending offline mutations per entity, backfills legacy H5 ids, and guards markMutationSynced by client_id', async (context) => {
-  const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: key => storage.get(key),
-    setStorageSync: (key, value) => storage.set(key, value),
-    removeStorageSync: key => storage.delete(key),
-  }
-  const loader = registerHooks({
-    resolve(specifier, ctx, nextResolve) {
-      if (specifier.startsWith('@/')) {
-        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, ctx)
-      }
-      if (specifier.startsWith('./') && !specifier.endsWith('.ts') && ctx.parentURL?.includes('Auralis-Mobile')) {
-        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
-      }
-      return nextResolve(specifier, ctx)
-    },
-  })
-  context.after(() => {
-    loader.deregister()
-    delete globalThis.uni
-  })
+test('localDb coalesces pending offline mutations per entity and guards markMutationSynced by client_id', async (context) => {
+  installLocalDbTestEnv(context)
 
   const { localDataScope } = await import('../src/services/localDataScope.ts?localdb-coalesce-test')
   const { localDb } = await import('../src/services/localDb.ts?localdb-coalesce-test')
 
-  const scope = localDataScope.activate('user-coalesce', 'dev-1')
-  // Legacy H5 row missing numeric id
-  storage.set(`auralis:local:${scope}:local_mutations`, JSON.stringify([
-    {
-      client_id: 'legacy-1',
-      entity_type: 'task',
-      entity_id: 'legacy-task',
-      action: 'update',
-      payload: JSON.stringify({ id: 'legacy-task', status: 'pending', sync_version: 2 }),
-      created_at: 1000,
-      sync_status: 'pending',
-    },
-  ]))
-
+  localDataScope.activate('user-coalesce', 'dev-1')
   await localDb.init()
+  await localDb.addLocalMutation('legacy-1', 'task', 'legacy-task', 'update', {
+    id: 'legacy-task',
+    status: 'pending',
+    sync_version: 2,
+  })
 
   // Repeated offline updates on synced task coalesce into 1 pending update preserving sync_version & updating client_id
   await localDb.addLocalMutation('c-1', 'task', 'task-sync', 'update', { id: 'task-sync', status: 'completed', sync_version: 5 })
@@ -643,28 +587,8 @@ test('localDb coalesces pending offline mutations per entity, backfills legacy H
   assert.equal(afterSynced.some(row => row.entity_id === 'legacy-task'), true)
 })
 
-test('localDb H5 query parser handles quotes containing WHERE, ORDER BY, AND, and =, and fences in-flight mutations during rebase', async (context) => {
-  const storage = new Map()
-  globalThis.uni = {
-    getStorageSync: key => storage.get(key),
-    setStorageSync: (key, value) => storage.set(key, value),
-    removeStorageSync: key => storage.delete(key),
-  }
-  const loader = registerHooks({
-    resolve(specifier, ctx, nextResolve) {
-      if (specifier.startsWith('@/')) {
-        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, ctx)
-      }
-      if (specifier.startsWith('./') && !specifier.endsWith('.ts') && ctx.parentURL?.includes('Auralis-Mobile')) {
-        return nextResolve(new URL(`${specifier}.ts`, ctx.parentURL).href, ctx)
-      }
-      return nextResolve(specifier, ctx)
-    },
-  })
-  context.after(() => {
-    loader.deregister()
-    delete globalThis.uni
-  })
+test('localDb parameterized SQLite queries handle quotes containing WHERE, ORDER BY, AND, and =, and fence in-flight mutations during rebase', async (context) => {
+  installLocalDbTestEnv(context)
 
   const { localDataScope } = await import('../src/services/localDataScope.ts?localdb-sql-fencing-test')
   const { localDb } = await import('../src/services/localDb.ts?localdb-sql-fencing-test')
@@ -980,15 +904,10 @@ test('useTaskStore enforces scheduled completion lock and recovers overdue tasks
     get isSyncing() { return isSyncingFlag },
     async triggerSync() { triggerSyncCalls += 1 },
   }
-  globalThis.uni = {
-    onNetworkStatusChange() {},
-    getNetworkType({ success }) { success({ networkType: 'wifi' }) },
-  }
   context.after(() => {
     delete globalThis.__taskOverdueDb
     delete globalThis.__taskOverdueAuth
     delete globalThis.__taskOverdueSync
-    delete globalThis.uni
   })
 
   const loader = registerHooks({
@@ -1100,16 +1019,11 @@ test('useTaskStore clears stale tasks synchronously on account switch, fences lo
     get isResettingOffline() { return resetActive },
     async triggerSync() {},
   }
-  globalThis.uni = {
-    onNetworkStatusChange() {},
-    getNetworkType({ success }) { success({ networkType: 'wifi' }) },
-  }
   context.after(() => {
     delete globalThis.__taskFenceDb
     delete globalThis.__taskFenceAuth
     delete globalThis.__taskFenceSync
     delete globalThis.__taskFenceGetClientId
-    delete globalThis.uni
   })
 
   const loader = registerHooks({

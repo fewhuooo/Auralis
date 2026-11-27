@@ -1,45 +1,45 @@
 <template>
   <TabletLayout>
-    <view class="t-subject-hall">
-      <view class="hall-content zen-panel">
-        <view class="hall-header">
-          <view class="title-row">
-            <text class="page-title">学科空间</text>
-            <text v-if="subjects.length > 0" class="count-num num-tabular">{{ subjects.length }}</text>
-          </view>
+    <div class="t-subject-hall">
+      <div class="hall-content zen-panel">
+        <div class="hall-header">
+          <div class="title-row">
+            <span class="page-title">学科空间</span>
+            <span v-if="subjects.length > 0" class="count-num num-tabular">{{ subjects.length }}</span>
+          </div>
 
-          <view class="header-actions">
-            <view v-if="subjects.length > 0" class="search-box">
+          <div class="header-actions">
+            <div v-if="subjects.length > 0" class="search-box">
               <LineIcon name="search" size="14px" color="var(--text-muted)" />
               <input class="search-input" v-model="searchQuery" placeholder="搜索学科" />
-              <view v-if="searchQuery" class="search-clear" role="button" aria-label="清空搜索" @click="searchQuery = ''">
+              <div v-if="searchQuery" class="search-clear" role="button" aria-label="清空搜索" @click="searchQuery = ''">
                 <LineIcon name="close" size="13px" color="var(--text-muted)" />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
+            <div class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
               <LineIcon name="plus" size="15px" color="#FFFFFF" />
-              <text>新建学科</text>
-            </view>
-          </view>
-        </view>
+              <span>新建学科</span>
+            </div>
+          </div>
+        </div>
 
-        <view v-if="hydrated && subjects.length === 0" class="empty-hall zen-card">
+        <div v-if="hydrated && subjects.length === 0" class="empty-hall zen-card">
           <LineIcon name="book" size="30px" color="var(--color-zen-sage)" />
-          <text class="empty-title">暂无学科空间</text>
-          <view class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
+          <span class="empty-title">暂无学科空间</span>
+          <div class="ui-btn ui-btn-primary create-btn" role="button" @click="openCreateModal">
             <LineIcon name="plus" size="15px" color="#FFFFFF" />
-            <text>新建学科</text>
-          </view>
-        </view>
+            <span>新建学科</span>
+          </div>
+        </div>
 
-        <view v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
-          <text class="empty-title">无匹配学科</text>
-          <view class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</view>
-        </view>
+        <div v-else-if="hydrated && filteredSubjects.length === 0" class="empty-hall zen-card">
+          <span class="empty-title">无匹配学科</span>
+          <div class="ui-btn ui-btn-secondary" role="button" @click="searchQuery = ''">清空搜索</div>
+        </div>
 
-        <view v-else-if="hydrated" class="grid">
-          <view
+        <div v-else-if="hydrated" class="grid">
+          <div
             v-for="subj in filteredSubjects"
             :key="subj.id"
             class="subject-card zen-card"
@@ -47,64 +47,64 @@
             :aria-label="`进入学科 ${subj.name}`"
             @click="enterWorkspace(subj.id)"
           >
-            <view class="card-top">
-              <view class="s-icon">
+            <div class="card-top">
+              <div class="s-icon">
                 <LineIcon
                   :name="`subj-${isSubjectIconKey(subj.icon) ? subj.icon : 'book'}`"
                   size="21px"
                   color="var(--color-sage-ink)"
                 />
-              </view>
-              <view class="card-actions" @click.stop>
-                <view class="icon-action-btn" role="button" aria-label="编辑学科" @click="openEditModal(subj)">
+              </div>
+              <div class="card-actions" @click.stop>
+                <div class="icon-action-btn" role="button" aria-label="编辑学科" @click="openEditModal(subj)">
                   <LineIcon name="edit" size="13px" color="var(--text-muted)" />
-                </view>
-                <view class="icon-action-btn danger" role="button" aria-label="删除学科" @click="handleDeleteSubject(subj)">
+                </div>
+                <div class="icon-action-btn danger" role="button" aria-label="删除学科" @click="handleDeleteSubject(subj)">
                   <LineIcon name="close" size="13px" color="var(--text-muted)" />
-                </view>
-              </view>
-            </view>
+                </div>
+              </div>
+            </div>
 
-            <text class="s-name">{{ subj.name }}</text>
-            <text v-if="subj.description" class="s-desc">{{ subj.description }}</text>
+            <span class="s-name">{{ subj.name }}</span>
+            <span v-if="subj.description" class="s-desc">{{ subj.description }}</span>
 
-            <view class="s-footer">
-              <view class="s-metrics num-tabular">
-                <view class="s-metric-item">
+            <div class="s-footer">
+              <div class="s-metrics num-tabular">
+                <div class="s-metric-item">
                   <LineIcon name="file-text" size="13px" color="var(--text-muted)" />
-                  <text>{{ subj.fileCount || 0 }}</text>
-                </view>
-                <view class="s-metric-item">
+                  <span>{{ subj.fileCount || 0 }}</span>
+                </div>
+                <div class="s-metric-item">
                   <LineIcon name="layers" size="13px" color="var(--text-muted)" />
-                  <text>{{ subj.blockCount || 0 }}</text>
-                </view>
-              </view>
+                  <span>{{ subj.blockCount || 0 }}</span>
+                </div>
+              </div>
               <LineIcon name="arrow-right" size="14px" color="var(--text-muted)" class="card-arrow" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="subject-card add-card" role="button" aria-label="新建学科" @click="openCreateModal">
-            <view class="add-plus-btn">
+          <div class="subject-card add-card" role="button" aria-label="新建学科" @click="openCreateModal">
+            <div class="add-plus-btn">
               <LineIcon name="plus" size="20px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="add-label">新建学科</text>
-          </view>
-        </view>
-      </view>
-    </view>
+            </div>
+            <span class="add-label">新建学科</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
-      <view v-if="showModal" class="zen-modal-mask subject-modal-mask" @click="closeModal">
-        <view
+      <div v-if="showModal" class="zen-modal-mask subject-modal-mask" @click="closeModal">
+        <div
           class="subject-modal"
           role="dialog"
           aria-modal="true"
           :aria-label="isEditing ? '编辑学科空间' : '创建学科空间'"
           @click.stop
         >
-          <view class="modal-header">
-            <text class="modal-title">{{ isEditing ? '编辑学科空间' : '创建学科空间' }}</text>
-            <view
+          <div class="modal-header">
+            <span class="modal-title">{{ isEditing ? '编辑学科空间' : '创建学科空间' }}</span>
+            <div
               class="modal-close-btn"
               :class="{ 'is-disabled': savingSubject }"
               role="button"
@@ -112,37 +112,37 @@
               @click="closeModal"
             >
               <LineIcon name="close" size="15px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-body">
-            <view class="preview-row">
-              <view class="preview-icon">
+          <div class="modal-body">
+            <div class="preview-row">
+              <div class="preview-icon">
                 <LineIcon :name="`subj-${formData.icon}`" size="26px" color="#FFFFFF" />
-              </view>
-              <view class="preview-info">
-                <text class="preview-name">{{ formData.name.trim() || '学科名称预览' }}</text>
-                <text class="preview-desc">{{ formData.description.trim() || '这是您的专属学科知识沉淀空间' }}</text>
-              </view>
-            </view>
+              </div>
+              <div class="preview-info">
+                <span class="preview-name">{{ formData.name.trim() || '学科名称预览' }}</span>
+                <span class="preview-desc">{{ formData.description.trim() || '这是您的专属学科知识沉淀空间' }}</span>
+              </div>
+            </div>
 
-            <view class="modal-form-group">
-              <view class="modal-form-label">
-                <text>学科名称</text>
-                <text class="required">*</text>
-              </view>
+            <div class="modal-form-group">
+              <div class="modal-form-label">
+                <span>学科名称</span>
+                <span class="required">*</span>
+              </div>
               <input
                 v-model="formData.name"
                 class="modal-form-input"
                 maxlength="20"
                 placeholder="例如: 算法与数据结构、应用物理学"
                 :disabled="savingSubject"
-                @confirm="handleSave"
+                @keydown="handleEnterKey($event, handleSave)"
               />
-            </view>
+            </div>
 
-            <view class="modal-form-group">
-              <text class="modal-form-label">学科简述</text>
+            <div class="modal-form-group">
+              <span class="modal-form-label">学科简述</span>
               <textarea
                 v-model="formData.description"
                 class="modal-form-textarea"
@@ -150,12 +150,12 @@
                 placeholder="简短描述这个学科的研究方向或课程定位..."
                 :disabled="savingSubject"
               />
-            </view>
+            </div>
 
-            <view class="modal-form-group">
-              <text class="modal-form-label">选择空间图标</text>
-              <view class="icon-grid">
-                <view
+            <div class="modal-form-group">
+              <span class="modal-form-label">选择空间图标</span>
+              <div class="icon-grid">
+                <div
                   v-for="option in subjectIconOptions"
                   :key="option.key"
                   class="icon-option"
@@ -170,14 +170,14 @@
                     size="20px"
                     :color="formData.icon === option.key ? '#76855B' : 'var(--text-secondary)'"
                   />
-                </view>
-              </view>
-            </view>
+                </div>
+              </div>
+            </div>
 
-            <text v-if="modalError" class="modal-error">{{ modalError }}</text>
-          </view>
+            <span v-if="modalError" class="modal-error">{{ modalError }}</span>
+          </div>
 
-          <view class="modal-footer">
+          <div class="modal-footer">
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
@@ -190,9 +190,9 @@
               :disabled="savingSubject || !formData.name.trim()"
               @click="handleSave"
             >{{ savingSubject ? '保存中…' : isEditing ? '保存修改' : '确认创建' }}</button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
     </template>
   </TabletLayout>
 </template>
@@ -203,9 +203,12 @@ import { storeToRefs } from 'pinia'
 import LineIcon from '@/components/LineIcon.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { navigateTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import { handleEnterKey } from '@/utils/domHelpers'
 import { isSubjectIconKey, subjectIconOptions } from '@/utils/subjectIcon'
 
 const authStore = useAuthStore()
@@ -294,14 +297,14 @@ async function handleSave() {
       })
       if (generation !== authStore.getLoginGeneration()) return
       showModal.value = false
-      uni.showToast({ title: '已更新', icon: 'none' })
+      showToast('已更新')
       return
     }
 
     const newId = await subjectStore.addSubject(trimmedName, formData.description.trim(), formData.icon)
     if (generation !== authStore.getLoginGeneration()) return
     showModal.value = false
-    uni.showToast({ title: '已创建', icon: 'none' })
+    showToast('已创建')
     enterWorkspace(newId)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
@@ -313,28 +316,26 @@ async function handleSave() {
   }
 }
 
-function handleDeleteSubject(subj: Subject) {
+async function handleDeleteSubject(subj: Subject) {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除学科',
     content: `确定删除「${subj.name}」吗？`,
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      try {
-        await subjectStore.deleteSubject(subj.id)
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: '已删除', icon: 'none' })
-      } catch (err) {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: err instanceof Error ? err.message : '删除失败', icon: 'none' })
-      }
-    },
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await subjectStore.deleteSubject(subj.id)
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast('已删除')
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '删除失败')
+  }
 }
 
 function enterWorkspace(id: string) {
-  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${id}` })
+  navigateTo(`/pages/tablet/workspace/index?id=${id}`)
 }
 
 const hydrated = ref(false)
@@ -374,7 +375,7 @@ onMounted(async () => {
 .t-subject-hall {
   width: 100%;
   height: 100%;
-  padding: 16px 20px;
+  padding: var(--tablet-shell-pad);
   background-color: transparent;
   overflow-y: auto;
   box-sizing: border-box;
@@ -382,11 +383,11 @@ onMounted(async () => {
 
 .hall-content {
   width: 100%;
-  max-width: 1360px;
+  max-width: 1680px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 28px 32px;
-  border-radius: 20px;
+  padding: 16px 20px;
+  border-radius: 16px;
   box-sizing: border-box;
 }
 
@@ -395,7 +396,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
@@ -406,7 +407,7 @@ onMounted(async () => {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.03em;
@@ -443,13 +444,11 @@ onMounted(async () => {
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* #ifdef H5 */
 .search-box:focus-within {
   border-color: var(--color-zen-sage);
   background-color: #FFFFFF;
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16);
 }
-/* #endif */
 
 .search-input {
   flex: 1;
@@ -487,17 +486,17 @@ onMounted(async () => {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(206px, 1fr));
+  gap: 12px;
 }
 
 .subject-card {
-  padding: 20px 22px;
-  border-radius: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-height: 158px;
+  gap: 8px;
+  min-height: 128px;
   cursor: pointer;
   box-sizing: border-box;
   transition: transform 0.22s var(--ease-out), box-shadow 0.22s ease, border-color 0.22s ease;
@@ -507,6 +506,10 @@ onMounted(async () => {
   transform: translateY(-3px);
   border-color: var(--glass-border);
   box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.36), 0 12px 30px rgba(45, 55, 40, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.90);
+}
+
+.subject-card:active {
+  transform: scale(0.982);
 }
 
 .subject-card:hover .card-arrow {
@@ -524,9 +527,9 @@ onMounted(async () => {
 }
 
 .s-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
@@ -565,20 +568,25 @@ onMounted(async () => {
   border-color: var(--border-accent);
 }
 
+.icon-action-btn:active {
+  border-color: var(--border-accent);
+  transform: scale(0.9);
+}
+
 .icon-action-btn.danger:hover {
   background-color: var(--color-danger-bg);
   border-color: transparent;
 }
 
 .s-name {
-  font-size: 17px;
+  font-size: 14.5px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   letter-spacing: -0.015em;
 }
 
 .s-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
   display: -webkit-box;
@@ -626,6 +634,12 @@ onMounted(async () => {
 .add-card:hover {
   border-color: var(--color-zen-sage);
   background-color: rgba(139, 154, 110, 0.08);
+}
+
+.add-card:active {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.12);
+  transform: scale(0.982);
 }
 
 .add-plus-btn {
@@ -703,6 +717,11 @@ onMounted(async () => {
 .modal-close-btn:hover {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.05);
+}
+
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .modal-close-btn.is-disabled {
@@ -812,7 +831,6 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
-/* #ifdef H5 */
 .modal-form-input:focus,
 .modal-form-textarea:focus {
   outline: none;
@@ -820,7 +838,6 @@ onMounted(async () => {
   background: #FDFBF8;
   box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
-/* #endif */
 
 .icon-grid {
   display: grid;
@@ -846,6 +863,10 @@ onMounted(async () => {
   border-color: var(--color-zen-sage);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.icon-option:active {
+  transform: scale(0.93);
 }
 
 .icon-option.selected {
@@ -909,6 +930,11 @@ onMounted(async () => {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -918,6 +944,10 @@ onMounted(async () => {
 .modal-btn-primary:hover:not(:disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 @media (max-width: 760px) {

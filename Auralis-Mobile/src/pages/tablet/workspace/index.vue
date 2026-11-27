@@ -1,15 +1,15 @@
 <template>
   <TabletLayout>
-    <view class="t-workspace">
+    <div class="t-workspace">
       <!-- 1. PC 同源左侧一级窄条导轨 (72px) -->
       <aside class="tier1-strip zen-panel" aria-label="工作区导轨">
-        <view class="tier1-top">
-          <view class="tier1-btn" role="button" aria-label="返回学科大厅" @click="goBack">
+        <div class="tier1-top">
+          <div class="tier1-btn" role="button" aria-label="返回学科大厅" @click="goBack">
             <LineIcon name="chevron-left" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">返回</text>
-          </view>
+            <span class="tier1-btn-text">返回</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'preview' || centerView === 'subject-overview' || centerView === 'onboarding' }"
             role="button"
@@ -17,10 +17,10 @@
             @click="handleFilesRailClick"
           >
             <LineIcon name="file-text" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">资料</text>
-          </view>
+            <span class="tier1-btn-text">资料</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'blocks' }"
             role="button"
@@ -28,10 +28,10 @@
             @click="openCenterSection('blocks')"
           >
             <LineIcon name="grid" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">知识库</text>
-          </view>
+            <span class="tier1-btn-text">知识库</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'review' }"
             role="button"
@@ -39,10 +39,10 @@
             @click="openCenterSection('review')"
           >
             <LineIcon name="history" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">复习</text>
-          </view>
+            <span class="tier1-btn-text">复习</span>
+          </div>
 
-          <view
+          <div
             class="tier1-btn"
             :class="{ 'is-active': centerView === 'stats' }"
             role="button"
@@ -50,15 +50,15 @@
             @click="openCenterSection('stats')"
           >
             <LineIcon name="chart" size="19px" color="currentColor" />
-            <text class="tier1-btn-text">统计</text>
-          </view>
-        </view>
+            <span class="tier1-btn-text">统计</span>
+          </div>
+        </div>
 
-        <view class="tier1-bottom">
-          <view class="subject-mini-icon" :title="subjectName" aria-hidden="true">
+        <div class="tier1-bottom">
+          <div class="subject-mini-icon" :title="subjectName" aria-hidden="true">
             <LineIcon :name="`subj-${safeSubjectIcon}`" size="20px" color="#FFFFFF" />
-          </view>
-        </view>
+          </div>
+        </div>
       </aside>
 
       <!-- 2. 可折叠学习资料与学科总览抽屉 -->
@@ -118,11 +118,11 @@
         @open-files-drawer="openFilesDrawer"
         @open-review="openCenterSection('review')"
       />
-    </view>
+    </div>
 
     <template #modal>
       <!-- 右下角 AI 伴读悬浮图标按钮 -->
-      <view
+      <div
         v-if="!aiPanelVisible"
         class="ai-fab-btn"
         role="button"
@@ -131,11 +131,11 @@
         @click="openAiFloating"
       >
         <LineIcon name="auralis-mark" size="21px" color="var(--color-sage-ink)" />
-        <view v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></view>
-      </view>
+        <div v-if="aiTyping" class="ai-fab-live-dot" aria-hidden="true"></div>
+      </div>
 
       <!-- 非阻塞 AI 伴读浮窗（懒挂载 + 保活不销毁流式状态） -->
-      <view
+      <div
         v-if="aiPanelMounted"
         v-show="aiPanelVisible"
         class="ai-floating-shell"
@@ -153,7 +153,7 @@
           @typing-change="aiTyping = $event"
           @request-save-block="handleRequestSaveBlock"
         />
-      </view>
+      </div>
 
       <!-- AI 回答存为知识块弹窗（置于独立模态层，避免受浮窗 transform 限制） -->
       <SaveKnowledgeBlockModal
@@ -198,7 +198,9 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageLoad } from '@/platform/lifecycle'
+import { canNavigateBack, navigateBack, redirectTo } from '@/platform/navigation'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import SaveKnowledgeBlockModal from '@/components/SaveKnowledgeBlockModal.vue'
@@ -217,9 +219,7 @@ import { useEscapeKey } from '@/composables/useEscapeKey'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDataScope } from '@/services/localDataScope'
 import { localDb } from '@/services/localDb'
-// #ifdef H5
 import { deleteCachedDocument, getCachedDocument } from '@/services/localDocumentCache'
-// #endif
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -338,15 +338,11 @@ const floatingShellStyle = computed(() => {
 })
 
 function goBack() {
-  try {
-    if (getCurrentPages().length > 1) {
-      uni.navigateBack()
-      return
-    }
-  } catch {
-    // Fallback to subject hall when launched directly
+  if (canNavigateBack()) {
+    navigateBack()
+    return
   }
-  uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+  redirectTo('/pages/tablet/subject-hall/index')
 }
 
 function captureFence() {
@@ -507,7 +503,6 @@ async function loadSourcePreview(bypassCache = false) {
   previewUrl.value = ''
   previewBuffer.value = null
   try {
-    // #ifdef H5
     if (bypassCache) {
       await deleteCachedDocument(activeScope, source.assetId)
       if (token !== previewReqToken || !isFenceValid(fence)) return
@@ -521,7 +516,6 @@ async function loadSourcePreview(bypassCache = false) {
         return
       }
     }
-    // #endif
 
     const res = await assetApi.downloadUrl(source.assetId)
     if (token !== previewReqToken || !isFenceValid(fence)) return
@@ -744,7 +738,7 @@ async function handleSubmitUpload(payload: { file: LocalUploadFile; title: strin
     const toastTitle = payload.subjectId === fence.subjectId || !targetSubjectName
       ? '已上传，等待解析'
       : `已上传至《${targetSubjectName}》`
-    uni.showToast({ title: toastTitle, icon: 'none' })
+    showToast(toastTitle)
   } catch (error) {
     if (!isFenceValid(fence, false)) return
     uploadProgress.value = 0
@@ -755,53 +749,50 @@ async function handleSubmitUpload(payload: { file: LocalUploadFile; title: strin
   }
 }
 
-function handleDeleteSource(source: SourceView) {
+async function handleDeleteSource(source: SourceView) {
   if (!source.id) return
   const fence = captureFence()
   const activeScope = localDataScope.current()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除资料',
     content: `确定删除《${source.title || '未命名资料'}》吗？`,
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || !source.id || !isFenceValid(fence, false)) return
-      try {
-        await sourceApi.delete(source.id, source.version ?? 0)
-        if (!isFenceValid(fence, false)) return
-        await localDb.deleteSourceFile(source.id).catch(() => {})
-        if (!isFenceValid(fence, false)) return
-        // #ifdef H5
-        if (source.assetId) {
-          void deleteCachedDocument(activeScope, source.assetId)
-        }
-        // #endif
-        const wasSelected = selectedSourceId.value === source.id
-        if (wasSelected) {
-          selectedSourceId.value = null
-          clearPreview()
-        }
-        await loadSources()
-        if (!isFenceValid(fence, false)) return
-        if (wasSelected) {
-          const nextSource = sources.value[0]
-          if (nextSource?.id) {
-            selectedSourceId.value = nextSource.id
-            centerView.value = 'preview'
-            void loadSourcePreview()
-          } else if (centerView.value === 'preview') {
-            centerView.value = 'onboarding'
-          }
-        }
-        await Promise.all([subjectStore.loadSubjects(), loadSubjectOverview()])
-        if (!isFenceValid(fence, false)) return
-        uni.showToast({ title: '已删除', icon: 'none' })
-      } catch (error) {
-        if (!isFenceValid(fence, false)) return
-        const msg = error instanceof Error && error.message ? error.message : '删除资料失败'
-        uni.showToast({ title: msg, icon: 'none' })
-      }
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || !source.id || !isFenceValid(fence, false)) return
+  try {
+    await sourceApi.delete(source.id, source.version ?? 0)
+    if (!isFenceValid(fence, false)) return
+    await localDb.deleteSourceFile(source.id).catch(() => {})
+    if (!isFenceValid(fence, false)) return
+    if (source.assetId) {
+      void deleteCachedDocument(activeScope, source.assetId)
+    }
+    const wasSelected = selectedSourceId.value === source.id
+    if (wasSelected) {
+      selectedSourceId.value = null
+      clearPreview()
+    }
+    await loadSources()
+    if (!isFenceValid(fence, false)) return
+    if (wasSelected) {
+      const nextSource = sources.value[0]
+      if (nextSource?.id) {
+        selectedSourceId.value = nextSource.id
+        centerView.value = 'preview'
+        void loadSourcePreview()
+      } else if (centerView.value === 'preview') {
+        centerView.value = 'onboarding'
+      }
+    }
+    await Promise.all([subjectStore.loadSubjects(), loadSubjectOverview()])
+    if (!isFenceValid(fence, false)) return
+    showToast('已删除')
+  } catch (error) {
+    if (!isFenceValid(fence, false)) return
+    const msg = error instanceof Error && error.message ? error.message : '删除资料失败'
+    showToast(msg)
+  }
 }
 
 function openBlockDetail(block: KnowledgeBlock) {
@@ -827,7 +818,7 @@ async function handleSaveBlockModal(payload: { title: string; color: string; pre
   const title = payload.title.trim()
   const preview = payload.preview.trim()
   if (!title || !preview) {
-    uni.showToast({ title: '请填写标题与正文内容', icon: 'none' })
+    showToast('请填写标题与正文内容')
     return
   }
 
@@ -848,7 +839,7 @@ async function handleSaveBlockModal(payload: { title: string; color: string; pre
       if (!isFenceValid(fence, false)) return
       blockDialogVisible.value = false
       blockDialogMode.value = 'view'
-      uni.showToast({ title: '知识块已更新', icon: 'none' })
+      showToast('知识块已更新')
       return
     }
 
@@ -866,11 +857,11 @@ async function handleSaveBlockModal(payload: { title: string; color: string; pre
     blockDialogVisible.value = false
     blockDialogMode.value = 'view'
     centerView.value = 'blocks'
-    uni.showToast({ title: '已创建知识块', icon: 'none' })
+    showToast('已创建知识块')
   } catch (error) {
     if (!isFenceValid(fence, false)) return
     const msg = error instanceof Error && error.message ? error.message : '保存知识块失败'
-    uni.showToast({ title: msg, icon: 'none' })
+    showToast(msg)
   } finally {
     if (fence.generation === authStore.getLoginGeneration() && fence.userId === authStore.user?.id) {
       submittingBlock.value = false
@@ -884,30 +875,29 @@ watch([activeBlock, blockDialogMode], ([block, mode]) => {
   }
 })
 
-function handleDeleteBlock(block: KnowledgeBlock) {
+async function handleDeleteBlock(block: KnowledgeBlock) {
   const fence = captureFence()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除知识块',
     content: `确定删除知识块“${block.title}”吗？`,
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || !isFenceValid(fence, false)) return
-      try {
-        await blockStore.removeBlock(block.id)
-        if (!isFenceValid(fence, false)) return
-        if (activeBlockId.value === block.id) {
-          activeBlockId.value = ''
-          blockDialogVisible.value = false
-          blockDialogMode.value = 'view'
-        }
-        uni.showToast({ title: '已删除知识块', icon: 'none' })
-      } catch (error) {
-        if (!isFenceValid(fence, false)) return
-        const msg = error instanceof Error && error.message ? error.message : '删除知识块失败'
-        uni.showToast({ title: msg, icon: 'none' })
-      }
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || !isFenceValid(fence, false)) return
+  try {
+    await blockStore.removeBlock(block.id)
+    if (!isFenceValid(fence, false)) return
+    if (activeBlockId.value === block.id) {
+      activeBlockId.value = ''
+      blockDialogVisible.value = false
+      blockDialogMode.value = 'view'
+    }
+    showToast('已删除知识块')
+  } catch (error) {
+    if (!isFenceValid(fence, false)) return
+    const msg = error instanceof Error && error.message ? error.message : '删除知识块失败'
+    showToast(msg)
+  }
 }
 
 function openAiFloating() {
@@ -1005,9 +995,9 @@ function handleRequestSaveBlock(payload: { title: string; preview: string }) {
   showSaveAiBlockModal.value = true
 }
 
-useEscapeKey(() => showUploadModal.value && !uploading.value, closeUploadModal)
+useEscapeKey(() => showUploadModal.value, closeUploadModal)
 useEscapeKey(
-  () => blockDialogVisible.value && !submittingBlock.value && !showSaveAiBlockModal.value && !showUploadModal.value,
+  () => blockDialogVisible.value && !showSaveAiBlockModal.value && !showUploadModal.value,
   closeBlockDialog,
 )
 useEscapeKey(
@@ -1065,7 +1055,7 @@ async function reloadAll() {
   void loadAllOverviews()
 }
 
-onLoad((options) => {
+onPageLoad((options) => {
   const incomingId = typeof options?.id === 'string' && options.id
     ? options.id
     : (typeof options?.subjectId === 'string' && options.subjectId ? options.subjectId : '')
@@ -1122,7 +1112,7 @@ onMounted(async () => {
     if (!subjectId.value) {
       const fallbackId = subjectStore.activeSubjectId || subjectStore.subjects[0]?.id || ''
       if (!fallbackId) {
-        uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+        redirectTo('/pages/tablet/subject-hall/index')
         return
       }
       subjectId.value = fallbackId
@@ -1214,7 +1204,7 @@ watch(
   width: 100%;
   height: 100%;
   background: transparent;
-  padding: 12px 14px;
+  padding: 8px 10px;
   box-sizing: border-box;
   display: flex;
   align-items: stretch;
@@ -1222,12 +1212,12 @@ watch(
 }
 
 .tier1-strip {
-  width: 72px;
+  width: 54px;
   height: 100%;
   flex-shrink: 0;
-  margin-right: 10px;
-  padding: 18px 0 16px;
-  border-radius: 16px;
+  margin-right: 8px;
+  padding: 12px 0;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1245,14 +1235,14 @@ watch(
 }
 
 .tier1-btn {
-  width: 58px;
-  height: 54px;
-  border-radius: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -1276,15 +1266,15 @@ watch(
 }
 
 .tier1-btn-text {
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 600;
   line-height: 1;
 }
 
 .subject-mini-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
@@ -1345,10 +1335,10 @@ watch(
   position: fixed;
   right: 22px;
   bottom: 22px;
-  width: 376px;
+  width: clamp(300px, 28vw, 390px);
   max-width: calc(100vw - 32px);
-  height: min(72vh, 620px);
-  min-height: 400px;
+  height: min(74vh, 680px);
+  min-height: min(360px, 60vh);
   z-index: 1080;
   border-radius: 18px;
   box-shadow: 0 18px 46px rgba(28, 28, 26, 0.14), 0 4px 14px rgba(45, 55, 40, 0.06);

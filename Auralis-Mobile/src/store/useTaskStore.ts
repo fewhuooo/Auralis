@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { isNetworkOnline, subscribeNetworkStatus } from '@/platform/network'
 import { localDb } from '@/services/localDb'
 import { formatLocalTimeHHmm } from '@/utils/dateKey'
 import { Lexorank } from '@/utils/lexorank'
@@ -85,12 +86,7 @@ export const useTaskStore = defineStore('task', () => {
     return getScheduledTasksForLocalDate(allTasks.value, dateKey)
   }
 
-  const checkOnline = async (): Promise<boolean> => new Promise((resolve) => {
-    uni.getNetworkType({
-      success: res => resolve(res.networkType !== 'none'),
-      fail: () => resolve(true),
-    })
-  })
+  const checkOnline = async (): Promise<boolean> => isNetworkOnline()
 
   async function loadLocalTasks() {
     const scope = currentRetentionScope()
@@ -376,8 +372,8 @@ export const useTaskStore = defineStore('task', () => {
     return true
   }
 
-  uni.onNetworkStatusChange((res) => {
-    if (res.isConnected) {
+  subscribeNetworkStatus((online) => {
+    if (online) {
       console.log('[Mobile Store] Network re-established. Auto-syncing tasks...')
       void syncPendingChanges()
     }

@@ -1,5 +1,5 @@
 <template>
-  <rich-text class="markdown-rich-text" :nodes="nodes" />
+  <div class="markdown-rich-text" v-html="nodes"></div>
 </template>
 
 <script setup lang="ts">

@@ -1,0 +1,19 @@
+{
+  "productName": "Auralis HD",
+  "build": {
+    "beforeDevCommand": "npm run dev:tablet",
+    "beforeBuildCommand": "node scripts/vite-build.mjs tablet build",
+    "frontendDist": "../dist-tablet"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Auralis HD",
+        "width": 1180,
+        "height": 760,
+        "resizable": true
+      }
+    ]
+  }
+}

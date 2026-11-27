@@ -1,18 +1,18 @@
 <template>
   <AppPageLayout>
-    <view class="pomodoro-page">
-      <view class="status-bar-spacer"></view>
+    <div class="pomodoro-page">
+      <div class="status-bar-spacer"></div>
 
-      <view class="time-row">
-        <view class="datetime-pill num-tabular">
-          <view class="datetime-dot"></view>
-          <text>{{ clockText.dateText }} {{ clockText.timeText }}</text>
-        </view>
-      </view>
+      <div class="time-row">
+        <div class="datetime-pill num-tabular">
+          <div class="datetime-dot"></div>
+          <span>{{ clockText.dateText }} {{ clockText.timeText }}</span>
+        </div>
+      </div>
 
-      <scroll-view scroll-y :show-scrollbar="false" class="timer-scroll">
-        <view class="timer-scroll-inner">
-          <view class="timer-hero">
+      <div class="timer-scroll zen-scroll-y">
+        <div class="timer-scroll-inner">
+          <div class="timer-hero">
             <PomodoroRing
               size="min(284px, 72vw, 36vh)"
               :total-seconds="focusStore.totalSeconds"
@@ -25,18 +25,18 @@
               @center-click="focusStore.toggle()"
             />
 
-            <view class="phase-status">
-              <view
+            <div class="phase-status">
+              <div
                 class="phase-pill"
                 :class="{ 'is-break': focusStore.isBreakPhase, 'is-active': focusStore.isRunning }"
               >
-                <view class="phase-beacon"></view>
-                <text>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</text>
-              </view>
-            </view>
+                <div class="phase-beacon"></div>
+                <span>{{ focusStore.isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}</span>
+              </div>
+            </div>
 
-            <view class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
-              <view
+            <div class="progress-dots" :aria-label="`今日第 ${focusStore.cycleCount} 个番茄周期`">
+              <div
                 v-for="idx in 4"
                 :key="idx"
                 class="dot"
@@ -44,86 +44,86 @@
                   'is-filled': focusStore.cycleCount >= idx,
                   'is-break-filled': focusStore.cycleCount >= idx && focusStore.isBreakPhase,
                 }"
-              ></view>
-            </view>
+              ></div>
+            </div>
 
-            <view class="controls">
-              <view class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
-                <text>重置</text>
-              </view>
+            <div class="controls">
+              <div class="ctrl-btn" role="button" aria-label="重置" @click="focusStore.reset()">
+                <span>重置</span>
+              </div>
 
-              <view
+              <div
                 class="main-btn"
                 :class="{ 'is-break': focusStore.isBreakPhase }"
                 role="button"
                 :aria-label="focusStore.isRunning ? '暂停专注' : '开始专注'"
                 @click="focusStore.toggle()"
               >
-                <view v-if="focusStore.isRunning" class="pause-icon"></view>
-                <view v-else class="play-icon"></view>
-              </view>
+                <div v-if="focusStore.isRunning" class="pause-icon"></div>
+                <div v-else class="play-icon"></div>
+              </div>
 
-              <view class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
-                <text>跳过</text>
-              </view>
-            </view>
-          </view>
-        </view>
-      </scroll-view>
+              <div class="ctrl-btn" role="button" aria-label="跳过" @click="focusStore.skip()">
+                <span>跳过</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <view class="bottom-card-dock">
-        <view
+      <div class="bottom-card-dock">
+        <div
           class="panel-card zen-card focus-panel-card"
           :class="{ 'is-locked': focusStore.isTaskLocked }"
           role="button"
           aria-label="选择专注任务"
           @click="openTaskPicker"
         >
-          <view class="card-header">
-            <text class="card-title">当前专注</text>
-            <view class="card-header-meta">
-              <text
+          <div class="card-header">
+            <span class="card-title">当前专注</span>
+            <div class="card-header-meta">
+              <span
                 v-if="!displayedTask.isFreeStudy && displayedTask.timeStr && displayedTask.timeStr !== '关联待办'"
                 class="header-time-badge num-tabular"
               >
                 {{ displayedTask.timeStr }}
-              </text>
+              </span>
               <LineIcon
                 :name="focusStore.isTaskLocked ? 'lock' : 'chevron-down'"
                 size="14px"
                 color="var(--text-muted, #7A7A75)"
               />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
-            <text class="banner-title">{{ displayedTask.name }}</text>
-            <text class="banner-status-tag">{{ displayedTask.statusTag }}</text>
-          </view>
+          <div class="active-focus-banner" :class="{ 'is-free': displayedTask.isFreeStudy }">
+            <span class="banner-title">{{ displayedTask.name }}</span>
+            <span class="banner-status-tag">{{ displayedTask.statusTag }}</span>
+          </div>
 
-          <view v-if="focusStore.lastCompletedTask" class="complete-prompt" @click.stop>
-            <text class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</text>
-            <view class="complete-prompt-actions">
-              <view
+          <div v-if="focusStore.lastCompletedTask" class="complete-prompt" @click.stop>
+            <span class="complete-prompt-title">完成「{{ focusStore.lastCompletedTask.title }}」？</span>
+            <div class="complete-prompt-actions">
+              <div
                 class="ui-btn ui-btn-secondary sm prompt-btn"
                 role="button"
                 @click="focusStore.dismissCompletedTaskPrompt()"
               >
-                <text>暂不</text>
-              </view>
-              <view
+                <span>暂不</span>
+              </div>
+              <div
                 class="ui-btn ui-btn-primary sm prompt-btn"
                 :class="{ 'is-disabled': completingTask }"
                 role="button"
                 @click="completeBoundTask"
               >
-                <text>{{ completingTask ? '保存中…' : '标记完成' }}</text>
-              </view>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
+                <span>{{ completingTask ? '保存中…' : '标记完成' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #overlay>
       <TaskSelectSheet
@@ -137,11 +137,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { onHide, onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import PomodoroRing from '@/components/PomodoroRing.vue'
 import TaskSelectSheet from '@/components/TaskSelectSheet.vue'
+import { showToast } from '@/platform/feedback'
+import { onPageHide, onPageShow } from '@/platform/lifecycle'
 import {
   formatFocusClockDateTime,
   resolveDefaultFocusTask,
@@ -297,15 +298,15 @@ watch(
 onMounted(() => {
   void syncFocusState()
 })
-onShow(() => {
+onPageShow(() => {
   void syncFocusState()
 })
-onHide(stopClock)
+onPageHide(stopClock)
 onUnmounted(stopClock)
 
 function openTaskPicker() {
   if (focusStore.isTaskLocked) {
-    uni.showToast({ title: '本轮专注结束后可重新选择任务', icon: 'none' })
+    showToast('本轮专注结束后可重新选择任务')
     return
   }
   showTaskSheet.value = true
@@ -338,7 +339,7 @@ async function completeBoundTask() {
     ) {
       return
     }
-    uni.showToast({ title: '已标记完成', icon: 'none' })
+    showToast('已标记完成')
     focusStore.dismissCompletedTaskPrompt()
   } catch (err) {
     if (
@@ -348,10 +349,7 @@ async function completeBoundTask() {
     ) {
       return
     }
-    uni.showToast({
-      title: err instanceof Error ? err.message : '标记完成失败，请重试',
-      icon: 'none',
-    })
+    showToast(err instanceof Error ? err.message : '标记完成失败，请重试')
   } finally {
     if (
       generation === authStore.getLoginGeneration()
@@ -394,17 +392,8 @@ async function completeBoundTask() {
   min-height: 0;
 }
 
-/* #ifdef H5 */
-.timer-scroll :deep(.uni-scroll-view-content) {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-/* #endif */
-
 .timer-scroll-inner {
   width: 100%;
-  flex: 1;
   min-height: 100%;
   display: flex;
   flex-direction: column;

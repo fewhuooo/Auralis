@@ -1,6 +1,7 @@
 import { dedupeEventKey } from './protocol'
 import { realtimeApi } from './realtimeApi'
 import { getRuntimeConfig, resolveWebsocketUrl } from '@/config/runtime'
+import { openWebSocket, type PlatformSocket } from '@/platform/websocket'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
 
@@ -23,7 +24,7 @@ export function subscribeOverviewUpdated(listener: OverviewRealtimeListener): ()
   }
 }
 
-let socketTask: UniApp.SocketTask | null = null
+let socketTask: PlatformSocket | null = null
 let activeSocketIdentity = ''
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempt = 0
@@ -50,7 +51,7 @@ function rememberEvent(event: RealtimeEvent): boolean {
   return true
 }
 
-export async function connectRealtimeSync() {
+export async function connectRealtimeSync(options?: { resetBackoff?: boolean }) {
   const auth = useAuthStore()
   const targetIdentity = auth.user?.id && auth.serverDeviceId ? `${auth.user.id}:${auth.serverDeviceId}` : ''
   if (!auth.isAuthenticated || !targetIdentity) return
@@ -62,7 +63,15 @@ export async function connectRealtimeSync() {
     disconnectRealtimeSync()
   }
 
+  if (options?.resetBackoff) {
+    reconnectAttempt = 0
+  }
+
   if (socketTask && activeSocketIdentity === targetIdentity) return
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
   if (activeConnectFlight && activeConnectFlight.seq === connectSeq && activeConnectFlight.identity === targetIdentity) {
     return activeConnectFlight.promise
   }
@@ -88,12 +97,12 @@ export async function connectRealtimeSync() {
       if (!ticket.ticket && !ticket.websocketUrl) throw new Error('Realtime ticket response is incomplete')
       const path = ticket.websocketUrl || `/ws/events?ticket=${encodeURIComponent(ticket.ticket!)}`
       const url = resolveWebsocketUrl(path, getRuntimeConfig())
-      const task = uni.connectSocket({ url, complete: () => {} }) as unknown as UniApp.SocketTask
+      const task = openWebSocket(url)
       socketTask = task
       activeSocketIdentity = targetIdentity
       task.onOpen(() => {
         if (socketTask !== task || !isCurrentAttempt()) {
-          task.close({})
+          task.close()
           return
         }
         reconnectAttempt = 0
@@ -159,5 +168,5 @@ export function disconnectRealtimeSync() {
   recentEvents.clear()
   const activeSocket = socketTask
   socketTask = null
-  activeSocket?.close({})
+  activeSocket?.close()
 }

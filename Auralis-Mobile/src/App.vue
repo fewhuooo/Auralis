@@ -1,15 +1,28 @@
+<template>
+  <RouterView />
+</template>
+
 <script setup lang="ts">
-import { watch } from 'vue'
-import { onHide, onLaunch, onShow } from '@dcloudio/uni-app'
+import { onUnmounted, watch } from 'vue'
+import { RouterView } from 'vue-router'
+import { installAndroidBackBridge } from '@/platform/backButton'
+import { ensureFeedbackHost } from '@/platform/feedback'
+import { onAppHide, onAppLaunch, onAppShow } from '@/platform/lifecycle'
+import { subscribeNetworkStatus } from '@/platform/network'
+import { installTouchFeedback } from '@/platform/touchFeedback'
 import { connectRealtimeSync, disconnectRealtimeSync } from '@/api/sync'
 import { localDb } from '@/services/localDb'
 import { cursorKeyForAuth } from '@/services/syncController'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
+import { useLayoutStore } from '@/store/useLayoutStore'
 import { useSyncStore } from '@/store/useSyncStore'
 
 let activeRuntimeKey = ''
 let runtimeFlight: { token: symbol; key: string; promise: Promise<void> } | null = null
+let stopBackBridge: (() => void) | null = null
+let stopNetworkWatch: (() => void) | null = null
+let stopTouchFeedback: (() => void) | null = null
 
 async function startAuthenticatedRuntime() {
   const authStore = useAuthStore()
@@ -56,8 +69,26 @@ async function startAuthenticatedRuntime() {
   return promise
 }
 
-onLaunch(async () => {
+onAppLaunch(async () => {
+  void ensureFeedbackHost()
   const authStore = useAuthStore()
+  const layoutStore = useLayoutStore()
+
+  stopTouchFeedback?.()
+  stopTouchFeedback = installTouchFeedback()
+
+  stopBackBridge = installAndroidBackBridge({
+    consumeReturnRoute: () => layoutStore.consumeReturnRoute(),
+    triggerReturn: (duration) => layoutStore.triggerReturn(duration),
+  })
+
+  stopNetworkWatch = subscribeNetworkStatus((online) => {
+    if (!online) return
+    if (!authStore.isAuthenticated || runtimeFlight) return
+    const focusStore = useFocusStore()
+    void useSyncStore().triggerSync().then(() => focusStore.flushPendingSessions())
+    void connectRealtimeSync({ resetBackoff: true })
+  })
 
   watch(
     () => [authStore.isAuthenticated, authStore.user?.id, authStore.serverDeviceId],
@@ -79,23 +110,34 @@ onLaunch(async () => {
     { flush: 'sync' },
   )
 
-  if (authStore.token && await authStore.restoreSession()) {
+  if (authStore.isAuthenticated) {
+    await startAuthenticatedRuntime()
+  } else if (authStore.token && await authStore.restoreSession()) {
     await startAuthenticatedRuntime()
   }
 })
 
-onShow(() => {
+onAppShow(() => {
   const authStore = useAuthStore()
   const focusStore = useFocusStore()
   if (!authStore.isAuthenticated) return
   focusStore.reconcileNow(true)
   if (runtimeFlight) return
   void useSyncStore().triggerSync().then(() => focusStore.flushPendingSessions())
-  void connectRealtimeSync()
+  void connectRealtimeSync({ resetBackoff: true })
 })
 
-onHide(() => {
+onAppHide(() => {
   disconnectRealtimeSync()
+})
+
+onUnmounted(() => {
+  stopTouchFeedback?.()
+  stopTouchFeedback = null
+  stopBackBridge?.()
+  stopBackBridge = null
+  stopNetworkWatch?.()
+  stopNetworkWatch = null
 })
 </script>
 

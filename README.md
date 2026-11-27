@@ -9,7 +9,7 @@
 | 目录 | 用途 |
 | --- | --- |
 | Auralis-PC | Vue、TypeScript 与 Tauri 客户端 |
-| Auralis-Mobile | Uni-app 手机与平板客户端 |
+| Auralis-Mobile | Vue 3 + Vite + Tauri 2 Android 手机与平板独立客户端（Auralis / Auralis HD） |
 | Auralis-Server | Java / Spring Boot 后端 |
 | scripts | 跨端契约检查、数据准备及诊断工具 |
 | docs | 开发、契约、运维与历史记录 |

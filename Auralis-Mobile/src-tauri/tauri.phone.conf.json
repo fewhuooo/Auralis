@@ -1,0 +1,7 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev:phone",
+    "beforeBuildCommand": "node scripts/vite-build.mjs phone build",
+    "frontendDist": "../dist-phone"
+  }
+}

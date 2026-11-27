@@ -1,10 +1,10 @@
 <template>
   <TabletLayout>
-    <view class="t-dashboard">
-      <view class="left-column zen-panel">
-        <view class="greeting-header">
-          <text class="greeting-title">{{ greeting }}，{{ displayName }}</text>
-          <view
+    <div class="t-dashboard">
+      <div class="left-column zen-panel">
+        <div class="greeting-header">
+          <span class="greeting-title">{{ greeting }}，{{ displayName }}</span>
+          <div
             class="todo-fab-add-btn"
             role="button"
             title="新建任务"
@@ -12,8 +12,8 @@
             @click="openCreateModal"
           >
             <LineIcon name="plus" size="16px" color="#FFFFFF" />
-          </view>
-        </view>
+          </div>
+        </div>
 
         <ZenWeekStrip
           v-model="selectedDateKey"
@@ -23,35 +23,35 @@
           :frameless="true"
         />
 
-        <scroll-view scroll-y :show-scrollbar="false" class="tasks-scroll">
-          <view
+        <div class="tasks-scroll zen-scroll-y">
+          <div
             v-if="hydrated && scheduledForDay.length === 0 && taskStore.homePendingTasks.length === 0"
             class="clear-day-canvas zen-card"
           >
-            <view class="clear-day-halo" aria-hidden="true">
+            <div class="clear-day-halo" aria-hidden="true">
               <LineIcon name="calendar" size="22px" color="var(--color-sage-ink)" />
-            </view>
-            <text class="clear-day-title">今日无安排</text>
-            <view class="ui-btn ui-btn-secondary sm clear-day-cta" role="button" @click="openCreateModal">
+            </div>
+            <span class="clear-day-title">今日无安排</span>
+            <div class="ui-btn ui-btn-secondary sm clear-day-cta" role="button" @click="openCreateModal">
               <LineIcon name="plus" size="14px" color="var(--color-sage-ink)" />
-              <text>新建任务</text>
-            </view>
-          </view>
+              <span>新建任务</span>
+            </div>
+          </div>
 
           <template v-else-if="hydrated || scheduledForDay.length > 0 || taskStore.homePendingTasks.length > 0">
-            <view class="task-section">
-              <view class="section-header">
-                <text class="section-title">日程</text>
-                <text v-if="scheduledForDay.length > 0" class="section-count num-tabular">
+            <div class="task-section">
+              <div class="section-header">
+                <span class="section-title">日程</span>
+                <span v-if="scheduledForDay.length > 0" class="section-count num-tabular">
                   {{ scheduledForDay.length }}
-                </text>
-              </view>
+                </span>
+              </div>
 
-              <view v-if="scheduledForDay.length === 0" class="empty-slot zen-empty-surface">
-                <text class="empty-text">暂无日程</text>
-              </view>
+              <div v-if="scheduledForDay.length === 0" class="empty-slot zen-empty-surface">
+                <span class="empty-text">暂无日程</span>
+              </div>
 
-              <view v-else class="card-stack">
+              <div v-else class="card-stack">
                 <ZenTaskRow
                   v-for="item in scheduledForDay"
                   :key="item.id"
@@ -61,22 +61,22 @@
                   @toggle="toggleTaskItem"
                   @unschedule="unscheduleTaskItem"
                 />
-              </view>
-            </view>
+              </div>
+            </div>
 
-            <view class="task-section">
-              <view class="section-header">
-                <text class="section-title">待办</text>
-                <text v-if="taskStore.homePendingTasks.length > 0" class="section-count num-tabular">
+            <div class="task-section">
+              <div class="section-header">
+                <span class="section-title">待办</span>
+                <span v-if="taskStore.homePendingTasks.length > 0" class="section-count num-tabular">
                   {{ taskStore.homePendingTasks.length }}
-                </text>
-              </view>
+                </span>
+              </div>
 
-              <view v-if="taskStore.homePendingTasks.length === 0" class="empty-slot zen-empty-surface">
-                <text class="empty-text">暂无待办</text>
-              </view>
+              <div v-if="taskStore.homePendingTasks.length === 0" class="empty-slot zen-empty-surface">
+                <span class="empty-text">暂无待办</span>
+              </div>
 
-              <view v-else class="card-stack">
+              <div v-else class="card-stack">
                 <ZenTaskRow
                   v-for="todo in taskStore.homePendingTasks"
                   :key="todo.id"
@@ -86,28 +86,28 @@
                   @toggle="toggleTaskItem"
                   @delete="confirmDeleteTodo"
                 />
-              </view>
-            </view>
+              </div>
+            </div>
           </template>
-        </scroll-view>
-      </view>
+        </div>
+      </div>
 
-      <view class="right-column">
-        <view class="subjects-card zen-panel">
-          <view class="panel-header">
-            <text class="panel-title">学科空间</text>
-            <text v-if="subjectStore.subjects.length > 0" class="section-count num-tabular">
+      <div class="right-column">
+        <div class="subjects-card zen-panel">
+          <div class="panel-header">
+            <span class="panel-title">学科空间</span>
+            <span v-if="subjectStore.subjects.length > 0" class="section-count num-tabular">
               {{ subjectStore.subjects.length }}
-            </text>
-          </view>
+            </span>
+          </div>
 
-          <view v-if="hydrated && subjectStore.subjects.length === 0" class="subjects-empty">
-            <text class="empty-text">暂无学科</text>
-          </view>
+          <div v-if="hydrated && subjectStore.subjects.length === 0" class="subjects-empty">
+            <span class="empty-text">暂无学科</span>
+          </div>
 
-          <scroll-view v-else-if="subjectStore.subjects.length > 0" scroll-y :show-scrollbar="false" class="subjects-scroll">
-            <view class="subject-list">
-              <view
+          <div v-else-if="subjectStore.subjects.length > 0" class="subjects-scroll zen-scroll-y">
+            <div class="subject-list">
+              <div
                 v-for="sub in subjectStore.subjects"
                 :key="sub.id"
                 class="subject-row"
@@ -115,46 +115,46 @@
                 :aria-label="`进入学科 ${sub.name}`"
                 @click="openSubjectWorkspace(sub.id)"
               >
-                <view class="subject-row-left">
-                  <view class="sub-icon-badge">
+                <div class="subject-row-left">
+                  <div class="sub-icon-badge">
                     <LineIcon
                       :name="`subj-${isSubjectIconKey(sub.icon) ? sub.icon : 'book'}`"
                       size="16px"
                       color="var(--color-sage-ink)"
                     />
-                  </view>
-                  <text class="sub-name">{{ sub.name }}</text>
-                </view>
-                <view class="subject-row-right">
-                  <view class="subject-meta num-tabular">
+                  </div>
+                  <span class="sub-name">{{ sub.name }}</span>
+                </div>
+                <div class="subject-row-right">
+                  <div class="subject-meta num-tabular">
                     <LineIcon name="layers" size="12px" color="var(--text-muted)" />
-                    <text>{{ sub.blockCount || 0 }}</text>
-                  </view>
+                    <span>{{ sub.blockCount || 0 }}</span>
+                  </div>
                   <LineIcon name="chevron-right" size="14px" color="var(--text-muted)" />
-                </view>
-              </view>
-            </view>
-          </scroll-view>
-        </view>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <view class="metrics-panel zen-panel">
+        <div class="metrics-panel zen-panel">
           <StudyMetrics />
-        </view>
-      </view>
-    </view>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
-      <view v-if="showCreateModal" class="zen-modal-mask task-modal-mask" @click="closeCreateModal">
-        <view
+      <div v-if="showCreateModal" class="zen-modal-mask task-modal-mask" @click="closeCreateModal">
+        <div
           class="task-modal"
           role="dialog"
           aria-modal="true"
           aria-label="新建学习任务"
           @click.stop
         >
-          <view class="modal-header">
-            <text class="modal-title">新建学习任务</text>
-            <view
+          <div class="modal-header">
+            <span class="modal-title">新建学习任务</span>
+            <div
               class="modal-close-btn"
               :class="{ 'is-disabled': savingTask }"
               role="button"
@@ -162,42 +162,42 @@
               @click="closeCreateModal"
             >
               <LineIcon name="close" size="15px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-body">
+          <div class="modal-body">
             <!-- 任务名称 -->
-            <view class="modal-form-group">
-              <view class="modal-form-label">
-                <text>任务名称</text>
-                <text class="required">*</text>
-              </view>
+            <div class="modal-form-group">
+              <div class="modal-form-label">
+                <span>任务名称</span>
+                <span class="required">*</span>
+              </div>
               <input
                 v-model="taskForm.name"
                 class="modal-form-input"
                 maxlength="80"
                 placeholder="请输入学习或专注任务名称..."
                 :disabled="savingTask"
-                @confirm="submitCreateTask"
+                @keydown="handleEnterKey($event, submitCreateTask)"
               />
-            </view>
+            </div>
 
             <!-- 所属学科 -->
-            <view class="modal-form-group">
-              <view class="subject-header">
-                <view class="modal-form-label">
-                  <text>所属学科</text>
-                  <text class="required">*</text>
-                </view>
-                <text v-if="subjectStore.subjects.length > 0" class="subject-count-hint num-tabular">
+            <div class="modal-form-group">
+              <div class="subject-header">
+                <div class="modal-form-label">
+                  <span>所属学科</span>
+                  <span class="required">*</span>
+                </div>
+                <span v-if="subjectStore.subjects.length > 0" class="subject-count-hint num-tabular">
                   共 {{ subjectStore.subjects.length }} 门
-                </text>
-              </view>
-              <view v-if="subjectStore.subjects.length === 0" class="empty-hint">
+                </span>
+              </div>
+              <div v-if="subjectStore.subjects.length === 0" class="empty-hint">
                 暂无学科，请先创建学科空间
-              </view>
-              <view v-else class="subject-grid">
-                <view
+              </div>
+              <div v-else class="subject-grid">
+                <div
                   v-for="sub in subjectStore.subjects"
                   :key="sub.id"
                   class="subject-chip"
@@ -210,27 +210,27 @@
                     size="13px"
                     :color="taskForm.subjectId === sub.id ? '#76855B' : 'var(--text-secondary)'"
                   />
-                  <text class="chip-name">{{ sub.name }}</text>
-                </view>
-              </view>
-            </view>
+                  <span class="chip-name">{{ sub.name }}</span>
+                </div>
+              </div>
+            </div>
 
             <!-- 专注时长（PC 同源 7 档整半小时分段滑轨） -->
-            <view class="modal-form-group">
-              <view class="duration-header">
-                <text class="modal-form-label">专注时长</text>
-                <view class="duration-value-pill num-tabular">
+            <div class="modal-form-group">
+              <div class="duration-header">
+                <span class="modal-form-label">专注时长</span>
+                <div class="duration-value-pill num-tabular">
                   <LineIcon name="clock" size="13px" color="#76855B" />
-                  <text>{{ taskForm.duration }} 分钟（{{ (taskForm.duration / 60).toFixed(1) }} 小时）</text>
-                </view>
-              </view>
+                  <span>{{ taskForm.duration }} 分钟（{{ (taskForm.duration / 60).toFixed(1) }} 小时）</span>
+                </div>
+              </div>
 
-              <view class="duration-segmented-track">
-                <view class="track-segments-row">
-                  <view class="active-thumb-pill" :style="durationThumbStyle">
-                    <text class="active-thumb-text num-tabular">{{ activeDurationLabel }}</text>
-                  </view>
-                  <view
+              <div class="duration-segmented-track">
+                <div class="track-segments-row">
+                  <div class="active-thumb-pill" :style="durationThumbStyle">
+                    <span class="active-thumb-text num-tabular">{{ activeDurationLabel }}</span>
+                  </div>
+                  <div
                     v-for="opt in DURATION_OPTIONS"
                     :key="opt.minutes"
                     class="track-segment-item"
@@ -238,73 +238,77 @@
                     role="button"
                     @click="!savingTask && (taskForm.duration = opt.minutes)"
                   >
-                    <text class="segment-label num-tabular">{{ opt.label }}</text>
-                  </view>
-                </view>
-              </view>
-            </view>
+                    <span class="segment-label num-tabular">{{ opt.label }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- 日程安排（平板专属直接排程） -->
-            <view class="modal-form-group">
-              <view class="modal-form-label">
-                <text>日程安排</text>
-                <text class="optional-tag">可选</text>
-              </view>
-              <view class="schedule-row-card">
-                <text class="schedule-date-label">排入 {{ selectedDateHeading }}</text>
-                <view class="schedule-controls">
-                  <picker
+            <div class="modal-form-group">
+              <div class="modal-form-label">
+                <span>日程安排</span>
+                <span class="optional-tag">可选</span>
+              </div>
+              <div class="schedule-row-card">
+                <span class="schedule-date-label">排入 {{ selectedDateHeading }}</span>
+                <div class="schedule-controls">
+                  <ZenTimePicker
                     v-if="taskForm.scheduled"
-                    mode="time"
-                    :value="taskForm.timeHHmm"
+                    v-model="taskForm.timeHHmm"
                     :disabled="savingTask"
-                    @change="onModalTimeChange"
+                    title="选择开始时间"
                   >
-                    <view class="time-pill num-tabular">
+                    <div class="time-pill num-tabular">
                       <LineIcon name="clock" size="13px" color="#76855B" />
-                      <text>{{ taskForm.timeHHmm }}</text>
-                    </view>
-                  </picker>
-                  <switch
-                    :checked="taskForm.scheduled"
+                      <span>{{ taskForm.timeHHmm }}</span>
+                    </div>
+                  </ZenTimePicker>
+                  <button
+                    type="button"
+                    role="switch"
+                    :aria-checked="taskForm.scheduled"
+                    aria-label="按时段排期"
                     :disabled="savingTask"
-                    color="#8B9A6E"
-                    style="transform: scale(0.84); transform-origin: right center;"
-                    @change="onScheduledSwitch"
-                  />
-                </view>
-              </view>
-            </view>
+                    class="zen-switch"
+                    :class="{ checked: taskForm.scheduled }"
+                    @click="taskForm.scheduled = !taskForm.scheduled"
+                  >
+                    <span class="zen-switch-thumb"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <!-- 截止时间 -->
-            <view class="modal-form-group">
-              <view class="due-header">
-                <view class="modal-form-label">
-                  <text>截止时间</text>
-                  <text class="optional-tag">可选</text>
-                </view>
-                <text
+            <div class="modal-form-group">
+              <div class="due-header">
+                <div class="modal-form-label">
+                  <span>截止时间</span>
+                  <span class="optional-tag">可选</span>
+                </div>
+                <span
                   v-if="taskForm.dueDateKey && !savingTask"
                   class="due-clear-btn"
                   role="button"
                   @click="taskForm.dueDateKey = ''"
-                >清除</text>
-              </view>
+                >清除</span>
+              </div>
 
-              <picker
-                mode="date"
-                :value="taskForm.dueDateKey || selectedDateKey"
+              <ZenDatePicker
+                v-model="taskForm.dueDateKey"
+                :fallback-date="selectedDateKey"
                 :disabled="savingTask"
-                @change="onModalDueDateChange"
+                title="选择截止日期"
               >
-                <view class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
+                <div class="due-picker-box num-tabular" :class="{ 'has-value': Boolean(taskForm.dueDateKey) }">
                   <LineIcon name="calendar" size="14px" :color="taskForm.dueDateKey ? '#76855B' : '#8B9A6E'" />
-                  <text class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</text>
-                </view>
-              </picker>
+                  <span class="due-picker-text">{{ taskForm.dueDateKey || '请选择截止日期（可选）' }}</span>
+                </div>
+              </ZenDatePicker>
 
-              <view class="quick-date-row">
-                <view
+              <div class="quick-date-row">
+                <div
                   v-for="preset in dueDatePresets"
                   :key="preset.label"
                   class="due-preset-chip"
@@ -312,13 +316,13 @@
                   role="button"
                   @click="!savingTask && toggleDuePreset(preset.key)"
                 >
-                  <text>{{ preset.label }}</text>
-                </view>
-              </view>
-            </view>
-          </view>
+                  <span>{{ preset.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-          <view class="modal-footer">
+          <div class="modal-footer">
             <button
               type="button"
               class="modal-btn modal-btn-secondary"
@@ -331,22 +335,26 @@
               :disabled="!canSubmitTask"
               @click="submitCreateTask"
             >{{ savingTask ? '保存中…' : taskForm.scheduled ? '加入日程' : '添加到待办' }}</button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
     </template>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
+import ZenDatePicker from '@/components/ZenDatePicker.vue'
+import ZenTimePicker from '@/components/ZenTimePicker.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageShow } from '@/platform/lifecycle'
+import { navigateTo } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
@@ -359,6 +367,7 @@ import {
   shiftDateKey,
   toLocalDateKey,
 } from '@/utils/dateKey'
+import { handleEnterKey } from '@/utils/domHelpers'
 import { isSubjectIconKey } from '@/utils/subjectIcon'
 
 const authStore = useAuthStore()
@@ -408,7 +417,7 @@ async function toggleTaskItem(id: string) {
   if (taskStore.updatingTaskIds.includes(id)) return
   const task = taskStore.allTasks.find(item => item.id === id)
   if (isScheduledCompletionLocked(task, nowClock.value)) {
-    uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
+    showToast('任务时段已结束，完成状态不可取消')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -416,7 +425,7 @@ async function toggleTaskItem(id: string) {
     await taskStore.toggleTaskComplete(id)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败，请重试')
   }
 }
 
@@ -425,27 +434,28 @@ async function unscheduleTaskItem(id: string) {
   try {
     await taskStore.unscheduleTask(id)
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: '已移回待办', icon: 'none' })
+    showToast('已移回待办')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '移回失败，请重试', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '移回失败，请重试')
   }
 }
 
-function confirmDeleteTodo(id: string, title: string) {
+async function confirmDeleteTodo(id: string, title: string) {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除待办',
     content: `确定删除「${title}」？`,
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      void taskStore.removeTask(id).catch((err) => {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
-      })
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await taskStore.removeTask(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '删除失败，请重试')
+  }
 }
 
 const DURATION_OPTIONS = [
@@ -536,29 +546,16 @@ function toggleDuePreset(key: string) {
   taskForm.dueDateKey = taskForm.dueDateKey === key ? '' : key
 }
 
-function onScheduledSwitch(event: Event) {
-  const detail = (event as Event & { detail?: { value?: boolean } }).detail
-  taskForm.scheduled = Boolean(detail?.value)
-}
-
-function onModalTimeChange(event: { detail?: { value?: string } }) {
-  if (event?.detail?.value) taskForm.timeHHmm = event.detail.value
-}
-
-function onModalDueDateChange(event: { detail?: { value?: string } }) {
-  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
-}
-
 async function submitCreateTask() {
   if (savingTask.value) return
   const title = taskForm.name.trim()
   const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
   if (!title) {
-    uni.showToast({ title: '请输入名称', icon: 'none' })
+    showToast('请输入名称')
     return
   }
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
 
@@ -571,10 +568,7 @@ async function submitCreateTask() {
       durationMinutes: taskForm.duration,
     })
     if (overlap) {
-      uni.showToast({
-        title: `与日程「${overlap.name}」时段冲突，请调整时间或关闭按时段排期`,
-        icon: 'none',
-      })
+      showToast(`与日程「${overlap.name}」时段冲突，请调整时间或关闭按时段排期`)
       return
     }
   }
@@ -596,10 +590,10 @@ async function submitCreateTask() {
     taskForm.name = ''
     taskForm.dueDateKey = ''
     showCreateModal.value = false
-    uni.showToast({ title: scheduledAt ? '已加入日程' : '已加入待办', icon: 'none' })
+    showToast(scheduledAt ? '已加入日程' : '已加入待办')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       savingTask.value = false
@@ -608,12 +602,12 @@ async function submitCreateTask() {
 }
 
 function openSubjectWorkspace(subjectId: string) {
-  uni.navigateTo({ url: `/pages/tablet/workspace/index?id=${subjectId}` })
+  navigateTo(`/pages/tablet/workspace/index?id=${subjectId}`)
 }
 
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
-onShow(() => {
+onPageShow(() => {
   syncClock()
   void subjectStore.loadSubjects()
 })
@@ -664,8 +658,8 @@ onUnmounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 16px;
-  gap: 14px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   background-color: transparent;
   box-sizing: border-box;
   overflow: hidden;
@@ -676,9 +670,9 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   height: 100%;
-  padding: 22px 24px;
+  padding: 14px 18px;
   box-sizing: border-box;
 }
 
@@ -687,7 +681,7 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--tablet-panel-gap);
   height: 100%;
 }
 
@@ -700,7 +694,7 @@ onUnmounted(() => {
 }
 
 .greeting-title {
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.03em;
@@ -708,8 +702,8 @@ onUnmounted(() => {
 }
 
 .todo-fab-add-btn {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--accent-gradient);
   box-shadow: 0 3px 10px rgba(118, 135, 88, 0.28);
@@ -771,8 +765,8 @@ onUnmounted(() => {
 .task-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .section-header {
@@ -783,7 +777,7 @@ onUnmounted(() => {
 }
 
 .section-title {
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: var(--font-weight-bold);
   color: var(--text-secondary);
 }
@@ -794,7 +788,7 @@ onUnmounted(() => {
 }
 
 .empty-slot {
-  height: 38px;
+  height: 32px;
 }
 
 .empty-text {
@@ -805,20 +799,20 @@ onUnmounted(() => {
 .card-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .subjects-card {
   flex: 1;
   min-height: 0;
-  padding: 20px 22px;
+  padding: 13px 15px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 }
 
 .metrics-panel {
-  padding: 16px;
+  padding: 11px;
   flex-shrink: 0;
 }
 
@@ -830,7 +824,7 @@ onUnmounted(() => {
 }
 
 .panel-title {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   letter-spacing: -0.015em;
@@ -852,7 +846,7 @@ onUnmounted(() => {
 .subject-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .subject-row {
@@ -860,8 +854,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 11px 13px;
-  border-radius: 13px;
+  padding: 8px 10px;
+  border-radius: 10px;
   background-color: var(--glass-sub-bg);
   backdrop-filter: var(--glass-blur-soft);
   -webkit-backdrop-filter: var(--glass-blur-soft);
@@ -888,9 +882,9 @@ onUnmounted(() => {
 }
 
 .sub-icon-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   background-color: var(--color-sage-bg);
   display: flex;
   align-items: center;
@@ -899,7 +893,7 @@ onUnmounted(() => {
 }
 
 .sub-name {
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   overflow: hidden;
@@ -984,6 +978,11 @@ onUnmounted(() => {
   border-color: rgba(0, 0, 0, 0.05);
 }
 
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-close-btn.is-disabled {
   opacity: 0.4;
   pointer-events: none;
@@ -1039,14 +1038,12 @@ onUnmounted(() => {
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
 }
 
-/* #ifdef H5 */
 .modal-form-input:focus {
   outline: none;
   border-color: var(--color-zen-sage);
   background: #FDFBF8;
   box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
-/* #endif */
 
 .subject-header {
   display: flex;
@@ -1097,6 +1094,10 @@ onUnmounted(() => {
   color: var(--color-sage-dark);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
   transform: translateY(-1px);
+}
+
+.subject-chip:active {
+  transform: scale(0.95);
 }
 
 .subject-chip.active {
@@ -1231,6 +1232,36 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.zen-switch {
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 9999px;
+  background: rgba(28, 28, 26, 0.16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.zen-switch.checked {
+  background: #8B9A6E;
+}
+
+.zen-switch-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: transform 0.18s ease;
+}
+
+.zen-switch.checked .zen-switch-thumb {
+  transform: translateX(18px);
+}
+
 .time-pill {
   height: 30px;
   padding: 0 11px;
@@ -1262,8 +1293,13 @@ onUnmounted(() => {
   transition: background-color 0.16s ease;
 }
 
-.due-clear-btn:hover {
+.due-clear-btn:hover,
+.due-clear-btn:active {
   background: rgba(139, 154, 110, 0.12);
+}
+
+.due-clear-btn:active {
+  transform: scale(0.95);
 }
 
 .due-picker-box {
@@ -1286,6 +1322,11 @@ onUnmounted(() => {
 
 .due-picker-box:hover {
   border-color: rgba(139, 154, 110, 0.4);
+}
+
+.due-picker-box:active {
+  border-color: rgba(139, 154, 110, 0.55);
+  transform: scale(0.985);
 }
 
 .due-picker-box.has-value {
@@ -1323,6 +1364,12 @@ onUnmounted(() => {
 .due-preset-chip:hover {
   border-color: var(--color-zen-sage);
   color: var(--color-sage-dark);
+}
+
+.due-preset-chip:active {
+  border-color: var(--color-zen-sage);
+  background: rgba(139, 154, 110, 0.12);
+  transform: scale(0.95);
 }
 
 .due-preset-chip.active {
@@ -1381,6 +1428,11 @@ onUnmounted(() => {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -1392,7 +1444,22 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
-@media (max-width: 900px) {
+.modal-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (min-width: 1360px) {
+  .left-column {
+    flex: 6.4;
+  }
+
+  .right-column {
+    flex: 3.6;
+    max-width: 480px;
+  }
+}
+
+@media (max-width: 760px) {
   .t-dashboard {
     flex-direction: column;
     overflow-y: auto;

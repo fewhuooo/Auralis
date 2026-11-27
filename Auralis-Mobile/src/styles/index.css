@@ -1,11 +1,10 @@
 /* ==========================================================================
    Design System - Auralis Zen Minimalist (Aligned with Auralis-PC)
-   Deterministic logical px + clamp() scale across H5, Tablet & MP-Weixin
+   Deterministic logical px + clamp() scale across Phone & Tablet
    3-Tier Surface Hierarchy:
    1. Canvas Shell (#EEEEEE) -> 2. Primary Linen Panel (#F7F2EB) -> 3. Stationery Card/Input (#FAF7F2)
    ========================================================================== */
 
-page,
 :root {
   /* ===== Zen Minimalist Palette ===== */
   --color-zen-ivory: #F7F2EB;
@@ -156,8 +155,9 @@ page,
   /* Shell Metrics */
   --phone-header-height: 52px;
   --tabbar-clearance: calc(96px + env(safe-area-inset-bottom));
-  --tablet-sidebar-width: 68px;
-  --tablet-panel-gap: 14px;
+  --tablet-sidebar-width: clamp(56px, 5.2vw, 72px);
+  --tablet-panel-gap: clamp(10px, 1.15vw, 18px);
+  --tablet-shell-pad: clamp(10px, 1.35vw, 20px);
 
   --color-pomodoro: #8B9A6E;
   --color-pomodoro-glow: rgba(139, 154, 110, 0.24);
@@ -170,13 +170,78 @@ page,
   --hw-lasso-border: var(--color-zen-sage);
 }
 
+:root[data-app-target='tablet'] {
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 13px;
+  --text-md: 13.5px;
+  --text-lg: 15px;
+  --text-xl: 17.5px;
+  --text-2xl: 20px;
+  --text-display: clamp(19px, 2vw, 24px);
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12.5px;
+  --font-size-base: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 17.5px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 23px;
+
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-card: 14px;
+
+  --tablet-sidebar-width: clamp(50px, 4.2vw, 58px);
+  --tablet-panel-gap: clamp(8px, 0.85vw, 14px);
+  --tablet-shell-pad: clamp(8px, 0.95vw, 14px);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-body,
-page {
+button,
+a,
+[role='button'],
+[role='tab'],
+[role='checkbox'],
+[role='option'],
+[role='switch'],
+[role='menuitem'],
+.ui-btn,
+.ui-icon-btn,
+.ui-seg-item {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.zen-touch-pressed {
+  animation: zenTouchPress 85ms var(--ease-out) forwards;
+}
+
+.zen-touch-releasing {
+  animation: zenTouchRelease 180ms var(--ease-spring) forwards;
+}
+
+@keyframes zenTouchPress {
+  from { scale: 1; filter: brightness(1); }
+  to { scale: var(--zen-press-scale, 0.955); filter: brightness(0.95); }
+}
+
+@keyframes zenTouchRelease {
+  from { scale: var(--zen-press-scale, 0.955); filter: brightness(0.95); }
+  to { scale: 1; filter: brightness(1); }
+}
+
+body {
   background-color: var(--color-bg-primary);
   color: var(--text-primary);
   font-family: var(--font-family-base);
@@ -189,25 +254,18 @@ page {
 }
 
 button,
-uni-button,
 input,
 textarea,
-select,
-uni-input,
-uni-textarea {
+select {
   font-family: var(--font-family-base);
 }
 
-/* #ifdef H5 */
 code,
 pre {
   font-family: var(--font-family-mono);
 }
-/* #endif */
 
-/* Reset both native button and Uni-app H5 <uni-button> host defaults */
-button,
-uni-button {
+button {
   margin: 0;
   padding: 0;
   border: none;
@@ -218,11 +276,26 @@ uni-button {
   box-sizing: border-box;
 }
 
-button::after,
-uni-button::after {
+button::after {
   border: none !important;
   display: none !important;
   content: none !important;
+}
+
+/* Reset native input/textarea defaults so borderless fields behave consistently without uni-h5 wrappers */
+input,
+textarea {
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+textarea {
+  resize: none;
 }
 
 /* ===== Semantic Reusable Surface & Interactive Primitives ===== */
@@ -297,7 +370,7 @@ uni-button::after {
 }
 
 .ui-btn:active {
-  transform: scale(0.975);
+  transform: scale(0.965);
 }
 
 .ui-btn[disabled],
@@ -316,6 +389,11 @@ uni-button::after {
   box-shadow: 0 4px 14px rgba(118, 135, 88, 0.22);
 }
 
+.ui-btn-primary:active {
+  filter: brightness(0.94);
+  box-shadow: 0 2px 8px rgba(118, 135, 88, 0.18);
+}
+
 .ui-btn-secondary {
   background-color: var(--glass-sub-bg);
   backdrop-filter: var(--glass-blur-soft);
@@ -329,6 +407,11 @@ uni-button::after {
   border-color: var(--border-accent);
 }
 
+.ui-btn-secondary:active {
+  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.08);
+}
+
 .ui-btn-ghost {
   background-color: transparent;
   color: var(--text-secondary);
@@ -338,9 +421,17 @@ uni-button::after {
   background-color: rgba(45, 55, 40, 0.04);
 }
 
+.ui-btn-ghost:active {
+  background-color: rgba(45, 55, 40, 0.07);
+}
+
 .ui-btn-danger {
   background-color: var(--color-danger-bg);
   color: var(--color-danger);
+}
+
+.ui-btn-danger:active {
+  background-color: rgba(201, 59, 59, 0.16);
 }
 
 .ui-icon-btn {
@@ -371,7 +462,9 @@ uni-button::after {
 }
 
 .ui-icon-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
+  border-color: var(--border-accent);
+  background-color: rgba(139, 154, 110, 0.12);
 }
 
 .ui-input {
@@ -433,7 +526,16 @@ uni-button::after {
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.16s var(--ease-out);
+}
+
+.ui-seg-item:active {
+  transform: scale(0.96);
+}
+
+.ui-seg-item:not(.active):active {
+  background-color: rgba(139, 154, 110, 0.09);
+  color: var(--text-primary);
 }
 
 .ui-seg-item.active {
@@ -441,6 +543,50 @@ uni-button::after {
   color: #FFFFFF;
   border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow: 0 2px 10px rgba(118, 135, 88, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+:where(html[data-app-target='tablet']) .zen-panel {
+  border-radius: 16px;
+}
+
+:where(html[data-app-target='tablet']) .zen-card,
+:where(html[data-app-target='tablet']) .ui-surface {
+  border-radius: 14px;
+}
+
+:where(html[data-app-target='tablet']) .ui-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
+:where(html[data-app-target='tablet']) .ui-btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+:where(html[data-app-target='tablet']) .ui-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+:where(html[data-app-target='tablet']) .ui-icon-btn.sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+:where(html[data-app-target='tablet']) .ui-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+:where(html[data-app-target='tablet']) .ui-seg-item {
+  height: 30px;
+  font-size: 12px;
 }
 
 .ui-tag {
@@ -605,54 +751,68 @@ uni-button::after {
   40% { opacity: 1; transform: scale(1.15); }
 }
 
-/* #ifdef H5 */
+.katex-display-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 10px 0;
+  max-width: 100%;
+}
+
+.katex-display {
+  margin: 0.4em 0;
+}
+
+.katex {
+  font-size: 1.04em;
+}
+
+.zen-scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.zen-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+button.is-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.78;
+}
+
+button.is-loading::before {
+  content: '';
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  vertical-align: -2px;
+  animation: zenButtonSpin 0.75s linear infinite;
+}
+
+@keyframes zenButtonSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 html,
 body,
-uni-app,
-uni-page,
-uni-page-wrapper,
-uni-page-body {
+#app {
   width: 100%;
+  height: 100%;
   max-width: 100%;
+  margin: 0;
+  padding: 0;
   background-color: var(--color-bg-primary);
   box-sizing: border-box;
   overflow-x: clip;
-}
-
-uni-input {
-  display: flex;
-  align-items: center;
-}
-
-uni-textarea {
-  display: block;
-}
-
-.uni-picker-container {
-  z-index: 1400 !important;
-}
-
-.uni-picker-container .uni-picker-toggle[style*="display: none"],
-.uni-picker-container .uni-picker[style*="display: none"] {
-  display: none !important;
-}
-
-.uni-picker-container .uni-mask {
-  z-index: 1390 !important;
-  background: rgba(28, 28, 26, 0.34) !important;
-  backdrop-filter: blur(4px);
-}
-
-.uni-picker-container .uni-picker-custom {
-  z-index: 1401 !important;
-  border-radius: 20px 20px 0 0;
-  overflow: hidden;
-  background-color: var(--color-bg-primary) !important;
-}
-
-.uni-picker-container .uni-picker-action.uni-picker-action-confirm {
-  color: var(--color-sage-ink) !important;
-  font-weight: 600;
 }
 
 .ui-input:focus,
@@ -672,7 +832,7 @@ uni-textarea {
   outline-offset: 2px;
 }
 
-@media (min-width: 540px) {
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
   .zen-sheet-mask {
     align-items: center;
     justify-content: center;
@@ -710,4 +870,3 @@ uni-textarea {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
-/* #endif */

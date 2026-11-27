@@ -5,8 +5,12 @@ import { getOrCreateDeviceIdentity } from '@/api/deviceIdentity'
 import { ApiProblemError, createRefreshCoordinator } from '@/api/protocol'
 import { configureAuthSessionBridge } from '@/api/request'
 import { useAuthApi } from '@/api/useAuthApi'
+import { getCurrentRoutePath, reLaunch } from '@/platform/navigation'
+import { getStorageItem, removeStorageItem, setStorageItem, setStorageJson } from '@/platform/storage'
+import { getDeviceSystemInfo } from '@/platform/system'
+import { getDefaultLoginRoute } from '@/router/target'
 import { localDataScope } from '@/services/localDataScope'
-import { purgeLegacyLocalData } from '@/services/legacyDataPurge'
+import { localDb } from '@/services/localDb'
 
 type AuthResult = components['schemas']['AuthResult']
 type TokenPair = components['schemas']['TokenPair']
@@ -22,13 +26,13 @@ interface PersistedAuthSession {
 const AUTH_STORAGE_KEY = 'auralis:auth:v2'
 
 function loadPersistedSession(): PersistedAuthSession | null {
-  const value = uni.getStorageSync(AUTH_STORAGE_KEY)
+  const value = getStorageItem(AUTH_STORAGE_KEY)
   if (!value) return null
   try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value
-    if (!parsed?.user?.id || !parsed?.tokens?.accessToken || !parsed?.tokens?.refreshToken
-      || !parsed?.sessionId || !parsed?.serverDeviceId) {
-      uni.removeStorageSync(AUTH_STORAGE_KEY)
+    const parsed = JSON.parse(value) as Partial<PersistedAuthSession> | null
+    if (!parsed?.user?.id || !parsed.tokens?.accessToken || !parsed.tokens.refreshToken
+      || !parsed.sessionId || !parsed?.serverDeviceId) {
+      removeStorageItem(AUTH_STORAGE_KEY)
       return null
     }
     return parsed as PersistedAuthSession
@@ -51,27 +55,10 @@ function normalizeAuthResult(result: AuthResult): PersistedAuthSession {
 }
 
 function currentLoginRoute(): string {
-  try {
-    const pages = getCurrentPages()
-    const route = pages.length > 0 ? pages[pages.length - 1].route || '' : ''
-    if (route.startsWith('pages/tablet/')) return '/pages/tablet/login/index'
-    if (route.startsWith('pages/mobile/')) return '/pages/mobile/login/index'
-  } catch {
-    // Ignore route lookup error outside page context
-  }
-  // #ifndef MP-WEIXIN
-  try {
-    const sysInfo = uni.getSystemInfoSync()
-    const width = sysInfo.windowWidth || sysInfo.screenWidth
-    const height = sysInfo.windowHeight || sysInfo.screenHeight
-    if (width >= 768 && height >= 500) {
-      return '/pages/tablet/login/index'
-    }
-  } catch {
-    // Fallback to mobile login route when system info is unavailable
-  }
-  // #endif
-  return '/pages/mobile/login/index'
+  const route = getCurrentRoutePath()
+  if (route.startsWith('/pages/tablet/')) return '/pages/tablet/login/index'
+  if (route.startsWith('/pages/mobile/')) return '/pages/mobile/login/index'
+  return getDefaultLoginRoute()
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -81,15 +68,14 @@ export const useAuthStore = defineStore('auth', () => {
   const sessionId = ref(persisted?.sessionId || '')
   let loginGeneration = Symbol('login')
   const getLoginGeneration = () => loginGeneration
-  const avatar = ref<string | null>(uni.getStorageSync('avatar') || null)
+  const avatar = ref<string | null>(getStorageItem('avatar') || null)
 
   const identity = getOrCreateDeviceIdentity({
-    get: (key) => uni.getStorageSync(key),
-    set: (key, value) => uni.setStorageSync(key, value),
-  }, uni.getSystemInfoSync())
+    get: (key) => getStorageItem(key),
+    set: (key, value) => setStorageItem(key, value),
+  }, getDeviceSystemInfo())
   const serverDeviceId = ref(persisted?.serverDeviceId || '')
   if (persisted?.user.id && serverDeviceId.value) localDataScope.activate(persisted.user.id, serverDeviceId.value)
-  if (persisted?.user.id) void purgeLegacyLocalData()
 
   const token = computed(() => tokens.value?.accessToken || null)
   const refreshToken = computed(() => tokens.value?.refreshToken || null)
@@ -97,14 +83,14 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => Boolean(token.value && user.value?.id && serverDeviceId.value))
 
   function persistSession(session: PersistedAuthSession): void {
-    localDataScope.activate(session.user.id!, session.serverDeviceId)
-    void purgeLegacyLocalData()
+    const activeScope = localDataScope.activate(session.user.id!, session.serverDeviceId)
+    void localDb.closeInactiveScopes(activeScope)
     user.value = session.user
     tokens.value = session.tokens
     sessionId.value = session.sessionId
     serverDeviceId.value = session.serverDeviceId
-    uni.setStorageSync(AUTH_STORAGE_KEY, JSON.stringify(session))
-    for (const legacyKey of ['token', 'refreshToken', 'username']) uni.removeStorageSync(legacyKey)
+    setStorageJson(AUTH_STORAGE_KEY, session)
+    for (const legacyKey of ['token', 'refreshToken', 'username']) removeStorageItem(legacyKey)
   }
 
   function clearSession(): void {
@@ -115,9 +101,13 @@ export const useAuthStore = defineStore('auth', () => {
     sessionId.value = ''
     serverDeviceId.value = ''
     avatar.value = null
+    const previousScope = localDataScope.current()
     localDataScope.deactivate()
-    uni.removeStorageSync(AUTH_STORAGE_KEY)
-    for (const legacyKey of ['token', 'refreshToken', 'username']) uni.removeStorageSync(legacyKey)
+    if (previousScope) {
+      void localDb.closeScope(previousScope)
+    }
+    removeStorageItem(AUTH_STORAGE_KEY)
+    for (const legacyKey of ['token', 'refreshToken', 'username']) removeStorageItem(legacyKey)
   }
 
   function requireCurrentLogin(expected: symbol): void {
@@ -127,7 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
   function expireSession(expected: symbol): void {
     if (loginGeneration !== expected) return
     clearSession()
-    uni.reLaunch({ url: currentLoginRoute() })
+    reLaunch(currentLoginRoute())
   }
 
   let refreshFlight: { generation: symbol; refresh: () => Promise<boolean> } | null = null

@@ -1,6 +1,6 @@
 # Auralis 当前问题与审查登记
 
-更新时间：2026-11-25
+更新时间：2026-11-27
 
 文档状态：现行风险登记
 
@@ -93,8 +93,8 @@
 
 ### Mobile、Tablet 与发布基础设施
 
-- **Mobile/Tablet 持久化、双端交互对齐与端到端 UX/服务端 BYOK 收口（2026-11-23～25，代码与自动化已收口，部分现场与真机待验）**：在完成 11-17～20 禅意重构、双端学习全生命周期迁移、全端 AI 协议 1 体验对齐与两轮持久化审查的基础上，11-25 完成面向真实用户联调的端到端 UX 与后端链路修复及逐页视觉对齐：后端修复 `test-connection` 0ms 超时异常、补齐 `SiliconFlowAiProvider` 与跨 BYOK 槽位按更新序解析、将 CORS 升级为 `.allowedOriginPatterns(...)`（`42/42` AI 定向测试通过）；前端修复排期重叠防丢与冲突提示、未同步任务 Focus Outbox 404 延后重试、WS `OVERVIEW_UPDATED` 实时刷新、英文 `ProblemDetails` 本地化、双倍复制提示、登录路由守卫与 `@confirm` 提交、弹窗裁切与零学科快建、AI 会话删改 409 版本刷新与防重复气泡、文档预览 `v-show` 保活、`StudyMetrics` 5 格骨架/缓存/同步刷新及冷启动闪烁抑制，并完成平板联调收口：`overviewApi.getSubjectStatuses` 预检消除总览 404 刷屏、`WorkspaceKnowledgeBlockModal` 1:1 对齐 PC（5 色标记与实时预览）、无文字圆形 `auralis-mark` AI 浮窗入口与精简对齐 PC 的 `WorkspaceAiPanel`、PC `SubjectWorkspace` 与平板统一的左对齐双行引导卡，以及 `WorkspaceReviewPane` 规划与轮次卡片 1:1 对齐 PC。最终 `Auralis-Mobile`（`vue-tsc --noEmit`、`check:r4-mobile` 85 文件、`test:r4-mobile` 129/129、`test:tablet`）与 `Auralis-PC`（`vue-tsc -b`、`check:r4-pc` 125 文件、`test:r4-pc` 901/901）全部通过；用户已在本地 H5 + Docker 后端完成一轮平板逐页试测。**仍未关闭的运行/现场项**：真实已登录态下跨更多样本的全端流式效果、Tauri/PC GUI 实测、微信开发者工具与真机触控/键盘、MinIO 跨域直传与多设备并发冲突走查仍开放；此前登记的 `OPTIONAL` 延后项保持延后。
-- **环境旧项（P2，待核实）**：旧 Mobile localhost、页面未接 API、Sass/import 警告需对现行 runtime 和页面 API 映射复核；不直接把旧问题句子当当前事实，也不默认关闭。
+- **Mobile / Tablet Tauri 2 Android 迁移收口（2026-11-26～27，代码、自动化与 MuMu 15 初验完成，物理真机与签名发行版仍开放）**：完成 `Auralis-Mobile` 从 Uni-app 原地重构至 Vue 3.5 + Vite 8 + Pinia 3 + vue-router 4 + Tauri 2（`com.auralis.mobile` 竖屏与 `com.auralis.hd` 横屏双独立包）；微信小程序与 Mobile H5 已退出发布范围，原 Uni-app 实现归档至 `D:\CodeBase\Archive\Auralis-Mobile-uniapp-20261127\` 与 Git 标签 `archive/mobile-uniapp-20261127`。迁移与后续视觉/触控修复（`6219ea8`～`3dc3285`）包含手机全宽适配、平板紧凑令牌与 `.is-tablet-target` 根类名重构（修复 `:global()` 编译截断页面根宽问题）、`touchFeedback.ts` 委托触控动效，以及切回原生 `1.0` 视口消除 Chromium 110 WebView 小于 `1.0` 分数级缩放文字模糊。最终代码（`3dc3285`）通过 `vue-tsc -b`、`check:r4-mobile`（138 文件）、`test:r4-mobile`（152/152）、`test:tablet`、`check-tablet-sidebar-transition.mjs`、双端 Vite 构建与 Debug/Release-unsigned APK 构建，并在 MuMu 15（Android 15）验证手机登录切换与平板首页/学科页清晰比例。**仍开放的发布前门禁**：① 物理 Android 手机与横屏平板多机型真实业务全流程（含大文档多指缩放滚动、软键盘、后台保活计时、弱网/SSE 断流、MinIO 真实签名上传及多设备并发同步）；② 正式发行版 Release Keystore 签名配置；③ 切换 HTTPS/WSS 后收口 `network_security_config.xml` 测试明文域名与服务端 CORS 白名单。
+- **环境旧项（P2，待核实）**：涉及旧 Mobile localhost、页面未接 API、Sass/import 警告的历史登记（其中涉及微信/H5 专属表述已随退出发布范围失效），须针对现行 Tauri 2 runtime 与页面映射按需核实。
 - **服务端收敛（P1）**：Source/job 事务与 revision/lease 栅栏有自动证据；真实进程崩溃、stale worker、长 Provider 请求、提交后 WebSocket、遗漏事件重连和跨设备最终状态仍需场景验收。
 - **定时清理（P1）**：SyncRetentionService 事务错误有修复回归；至少一次生产形态 scheduled run 日志无相应异常的证据仍待核实。
 - **发布（P1/P2）**：生产迁移/恢复、PostgreSQL/MinIO 异常、监控告警、CI 覆盖及正式备份恢复演练未由本机健康检查关闭。旧“没有 CI”表述先按仓库实际重新核对；生产 secret 与部署行为不在文档整理中更改。

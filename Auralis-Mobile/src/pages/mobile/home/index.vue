@@ -1,61 +1,61 @@
 <template>
   <AppPageLayout>
-    <view class="home-page">
-      <view class="status-bar-spacer"></view>
+    <div class="home-page">
+      <div class="status-bar-spacer"></div>
 
-      <view class="top-bar">
-        <view class="masthead-left" role="button" aria-label="回到今天" @click="jumpToToday">
-          <view class="masthead-main-row">
-            <view class="date-heading" aria-label="今天日期">
-              <text class="date-num num-tabular">{{ todayMonthNumber }}</text>
-              <text class="date-unit">月</text>
-              <text class="date-num num-tabular">{{ todayDayNumber }}</text>
-              <text class="date-unit">日</text>
-            </view>
-            <view v-if="syncStore.isSyncing" class="sync-dot" aria-label="同步中"></view>
-          </view>
-          <text class="masthead-subtitle">
-            {{ todayFullWeekday }} · 第 <text class="num-tabular">{{ todayIsoWeek }}</text> 周
-          </text>
-        </view>
-        <view class="add-fab" role="button" aria-label="新建" @click="openCaptureSheet('task')">
+      <div class="top-bar">
+        <div class="masthead-left" role="button" aria-label="回到今天" @click="jumpToToday">
+          <div class="masthead-main-row">
+            <div class="date-heading" aria-label="今天日期">
+              <span class="date-num num-tabular">{{ todayMonthNumber }}</span>
+              <span class="date-unit">月</span>
+              <span class="date-num num-tabular">{{ todayDayNumber }}</span>
+              <span class="date-unit">日</span>
+            </div>
+            <div v-if="syncStore.isSyncing" class="sync-dot" aria-label="同步中"></div>
+          </div>
+          <span class="masthead-subtitle">
+            {{ todayFullWeekday }} · 第 <span class="num-tabular">{{ todayIsoWeek }}</span> 周
+          </span>
+        </div>
+        <div class="add-fab" role="button" aria-label="新建" @click="openCaptureSheet('task')">
           <LineIcon name="plus" size="18px" color="#FFFFFF" />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <view class="home-content">
+      <div class="home-content">
         <ZenWeekStrip
           v-model="selectedDateKey"
           :days="weekDays"
           :scheduled-dates="scheduledDateSet"
         />
 
-        <view class="planner-cards">
-          <view class="zone-card schedule-card">
-            <view class="section-header">
-              <view class="section-title-group">
-                <text class="section-title">{{ selectedScheduleTitle }}</text>
-                <text v-if="scheduledForSelectedDay.length > 0" class="section-meta-pill num-tabular">
+        <div class="planner-cards">
+          <div class="zone-card schedule-card">
+            <div class="section-header">
+              <div class="section-title-group">
+                <span class="section-title">{{ selectedScheduleTitle }}</span>
+                <span v-if="scheduledForSelectedDay.length > 0" class="section-meta-pill num-tabular">
                   {{ scheduledSummaryLabel }}
-                </text>
-              </view>
-              <view
+                </span>
+              </div>
+              <div
                 v-if="selectedDateKey !== todayKey"
                 class="back-today-pill"
                 role="button"
                 aria-label="回到今天"
                 @click="jumpToToday"
               >
-                <text>回到今天</text>
-              </view>
-            </view>
+                <span>回到今天</span>
+              </div>
+            </div>
 
-            <view v-if="hydrated && scheduledForSelectedDay.length === 0" class="empty-stage">
-              <text class="empty-whisper">当日暂无日程</text>
-            </view>
+            <div v-if="hydrated && scheduledForSelectedDay.length === 0" class="empty-stage">
+              <span class="empty-whisper">当日暂无日程</span>
+            </div>
 
-            <scroll-view v-else-if="scheduledForSelectedDay.length > 0" scroll-y :show-scrollbar="false" class="zone-scroll">
-              <view class="card-list">
+            <div v-else-if="scheduledForSelectedDay.length > 0" class="zone-scroll zen-scroll-y">
+              <div class="card-list">
                 <ZenTaskRow
                   v-for="item in scheduledForSelectedDay"
                   :key="item.id"
@@ -65,22 +65,22 @@
                   :locked="isTaskLocked(item)"
                   @toggle="toggleComplete"
                 />
-              </view>
-            </scroll-view>
-          </view>
+              </div>
+            </div>
+          </div>
 
-          <view class="zone-card backlog-card">
-            <view class="section-header">
-              <view class="section-title-group">
-                <text class="section-title">待办清单</text>
-                <text v-if="taskStore.pendingTasks.length > 0" class="section-count-badge num-tabular">
+          <div class="zone-card backlog-card">
+            <div class="section-header">
+              <div class="section-title-group">
+                <span class="section-title">待办清单</span>
+                <span v-if="taskStore.pendingTasks.length > 0" class="section-count-badge num-tabular">
                   {{ taskStore.pendingTasks.length }}
-                </text>
-              </view>
-            </view>
+                </span>
+              </div>
+            </div>
 
-            <scroll-view v-if="taskStore.homePendingTasks.length > 0" scroll-y :show-scrollbar="false" class="zone-scroll">
-              <view class="card-list">
+            <div v-if="taskStore.homePendingTasks.length > 0" class="zone-scroll zen-scroll-y">
+              <div class="card-list">
                 <ZenTaskRow
                   v-for="todo in taskStore.homePendingTasks"
                   :key="todo.id"
@@ -91,42 +91,43 @@
                   @toggle="toggleComplete"
                   @delete="confirmDeleteTask"
                 />
-              </view>
-            </scroll-view>
+              </div>
+            </div>
 
-            <view v-else-if="hydrated" class="ghost-todo-stage">
+            <div v-else-if="hydrated" class="ghost-todo-stage">
               <button
+                type="button"
                 class="ghost-todo-btn"
                 aria-label="点击添加第一条待办"
                 @click="openCaptureSheet('task')"
               >
-                <view class="ghost-check-circle" aria-hidden="true"></view>
-                <text class="ghost-btn-label">点击添加第一条待办...</text>
+                <div class="ghost-check-circle" aria-hidden="true"></div>
+                <span class="ghost-btn-label">点击添加第一条待办...</span>
               </button>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #overlay>
-      <view v-if="showCaptureSheet" class="zen-modal-mask capture-modal-mask" @click="closeCaptureSheet">
-        <view
+      <div v-if="showCaptureSheet" class="zen-modal-mask capture-modal-mask" @click="closeCaptureSheet">
+        <div
           class="zen-modal-body capture-modal-card"
           role="dialog"
           aria-modal="true"
           :aria-label="captureTabs[captureModeIndex]?.label || '新建'"
           @click.stop
         >
-          <view class="capture-modal-header">
-            <view
+          <div class="capture-modal-header">
+            <div
               class="mode-capsule"
               role="tablist"
               @touchstart="onModeTouchStart"
               @touchend="onModeTouchEnd"
             >
-              <view class="mode-capsule-thumb" :style="modeThumbStyle" aria-hidden="true"></view>
-              <view
+              <div class="mode-capsule-thumb" :style="modeThumbStyle" aria-hidden="true"></div>
+              <div
                 v-for="tab in captureTabs"
                 :key="tab.id"
                 class="mode-capsule-item"
@@ -135,35 +136,35 @@
                 :aria-selected="captureMode === tab.id"
                 @click="switchCaptureMode(tab.id)"
               >
-                <text>{{ tab.label }}</text>
-              </view>
-            </view>
-            <view class="modal-close-btn" role="button" aria-label="关闭" @click="closeCaptureSheet">
+                <span>{{ tab.label }}</span>
+              </div>
+            </div>
+            <div class="modal-close-btn" role="button" aria-label="关闭" @click="closeCaptureSheet">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="capture-modal-body">
-            <view class="form-stack">
-              <view v-if="captureMode === 'task'" class="modal-field-group">
-                <view class="modal-field-header">
-                  <text class="modal-field-label">任务名称</text>
-                </view>
+          <div class="capture-modal-body">
+            <div class="form-stack">
+              <div v-if="captureMode === 'task'" class="modal-field-group">
+                <div class="modal-field-header">
+                  <span class="modal-field-label">任务名称</span>
+                </div>
                 <input
                   class="ui-input"
                   v-model="taskForm.name"
                   placeholder="请输入任务名称..."
                   :disabled="submittingCapture"
-                  @confirm="submitActiveCapture"
+                  @keydown="handleEnterKey($event, submitActiveCapture)"
                 />
-              </view>
+              </div>
 
-              <view class="modal-field-group">
-                <view class="modal-field-header">
-                  <text class="modal-field-label">所属学科</text>
-                </view>
+              <div class="modal-field-group">
+                <div class="modal-field-header">
+                  <span class="modal-field-label">所属学科</span>
+                </div>
 
-                <view v-if="subjectStore.subjects.length === 0" class="inline-subject-box">
+                <div v-if="subjectStore.subjects.length === 0" class="inline-subject-box">
                   <input
                     class="ui-input inline-subject-input"
                     v-model="newSubjectName"
@@ -172,17 +173,18 @@
                     :disabled="creatingSubject"
                   />
                   <button
+                    type="button"
                     class="ui-btn ui-btn-primary sm inline-subject-btn"
-                    :loading="creatingSubject"
+                    :class="{ 'is-loading': creatingSubject }"
                     :disabled="creatingSubject"
                     @click="submitInlineSubject"
                   >
                     创建
                   </button>
-                </view>
+                </div>
 
-                <view v-if="subjectStore.subjects.length > 0" class="subject-chips-grid">
-                  <view
+                <div v-if="subjectStore.subjects.length > 0" class="subject-chips-grid">
+                  <div
                     v-for="sub in subjectStore.subjects"
                     :key="sub.id"
                     class="chip-item subject-chip"
@@ -190,23 +192,23 @@
                     role="button"
                     @click="activeSubjectId = sub.id"
                   >
-                    <text>{{ sub.name }}</text>
-                  </view>
-                </view>
-              </view>
+                    <span>{{ sub.name }}</span>
+                  </div>
+                </div>
+              </div>
 
               <template v-if="captureMode === 'task'">
-                <view class="modal-field-group">
-                  <view class="modal-field-header">
-                    <text class="modal-field-label">专注时长</text>
-                  </view>
+                <div class="modal-field-group">
+                  <div class="modal-field-header">
+                    <span class="modal-field-label">专注时长</span>
+                  </div>
 
-                  <view class="duration-segmented-track">
-                    <view class="active-thumb-pill" :style="durationThumbStyle">
-                      <text class="active-thumb-text num-tabular">{{ currentDurationLabel }}</text>
-                    </view>
-                    <view class="track-segments-row">
-                      <view
+                  <div class="duration-segmented-track">
+                    <div class="active-thumb-pill" :style="durationThumbStyle">
+                      <span class="active-thumb-text num-tabular">{{ currentDurationLabel }}</span>
+                    </div>
+                    <div class="track-segments-row">
+                      <div
                         v-for="opt in durationOptions"
                         :key="opt.minutes"
                         class="track-segment-item"
@@ -214,105 +216,111 @@
                         role="button"
                         @click="taskForm.duration = opt.minutes"
                       >
-                        <text class="segment-label num-tabular">{{ opt.label }}</text>
-                      </view>
-                    </view>
-                  </view>
-                </view>
+                        <span class="segment-label num-tabular">{{ opt.label }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                <view class="modal-field-group">
-                  <view class="modal-field-header">
-                    <view class="modal-field-label">
-                      <text>截止时间</text>
-                      <text class="optional-tag">可选</text>
-                    </view>
-                    <text
+                <div class="modal-field-group">
+                  <div class="modal-field-header">
+                    <div class="modal-field-label">
+                      <span>截止时间</span>
+                      <span class="optional-tag">可选</span>
+                    </div>
+                    <span
                       v-if="taskForm.dueDateKey"
                       class="field-action-link"
                       role="button"
                       @click="taskForm.dueDateKey = ''"
                     >
                       清除
-                    </text>
-                  </view>
+                    </span>
+                  </div>
 
-                  <picker mode="date" :value="taskForm.dueDateKey || selectedDateKey" @change="onTaskDueDateChange">
-                    <view class="due-picker-pill num-tabular" :class="{ filled: Boolean(taskForm.dueDateKey) }">
+                  <ZenDatePicker
+                    v-model="taskForm.dueDateKey"
+                    :fallback-date="selectedDateKey"
+                    :disabled="submittingCapture"
+                    title="选择截止日期"
+                  >
+                    <div class="due-picker-pill num-tabular" :class="{ filled: Boolean(taskForm.dueDateKey) }">
                       <LineIcon
                         name="calendar"
                         size="14px"
                         :color="taskForm.dueDateKey ? 'var(--color-sage-ink)' : 'var(--text-muted)'"
                       />
-                      <text class="due-picker-text">
+                      <span class="due-picker-text">
                         {{ taskForm.dueDateKey || '请选择截止日期' }}
-                      </text>
-                    </view>
-                  </picker>
-                </view>
+                      </span>
+                    </div>
+                  </ZenDatePicker>
+                </div>
               </template>
 
               <template v-else-if="captureMode === 'block'">
-                <view class="modal-field-group">
-                  <view class="modal-field-header">
-                    <text class="modal-field-label">标题</text>
-                  </view>
+                <div class="modal-field-group">
+                  <div class="modal-field-header">
+                    <span class="modal-field-label">标题</span>
+                  </div>
                   <input
                     class="ui-input"
                     v-model="blockForm.title"
                     placeholder="知识块标题"
                     :disabled="submittingCapture"
                   />
-                </view>
+                </div>
 
-                <view class="modal-field-group">
-                  <view class="modal-field-header">
-                    <text class="modal-field-label">正文内容</text>
-                  </view>
+                <div class="modal-field-group">
+                  <div class="modal-field-header">
+                    <span class="modal-field-label">正文内容</span>
+                  </div>
                   <textarea
                     class="ui-textarea"
                     v-model="blockForm.content"
                     placeholder="Markdown 正文"
                     :disabled="submittingCapture"
                   />
-                </view>
+                </div>
               </template>
 
               <template v-else>
-                <view class="modal-field-group">
-                  <view class="modal-field-header">
-                    <text class="modal-field-label">选择文件</text>
-                  </view>
-                  <view class="file-drop-box" role="button" @click="chooseFileToUpload">
+                <div class="modal-field-group">
+                  <div class="modal-field-header">
+                    <span class="modal-field-label">选择文件</span>
+                  </div>
+                  <div class="file-drop-box" role="button" @click="chooseFileToUpload">
                     <LineIcon name="upload" size="22px" color="var(--color-sage-ink)" />
-                    <text class="file-drop-name">
+                    <span class="file-drop-name">
                       {{ uploadForm.file ? uploadForm.file.name : '点击选择本地文件' }}
-                    </text>
-                    <text v-if="uploadForm.file" class="file-drop-size num-tabular">
+                    </span>
+                    <span v-if="uploadForm.file" class="file-drop-size num-tabular">
                       {{ formatBytes(uploadForm.file.size) }}
-                    </text>
-                  </view>
-                </view>
+                    </span>
+                  </div>
+                </div>
 
-                <view class="modal-field-group">
-                  <view class="modal-field-header">
-                    <view class="modal-field-label">
-                      <text>资料名称</text>
-                      <text class="optional-tag">可选</text>
-                    </view>
-                  </view>
+                <div class="modal-field-group">
+                  <div class="modal-field-header">
+                    <div class="modal-field-label">
+                      <span>资料名称</span>
+                      <span class="optional-tag">可选</span>
+                    </div>
+                  </div>
                   <input
                     class="ui-input"
                     v-model="uploadForm.title"
                     placeholder="默认使用文件名"
                     :disabled="submittingCapture"
                   />
-                </view>
+                </div>
               </template>
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="capture-modal-footer">
+          <div class="capture-modal-footer">
             <button
+              type="button"
               class="ui-btn ui-btn-secondary modal-capsule-btn"
               :disabled="submittingCapture"
               @click="closeCaptureSheet"
@@ -320,28 +328,31 @@
               取消
             </button>
             <button
+              type="button"
               class="ui-btn ui-btn-primary modal-capsule-btn"
-              :loading="submittingCapture"
+              :class="{ 'is-loading': submittingCapture }"
               :disabled="submittingCapture || !canSubmitCapture"
               @click="submitActiveCapture"
             >
               {{ captureSubmitLabel }}
             </button>
-          </view>
-        </view>
-      </view>
+          </div>
+        </div>
+      </div>
     </template>
   </AppPageLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import AppPageLayout from '@/components/AppPageLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import ZenTaskRow from '@/components/ZenTaskRow.vue'
 import ZenWeekStrip from '@/components/ZenWeekStrip.vue'
+import ZenDatePicker from '@/components/ZenDatePicker.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { onPageShow } from '@/platform/lifecycle'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -350,6 +361,7 @@ import { useSubjectStore } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
 import { isScheduledCompletionLocked } from '@/utils/taskSyncMapper'
+import { handleEnterKey } from '@/utils/domHelpers'
 import {
   endOfLocalDateIso,
   formatDateHeading,
@@ -424,7 +436,7 @@ async function toggleComplete(id: string) {
   if (taskStore.updatingTaskIds.includes(id)) return
   const task = taskStore.allTasks.find(item => item.id === id)
   if (isScheduledCompletionLocked(task, nowClock.value)) {
-    uni.showToast({ title: '任务时段已结束，完成状态不可取消', icon: 'none' })
+    showToast('任务时段已结束，完成状态不可取消')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -432,24 +444,25 @@ async function toggleComplete(id: string) {
     await taskStore.toggleTaskComplete(id)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败，请重试', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败，请重试')
   }
 }
 
-function confirmDeleteTask(id: string, title: string) {
+async function confirmDeleteTask(id: string, title: string) {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '删除待办',
     content: `确定要删除「${title}」吗？`,
-    confirmColor: '#C93B3B',
-    success: (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      void taskStore.removeTask(id).catch((err) => {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({ title: err instanceof Error ? err.message : '删除失败，请重试', icon: 'none' })
-      })
-    },
+    confirmText: '删除',
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await taskStore.removeTask(id)
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '删除失败，请重试')
+  }
 }
 
 type CaptureMode = 'task' | 'block' | 'upload'
@@ -598,12 +611,12 @@ async function submitInlineSubject() {
   if (creatingSubject.value) return
   const trimmed = newSubjectName.value.trim()
   if (!trimmed) {
-    uni.showToast({ title: '请输入学科名称', icon: 'none' })
+    showToast('请输入学科名称')
     return
   }
   const duplicate = subjectStore.subjects.some(item => item.name.trim().toLowerCase() === trimmed.toLowerCase())
   if (duplicate) {
-    uni.showToast({ title: '已存在同名学科', icon: 'none' })
+    showToast('已存在同名学科')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -615,10 +628,10 @@ async function submitInlineSubject() {
     blockForm.subjectId = id
     uploadForm.subjectId = id
     newSubjectName.value = ''
-    uni.showToast({ title: `已创建「${trimmed}」`, icon: 'none' })
+    showToast(`已创建「${trimmed}」`)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '创建失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '创建失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       creatingSubject.value = false
@@ -626,20 +639,16 @@ async function submitInlineSubject() {
   }
 }
 
-function onTaskDueDateChange(event: { detail?: { value?: string } }) {
-  if (event?.detail?.value) taskForm.dueDateKey = event.detail.value
-}
-
 async function submitTask() {
   if (submittingCapture.value) return
   const title = taskForm.name.trim()
   if (!title) {
-    uni.showToast({ title: '请输入任务名称', icon: 'none' })
+    showToast('请输入任务名称')
     return
   }
   const subject = subjectStore.subjects.find(item => item.id === taskForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -658,10 +667,10 @@ async function submitTask() {
     taskForm.name = ''
     taskForm.dueDateKey = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: '已加入待办', icon: 'none' })
+    showToast('已加入待办')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       submittingCapture.value = false
@@ -675,11 +684,11 @@ async function submitQuickBlock() {
   const content = blockForm.content.trim()
   const subject = subjectStore.subjects.find(item => item.id === blockForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
   if (!title || !content) {
-    uni.showToast({ title: '请填写标题和内容', icon: 'none' })
+    showToast('请填写标题和内容')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -697,10 +706,10 @@ async function submitQuickBlock() {
     blockForm.title = ''
     blockForm.content = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: '已保存知识块', icon: 'none' })
+    showToast('已保存知识块')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       submittingCapture.value = false
@@ -719,7 +728,7 @@ async function chooseFileToUpload() {
     if (!uploadForm.title.trim()) uploadForm.title = file.name
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '选择失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '选择失败')
   }
 }
 
@@ -727,17 +736,17 @@ async function submitFileUpload() {
   if (submittingCapture.value) return
   const subject = subjectStore.subjects.find(item => item.id === uploadForm.subjectId)
   if (!subject) {
-    uni.showToast({ title: '请选择学科', icon: 'none' })
+    showToast('请选择学科')
     return
   }
   if (!uploadForm.file) {
-    uni.showToast({ title: '请选择文件', icon: 'none' })
+    showToast('请选择文件')
     return
   }
   try {
     validateUploadFile(uploadForm.file)
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '不支持的文件格式', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '不支持的文件格式')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -759,10 +768,10 @@ async function submitFileUpload() {
     uploadForm.file = null
     uploadForm.title = ''
     showCaptureSheet.value = false
-    uni.showToast({ title: `已归入「${subject.name}」`, icon: 'none' })
+    showToast(`已归入「${subject.name}」`)
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '上传失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '上传失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       submittingCapture.value = false
@@ -861,7 +870,7 @@ watch(
   },
 )
 
-onShow(syncClockToWeek)
+onPageShow(syncClockToWeek)
 
 onMounted(async () => {
   clockTimer = setInterval(syncClockToWeek, 30000)
@@ -1437,6 +1446,13 @@ onUnmounted(() => {
   color: var(--color-sage-dark);
 }
 
+.chip-item:active,
+.subject-chip:active {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.1);
+  transform: scale(0.95);
+}
+
 .chip-item.active,
 .subject-chip.active {
   background-color: rgba(139, 154, 110, 0.14);
@@ -1532,6 +1548,11 @@ onUnmounted(() => {
   border-color: rgba(139, 154, 110, 0.4);
 }
 
+.due-picker-pill:active {
+  border-color: rgba(139, 154, 110, 0.55);
+  transform: scale(0.985);
+}
+
 .due-picker-pill.filled {
   border-color: var(--color-zen-sage);
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.14);
@@ -1559,6 +1580,13 @@ onUnmounted(() => {
   text-align: center;
   cursor: pointer;
   box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.16s var(--ease-out);
+}
+
+.file-drop-box:active {
+  border-color: var(--color-zen-sage);
+  background-color: rgba(139, 154, 110, 0.08);
+  transform: scale(0.985);
 }
 
 .file-drop-name {

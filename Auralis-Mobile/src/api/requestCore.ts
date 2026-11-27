@@ -9,7 +9,7 @@ export interface CoreRequestOptions {
   skipAuthRefresh?: boolean
 }
 
-interface RequestAdapterOptions {
+export interface RequestAdapterOptions {
   url: string
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   data?: unknown

@@ -1,57 +1,53 @@
 <template>
-  <view ref="shellRef" class="doc-viewer-shell" :aria-busy="loading">
-    <!-- #ifdef H5 -->
-    <view class="doc-viewer-rotation-stage" :style="rotationStageStyle">
+  <div ref="shellRef" class="doc-viewer-shell" :aria-busy="loading">
+    <div class="doc-viewer-rotation-stage" :style="rotationStageStyle">
       <div
         v-show="!errorMessage"
         ref="surfaceRef"
         class="doc-viewer-surface"
         :class="{ 'is-ready': isReady }"
       ></div>
-    </view>
+    </div>
 
     <Transition name="doc-overlay-fade">
-      <view v-if="loading && !errorMessage" class="doc-viewer-overlay" role="status">
-        <view class="doc-loading-stage">
-          <view class="doc-sheet-placeholder zen-card" aria-hidden="true">
-            <view class="doc-sheet-kicker"></view>
-            <view class="doc-sheet-title"></view>
-            <view class="doc-sheet-block"></view>
-            <view class="doc-sheet-line"></view>
-            <view class="doc-sheet-line is-short"></view>
-          </view>
-          <view class="doc-viewer-status-pill zen-card">
-            <view class="doc-spinner" aria-hidden="true"></view>
-            <text class="doc-status-title">{{ statusLabel }}</text>
-            <view v-if="downloadProgress !== null" class="doc-progress-track">
-              <view class="doc-progress-fill" :style="{ width: `${downloadProgress}%` }"></view>
-            </view>
-            <text v-else class="doc-status-sub">{{ fileName }}</text>
-          </view>
-        </view>
-      </view>
+      <div v-if="loading && !errorMessage" class="doc-viewer-overlay" role="status">
+        <div class="doc-loading-stage">
+          <div class="doc-sheet-placeholder zen-card" aria-hidden="true">
+            <div class="doc-sheet-kicker"></div>
+            <div class="doc-sheet-title"></div>
+            <div class="doc-sheet-block"></div>
+            <div class="doc-sheet-line"></div>
+            <div class="doc-sheet-line is-short"></div>
+          </div>
+          <div class="doc-viewer-status-pill zen-card">
+            <div class="doc-spinner" aria-hidden="true"></div>
+            <span class="doc-status-title">{{ statusLabel }}</span>
+            <div v-if="downloadProgress !== null" class="doc-progress-track">
+              <div class="doc-progress-fill" :style="{ width: `${downloadProgress}%` }"></div>
+            </div>
+            <span v-else class="doc-status-sub">{{ fileName }}</span>
+          </div>
+        </div>
+      </div>
     </Transition>
 
-    <view v-if="errorMessage" class="doc-viewer-overlay" role="alert">
-      <view class="doc-viewer-error-card zen-card">
-        <text class="doc-error-title">文档暂时无法在线预览</text>
-        <text class="doc-error-desc">{{ errorMessage }}</text>
-        <view class="doc-error-actions">
-          <button class="ui-btn ui-btn-secondary sm" @click="retry">重试</button>
-          <button class="ui-btn ui-btn-primary sm" @click="emit('open-external')">打开原文件</button>
-        </view>
-      </view>
-    </view>
-    <!-- #endif -->
-  </view>
+    <div v-if="errorMessage" class="doc-viewer-overlay" role="alert">
+      <div class="doc-viewer-error-card zen-card">
+        <span class="doc-error-title">文档暂时无法在线预览</span>
+        <span class="doc-error-desc">{{ errorMessage }}</span>
+        <div class="doc-error-actions">
+          <button type="button" class="ui-btn ui-btn-secondary sm" @click="retry">重试</button>
+          <button type="button" class="ui-btn ui-btn-primary sm" @click="emit('open-external')">打开原文件</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-// #ifdef H5
 import { localDataScope } from '@/services/localDataScope'
 import { deleteCachedDocument, putCachedDocument } from '@/services/localDocumentCache'
-// #endif
 import type {
   FileRenderContext,
   FileRenderHandler,
@@ -480,7 +476,6 @@ async function loadDocument(): Promise<void> {
     return
   }
 
-  // #ifdef H5
   const cacheScope = localDataScope.current()
   await nextTick()
   if (token !== loadToken) return
@@ -676,7 +671,6 @@ async function loadDocument(): Promise<void> {
       waitAbort = null
     }
   }
-  // #endif
 }
 
 function retry(): void {
@@ -689,12 +683,10 @@ function handleResize(): void {
 }
 
 onMounted(() => {
-  // #ifdef H5
   measureShellBounds()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleResize)
   }
-  // #endif
 })
 
 watch(
@@ -706,11 +698,9 @@ watch(
 onBeforeUnmount(() => {
   loadToken += 1
   abortActiveWork()
-  // #ifdef H5
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleResize)
   }
-  // #endif
   void destroyActiveViewer('component-unmount')
 })
 

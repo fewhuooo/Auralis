@@ -11,6 +11,7 @@ import type {
   reviewApi,
 } from '@/api/reviewApi'
 import { ApiProblemError } from '@/api/protocol'
+import { getStorageJson, removeStorageItem, setStorageJson } from '@/platform/storage'
 import { localDb } from '@/services/localDb'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useBlockStore } from '@/store/useBlockStore'
@@ -111,7 +112,7 @@ export function lifecyclePendingStorageKey(userId: string, serverDeviceId: strin
 }
 
 function readStoredPending(key: string): PersistedLifecyclePending | null {
-  const raw = uni.getStorageSync<PersistedLifecyclePending | ''>(key)
+  const raw = getStorageJson<PersistedLifecyclePending>(key)
   if (!raw || typeof raw !== 'object' || !raw.body?.clientCommandId) return null
   return raw
 }
@@ -120,7 +121,7 @@ function removeStoredPendingIfMatch(key: string, clientCommandId: string): void 
   try {
     const stored = readStoredPending(key)
     if (stored && stored.body.clientCommandId === clientCommandId) {
-      uni.removeStorageSync(key)
+      removeStorageItem(key)
     }
   } catch {
     // Ignore storage error when clearing settled pending command
@@ -865,7 +866,7 @@ export function useMobileLifecycleReview(
     actionError.value = ''
     submitting.value = true
     try {
-      uni.setStorageSync(storageKey, rawPending)
+      setStorageJson(storageKey, rawPending)
       const response = await dispatchCommand(rawPending)
       if (response.clientCommandId && response.clientCommandId !== rawPending.body.clientCommandId) {
         throw new Error('复习回执标识不匹配，请原样重试')

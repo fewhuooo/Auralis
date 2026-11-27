@@ -1,245 +1,245 @@
 <template>
   <TabletLayout>
-    <view class="profile-studio">
+    <div class="profile-studio">
       <!-- ===== LEFT PANEL: 数据透视与身份面板 ===== -->
-      <view class="studio-left">
-        <scroll-view scroll-y :show-scrollbar="false" class="panel-scroll">
-          <view class="studio-left-inner">
+      <div class="studio-left">
+        <div class="panel-scroll zen-scroll-y">
+          <div class="studio-left-inner">
             <!-- 1. 用户基本资料卡 -->
-            <view class="user-profile-card">
-              <view class="user-avatar">
-                <text class="avatar-initial">{{ avatarInitial }}</text>
-              </view>
-              <view class="user-profile-meta">
-                <text class="user-name">{{ displayName }}</text>
-                <view class="user-badges">
-                  <view class="user-streak-pill">
+            <div class="user-profile-card">
+              <div class="user-avatar">
+                <span class="avatar-initial">{{ avatarInitial }}</span>
+              </div>
+              <div class="user-profile-meta">
+                <span class="user-name">{{ displayName }}</span>
+                <div class="user-badges">
+                  <div class="user-streak-pill">
                     <LineIcon name="fire" size="13px" color="#C89B6D" />
-                    <text>本周专注天数</text>
-                    <text class="streak-count num-tabular">{{ weeklyFocusDays }}</text>
-                  </view>
-                </view>
-              </view>
-            </view>
+                    <span>本周专注天数</span>
+                    <span class="streak-count num-tabular">{{ weeklyFocusDays }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- 2. 核心学习指标 -->
-            <view class="study-stats-card">
-              <view class="card-head-between">
-                <text class="card-heading">核心学习指标</text>
-              </view>
+            <div class="study-stats-card">
+              <div class="card-head-between">
+                <span class="card-heading">核心学习指标</span>
+              </div>
               <StudyMetrics ref="metricsRef" variant="pc" @loaded="handleMetricsLoaded" />
-            </view>
+            </div>
 
             <!-- 3. 学科知识分布 -->
-            <view class="subject-dist-card">
-              <view class="card-head-between">
-                <text class="card-heading">学科知识分布</text>
-              </view>
-              <view v-if="subjectDistItems.length === 0" class="no-data-hint">
-                <text>暂无学科分布统计</text>
-              </view>
-              <view v-else class="subject-list">
-                <view v-for="sub in subjectDistItems" :key="sub.id" class="subject-row">
-                  <view class="subject-dot" :style="{ backgroundColor: sub.color }"></view>
-                  <text class="subject-name">{{ sub.name }}</text>
-                  <view class="subject-bar-bg">
-                    <view
+            <div class="subject-dist-card">
+              <div class="card-head-between">
+                <span class="card-heading">学科知识分布</span>
+              </div>
+              <div v-if="subjectDistItems.length === 0" class="no-data-hint">
+                <span>暂无学科分布统计</span>
+              </div>
+              <div v-else class="subject-list">
+                <div v-for="sub in subjectDistItems" :key="sub.id" class="subject-row">
+                  <div class="subject-dot" :style="{ backgroundColor: sub.color }"></div>
+                  <span class="subject-name">{{ sub.name }}</span>
+                  <div class="subject-bar-bg">
+                    <div
                       class="subject-bar-fill"
                       :style="{ width: `${sub.pct}%`, backgroundColor: sub.color }"
-                    ></view>
-                  </view>
-                  <text class="subject-count-badge num-tabular">{{ sub.count }} 块</text>
-                </view>
-              </view>
-            </view>
+                    ></div>
+                  </div>
+                  <span class="subject-count-badge num-tabular">{{ sub.count }} 块</span>
+                </div>
+              </div>
+            </div>
 
             <!-- 4. 账号与安全凭证 -->
-            <view class="account-card">
-              <text class="account-card-title">账号与安全凭证</text>
+            <div class="account-card">
+              <span class="account-card-title">账号与安全凭证</span>
 
               <!-- 4.1 账号资料 -->
-              <view class="account-section">
-                <view class="account-section-header">
-                  <view class="setting-label-with-icon">
+              <div class="account-section">
+                <div class="account-section-header">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="id-card" size="15px" color="var(--color-sage-ink)" />
-                    <text class="account-section-title">账号资料</text>
-                  </view>
-                </view>
-                <view class="account-section-body">
-                  <view class="account-detail">
-                    <text class="cell-label">用户名</text>
-                    <text class="cell-val">@{{ authStore.username || 'auralis' }}</text>
-                  </view>
-                  <view class="account-detail">
-                    <text class="cell-label">显示名称</text>
-                    <text class="cell-val">{{ displayName }}</text>
-                    <view class="cell-btn" role="button" @click="openNameModal">
-                      <text>修改</text>
-                    </view>
-                  </view>
-                  <view class="account-detail">
-                    <text class="cell-label">登录密码</text>
-                    <text class="cell-sub">••••••••</text>
-                    <view class="cell-btn" role="button" @click="openPasswordModal">
-                      <text>修改</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
+                    <span class="account-section-title">账号资料</span>
+                  </div>
+                </div>
+                <div class="account-section-body">
+                  <div class="account-detail">
+                    <span class="cell-label">用户名</span>
+                    <span class="cell-val">@{{ authStore.username || 'auralis' }}</span>
+                  </div>
+                  <div class="account-detail">
+                    <span class="cell-label">显示名称</span>
+                    <span class="cell-val">{{ displayName }}</span>
+                    <div class="cell-btn" role="button" @click="openNameModal">
+                      <span>修改</span>
+                    </div>
+                  </div>
+                  <div class="account-detail">
+                    <span class="cell-label">登录密码</span>
+                    <span class="cell-sub">••••••••</span>
+                    <div class="cell-btn" role="button" @click="openPasswordModal">
+                      <span>修改</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- 4.2 登录设备管理 -->
-              <view class="account-sessions">
-                <view class="account-section-header">
-                  <view class="setting-label-with-icon">
+              <div class="account-sessions">
+                <div class="account-section-header">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="device" size="15px" color="var(--color-sage-ink)" />
-                    <text class="account-section-title">登录设备管理</text>
-                  </view>
-                  <view class="session-header-actions">
-                    <view class="ui-icon-btn sm" role="button" aria-label="刷新设备列表" @click="loadSessions">
+                    <span class="account-section-title">登录设备管理</span>
+                  </div>
+                  <div class="session-header-actions">
+                    <div class="ui-icon-btn sm" role="button" aria-label="刷新设备列表" @click="loadSessions">
                       <LineIcon name="refresh" size="13px" color="var(--text-secondary)" />
-                    </view>
-                    <view class="cell-btn" role="button" @click="handleLogout">
-                      <text>退出登录</text>
-                    </view>
-                  </view>
-                </view>
-                <view class="account-section-body">
-                  <view v-if="loadingSessions && sessionsList.length === 0" class="quota-skeleton">
-                    <view class="ui-shimmer shimmer-line"></view>
-                  </view>
-                  <view v-else-if="sessionsError" class="quota-error">
-                    <text class="error-msg">{{ sessionsError }}</text>
-                    <view class="cell-btn" role="button" @click="loadSessions">
-                      <text>重试</text>
-                    </view>
-                  </view>
-                  <text v-else-if="sessionsList.length === 0" class="session-empty">暂无登录设备记录</text>
-                  <view v-else class="sessions-list">
-                    <view
+                    </div>
+                    <div class="cell-btn" role="button" @click="handleLogout">
+                      <span>退出登录</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="account-section-body">
+                  <div v-if="loadingSessions && sessionsList.length === 0" class="quota-skeleton">
+                    <div class="ui-shimmer shimmer-line"></div>
+                  </div>
+                  <div v-else-if="sessionsError" class="quota-error">
+                    <span class="error-msg">{{ sessionsError }}</span>
+                    <div class="cell-btn" role="button" @click="loadSessions">
+                      <span>重试</span>
+                    </div>
+                  </div>
+                  <span v-else-if="sessionsList.length === 0" class="session-empty">暂无登录设备记录</span>
+                  <div v-else class="sessions-list">
+                    <div
                       v-for="s in sessionsList"
                       :key="s.id || s.serverDeviceId"
                       class="account-operation session-item"
                     >
-                      <view class="session-meta">
-                        <view class="session-title-line">
-                          <text class="row-label">{{ s.deviceName || s.platform || '未知设备' }}</text>
-                          <text v-if="isCurrentSession(s)" class="session-current-pill">当前设备</text>
-                        </view>
-                        <text class="row-sub num-tabular">
+                      <div class="session-meta">
+                        <div class="session-title-line">
+                          <span class="row-label">{{ s.deviceName || s.platform || '未知设备' }}</span>
+                          <span v-if="isCurrentSession(s)" class="session-current-pill">当前设备</span>
+                        </div>
+                        <span class="row-sub num-tabular">
                           {{ s.platform || 'UNKNOWN' }} · 最近活跃 {{ formatDateTime(s.lastUsedAt || s.createdAt || '') }}
-                        </text>
-                      </view>
-                      <view
+                        </span>
+                      </div>
+                      <div
                         v-if="!isCurrentSession(s) && s.id"
                         class="cell-btn danger"
                         :class="{ 'is-disabled': revokingAllOthers || Boolean(revokingSessionId) }"
                         role="button"
                         @click="revokeDevice(s.id)"
                       >
-                        <text>{{ revokingSessionId === s.id ? '下线中...' : '下线' }}</text>
-                      </view>
-                    </view>
-                    <view
+                        <span>{{ revokingSessionId === s.id ? '下线中...' : '下线' }}</span>
+                      </div>
+                    </div>
+                    <div
                       v-if="sessionsList.some(item => !isCurrentSession(item))"
                       class="cell-btn danger revoke-all-btn"
                       :class="{ 'is-disabled': revokingAllOthers || Boolean(revokingSessionId) }"
                       role="button"
                       @click="revokeAllOthers"
                     >
-                      <text>{{ revokingAllOthers ? '下线中...' : '下线全部其他设备' }}</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
+                      <span>{{ revokingAllOthers ? '下线中...' : '下线全部其他设备' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- 4.3 数据与账户重置 -->
-              <view class="danger-zone">
-                <view class="account-section-header">
-                  <view class="setting-label-with-icon">
+              <div class="danger-zone">
+                <div class="account-section-header">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="shield" size="15px" color="var(--color-sage-ink)" />
-                    <text class="account-section-title">数据与账户重置</text>
-                  </view>
-                </view>
-                <view class="account-section-body">
-                  <view class="account-operation">
-                    <view class="row-info">
-                      <text class="row-label">重置本地离线数据</text>
-                      <text class="row-desc">清除本机离线数据和未同步草稿，并重新同步云端</text>
-                    </view>
-                    <view
+                    <span class="account-section-title">数据与账户重置</span>
+                  </div>
+                </div>
+                <div class="account-section-body">
+                  <div class="account-operation">
+                    <div class="row-info">
+                      <span class="row-label">重置本地离线数据</span>
+                      <span class="row-desc">清除本机离线数据和未同步草稿，并重新同步云端</span>
+                    </div>
+                    <div
                       class="cell-btn danger"
                       :class="{ 'is-disabled': syncStore.isResettingOffline || syncStore.isSyncing }"
                       role="button"
                       @click="handleResetOfflineData"
                     >
-                      <text>{{ syncStore.isResettingOffline ? '重置中...' : '重置' }}</text>
-                    </view>
-                  </view>
+                      <span>{{ syncStore.isResettingOffline ? '重置中...' : '重置' }}</span>
+                    </div>
+                  </div>
 
-                  <view class="account-operation">
-                    <view class="row-info">
-                      <text class="row-label">注销账户</text>
-                      <text class="row-desc">停用账户并清理云端数据</text>
-                    </view>
-                    <view class="cell-btn danger" role="button" @click="openDeleteAccountModal">
-                      <text>注销</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
+                  <div class="account-operation">
+                    <div class="row-info">
+                      <span class="row-label">注销账户</span>
+                      <span class="row-desc">停用账户并清理云端数据</span>
+                    </div>
+                    <div class="cell-btn danger" role="button" @click="openDeleteAccountModal">
+                      <span>注销</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- ===== RIGHT PANEL: 个人偏好与设置 ===== -->
-      <view class="studio-right">
-        <scroll-view scroll-y :show-scrollbar="false" class="panel-scroll">
-          <view class="studio-right-inner">
-            <text class="settings-title">个人偏好与设置</text>
+      <div class="studio-right">
+        <div class="panel-scroll zen-scroll-y">
+          <div class="studio-right-inner">
+            <span class="settings-title">个人偏好与设置</span>
 
             <!-- 1. 同步与数据 -->
-            <view class="settings-group">
-              <view class="group-header">
-                <view class="group-title-line">
+            <div class="settings-group">
+              <div class="group-header">
+                <div class="group-title-line">
                   <LineIcon name="cloud" size="16px" color="var(--color-sage-ink)" />
-                  <text class="group-title">同步与数据</text>
-                </view>
-              </view>
+                  <span class="group-title">同步与数据</span>
+                </div>
+              </div>
 
-              <view class="group-items">
-                <view class="settings-row sync-status-row">
-                  <view class="row-info">
-                    <view class="setting-label-with-icon">
+              <div class="group-items">
+                <div class="settings-row sync-status-row">
+                  <div class="row-info">
+                    <div class="setting-label-with-icon">
                       <LineIcon name="activity" size="15px" color="var(--text-muted)" />
-                      <text class="row-label">同步状态</text>
-                    </view>
-                  </view>
-                  <view class="row-control sync-status-controls">
-                    <view class="status-pill-badge" :class="{ 'is-warning': syncStatusView.tone === 'warning' }">
-                      <view class="status-dot-indicator"></view>
-                      <text>{{ syncStatusView.label }}</text>
-                    </view>
-                    <view
+                      <span class="row-label">同步状态</span>
+                    </div>
+                  </div>
+                  <div class="row-control sync-status-controls">
+                    <div class="status-pill-badge" :class="{ 'is-warning': syncStatusView.tone === 'warning' }">
+                      <div class="status-dot-indicator"></div>
+                      <span>{{ syncStatusView.label }}</span>
+                    </div>
+                    <div
                       class="action-btn primary"
                       :class="{ 'is-disabled': syncStore.isSyncing || syncStore.isResettingOffline }"
                       role="button"
                       @click="handleSyncNow"
                     >
-                      <text>{{ syncButtonText }}</text>
-                    </view>
-                  </view>
-                </view>
+                      <span>{{ syncButtonText }}</span>
+                    </div>
+                  </div>
+                </div>
 
-                <view class="settings-row">
-                  <view class="row-info">
-                    <view class="setting-label-with-icon">
+                <div class="settings-row">
+                  <div class="row-info">
+                    <div class="setting-label-with-icon">
                       <LineIcon name="refresh" size="15px" color="var(--text-muted)" />
-                      <text class="row-label">自动同步</text>
-                    </view>
-                  </view>
-                  <view class="row-control">
-                    <view
+                      <span class="row-label">自动同步</span>
+                    </div>
+                  </div>
+                  <div class="row-control">
+                    <div
                       class="toggle-btn"
                       :class="{ 'is-on': syncStore.autoSyncEnabled }"
                       role="switch"
@@ -247,132 +247,128 @@
                       aria-label="自动同步"
                       @click="handleToggleAutoSync"
                     >
-                      <view class="toggle-knob"></view>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
+                      <div class="toggle-knob"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- 2. AI 设置（模型与服务 + 使用额度） -->
-            <view class="settings-group">
-              <view class="group-header">
-                <view class="group-title-line">
+            <div class="settings-group">
+              <div class="group-header">
+                <div class="group-title-line">
                   <LineIcon name="sparkles" size="16px" color="var(--color-sage-ink)" />
-                  <text class="group-title">AI 设置</text>
-                </view>
-              </view>
+                  <span class="group-title">AI 设置</span>
+                </div>
+              </div>
 
               <!-- 2.1 AI 模型与服务 -->
-              <view class="ai-settings-section first-ai-section">
-                <view class="ai-subheader">
-                  <view class="setting-label-with-icon">
+              <div class="ai-settings-section first-ai-section">
+                <div class="ai-subheader">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="cpu" size="15px" color="var(--text-muted)" />
-                    <text class="ai-subtitle">AI 模型与服务</text>
-                  </view>
-                </view>
+                    <span class="ai-subtitle">AI 模型与服务</span>
+                  </div>
+                </div>
 
-                <view class="ai-section-content">
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                <div class="ai-section-content">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="server" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">AI 服务商</text>
-                      </view>
-                    </view>
-                    <view class="row-control byok-control-wrap">
+                        <span class="row-label">AI 服务商</span>
+                      </div>
+                    </div>
+                    <div class="row-control byok-control-wrap">
                       <input
                         class="pc-settings-input byok-input"
                         v-model="customProvider"
                         placeholder="例如 DEEPSEEK"
-                        placeholder-style="color: #9A9A95;"
                         :disabled="aiBusy"
                       />
-                    </view>
-                  </view>
+                    </div>
+                  </div>
 
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="link" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">Base URL</text>
-                      </view>
-                      <text class="row-desc byok-hint-indent">
+                        <span class="row-label">Base URL</span>
+                      </div>
+                      <span class="row-desc byok-hint-indent">
                         {{ customProvider.trim() && canonicalAiProvider === 'OPENAI_COMPATIBLE' ? '兼容服务必填' : '留空使用默认地址' }}
-                      </text>
-                    </view>
-                    <view class="row-control byok-control-wrap">
+                      </span>
+                    </div>
+                    <div class="row-control byok-control-wrap">
                       <input
                         class="pc-settings-input byok-input"
                         v-model="customBaseUrl"
                         placeholder="例如 https://api.deepseek.com"
-                        placeholder-style="color: #9A9A95;"
                         :disabled="aiBusy"
                       />
-                    </view>
-                  </view>
+                    </div>
+                  </div>
 
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="key" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">API Key</text>
-                      </view>
-                      <text v-if="!aiInitializing" class="row-desc byok-hint-indent">
+                        <span class="row-label">API Key</span>
+                      </div>
+                      <span v-if="!aiInitializing" class="row-desc byok-hint-indent">
                         {{ currentProviderHasKey ? '已配置，留空保留' : '未配置' }}
-                      </text>
-                    </view>
-                    <view class="row-control byok-control-wrap">
-                      <view class="api-key-wrapper">
+                      </span>
+                    </div>
+                    <div class="row-control byok-control-wrap">
+                      <div class="api-key-wrapper">
                         <input
                           class="pc-settings-input byok-input api-key-input"
                           v-model="customApiKey"
                           placeholder="sk-..."
-                          placeholder-style="color: #9A9A95;"
-                          :password="!showApiKey"
+                          :type="showApiKey ? 'text' : 'password'"
                           :disabled="aiBusy"
                         />
-                        <view
+                        <div
                           class="eye-toggle-btn"
                           role="button"
                           :aria-label="showApiKey ? '隐藏密钥' : '显示密钥'"
                           @click="showApiKey = !showApiKey"
                         >
                           <LineIcon :name="showApiKey ? 'eye-off' : 'eye'" size="15px" color="var(--text-muted)" />
-                        </view>
-                      </view>
-                    </view>
-                  </view>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-                  <view class="settings-row byok-field-row">
-                    <view class="row-info">
-                      <view class="setting-label-with-icon">
+                  <div class="settings-row byok-field-row">
+                    <div class="row-info">
+                      <div class="setting-label-with-icon">
                         <LineIcon name="ai" size="15px" color="var(--text-muted)" />
-                        <text class="row-label">对话模型</text>
-                      </view>
-                    </view>
-                    <view class="row-control byok-control-wrap">
-                      <view class="byok-model-detect-group">
+                        <span class="row-label">对话模型</span>
+                      </div>
+                    </div>
+                    <div class="row-control byok-control-wrap">
+                      <div class="byok-model-detect-group">
                         <input
                           class="pc-settings-input byok-model-input"
                           v-model="customChatModel"
                           placeholder="例如 deepseek-chat"
-                          placeholder-style="color: #9A9A95;"
                           :disabled="aiBusy"
                         />
-                        <view
+                        <div
                           class="action-btn byok-detect-btn"
                           :class="{ 'is-disabled': detectingModels || aiBusy }"
                           role="button"
                           @click="fetchModelsForProvider"
                         >
-                          <text>{{ detectingModels ? '检测中...' : '自动检测' }}</text>
-                        </view>
-                      </view>
-                      <view v-if="availableModels.length > 0" class="detected-models-tray">
-                        <text class="tray-label">检测到 {{ availableModels.length }} 个候选模型：</text>
-                        <view class="chips-row">
-                          <view
+                          <span>{{ detectingModels ? '检测中...' : '自动检测' }}</span>
+                        </div>
+                      </div>
+                      <div v-if="availableModels.length > 0" class="detected-models-tray">
+                        <span class="tray-label">检测到 {{ availableModels.length }} 个候选模型：</span>
+                        <div class="chips-row">
+                          <div
                             v-for="m in availableModels.slice(0, 10)"
                             :key="m"
                             class="model-chip"
@@ -380,169 +376,169 @@
                             role="button"
                             @click="customChatModel = m"
                           >
-                            <text>{{ m }}</text>
-                          </view>
-                        </view>
-                      </view>
-                    </view>
-                  </view>
-                </view>
+                            <span>{{ m }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                <view class="byok-action-footer ai-section-content">
-                  <text class="byok-tip">{{ aiInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</text>
-                  <view class="byok-btn-group">
-                    <view
+                <div class="byok-action-footer ai-section-content">
+                  <span class="byok-tip">{{ aiInitializing ? '正在读取 AI 配置…' : '检测或测试前请先保存。' }}</span>
+                  <div class="byok-btn-group">
+                    <div
                       class="action-btn"
                       :class="{ 'is-disabled': testingConnection || aiBusy }"
                       role="button"
                       @click="testProviderConnection"
                     >
-                      <text>{{ testingConnection ? '测试中...' : '测试连接' }}</text>
-                    </view>
-                    <view
+                      <span>{{ testingConnection ? '测试中...' : '测试连接' }}</span>
+                    </div>
+                    <div
                       class="action-btn primary"
                       :class="{ 'is-disabled': aiBusy }"
                       role="button"
                       @click="saveAiSettings"
                     >
-                      <text>{{ savingAi ? '保存中...' : '保存 AI 配置' }}</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
+                      <span>{{ savingAi ? '保存中...' : '保存 AI 配置' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- 2.2 AI 使用额度 -->
-              <view class="ai-settings-section">
-                <view class="ai-subheader">
-                  <view class="setting-label-with-icon">
+              <div class="ai-settings-section">
+                <div class="ai-subheader">
+                  <div class="setting-label-with-icon">
                     <LineIcon name="gauge" size="15px" color="var(--text-muted)" />
-                    <text class="ai-subtitle">AI 使用额度</text>
-                  </view>
-                  <view
+                    <span class="ai-subtitle">AI 使用额度</span>
+                  </div>
+                  <div
                     v-if="aiUsage && !loadingAiUsage"
                     class="action-btn secondary"
                     role="button"
                     aria-label="刷新额度"
                     @click="fetchAiUsage"
                   >
-                    <text>{{ aiUsageError ? '刷新重试' : '刷新' }}</text>
-                  </view>
-                </view>
+                    <span>{{ aiUsageError ? '刷新重试' : '刷新' }}</span>
+                  </div>
+                </div>
 
-                <view class="ai-section-content">
-                  <view v-if="loadingAiUsage && !aiUsage" class="quota-skeleton">
-                    <view class="ui-shimmer shimmer-line"></view>
-                    <view class="ui-shimmer shimmer-line"></view>
-                  </view>
+                <div class="ai-section-content">
+                  <div v-if="loadingAiUsage && !aiUsage" class="quota-skeleton">
+                    <div class="ui-shimmer shimmer-line"></div>
+                    <div class="ui-shimmer shimmer-line"></div>
+                  </div>
 
-                  <view v-else-if="aiUsageError && !aiUsage" class="quota-error">
-                    <text class="error-msg">{{ aiUsageError }}</text>
-                    <view class="action-btn secondary" role="button" @click="fetchAiUsage">
-                      <text>重试</text>
-                    </view>
-                  </view>
+                  <div v-else-if="aiUsageError && !aiUsage" class="quota-error">
+                    <span class="error-msg">{{ aiUsageError }}</span>
+                    <div class="action-btn secondary" role="button" @click="fetchAiUsage">
+                      <span>重试</span>
+                    </div>
+                  </div>
 
-                  <view v-else-if="aiUsage" class="usage-content">
+                  <div v-else-if="aiUsage" class="usage-content">
                     <!-- 每小时额度 -->
-                    <view class="usage-card">
-                      <view class="usage-card-header">
-                        <view class="usage-header-left">
-                          <text class="usage-plan-name">每小时额度</text>
-                          <text class="usage-percent-badge num-tabular" :class="{ 'is-low': hourlyUsagePct < 20 }">
+                    <div class="usage-card">
+                      <div class="usage-card-header">
+                        <div class="usage-header-left">
+                          <span class="usage-plan-name">每小时额度</span>
+                          <span class="usage-percent-badge num-tabular" :class="{ 'is-low': hourlyUsagePct < 20 }">
                             剩余 {{ hourlyUsagePct }}%
-                          </text>
-                        </view>
-                        <text class="usage-reset-tag num-tabular">
+                          </span>
+                        </div>
+                        <span class="usage-reset-tag num-tabular">
                           重置时间: {{ formatClockTime(aiUsage.hourly.resetAt) || '—' }}
-                        </text>
-                      </view>
-                      <view class="usage-progress-bar-wrap">
-                        <view
+                        </span>
+                      </div>
+                      <div class="usage-progress-bar-wrap">
+                        <div
                           class="usage-progress-bar-fill"
                           :class="{ 'is-low': hourlyUsagePct < 20 }"
                           :style="{ width: `${hourlyUsagePct}%` }"
-                        ></view>
-                      </view>
-                      <view class="usage-grid">
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">总额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.limitTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">剩余额度</text>
-                          <text class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.hourly.remainingTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">已用额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.chargedTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">预留额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.reservedTokens) }}</text>
-                        </view>
-                      </view>
-                    </view>
+                        ></div>
+                      </div>
+                      <div class="usage-grid">
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">总额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.limitTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">剩余额度</span>
+                          <span class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.hourly.remainingTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">已用额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.chargedTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">预留额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.hourly.reservedTokens) }}</span>
+                        </div>
+                      </div>
+                    </div>
 
                     <!-- 每日额度 -->
-                    <view class="usage-card">
-                      <view class="usage-card-header">
-                        <view class="usage-header-left">
-                          <text class="usage-plan-name">每日额度</text>
-                          <text class="usage-percent-badge num-tabular" :class="{ 'is-low': dailyUsagePct < 20 }">
+                    <div class="usage-card">
+                      <div class="usage-card-header">
+                        <div class="usage-header-left">
+                          <span class="usage-plan-name">每日额度</span>
+                          <span class="usage-percent-badge num-tabular" :class="{ 'is-low': dailyUsagePct < 20 }">
                             剩余 {{ dailyUsagePct }}%
-                          </text>
-                        </view>
-                        <text class="usage-reset-tag num-tabular">
+                          </span>
+                        </div>
+                        <span class="usage-reset-tag num-tabular">
                           重置时间: {{ formatDateTime(aiUsage.daily.resetAt) }}
-                        </text>
-                      </view>
-                      <view class="usage-progress-bar-wrap">
-                        <view
+                        </span>
+                      </div>
+                      <div class="usage-progress-bar-wrap">
+                        <div
                           class="usage-progress-bar-fill"
                           :class="{ 'is-low': dailyUsagePct < 20 }"
                           :style="{ width: `${dailyUsagePct}%` }"
-                        ></view>
-                      </view>
-                      <view class="usage-grid">
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">总额度</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.limitTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">剩余额度</text>
-                          <text class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.daily.remainingTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">已结算（估算）</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.chargedTokens) }}</text>
-                        </view>
-                        <view class="usage-stat-box">
-                          <text class="usage-stat-label">在途预留（估算）</text>
-                          <text class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.reservedTokens) }}</text>
-                        </view>
-                      </view>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
-    </view>
+                        ></div>
+                      </div>
+                      <div class="usage-grid">
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">总额度</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.limitTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">剩余额度</span>
+                          <span class="usage-stat-val is-accent num-tabular">{{ formatTokenCount(aiUsage.daily.remainingTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">已结算（估算）</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.chargedTokens) }}</span>
+                        </div>
+                        <div class="usage-stat-box">
+                          <span class="usage-stat-label">在途预留（估算）</span>
+                          <span class="usage-stat-val num-tabular">{{ formatTokenCount(aiUsage.daily.reservedTokens) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #modal>
       <!-- 1. 修改显示名称 -->
-      <view v-if="showNameModal" class="zen-modal-mask" @click="closeAllModals">
-        <view class="zen-modal-body studio-modal" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">修改显示名称</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
+      <div v-if="showNameModal" class="zen-modal-mask" @click="closeAllModals">
+        <div class="zen-modal-body studio-modal" @click.stop>
+          <div class="modal-header">
+            <span class="modal-title">修改显示名称</span>
+            <div class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
+          <div class="modal-form">
             <input
               class="ui-input"
               v-model="nameDraft"
@@ -550,150 +546,150 @@
               placeholder="输入显示名称"
               :disabled="savingName"
             />
-          </view>
+          </div>
 
-          <view class="modal-footer">
-            <view class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
-              <text>取消</text>
-            </view>
-            <view
+          <div class="modal-footer">
+            <div class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
+              <span>取消</span>
+            </div>
+            <div
               class="ui-btn ui-btn-primary"
               :class="{ 'is-disabled': savingName }"
               role="button"
               @click="submitDisplayName"
             >
-              <text>{{ savingName ? '保存中...' : '保存' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ savingName ? '保存中...' : '保存' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 2. 修改登录密码 (aligned with PC ChangePasswordDialog) -->
-      <view v-if="showPasswordModal" class="zen-modal-mask" @click="closeAllModals">
-        <view class="zen-modal-body studio-modal" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">修改登录密码</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
+      <div v-if="showPasswordModal" class="zen-modal-mask" @click="closeAllModals">
+        <div class="zen-modal-body studio-modal" @click.stop>
+          <div class="modal-header">
+            <span class="modal-title">修改登录密码</span>
+            <div class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
-            <view class="security-tip">
+          <div class="modal-form">
+            <div class="security-tip">
               <LineIcon name="key" size="15px" color="var(--color-sage-ink)" />
-              <text class="security-tip-text">新密码至少 8 位，包含大写字母、小写字母和符号</text>
-            </view>
+              <span class="security-tip-text">新密码至少 8 位，包含大写字母、小写字母和符号</span>
+            </div>
 
-            <view class="modal-field">
-              <view class="modal-field-label">
-                <text>原密码</text>
-                <text class="required-mark">*</text>
-              </view>
+            <div class="modal-field">
+              <div class="modal-field-label">
+                <span>原密码</span>
+                <span class="required-mark">*</span>
+              </div>
               <input
                 class="ui-input"
                 v-model="pwdForm.currentPassword"
-                password
+                type="password"
                 placeholder="请输入当前正在使用的密码"
                 :disabled="savingPwd"
                 @input="pwdError = ''"
               />
-            </view>
+            </div>
 
-            <view class="modal-field">
-              <view class="modal-field-label">
-                <text>新密码</text>
-                <text class="required-mark">*</text>
-              </view>
+            <div class="modal-field">
+              <div class="modal-field-label">
+                <span>新密码</span>
+                <span class="required-mark">*</span>
+              </div>
               <input
                 class="ui-input"
                 v-model="pwdForm.newPassword"
-                password
+                type="password"
                 placeholder="请输入新密码"
                 :disabled="savingPwd"
                 @input="pwdError = ''"
               />
-            </view>
+            </div>
 
-            <view class="modal-field">
-              <view class="modal-field-label">
-                <text>确认新密码</text>
-                <text class="required-mark">*</text>
-              </view>
+            <div class="modal-field">
+              <div class="modal-field-label">
+                <span>确认新密码</span>
+                <span class="required-mark">*</span>
+              </div>
               <input
                 class="ui-input"
                 v-model="pwdForm.confirmPassword"
-                password
+                type="password"
                 placeholder="请再次输入新密码核对"
                 :disabled="savingPwd"
                 @input="pwdError = ''"
               />
-            </view>
+            </div>
 
-            <view v-if="pwdError" class="error-tip">
+            <div v-if="pwdError" class="error-tip">
               <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-              <text class="error-tip-text">{{ pwdError }}</text>
-            </view>
-          </view>
+              <span class="error-tip-text">{{ pwdError }}</span>
+            </div>
+          </div>
 
-          <view class="modal-footer">
-            <view class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
-              <text>取消</text>
-            </view>
-            <view
+          <div class="modal-footer">
+            <div class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
+              <span>取消</span>
+            </div>
+            <div
               class="ui-btn ui-btn-primary"
               :class="{ 'is-disabled': savingPwd }"
               role="button"
               @click="submitPasswordChange"
             >
-              <text>{{ savingPwd ? '保存中...' : '确认修改' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ savingPwd ? '保存中...' : '确认修改' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 3. 注销账户确认 -->
-      <view v-if="showDeleteAccountModal" class="zen-modal-mask" @click="closeAllModals">
-        <view class="zen-modal-body studio-modal" @click.stop>
-          <view class="modal-header">
-            <text class="modal-title">注销账户确认</text>
-            <view class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
+      <div v-if="showDeleteAccountModal" class="zen-modal-mask" @click="closeAllModals">
+        <div class="zen-modal-body studio-modal" @click.stop>
+          <div class="modal-header">
+            <span class="modal-title">注销账户确认</span>
+            <div class="ui-icon-btn" role="button" aria-label="关闭" @click="closeAllModals">
               <LineIcon name="close" size="16px" color="var(--text-muted)" />
-            </view>
-          </view>
+            </div>
+          </div>
 
-          <view class="modal-form">
-            <text class="modal-desc">
+          <div class="modal-form">
+            <span class="modal-desc">
               确认注销后，本机会退出登录，服务端会停用账户并在后台清理云端数据。本机保存的业务数据会保留。请输入登录密码确认注销。
-            </text>
+            </span>
             <input
               class="ui-input"
               v-model="deletePwd"
-              password
+              type="password"
               placeholder="请输入当前账号密码"
               :disabled="deletingAccount"
               @input="deleteAccountError = ''"
             />
-            <view v-if="deleteAccountError" class="error-tip">
+            <div v-if="deleteAccountError" class="error-tip">
               <LineIcon name="alert" size="14px" color="var(--color-danger)" />
-              <text class="error-tip-text">{{ deleteAccountError }}</text>
-            </view>
-          </view>
+              <span class="error-tip-text">{{ deleteAccountError }}</span>
+            </div>
+          </div>
 
-          <view class="modal-footer">
-            <view class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
-              <text>取消</text>
-            </view>
-            <view
+          <div class="modal-footer">
+            <div class="ui-btn ui-btn-secondary" role="button" @click="closeAllModals">
+              <span>取消</span>
+            </div>
+            <div
               class="ui-btn ui-btn-danger"
               :class="{ 'is-disabled': deletingAccount }"
               role="button"
               @click="submitDeleteAccount"
             >
-              <text>{{ deletingAccount ? '注销中...' : '确认注销' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+              <span>{{ deletingAccount ? '注销中...' : '确认注销' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
   </TabletLayout>
 </template>
@@ -708,6 +704,8 @@ import LineIcon from '@/components/LineIcon.vue'
 import StudyMetrics from '@/components/StudyMetrics.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { useEscapeKey } from '@/composables/useEscapeKey'
+import { confirmDialog, showToast } from '@/platform/feedback'
+import { reLaunch } from '@/platform/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useFocusStore } from '@/store/useFocusStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -818,16 +816,16 @@ async function handleSyncNow() {
 
   if (syncStore.lastError) {
     syncFeedbackLabel.value = '✕ 同步失败'
-    uni.showToast({ title: '同步未完成', icon: 'none' })
+    showToast('同步未完成')
   } else if (syncStore.conflicts.length > 0) {
     syncFeedbackLabel.value = '存在冲突'
-    uni.showToast({ title: '存在未处理同步冲突', icon: 'none' })
+    showToast('存在未处理同步冲突')
   } else if (focusStore.pendingOutboxCount > 0 || syncStore.pendingMutationCount > 0) {
     syncFeedbackLabel.value = '部分待传'
-    uni.showToast({ title: '仍有本地记录保存在此设备，可稍后重试', icon: 'none' })
+    showToast('仍有本地记录保存在此设备，可稍后重试')
   } else {
     syncFeedbackLabel.value = '✓ 已同步'
-    uni.showToast({ title: '同步完成', icon: 'none' })
+    showToast('同步完成')
   }
 
   syncFeedbackTimer = setTimeout(() => {
@@ -842,10 +840,7 @@ function handleToggleAutoSync() {
   if (next) {
     void focusStore.flushPendingSessions(false)
   }
-  uni.showToast({
-    title: next ? '自动同步已开启' : '自动同步已暂停',
-    icon: 'none',
-  })
+  showToast(next ? '自动同步已开启' : '自动同步已暂停')
 }
 
 // === 显示名称编辑 ===
@@ -862,7 +857,7 @@ async function submitDisplayName() {
   if (savingName.value) return
   const trimmed = nameDraft.value.trim()
   if (!trimmed) {
-    uni.showToast({ title: '请输入名称', icon: 'none' })
+    showToast('请输入名称')
     return
   }
   const generation = authStore.getLoginGeneration()
@@ -875,10 +870,10 @@ async function submitDisplayName() {
     if (generation !== authStore.getLoginGeneration()) return
     authStore.syncUserProfile(updatedUser)
     showNameModal.value = false
-    uni.showToast({ title: '已更新', icon: 'none' })
+    showToast('已更新')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '更新失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '更新失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       savingName.value = false
@@ -973,7 +968,7 @@ function ensureSavedForProbe(chatModel?: string): boolean {
   })) {
     return true
   }
-  uni.showToast({ title: '请先保存 AI 配置后再检测或测试', icon: 'none' })
+  showToast('请先保存 AI 配置后再检测或测试')
   return false
 }
 
@@ -988,16 +983,16 @@ async function fetchModelsForProvider() {
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
     availableModels.value = res.models || []
     if (availableModels.value.length === 0) {
-      uni.showToast({ title: '未拉取到可用模型', icon: 'none' })
+      showToast('未拉取到可用模型')
       return
     }
     if (!customChatModel.value.trim()) {
       customChatModel.value = availableModels.value[0]
     }
-    uni.showToast({ title: `检测到 ${availableModels.value.length} 个模型`, icon: 'none' })
+    showToast(`检测到 ${availableModels.value.length} 个模型`)
   } catch (err) {
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '拉取失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '拉取失败')
   } finally {
     if (probeGen === aiConnectionGeneration && authGen === authStore.getLoginGeneration()) {
       detectingModels.value = false
@@ -1016,13 +1011,10 @@ async function testProviderConnection() {
   try {
     const res = await aiApi.testConnection(provider)
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
-    uni.showToast({
-      title: res.reachable ? `连接正常 (${res.chatModel || provider})` : '连接不可达',
-      icon: 'none',
-    })
+    showToast(res.reachable ? `连接正常 (${res.chatModel || provider})` : '连接不可达')
   } catch (err) {
     if (probeGen !== aiConnectionGeneration || authGen !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '测试失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '测试失败')
   } finally {
     if (probeGen === aiConnectionGeneration && authGen === authStore.getLoginGeneration()) {
       testingConnection.value = false
@@ -1040,14 +1032,14 @@ async function saveAiSettings() {
     model: customChatModel.value,
   })
   if (validationError) {
-    uni.showToast({ title: validationError, icon: 'none' })
+    showToast(validationError)
     return
   }
 
   const generation = authStore.getLoginGeneration()
   const key = customApiKey.value.trim()
   if (!currentProviderSetting.value?.hasApiKey && !key) {
-    uni.showToast({ title: '首次配置该服务商请填写 API Key', icon: 'none' })
+    showToast('首次配置该服务商请填写 API Key')
     return
   }
   const effectiveBaseUrl = effectiveAiBaseUrl.value
@@ -1071,10 +1063,10 @@ async function saveAiSettings() {
       customBaseUrl.value = updated.baseUrl ?? effectiveBaseUrl
       customChatModel.value = updated.chatModel ?? effectiveModel
     }
-    uni.showToast({ title: 'AI 配置已保存', icon: 'none' })
+    showToast('AI 配置已保存')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '保存失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       savingAi.value = false
@@ -1133,7 +1125,7 @@ async function submitPasswordChange() {
     pwdForm.newPassword = ''
     pwdForm.confirmPassword = ''
     showPasswordModal.value = false
-    uni.showToast({ title: '密码已更新，其他设备已下线', icon: 'none' })
+    showToast('密码已更新，其他设备已下线')
     await authStore.refreshAccessToken().catch(() => false)
     if (generation !== authStore.getLoginGeneration()) return
     await useAuthApi.me().then((me) => {
@@ -1193,10 +1185,10 @@ async function revokeDevice(sessionId: string) {
     await useAuthApi.revokeSession(sessionId)
     if (generation !== authStore.getLoginGeneration()) return
     sessionsList.value = sessionsList.value.filter(item => item.id !== sessionId)
-    uni.showToast({ title: '设备已下线', icon: 'none' })
+    showToast('设备已下线')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '下线失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '下线失败')
   } finally {
     if (generation === authStore.getLoginGeneration() && revokingSessionId.value === sessionId) {
       revokingSessionId.value = null
@@ -1212,10 +1204,10 @@ async function revokeAllOthers() {
     await useAuthApi.revokeOtherSessions()
     if (generation !== authStore.getLoginGeneration()) return
     sessionsList.value = sessionsList.value.filter(isCurrentSession)
-    uni.showToast({ title: '已下线其他设备', icon: 'none' })
+    showToast('已下线其他设备')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
-    uni.showToast({ title: err instanceof Error ? err.message : '操作失败', icon: 'none' })
+    showToast(err instanceof Error ? err.message : '操作失败')
   } finally {
     if (generation === authStore.getLoginGeneration()) {
       revokingAllOthers.value = false
@@ -1224,33 +1216,25 @@ async function revokeAllOthers() {
 }
 
 // === 数据重置与注销账户 ===
-function handleResetOfflineData() {
+async function handleResetOfflineData() {
   if (syncStore.isResettingOffline || syncStore.isSyncing) return
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '清除本地离线数据',
     content: '将清空本地离线数据与未同步草稿，并重新同步云端完整数据。确认重置？',
     confirmText: '重置离线数据',
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      try {
-        await syncStore.resetOfflineData()
-        if (generation !== authStore.getLoginGeneration()) return
-        void metricsRef.value?.reload()
-        uni.showToast({
-          title: syncStore.lastError ? '本地数据已重置，同步暂未完成' : '离线数据已重置并同步',
-          icon: 'none',
-        })
-      } catch (err) {
-        if (generation !== authStore.getLoginGeneration()) return
-        uni.showToast({
-          title: err instanceof Error ? err.message : '重置失败，请稍后重试',
-          icon: 'none',
-        })
-      }
-    },
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await syncStore.resetOfflineData()
+    if (generation !== authStore.getLoginGeneration()) return
+    void metricsRef.value?.reload()
+    showToast(syncStore.lastError ? '本地数据已重置，同步暂未完成' : '离线数据已重置并同步')
+  } catch (err) {
+    if (generation !== authStore.getLoginGeneration()) return
+    showToast(err instanceof Error ? err.message : '重置失败，请稍后重试')
+  }
 }
 
 const showDeleteAccountModal = ref(false)
@@ -1280,8 +1264,8 @@ async function submitDeleteAccount() {
     showDeleteAccountModal.value = false
     authStore.clearSession()
     const refId = res.id ? String(res.id).slice(0, 8) : '已生成'
-    uni.showToast({ title: `注销申请已受理（${refId}）`, icon: 'none' })
-    uni.reLaunch({ url: '/pages/tablet/login/index' })
+    showToast(`注销申请已受理（${refId}）`)
+    reLaunch('/pages/tablet/login/index')
   } catch (err) {
     if (generation !== authStore.getLoginGeneration()) return
     deleteAccountError.value = err instanceof Error ? err.message : '密码错误或网络异常，无法注销账户'
@@ -1292,24 +1276,23 @@ async function submitDeleteAccount() {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   const generation = authStore.getLoginGeneration()
-  uni.showModal({
+  const confirmed = await confirmDialog({
     title: '退出登录',
     content: '确定要退出当前设备的登录状态吗？',
-    confirmColor: '#C93B3B',
-    success: async (res) => {
-      if (!res.confirm || generation !== authStore.getLoginGeneration()) return
-      try {
-        await authStore.logout()
-      } catch {
-        uni.showToast({ title: '登出请求未完成，本地会话已清除', icon: 'none' })
-      }
-      if (!authStore.isAuthenticated) {
-        uni.reLaunch({ url: '/pages/tablet/login/index' })
-      }
-    },
+    confirmText: '确定',
+    confirmTone: 'danger',
   })
+  if (!confirmed || generation !== authStore.getLoginGeneration()) return
+  try {
+    await authStore.logout()
+  } catch {
+    showToast('登出请求未完成，本地会话已清除')
+  }
+  if (!authStore.isAuthenticated) {
+    reLaunch('/pages/tablet/login/index')
+  }
 }
 
 function closeAllModals() {
@@ -1408,8 +1391,8 @@ onUnmounted(() => {
   flex-direction: row;
   width: 100%;
   height: 100%;
-  padding: 14px 18px 18px;
-  gap: 16px;
+  padding: var(--tablet-shell-pad);
+  gap: var(--tablet-panel-gap);
   overflow: hidden;
   box-sizing: border-box;
   background-color: transparent;
@@ -1431,9 +1414,9 @@ onUnmounted(() => {
 }
 
 .studio-left {
-  flex: 3.8;
-  min-width: 340px;
-  max-width: 450px;
+  flex: 3.6;
+  min-width: clamp(248px, 25vw, 310px);
+  max-width: 400px;
 }
 
 .studio-right {
@@ -1449,22 +1432,22 @@ onUnmounted(() => {
 }
 
 .studio-left-inner {
-  padding: 20px 18px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   box-sizing: border-box;
 }
 
 .studio-right-inner {
-  padding: 26px 32px;
-  max-width: 960px;
+  padding: 18px 22px;
+  max-width: 1120px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 /* ===== Left Panel Cards ===== */
@@ -1480,15 +1463,15 @@ onUnmounted(() => {
 }
 
 .user-profile-card {
-  padding: 18px 20px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
 .user-avatar {
-  width: 58px;
-  height: 58px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: linear-gradient(135deg, #8B9A6E 0%, #6E8052 100%);
   box-shadow:
@@ -1501,7 +1484,7 @@ onUnmounted(() => {
 }
 
 .avatar-initial {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   color: #FAF7F2;
   letter-spacing: -0.5px;
@@ -1810,7 +1793,7 @@ onUnmounted(() => {
 
 /* ===== Right Panel Settings Groups ===== */
 .settings-title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.03em;
@@ -1856,10 +1839,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 22px;
+  padding: 10px 16px;
   border-bottom: 1px solid rgba(45, 55, 40, 0.05);
   gap: 20px;
-  min-height: 54px;
+  min-height: 44px;
   box-sizing: border-box;
 }
 
@@ -2079,6 +2062,10 @@ onUnmounted(() => {
   color: var(--text-primary);
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pc-settings-input::placeholder {
+  color: #9A9A95;
 }
 
 .pc-settings-input:focus,
@@ -2433,13 +2420,19 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-/* #ifdef H5 */
 .cell-btn:hover {
   border-color: var(--border-strong);
   background-color: #F7F2EB;
 }
 
-.cell-btn.danger:hover:not(.is-disabled) {
+.cell-btn:active:not(.is-disabled) {
+  border-color: var(--border-strong);
+  background-color: #EFEBE2;
+  transform: scale(0.95);
+}
+
+.cell-btn.danger:hover:not(.is-disabled),
+.cell-btn.danger:active:not(.is-disabled) {
   background-color: rgba(201, 59, 59, 0.08);
   border-color: var(--color-danger);
 }
@@ -2462,19 +2455,29 @@ onUnmounted(() => {
   background-color: rgba(139, 154, 110, 0.08);
 }
 
+.model-chip:active {
+  border-color: #8B9A6E;
+  color: #637748;
+  background-color: rgba(139, 154, 110, 0.14);
+  transform: scale(0.95);
+}
+
 .eye-toggle-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
-/* #endif */
+
+.eye-toggle-btn:active {
+  background-color: rgba(0, 0, 0, 0.09);
+  transform: translateY(-50%) scale(0.92);
+}
 
 @media (max-width: 1150px) {
   .studio-left {
-    min-width: 300px;
     flex: 3.6;
   }
 
   .studio-right-inner {
-    padding: 20px 22px;
+    padding: 18px 22px;
   }
 }
 
@@ -2496,7 +2499,7 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 760px) {
   .profile-studio {
     flex-direction: column;
     overflow-y: auto;

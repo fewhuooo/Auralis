@@ -1,15 +1,15 @@
 <template>
-  <view v-if="visible" class="zen-modal-mask upload-modal-mask" @click="handleClose">
-    <view
+  <div v-if="visible" class="zen-modal-mask upload-modal-mask" @click="handleClose">
+    <div
       class="upload-modal-card"
       role="dialog"
       aria-modal="true"
       aria-label="上传参考文件"
       @click.stop
     >
-      <view class="modal-header">
-        <text class="modal-title">上传参考文件</text>
-        <view
+      <div class="modal-header">
+        <span class="modal-title">上传参考文件</span>
+        <div
           v-if="!uploading"
           class="modal-close-btn"
           role="button"
@@ -17,11 +17,10 @@
           @click="handleClose"
         >
           <LineIcon name="close" size="15px" color="var(--text-muted)" />
-        </view>
-      </view>
+        </div>
+      </div>
 
-      <view class="modal-body">
-        <!-- #ifdef H5 -->
+      <div class="modal-body">
         <div
           class="drop-zone"
           :class="{ 'is-active': isDragover, 'has-file': Boolean(selectedFile) }"
@@ -48,43 +47,22 @@
             {{ selectedFileHint }}
           </div>
         </div>
-        <!-- #endif -->
 
-        <!-- #ifndef H5 -->
-        <view
-          class="drop-zone"
-          :class="{ 'has-file': Boolean(selectedFile) }"
-          role="button"
-          aria-label="选择上传文件"
-          @click="triggerNativePicker"
-        >
-          <view class="drop-icon" :class="{ 'is-success': Boolean(selectedFile) }">
-            <LineIcon
-              :name="selectedFile ? 'check' : 'upload'"
-              size="22px"
-              :color="selectedFile ? '#76855B' : 'var(--text-muted)'"
-            />
-          </view>
-          <text class="drop-text">{{ selectedFile ? selectedFile.name : '点击选择本地文件' }}</text>
-          <text class="drop-hint">{{ selectedFileHint }}</text>
-        </view>
-        <!-- #endif -->
+        <div v-if="uploading" class="upload-progress">
+          <div class="progress-header">
+            <span class="stage-text">{{ uploadStage || '正在上传本地文件...' }}</span>
+            <span class="progress-pct num-tabular">{{ clampedProgress }}%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" :style="{ width: `${clampedProgress}%` }"></div>
+          </div>
+        </div>
 
-        <view v-if="uploading" class="upload-progress">
-          <view class="progress-header">
-            <text class="stage-text">{{ uploadStage || '正在上传本地文件...' }}</text>
-            <text class="progress-pct num-tabular">{{ clampedProgress }}%</text>
-          </view>
-          <view class="progress-track">
-            <view class="progress-fill" :style="{ width: `${clampedProgress}%` }"></view>
-          </view>
-        </view>
-
-        <view class="modal-form-group">
-          <view class="modal-form-label">
-            <text>文件名称</text>
-            <text class="required">*</text>
-          </view>
+        <div class="modal-form-group">
+          <div class="modal-form-label">
+            <span>文件名称</span>
+            <span class="required">*</span>
+          </div>
           <input
             v-model="fileName"
             class="modal-form-input"
@@ -92,15 +70,15 @@
             placeholder="例如: 计算机网络.pdf"
             :disabled="uploading"
           />
-        </view>
+        </div>
 
-        <view class="modal-form-group">
-          <view class="modal-form-label">
-            <text>归档至</text>
-            <text class="required">*</text>
-          </view>
-          <view v-if="subjects.length > 0" class="subject-grid">
-            <view
+        <div class="modal-form-group">
+          <div class="modal-form-label">
+            <span>归档至</span>
+            <span class="required">*</span>
+          </div>
+          <div v-if="subjects.length > 0" class="subject-grid">
+            <div
               v-for="subj in subjects"
               :key="subj.id"
               class="subject-chip"
@@ -108,16 +86,16 @@
               role="button"
               @click="!uploading && (selectedSubjectId = subj.id)"
             >
-              <text class="subject-chip-text">{{ subj.name }}</text>
-            </view>
-          </view>
-          <text v-else class="empty-hint">暂无学科，请先创建学科空间</text>
-        </view>
+              <span class="subject-chip-text">{{ subj.name }}</span>
+            </div>
+          </div>
+          <span v-else class="empty-hint">暂无学科，请先创建学科空间</span>
+        </div>
 
-        <text v-if="activeError" class="modal-error" role="alert">{{ activeError }}</text>
-      </view>
+        <span v-if="activeError" class="modal-error" role="alert">{{ activeError }}</span>
+      </div>
 
-      <view class="modal-footer">
+      <div class="modal-footer">
         <button
           type="button"
           class="modal-btn modal-btn-secondary"
@@ -130,9 +108,9 @@
           :disabled="!canSubmit || uploading"
           @click="handleSubmit"
         >{{ uploading ? '导入中...' : '确认登记' }}</button>
-      </view>
-    </view>
-  </view>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -141,12 +119,9 @@ import LineIcon from '@/components/LineIcon.vue'
 import type { LocalUploadFile } from '@/services/assetUpload'
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
-  pickLocalDocument,
+  normalizeBrowserFile,
   validateUploadFile,
 } from '@/utils/filePicker'
-// #ifdef H5
-import { normalizeBrowserFile } from '@/utils/filePicker'
-// #endif
 import { formatBytes } from '@/utils/sourceFormat'
 
 export interface UploadSubjectOption {
@@ -253,7 +228,6 @@ function applyChosenFile(candidate: LocalUploadFile) {
   }
 }
 
-// #ifdef H5
 function triggerH5FileInput() {
   if (props.uploading || typeof document === 'undefined') return
   const input = document.createElement('input')
@@ -274,21 +248,6 @@ function handleH5Drop(event: DragEvent) {
   if (!rawFile) return
   applyChosenFile(normalizeBrowserFile(rawFile))
 }
-// #endif
-
-// #ifndef H5
-async function triggerNativePicker() {
-  if (props.uploading) return
-  try {
-    const picked = await pickLocalDocument()
-    if (picked) {
-      applyChosenFile(picked)
-    }
-  } catch (error) {
-    localError.value = error instanceof Error && error.message ? error.message : '选择文件失败'
-  }
-}
-// #endif
 
 function handleClose() {
   if (props.uploading) return
@@ -383,6 +342,11 @@ function handleSubmit() {
   border-color: rgba(0, 0, 0, 0.05);
 }
 
+.modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-body {
   padding: 8px 28px 18px;
   overflow-y: auto;
@@ -411,6 +375,12 @@ function handleSubmit() {
 .drop-zone.is-active {
   border-color: var(--color-zen-sage);
   background: rgba(139, 154, 110, 0.08);
+}
+
+.drop-zone:active {
+  border-color: var(--color-zen-sage);
+  background: rgba(139, 154, 110, 0.12);
+  transform: scale(0.985);
 }
 
 .drop-zone.has-file {
@@ -522,14 +492,12 @@ function handleSubmit() {
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background-color 0.2s ease;
 }
 
-/* #ifdef H5 */
 .modal-form-input:focus {
   outline: none;
   border-color: var(--color-zen-sage);
   background: #FDFBF8;
   box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.14), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
-/* #endif */
 
 .subject-grid {
   display: flex;
@@ -560,6 +528,10 @@ function handleSubmit() {
   border-color: var(--color-zen-sage);
   color: var(--color-sage-dark);
   transform: translateY(-1px);
+}
+
+.subject-chip:active {
+  transform: scale(0.95);
 }
 
 .subject-chip.is-active {
@@ -635,6 +607,11 @@ function handleSubmit() {
   border-color: rgba(0, 0, 0, 0.16);
 }
 
+.modal-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .modal-btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
@@ -644,5 +621,9 @@ function handleSubmit() {
 .modal-btn-primary:hover:not(:disabled) {
   box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 </style>

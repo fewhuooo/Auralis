@@ -1,58 +1,58 @@
 <template>
   <TabletLayout>
-    <view class="t-handwriting">
+    <div class="t-handwriting">
       
       <!-- Toolbar -->
-      <view class="toolbar">
-        <view class="left">
-          <text class="back-btn" @click="goBack">‹ 返回</text>
+      <div class="toolbar">
+        <div class="left">
+          <span class="back-btn" @click="goBack">‹ 返回</span>
           <input class="title-input" v-model="notebook.title" @blur="save" />
-          <text class="save-status">{{ saveStatus }}</text>
-        </view>
-        <view class="center tool-group">
-          <view class="tool-btn" :class="{ active: currentTool === 'pan' }" @click="currentTool = 'pan'">✋</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'pen' }" @click="currentTool = 'pen'">╱</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'pencil' }" @click="currentTool = 'pencil'">∕</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'highlighter' }" @click="currentTool = 'highlighter'">═</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'eraser' }" @click="currentTool = 'eraser'">◌</view>
-          <view class="divider"></view>
+          <span class="save-status">{{ saveStatus }}</span>
+        </div>
+        <div class="center tool-group">
+          <div class="tool-btn" :class="{ active: currentTool === 'pan' }" @click="currentTool = 'pan'">✋</div>
+          <div class="tool-btn" :class="{ active: currentTool === 'pen' }" @click="currentTool = 'pen'">╱</div>
+          <div class="tool-btn" :class="{ active: currentTool === 'pencil' }" @click="currentTool = 'pencil'">∕</div>
+          <div class="tool-btn" :class="{ active: currentTool === 'highlighter' }" @click="currentTool = 'highlighter'">═</div>
+          <div class="tool-btn" :class="{ active: currentTool === 'eraser' }" @click="currentTool = 'eraser'">◌</div>
+          <div class="divider"></div>
           <!-- Colors -->
-          <view class="colors">
-            <view class="c-dot" style="background:#000" :class="{ active: currentColor==='#000' }" @click="currentColor='#000'"></view>
-            <view class="c-dot" style="background:#ef4444" :class="{ active: currentColor==='#ef4444' }" @click="currentColor='#ef4444'"></view>
-            <view class="c-dot" style="background:#3b82f6" :class="{ active: currentColor==='#3b82f6' }" @click="currentColor='#3b82f6'"></view>
-            <view class="c-dot" style="background:#22c55e" :class="{ active: currentColor==='#22c55e' }" @click="currentColor='#22c55e'"></view>
-            <view class="c-dot" style="background:#a855f7" :class="{ active: currentColor==='#a855f7' }" @click="currentColor='#a855f7'"></view>
-          </view>
-          <view class="divider"></view>
+          <div class="colors">
+            <div class="c-dot" style="background:#000" :class="{ active: currentColor==='#000' }" @click="currentColor='#000'"></div>
+            <div class="c-dot" style="background:#ef4444" :class="{ active: currentColor==='#ef4444' }" @click="currentColor='#ef4444'"></div>
+            <div class="c-dot" style="background:#3b82f6" :class="{ active: currentColor==='#3b82f6' }" @click="currentColor='#3b82f6'"></div>
+            <div class="c-dot" style="background:#22c55e" :class="{ active: currentColor==='#22c55e' }" @click="currentColor='#22c55e'"></div>
+            <div class="c-dot" style="background:#a855f7" :class="{ active: currentColor==='#a855f7' }" @click="currentColor='#a855f7'"></div>
+          </div>
+          <div class="divider"></div>
           <!-- Thickness -->
-          <view class="thickness-group">
-            <view
+          <div class="thickness-group">
+            <div
               v-for="size in thicknessOptions"
               :key="size"
               class="thickness-btn"
               :class="{ active: currentSize === size }"
               @click="currentSize = size"
             >
-              <view class="thickness-dot" :style="{ width: size * 2 + 'rpx', height: size * 2 + 'rpx' }"></view>
-            </view>
-          </view>
-          <view class="divider"></view>
-          <view class="tool-btn" @click="undo">↩</view>
-          <view class="tool-btn" @click="zoomOut">−</view>
-          <view class="tool-btn" @click="resetViewport">1:1</view>
-          <view class="tool-btn" @click="zoomIn">＋</view>
-        </view>
-        <view class="right">
-          <view class="menu-btn" @click="exportPNG">导出 PNG</view>
-          <view class="menu-btn" @click="exportPDF">导出 PDF</view>
-        </view>
-      </view>
+              <div class="thickness-dot" :style="{ width: size + 'px', height: size + 'px' }"></div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="tool-btn" @click="undo">↩</div>
+          <div class="tool-btn" @click="zoomOut">−</div>
+          <div class="tool-btn" @click="resetViewport">1:1</div>
+          <div class="tool-btn" @click="zoomIn">＋</div>
+        </div>
+        <div class="right">
+          <div class="menu-btn" @click="exportPNG">导出 PNG</div>
+          <div class="menu-btn" @click="exportPDF">导出 PDF</div>
+        </div>
+      </div>
 
       <!-- Canvas Area -->
-      <view class="canvas-container" :class="'bg-' + notebook.background">
+      <div class="canvas-container" :class="'bg-' + notebook.background">
         <!-- Render Canvas using native element to support PointerEvents -->
-        <view class="canvas-viewport" :style="viewportStyle">
+        <div class="canvas-viewport" :style="viewportStyle">
           <canvas
             ref="canvasRef"
             id="hw-canvas"
@@ -65,17 +65,19 @@
             @pointercancel="onPointerUp"
             @pointerleave="onPointerUp"
           ></canvas>
-        </view>
-      </view>
+        </div>
+      </div>
 
-    </view>
+    </div>
   </TabletLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
+import { hideLoading, showLoading, showToast } from '@/platform/feedback'
+import { onPageLoad } from '@/platform/lifecycle'
+import { canNavigateBack, navigateBack, redirectTo } from '@/platform/navigation'
 import { HandwritingEngine, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
 import { uuidv7 } from '@/utils/uuid'
@@ -111,7 +113,7 @@ const viewportStyle = computed(() => ({
   transform: `translate(${notebook.value.viewport.x}px, ${notebook.value.viewport.y}px) scale(${notebook.value.viewport.scale})`
 }))
 
-onLoad((options) => {
+onPageLoad((options) => {
   if (options?.id) {
     notebookId.value = options.id
   }
@@ -139,7 +141,11 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (saveTimeout) clearTimeout(saveTimeout)
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+    void NotebookStorage.saveNoteDocument(notebook.value)
+  }
 })
 
 const onPointerDown = (e: PointerEvent) => {
@@ -254,6 +260,10 @@ const triggerAutoSave = () => {
 }
 
 const save = async () => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+  }
   saveStatus.value = '保存中...'
   const success = await NotebookStorage.saveNoteDocument(notebook.value)
   saveStatus.value = success ? '已保存' : '保存失败'
@@ -321,14 +331,14 @@ const exportPNG = async () => {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    uni.showToast({ title: '导出失败', icon: 'none' })
+    showToast('导出失败')
   }
 }
 
 const exportPDF = async () => {
   if (!canvasRef.value) return
   try {
-    uni.showLoading({ title: '生成中...' })
+    showLoading('生成中...')
     const { default: jsPDF } = await import('jspdf')
     const pdf = new jsPDF('p', 'pt', 'a4')
     // Get image data from canvas
@@ -339,24 +349,20 @@ const exportPDF = async () => {
     
     pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
     pdf.save(`${notebook.value.title}.pdf`)
-    uni.hideLoading()
+    hideLoading()
   } catch (e) {
-    uni.hideLoading()
-    uni.showToast({ title: '生成 PDF 失败', icon: 'none' })
+    hideLoading()
+    showToast('生成 PDF 失败')
   }
 }
 
 const goBack = () => {
   save()
-  try {
-    if (getCurrentPages().length > 1) {
-      uni.navigateBack()
-      return
-    }
-  } catch {
-    // Fallback to redirect when history stack cannot be inspected
+  if (canNavigateBack()) {
+    navigateBack()
+    return
   }
-  uni.redirectTo({ url: '/pages/tablet/subject-hall/index' })
+  redirectTo('/pages/tablet/subject-hall/index')
 }
 </script>
 
@@ -373,37 +379,37 @@ const goBack = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24rpx 48rpx;
+  padding: 12px 24px;
   background: var(--color-zen-white, #FFFFFF);
   border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   z-index: 10;
 }
 .left, .right {
   display: flex;
   align-items: center;
-  gap: 24rpx;
-  width: 320rpx;
+  gap: 12px;
+  width: 160px;
 }
 .right { justify-content: flex-end; }
 .back-btn {
-  font-size: 32rpx;
+  font-size: 16px;
   color: var(--color-zen-graphite, #1C1C1A);
   font-family: var(--font-family-base);
   font-weight: 600;
   cursor: pointer;
 }
 .title-input {
-  font-size: 32rpx;
+  font-size: 16px;
   font-weight: 800;
   border: none;
   background: transparent;
   color: var(--color-zen-graphite, #1C1C1A);
   font-family: var(--font-family-base);
-  width: 220rpx;
+  width: 110px;
 }
 .save-status {
-  font-size: 24rpx;
+  font-size: 12px;
   color: var(--color-zen-stone, #A8A8A5);
   font-weight: 600;
 }
@@ -411,18 +417,18 @@ const goBack = () => {
 .tool-group {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 8px;
   background: var(--color-zen-ivory, #F9F9F7);
-  padding: 12rpx 28rpx;
-  border-radius: 999rpx;
+  padding: 6px 14px;
+  border-radius: 999px;
   border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
 }
 .tool-btn {
-  width: 64rpx; height: 64rpx;
+  width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 999rpx;
-  font-size: 32rpx;
+  border-radius: 999px;
+  font-size: 16px;
   color: var(--color-zen-graphite, #1C1C1A);
   font-weight: 700;
   cursor: pointer;
@@ -430,21 +436,21 @@ const goBack = () => {
 }
 .tool-btn.active {
   background: var(--color-zen-white, #FFFFFF);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 .divider {
-  width: 1px; height: 40rpx;
+  width: 1px; height: 20px;
   background: var(--color-zen-hairline, #E6E6E4);
-  margin: 0 10rpx;
+  margin: 0 5px;
 }
 .colors {
   display: flex;
-  gap: 16rpx;
+  gap: 8px;
 }
 .c-dot {
-  width: 40rpx; height: 40rpx;
+  width: 20px; height: 20px;
   border-radius: 50%;
-  border: 4rpx solid transparent;
+  border: 2px solid transparent;
   cursor: pointer;
   transition: transform 0.2s;
 }
@@ -455,23 +461,23 @@ const goBack = () => {
 
 .thickness-group {
   display: flex;
-  gap: 8rpx;
+  gap: 4px;
   align-items: center;
 }
 .thickness-btn {
-  width: 52rpx;
-  height: 52rpx;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2rpx solid transparent;
+  border: 1px solid transparent;
   transition: all 0.2s;
 }
 .thickness-btn.active {
   border-color: var(--color-zen-graphite, #1C1C1A);
   background: var(--color-zen-white, #FFFFFF);
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 .thickness-dot {
   border-radius: 50%;
@@ -479,12 +485,12 @@ const goBack = () => {
 }
 
 .menu-btn {
-  font-size: 28rpx;
+  font-size: 14px;
   color: var(--color-zen-graphite, #1C1C1A);
   font-weight: 600;
-  padding: 14rpx 28rpx;
+  padding: 7px 14px;
   background: var(--color-zen-ivory, #F9F9F7);
-  border-radius: 999rpx;
+  border-radius: 999px;
   border: 1px solid var(--color-zen-hairline, #E6E6E4);
   cursor: pointer;
   transition: all 0.2s;
@@ -515,13 +521,13 @@ const goBack = () => {
 
 .hw-canvas {
   background: #FFFFFF;
-  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.08);
-  border-radius: 12rpx;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
   cursor: crosshair;
   touch-action: none; 
 }
 .bg-grid {
-  background-image: radial-gradient(#D8D8D5 2rpx, transparent 0);
-  background-size: 40rpx 40rpx;
+  background-image: radial-gradient(#D8D8D5 1px, transparent 0);
+  background-size: 20px 20px;
 }
 </style>

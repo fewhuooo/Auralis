@@ -209,10 +209,11 @@ test('isConversationProtocolSupported accepts protocol-1 and flags unsupported l
   assert.equal(isConversationProtocolSupported({ chatSupported: true, chatProtocolVersion: 0 }), false)
 })
 
-test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bodies, and rejects cleanly when 401 retry fails', async (context) => {
+test('chatWithAI decodes split UTF-8 SSE chunks, parses error bodies, retries 401 once, and sends Protocol 1 activity payloads via fetch', async (context) => {
   let token = 'expired-token'
   const loginGen = Symbol('gen')
-  let requestHandler = () => {}
+  let fetchHandler = async () => new Response('', { status: 500 })
+  const origFetch = globalThis.fetch
 
   globalThis.__aiClientTestAuth = {
     get token() { return token },
@@ -223,12 +224,7 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
     },
     expireSession: () => {},
   }
-  globalThis.__aiClientTestRequest = (opts) => requestHandler(opts)
-  globalThis.uni = {
-    request(opts) {
-      return globalThis.__aiClientTestRequest(opts)
-    },
-  }
+  globalThis.fetch = (url, init) => fetchHandler(String(url), init)
 
   const mocks = new Map([
     ['./aiApi', 'export const aiApi = {};'],
@@ -255,14 +251,13 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
   context.after(() => {
     loader.deregister()
     delete globalThis.__aiClientTestAuth
-    delete globalThis.__aiClientTestRequest
-    delete globalThis.uni
+    globalThis.fetch = origFetch
   })
 
   const { chatWithAI } = await import('../src/api/aiClient.ts?ai-stream-test')
   const { ApiProblemError } = await import('../src/api/protocol.ts')
 
-  // 1) H5 ReadableStream Uint8Array chunks split mid-UTF8 Chinese characters
+  // 1) ReadableStream Uint8Array chunks split mid-UTF8 Chinese characters
   const sseText = 'event: text.delta\ndata: ' + JSON.stringify({
     protocolVersion: 1,
     conversationId: 'conv-1',
@@ -289,17 +284,15 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
   const encoded = new TextEncoder().encode(sseText)
   const splitIdx = sseText.indexOf('你好') + 4
 
-  requestHandler = (opts) => {
-    let chunkCb = null
-    queueMicrotask(() => {
-      chunkCb?.({ data: encoded.subarray(0, splitIdx) })
-      chunkCb?.({ data: encoded.subarray(splitIdx) })
-      opts.success({ statusCode: 200, data: new ArrayBuffer(0), header: {} })
+  fetchHandler = async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded.subarray(0, splitIdx))
+        controller.enqueue(encoded.subarray(splitIdx))
+        controller.close()
+      },
     })
-    return {
-      onChunkReceived(cb) { chunkCb = cb },
-      abort() {},
-    }
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
   }
 
   let streamed = ''
@@ -307,16 +300,10 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
   assert.equal(streamed, '你好世界')
 
   // 2) Stringified JSON error response preserves code & Retry-After header
-  requestHandler = (opts) => {
-    queueMicrotask(() => {
-      opts.success({
-        statusCode: 429,
-        data: JSON.stringify({ status: 429, code: 'AI_CONCURRENCY_LIMIT', title: 'Too busy' }),
-        header: { 'Retry-After': '15' },
-      })
-    })
-    return { onChunkReceived() {}, abort() {} }
-  }
+  fetchHandler = async () => new Response(
+    JSON.stringify({ status: 429, code: 'AI_CONCURRENCY_LIMIT', title: 'Too busy' }),
+    { status: 429, headers: { 'Retry-After': '15' } },
+  )
 
   await assert.rejects(
     chatWithAI('hi', [], () => {}, 'conv-1'),
@@ -325,24 +312,19 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
 
   // 3) 401 refresh followed by retried 429 must reject (never hang unresolved)
   let attempts = 0
-  requestHandler = (opts) => {
+  fetchHandler = async () => {
     attempts += 1
-    let chunkCb = null
-    queueMicrotask(() => {
-      if (attempts === 1) {
-        opts.success({ statusCode: 401, data: '', header: {} })
-        return
-      }
-      chunkCb?.({
-        data: new TextEncoder().encode(JSON.stringify({
-          status: 429,
-          code: 'AI_HOURLY_QUOTA_EXCEEDED',
-          title: 'Quota exceeded',
-        })),
-      })
-      opts.success({ statusCode: 429, data: new ArrayBuffer(0), header: {} })
-    })
-    return { onChunkReceived(cb) { chunkCb = cb }, abort() {} }
+    if (attempts === 1) {
+      return new Response('', { status: 401 })
+    }
+    return new Response(
+      JSON.stringify({
+        status: 429,
+        code: 'AI_HOURLY_QUOTA_EXCEEDED',
+        title: 'Quota exceeded',
+      }),
+      { status: 429 },
+    )
   }
 
   await assert.rejects(
@@ -354,37 +336,38 @@ test('chatWithAI decodes Uint8Array chunks, parses stringified/chunked error bod
   // 4) onEnvelope, submitChatActivity, and retryChatRun use expected Protocol 1 routes & payloads
   const capturedRequests = []
   const seenEnvelopes = []
-  requestHandler = (opts) => {
-    capturedRequests.push({ url: opts.url, data: opts.data })
-    let chunkCb = null
-    queueMicrotask(() => {
-      const payload = 'event: block.started\ndata: ' + JSON.stringify({
-        protocolVersion: 1,
-        conversationId: 'conv-1',
-        requestId: 'req-sub',
-        runId: 'run-2',
-        attemptId: 'att-2',
-        userMessageId: 'u-2',
-        replyMessageId: 'a-2',
-        sequence: 1,
-        event: 'block.started',
-        payload: { componentId: 'blk-1', component: 'steps', publicTextDelta: '\n' },
-      }) + '\n\nevent: run.completed\ndata: ' + JSON.stringify({
-        protocolVersion: 1,
-        conversationId: 'conv-1',
-        requestId: 'req-sub',
-        runId: 'run-2',
-        attemptId: 'att-2',
-        userMessageId: 'u-2',
-        replyMessageId: 'a-2',
-        sequence: 2,
-        event: 'run.completed',
-        payload: {},
-      }) + '\n\n'
-      chunkCb?.({ data: new TextEncoder().encode(payload) })
-      opts.success({ statusCode: 200, data: new ArrayBuffer(0), header: {} })
+  fetchHandler = async (url, init) => {
+    capturedRequests.push({ url, data: JSON.parse(String(init?.body || '{}')) })
+    const payload = 'event: block.started\ndata: ' + JSON.stringify({
+      protocolVersion: 1,
+      conversationId: 'conv-1',
+      requestId: 'req-sub',
+      runId: 'run-2',
+      attemptId: 'att-2',
+      userMessageId: 'u-2',
+      replyMessageId: 'a-2',
+      sequence: 1,
+      event: 'block.started',
+      payload: { componentId: 'blk-1', component: 'steps', publicTextDelta: '\n' },
+    }) + '\n\nevent: run.completed\ndata: ' + JSON.stringify({
+      protocolVersion: 1,
+      conversationId: 'conv-1',
+      requestId: 'req-sub',
+      runId: 'run-2',
+      attemptId: 'att-2',
+      userMessageId: 'u-2',
+      replyMessageId: 'a-2',
+      sequence: 2,
+      event: 'run.completed',
+      payload: {},
+    }) + '\n\n'
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload))
+        controller.close()
+      },
     })
-    return { onChunkReceived(cb) { chunkCb = cb }, abort() {} }
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
   }
 
   const { submitChatActivity, retryChatRun } = await import('../src/api/aiClient.ts?ai-stream-test')
@@ -972,13 +955,12 @@ test('resolveMobileTextDrainAction and animateOnMount animate fresh replies whil
   )
 })
 
-test('chatWithAI streams progressively via H5 fetch ReadableStream, retries once on 401, and aborts cleanly', async (context) => {
+test('chatWithAI streams progressively via fetch ReadableStream, retries once on 401, and aborts cleanly', async (context) => {
   let token = 'stale-token'
   const loginGen = Symbol('h5-gen')
   const origWindow = globalThis.window
   const origDocument = globalThis.document
   const origFetch = globalThis.fetch
-  const origUni = globalThis.uni
 
   globalThis.__h5StreamAuth = {
     get token() { return token },
@@ -991,11 +973,6 @@ test('chatWithAI streams progressively via H5 fetch ReadableStream, retries once
   }
   globalThis.window = globalThis
   globalThis.document = {}
-  globalThis.uni = {
-    request() {
-      throw new Error('uni.request should not be used when H5 fetch streaming is available')
-    },
-  }
 
   const mocks = new Map([
     ['./aiApi', 'export const aiApi = {};'],
@@ -1025,7 +1002,6 @@ test('chatWithAI streams progressively via H5 fetch ReadableStream, retries once
     globalThis.window = origWindow
     globalThis.document = origDocument
     globalThis.fetch = origFetch
-    globalThis.uni = origUni
   })
 
   const { chatWithAI } = await import('../src/api/aiClient.ts?h5-fetch-stream-test')

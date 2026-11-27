@@ -3,10 +3,23 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const scanRoots = ['src/api', 'src/store', 'src/services', 'src/pages', 'src/config', 'src/components', 'src/App.vue']
+const scanRoots = [
+  'src/api',
+  'src/store',
+  'src/services',
+  'src/pages',
+  'src/config',
+  'src/components',
+  'src/platform',
+  'src/router',
+  'src/composables',
+  'src/utils',
+  'src/styles',
+  'src/App.vue',
+  'src/main.ts',
+]
 const ignored = new Set([
   'src/api/generated/schema.ts',
-  'src/services/localDb.ts',
 ])
 const forbidden = [
   { label: 'legacy response wrapper', pattern: /(?:body|response|res\.data)\s*(?:&&|\?)?[^\n]{0,80}\.code\s*===?\s*200/ },
@@ -16,6 +29,63 @@ const forbidden = [
   { label: 'legacy sync cursor', pattern: /\b(?:afterId|lastMutationId|truncated)\b/ },
   { label: 'legacy AI endpoint', pattern: /\/api\/ai\/chat\b/ },
 ]
+const scopedForbidden = [
+  {
+    label: 'WeChat mini-program conditional compilation',
+    pattern: /MP-WEIXIN|mp-weixin/,
+    allow: new Set(),
+  },
+  {
+    label: '@dcloudio/uni-app import',
+    pattern: /@dcloudio\/uni-app/,
+    allow: new Set(),
+  },
+  {
+    label: 'uni.* runtime call',
+    pattern: /\buni\./,
+    allow: new Set(),
+  },
+  {
+    label: 'getCurrentPages() call',
+    pattern: /\bgetCurrentPages\s*\(/,
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp conditional compilation directive',
+    pattern: /#(?:ifdef|ifndef|endif)\b/,
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp template tag',
+    pattern: /<(?:view|text|scroll-view|image|picker|switch|rich-text)(?=[\s/>])/,
+    allow: new Set(),
+  },
+  {
+    label: 'rpx responsive unit',
+    pattern: /\d+(?:\.\d+)?rpx\b|['"]rpx['"]/,
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp template attribute or scroll-view deep selector',
+    pattern: /\b(?:confirm-type|placeholder-style|show-confirm-bar|auto-height|scroll-into-view|scroll-with-animation|show-scrollbar)\b|:scroll-left\s*=|:password\s*=|@confirm\s*=|<button\b[^>]*:loading\s*=|<input\b[^>]*\spassword(?=[\s/>])|:deep\(\.uni-scroll-view-content\)/,
+    allow: new Set(),
+  },
+  {
+    label: 'HTML5+ plus.* runtime call',
+    pattern: /\bplus\./,
+    allow: new Set(),
+  },
+  {
+    label: 'legacy H5 localStorage SQL emulation',
+    pattern: /\bh5Db\b|\bh5_db_/,
+    allow: new Set(),
+  },
+  {
+    label: 'UniApp built-in element selector',
+    pattern: /\buni-(?:app|page|button|input|textarea)\b/,
+    allow: new Set(),
+  },
+]
 
 async function collect(path) {
   const info = await stat(path)
@@ -24,7 +94,7 @@ async function collect(path) {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const entryPath = join(path, entry.name)
     if (entry.isDirectory()) files.push(...await collect(entryPath))
-    else if (/\.(?:ts|vue|js|mjs)$/.test(entry.name)) files.push(entryPath)
+    else if (/\.(?:ts|vue|js|mjs|css)$/.test(entry.name)) files.push(entryPath)
   }
   return files
 }
@@ -57,9 +127,16 @@ for (const file of files) {
   for (const rule of forbidden) {
     if (rule.pattern.test(source)) violations.push(`${displayPath}: ${rule.label}`)
   }
+  for (const rule of scopedForbidden) {
+    if (!rule.allow.has(displayPath) && rule.pattern.test(source)) {
+      violations.push(`${displayPath}: ${rule.label}`)
+    }
+  }
 }
 
 const retiredPages = [
+  'src/services/legacyDataPurge.ts',
+  'src/pages/launch/index.vue',
   'src/pages/mobile/settings/index.vue',
   'src/pages/mobile/timeline/index.vue',
   'src/pages/mobile/handwriting/index.vue',

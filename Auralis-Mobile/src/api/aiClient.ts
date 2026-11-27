@@ -316,15 +316,14 @@ function createChatStreamSession(
   }
 }
 
-/* #ifdef H5 */
-async function streamMessageViaFetch(
+async function streamMessage(
   endpointPath: string,
   conversationId: string,
   body: Protocol1MessageCommand | { requestId: string },
   onMessage: (content: string) => void,
-  retried: boolean,
-  expectedGeneration: symbol | undefined,
-  options: ChatWithAiOptions | undefined,
+  retried = false,
+  expectedGeneration?: symbol,
+  options?: ChatWithAiOptions,
 ): Promise<string> {
   const auth = useAuthStore()
   const generation = expectedGeneration ?? auth.getLoginGeneration()
@@ -377,7 +376,7 @@ async function streamMessageViaFetch(
       if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
       if (refreshed) {
         await response.body?.cancel?.().catch(() => {})
-        return streamMessageViaFetch(endpointPath, conversationId, body, onMessage, true, generation, options)
+        return streamMessage(endpointPath, conversationId, body, onMessage, true, generation, options)
       }
       auth.expireSession(generation)
     }
@@ -428,143 +427,6 @@ async function streamMessageViaFetch(
     if (manuallyAborted) return getContent()
     throw error
   }
-}
-/* #endif */
-
-async function streamMessage(
-  endpointPath: string,
-  conversationId: string,
-  body: Protocol1MessageCommand | { requestId: string },
-  onMessage: (content: string) => void,
-  retried = false,
-  expectedGeneration?: symbol,
-  options?: ChatWithAiOptions,
-): Promise<string> {
-  /* #ifdef H5 */
-  if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof fetch === 'function') {
-    return streamMessageViaFetch(endpointPath, conversationId, body, onMessage, retried, expectedGeneration, options)
-  }
-  /* #endif */
-
-  const auth = useAuthStore()
-  const generation = expectedGeneration ?? auth.getLoginGeneration()
-  const isCurrent = () => auth.getLoginGeneration() === generation
-  if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
-  const runtime = getRuntimeConfig()
-  return new Promise((resolve, reject) => {
-    let receivedChunk = false
-    let rawChunkText = ''
-    let settled = false
-    let manuallyAborted = false
-    const textDecoder = new TextDecoder('utf-8')
-    const appendRawChunk = (chunkText: string) => {
-      if (!chunkText || rawChunkText.length >= 65_536) return
-      rawChunkText += chunkText.slice(0, 65_536 - rawChunkText.length)
-    }
-    const { sse, getContent } = createChatStreamSession(
-      conversationId,
-      isCurrent,
-      () => manuallyAborted,
-      onMessage,
-      options,
-      (error) => {
-        if (settled) return
-        settled = true
-        reject(error)
-      },
-    )
-    const task = uni.request({
-      url: `${runtime.apiBaseUrl.replace(/\/+$/, '')}${endpointPath}`,
-      method: 'POST',
-      timeout: 330_000,
-      enableChunked: true,
-      header: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
-      },
-      data: body,
-      async success(response: any) {
-        if (settled || manuallyAborted) return
-        if (!isCurrent()) {
-          settled = true
-          reject(new Error('登录状态已变化，请重试。'))
-          return
-        }
-        if (response.statusCode === 401 && !retried) {
-          try {
-            const refreshed = await auth.refreshAccessToken()
-            if (manuallyAborted || settled) return
-            if (!isCurrent()) throw new Error('登录状态已变化，请重试。')
-            if (refreshed) {
-              settled = true
-              streamMessage(endpointPath, conversationId, body, onMessage, true, generation, options).then(resolve, reject)
-              return
-            }
-            auth.expireSession(generation)
-          } catch (error) {
-            if (manuallyAborted || settled) return
-            settled = true
-            reject(error)
-            return
-          }
-        }
-        const tail = textDecoder.decode()
-        appendRawChunk(tail)
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          settled = true
-          const headers = (response.header || {}) as Record<string, string>
-          const retryAfterKey = Object.keys(headers).find(k => k.toLowerCase() === 'retry-after')
-          reject(buildAiStreamError(
-            resolveErrorPayload(response.data, rawChunkText),
-            response.statusCode,
-            retryAfterKey ? headers[retryAfterKey] : undefined,
-          ))
-          return
-        }
-        if (receivedChunk) {
-          if (tail) sse.push(tail)
-        } else {
-          const full = decodeStreamChunk(response.data, textDecoder) + tail
-          if (full) sse.push(full)
-        }
-        sse.finish()
-        if (!settled) {
-          settled = true
-          resolve(getContent())
-        }
-      },
-      fail(error) {
-        if (settled) return
-        if (manuallyAborted) {
-          settled = true
-          resolve(getContent())
-          return
-        }
-        settled = true
-        reject(new Error(error.errMsg || 'Network Error'))
-      },
-    })
-    options?.onAbortReady?.(() => {
-      if (settled) return
-      manuallyAborted = true
-      settled = true
-      const abortable = task as typeof task & { abort?: () => void }
-      abortable.abort?.()
-      resolve(getContent())
-    })
-    const chunkedTask = task as typeof task & {
-      onChunkReceived?(handler: (response: { data: unknown }) => void): void
-    }
-    chunkedTask.onChunkReceived?.((response) => {
-      if (manuallyAborted) return
-      receivedChunk = true
-      const chunkText = decodeStreamChunk(response.data, textDecoder)
-      if (!chunkText) return
-      appendRawChunk(chunkText)
-      sse.push(chunkText)
-    })
-  })
 }
 
 export async function chatWithAI(

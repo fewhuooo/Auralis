@@ -6,35 +6,14 @@ export interface LocalUploadFile {
   name: string
   size: number
   mimeType: string
-  // #ifdef H5
   file?: File
-  // #endif
 }
 
 export type UploadProgressCallback = (percent: number, stage: string) => void
 
 async function readUploadFile(item: LocalUploadFile): Promise<ArrayBuffer> {
-  // #ifdef H5
   if (item.file) {
     return item.file.arrayBuffer()
-  }
-  // #endif
-
-  const fileSystemManager = (uni as unknown as {
-    getFileSystemManager?: () => {
-      readFile(options: {
-        filePath: string
-        success(result: { data: ArrayBuffer }): void
-        fail(error: unknown): void
-      }): void
-    }
-  }).getFileSystemManager?.()
-  if (fileSystemManager) {
-    return new Promise((resolve, reject) => fileSystemManager.readFile({
-      filePath: item.path,
-      success: result => resolve(result.data),
-      fail: reject,
-    }))
   }
   const response = await fetch(item.path)
   if (!response.ok) throw new Error('无法读取所选文件')
@@ -50,14 +29,13 @@ function sanitizeUploadHeaders(headers: Record<string, string>): Record<string, 
   return sanitized
 }
 
-function putFile(
+async function putFile(
   url: string,
   data: ArrayBuffer,
   headers: Record<string, string>,
   onProgress?: UploadProgressCallback,
 ): Promise<void> {
   const safeHeaders = sanitizeUploadHeaders(headers)
-  // #ifdef H5
   if (typeof XMLHttpRequest !== 'undefined') {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
@@ -84,24 +62,16 @@ function putFile(
       xhr.send(data)
     })
   }
-  // #endif
 
-  return new Promise((resolve, reject) => uni.request({
-    url,
+  const response = await fetch(url, {
     method: 'PUT',
-    data,
-    header: safeHeaders,
-    timeout: 300_000,
-    success(response) {
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        onProgress?.(75, '正在上传文件...')
-        resolve()
-        return
-      }
-      reject(new Error(`文件上传失败 (${response.statusCode})`))
-    },
-    fail: reject,
-  }))
+    headers: safeHeaders,
+    body: data,
+  })
+  if (!response.ok) {
+    throw new Error(`文件上传失败 (${response.status})`)
+  }
+  onProgress?.(75, '正在上传文件...')
 }
 
 export async function uploadAsset(
