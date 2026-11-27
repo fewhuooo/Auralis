@@ -3,10 +3,9 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig, loadEnv, type Plugin, type PluginOption, type UserConfig } from 'vite'
 
 function createAppTargetHtmlPlugin(target: 'phone' | 'tablet'): Plugin {
-  const viewportScale =
-    target === 'tablet'
-      ? 'initial-scale=0.85, maximum-scale=0.85, minimum-scale=0.85'
-      : 'initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'
+  // Android WebView (Chromium 110) blurs text under fractional initial-scale < 1;
+  // tablet compactness is driven purely by [data-app-target="tablet"] CSS tokens at 1.0 scale.
+  const viewportScale = 'initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'
   return {
     name: 'auralis-app-target-html',
     transformIndexHtml(html) {

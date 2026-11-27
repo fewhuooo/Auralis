@@ -171,7 +171,6 @@
 }
 
 :root[data-app-target='tablet'] {
-  --tablet-viewport-scale: 0.85;
   --text-2xs: 10px;
   --text-xs: 11px;
   --text-sm: 12.5px;

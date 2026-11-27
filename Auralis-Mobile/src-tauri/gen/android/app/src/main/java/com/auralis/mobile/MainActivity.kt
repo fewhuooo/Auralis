@@ -65,7 +65,6 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     webView.settings.useWideViewPort = true
-    webView.settings.loadWithOverviewMode = true
     webView.settings.textZoom = 100
     appWebView = webView
   }
