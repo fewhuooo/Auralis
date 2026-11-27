@@ -1,6 +1,6 @@
 # Auralis 部署指南
 
-更新时间：2026-11-15
+更新时间：2026-11-27
 
 文档状态：现行操作指南，生产演练边界见 current
 
@@ -17,7 +17,7 @@
 | 本地开发 | 本地 Node/Java 与 Compose 数据服务 |
 | PC Web | Vite 静态产物、反向代理与 Server |
 | PC Tauri | Web 前端、Rust/Tauri、OCR 资源与 Server |
-| Mobile H5 / 微信 | Uni-app 产物与可达的 HTTPS/WSS Server |
+| Mobile / Tablet (Android) | Tauri 2 双目标 Android APK（`Auralis` / `Auralis HD`）与可达的 HTTPS/WSS Server |
 | Compose 组合 | PostgreSQL/pgvector、MinIO、backend 与 PC Web frontend |
 
 下文命令是操作说明，不表示已经执行；启动、部署、重启、迁移和凭据变更须在已授权的目标环境进行。已有开发服务和应用进程不得擅自重启。
@@ -27,7 +27,7 @@
 - 确认目标提交、工作树、环境、负责人和回滚版本，保留未提交改动。
 - Node/npm 与前端 lockfile 匹配；后端 Java 21 与 Maven Wrapper 可用。
 - Docker Engine/Compose 可用；真实容器测试还需 Testcontainers 前置条件。
-- Tauri 具备 Rust/Cargo、目标系统依赖与 OCR 打包资源；微信具备开发者工具、AppID 和合法域名。
+- PC Tauri 具备 Rust/Cargo、目标系统依赖与 OCR 打包资源；Mobile/Tablet Android 构建另需 Android SDK/NDK（`NDK_HOME`）、Java 21、`aarch64-linux-android` Rust target 及发布密钥。
 - 明确域名、TLS、生产 secret、数据与密钥备份位置；迁移前确认恢复方案。
 
 ## 配置准备
@@ -101,11 +101,18 @@ Overview 当前走清理、大纲和 Markdown 总结，超出单请求容量时�
 | `Auralis-Server` | `.\mvnw.cmd -B -ntp test`；`.\mvnw.cmd -B -ntp -DskipTests package` | package 跳过测试时不能记为测试通过 |
 | `Auralis-PC` | `npm.cmd ci`；`npm.cmd run type-check`；`npm.cmd run build` | Web 产物不证明 Tauri/安装包验收 |
 | `Auralis-PC` | `npm.cmd run tauri dev`；按目标执行 Tauri build | 需系统 GUI、权限、SQL/文件/OCR 与安装升级验证 |
-| `Auralis-Mobile` | `npm.cmd ci`；`npm.cmd run build:h5`；`npm.cmd run build:mp-weixin` | 需微信工具与手机/平板真机验收 |
+| `Auralis-Mobile` | `npm.cmd ci`；`npm.cmd run build:phone`；`npm.cmd run build:tablet`；`..\scripts\build-mobile-release.ps1` | Debug / unsigned 包不证明物理真机与签名发行版验收 |
 
 Server 本地启动使用 Maven Wrapper 的 `spring-boot:run`，先配置实际 profile 与依赖服务。测试可能需要 PostgreSQL/MinIO 容器或 TLS fixture，缺少前置条件要记录实际失败/跳过范围，不能推断全量通过。
 
-PC Web 需要 SPA 回退、`/api` 代理、WebSocket Upgrade 和 SSE 透传。HTTPS 页面使用 WSS；检查部署链各层路由，不能仅凭示例 nginx 文件存在判断 `/ws/events` 已可达。Tauri 依据 PC 环境示例配置可达 API/WS 地址。Mobile 在真机上不能把 `localhost` 当宿主 Server；微信需合法域名、页面条件编译与平台权限。
+PC Web 需要 SPA 回退、`/api` 代理、WebSocket Upgrade 和 SSE 透传。HTTPS 页面使用 WSS；检查部署链各层路由，不能仅凭示例 nginx 文件存在判断 `/ws/events` 已可达。Tauri 依据 PC 环境示例配置可达 API/WS 地址。Android 手机/平板在真机与模拟器上不能把 `localhost` 当宿主 Server，调试明文测试 IP 须受 `network_security_config.xml` 约束，正式发行版须切换 HTTPS/WSS 并确认服务端 CORS 含 `http://tauri.localhost`。
+
+### Android 移动端打包与签名
+
+仓库根目录提供 `scripts/build-mobile-release.ps1`，统一构建竖屏手机（`com.auralis.mobile`）与横屏平板（`com.auralis.hd`）两个独立 APK，并在脚本执行前后自动备份并恢复 `Auralis-Mobile/.env.local`：
+
+- **本地调试 / 模拟器验证包（Debug + 可选明文 HTTP）**：传入 `-DebugBuild -AllowHttp` 指向局域网/测试服务端；不得作为对外发布产物。
+- **正式发行包（Release）**：必须使用 `https://` 与 `wss://` 地址并配置 Android 签名，通过环境变量 `AURALIS_ANDROID_KEYSTORE_PATH`、`AURALIS_ANDROID_KEYSTORE_PASSWORD`、`AURALIS_ANDROID_KEY_ALIAS`、`AURALIS_ANDROID_KEY_PASSWORD` 或未入库的 `Auralis-Mobile/src-tauri/gen/android/keystore.properties` 提供密钥（严禁将 keystore 或口令提交进 Git）；仅校验本地 Release 构建链时可显式附加 `-AllowUnsigned` 输出未签名 APK。
 
 ## 启动与更新 Compose
 

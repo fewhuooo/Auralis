@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-11-26
+更新时间：2026-11-27
 
 文档状态：现行
 
@@ -17,7 +17,6 @@
 | 已知问题与关闭条件 | [问题和审查](current/IssuesAndReview.md) |
 | 工作优先级与发布前门禁 | [路线规划与门禁](current/RoadmapAndGates.md) |
 | AI 链路与交互调优结论 | [AI 调优报告](current/AITuningReport.md) |
-| 移动端 Tauri 2 迁移 | [迁移方案](current/MobileTauriMigration.md) |
 | 修改前的规则与提交规范 | [AGENTS.md](../AGENTS.md)（硬性红线与纪律）· [编码前协议](agent/BeforeCoding.md)（矩阵、检查清单与交接模板） |
 | 配置、部署与恢复 | [部署指南](operations/Deployment.md) · [排障手册](operations/Runbook.md) |
 | 使用客户端 | [用户手册](project/UserManual.md) |
@@ -49,7 +48,7 @@
 | --- | --- | --- |
 | `agent/` | 必读/验证/回写矩阵、Git 提交清单与证据/交接模板（硬性红线见根目录 `AGENTS.md`） | [BeforeCoding.md](agent/BeforeCoding.md) |
 | `project/` | 项目定位、产品需求、系统架构、前端设计与用户手册 | [Overview](project/Overview.md) · [ProductRequirements](project/ProductRequirements.md) · [Architecture](project/Architecture.md) · [FrontendDesign](project/FrontendDesign.md) · [UserManual](project/UserManual.md) |
-| `current/` | 当前状态、开放问题、工作优先级、领域收口清单、R0–R6 门禁、AI 调优总结与移动端迁移方案 | [Status](current/Status.md) · [IssuesAndReview](current/IssuesAndReview.md) · [RoadmapAndGates](current/RoadmapAndGates.md) · [AITuningReport](current/AITuningReport.md) · [MobileTauriMigration](current/MobileTauriMigration.md) |
+| `current/` | 当前状态、开放问题、工作优先级、领域收口清单、R0–R6 门禁与 AI 调优总结 | [Status](current/Status.md) · [IssuesAndReview](current/IssuesAndReview.md) · [RoadmapAndGates](current/RoadmapAndGates.md) · [AITuningReport](current/AITuningReport.md) |
 | `modules/` | 各端与后端模块的实现结构、页面/API 边界、命令与限制 | [FrontendPC](modules/FrontendPC.md) · [FrontendMobileTablet](modules/FrontendMobileTablet.md) · [Backend](modules/Backend.md) · [Infrastructure](modules/Infrastructure.md) |
 | `contracts/` | HTTP/SSE/Sync/Realtime 接口、Chat Runtime 与双端数据契约 | [API](contracts/API.md) · [chat-runtime-api](contracts/chat-runtime-api.md) · [Database](contracts/Database.md) |
 | `operations/` | 可重复执行的部署、诊断、恢复、种子准备与已发生变更记录 | [Deployment](operations/Deployment.md) · [Runbook](operations/Runbook.md) · [TestAccountDataResetAndSeed](operations/TestAccountDataResetAndSeed.md) · [Changelog](operations/Changelog.md) |

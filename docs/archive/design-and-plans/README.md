@@ -3,7 +3,7 @@
 
 # Auralis 历史设计与实施方案归档索引
 
-更新时间：2026-11-16
+更新时间：2026-11-27
 
 文档状态：历史归档索引
 
@@ -106,6 +106,7 @@
 
 ### 实施方案
 
+- [移动端 Uni-app 迁移至 Vue 3 + Vite + Tauri 2 实施方案（2026-11-26 建立，2026-11-27 完成归档）](plans/frontend/2026-11-26-mobile-tauri-migration.md)
 - [PC 时间轴放置与交换修复实施计划（2026-10-07）](plans/frontend/2026-10-07-timeline-placement-and-swap-fixes.md)
 - [PC 时间轴日期与拖放修复实施计划（2026-10-06）](plans/frontend/2026-10-06-timeline-date-and-drag-fixes.md)
 - [PC 学习数据清理、专注统计与 Overview 同步实施计划（2026-10-01）](plans/frontend/2026-10-01-pc-learning-data-cleanup-and-sync.md)

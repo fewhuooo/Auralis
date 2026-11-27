@@ -1,14 +1,17 @@
+> [!NOTE]
+> 本方案已于 **2026-11-27** 完成阶段 0～5 全部迁移并在本地合并入 `main`（原实施分支 `feat/mobile-tauri-migration` 已收口）。现行移动端架构、命令与限制请以 [Mobile / Tablet 模块](../../../../modules/FrontendMobileTablet.md)、[当前状态](../../../../current/Status.md) 与 [问题和审查](../../../../current/IssuesAndReview.md) 为准。
+
 # Auralis 移动端 Tauri 2 迁移方案
 
-更新时间：2026-11-26
+更新时间：2026-11-27
 
-文档状态：现行迁移方案（计划中，阶段 0 PoC 尚未开始）
+文档状态：历史归档方案（阶段 0～5 已完成）
 
 权威范围：移动端从 Uni-app 迁移到 Vue 3 + Vite + Tauri 2 的范围决策、目标架构、实施阶段、PoC 检查项、风险与文档回写清单
 
 事实来源：`main` `c5b0678` 的 `Auralis-Mobile` 源码统计、`Auralis-PC` 现行 Tauri 配置，以及 2026-11-26 用户确认的范围决策
 
-实施分支为 `feat/mobile-tauri-migration`（工作树 `D:/CodeBase/Active/Auralis-mobile-tauri`），统计口径为 `main` 上的 `Auralis-Mobile/src`（133 个文件、56,570 行）。本文是迁移期间的执行依据；迁移完成后，实现细节并入 [Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)，本文移入 `archive/design-and-plans/`。在迁移完成并回写前，[Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)仍描述现行 Uni-app 实现。
+原实施分支为 `feat/mobile-tauri-migration`（迁移期间临时工作树 `D:/CodeBase/Active/Auralis-mobile-tauri`），统计口径为迁移前 `main` 上的 `Auralis-Mobile/src`（133 个文件、56,570 行）。迁移已完成并完成文档回写，现行实现细节已并入 [Mobile / Tablet 模块](../../../../modules/FrontendMobileTablet.md)。
 
 ## 1. 决策与范围
 
@@ -145,13 +148,13 @@ Auralis-Mobile/
 
 ## 7. 文档回写清单（阶段 5）
 
-- [modules/FrontendMobileTablet.md](../modules/FrontendMobileTablet.md)：全文重写（技术栈、目录、路由、平台层、存储、构建命令、限制、"不迁移旧数据"的说明）。
-- [project/ProductRequirements.md](../project/ProductRequirements.md)：约第 288 / 302 / 321 行的目标端（去掉微信小程序和 Mobile H5，改为 Android 手机 / 平板 App）。
-- [project/Architecture.md](../project/Architecture.md)：约第 29 行及结构图。
-- [current/RoadmapAndGates.md](RoadmapAndGates.md)：约第 27、96～106 行，R4-04 / R4-05 / R4-06 / R5-06。
-- [Status.md](Status.md)、[IssuesAndReview.md](IssuesAndReview.md)、[operations/Deployment.md](../operations/Deployment.md)（移动端打包与签名）、[operations/Changelog.md](../operations/Changelog.md)。
-- [project/FrontendDesign.md](../project/FrontendDesign.md)：如交互有变化再更新。
-- 本文：迁移完成后移入 `archive/design-and-plans/`，并从 [文档中心](../README.md) 与 [编码前协议](../agent/BeforeCoding.md) 移除登记。
+- [modules/FrontendMobileTablet.md](../../../../modules/FrontendMobileTablet.md)：全文重写（技术栈、目录、路由、平台层、存储、构建命令、限制、"不迁移旧数据"的说明）。
+- [project/ProductRequirements.md](../../../../project/ProductRequirements.md)：约第 288 / 302 / 321 行的目标端（去掉微信小程序和 Mobile H5，改为 Android 手机 / 平板 App）。
+- [project/Architecture.md](../../../../project/Architecture.md)：约第 29 行及结构图。
+- [current/RoadmapAndGates.md](../../../../current/RoadmapAndGates.md)：约第 27、96～106 行，R4-04 / R4-05 / R4-06 / R5-06。
+- [Status.md](../../../../current/Status.md)、[IssuesAndReview.md](../../../../current/IssuesAndReview.md)、[operations/Deployment.md](../../../../operations/Deployment.md)（移动端打包与签名）、[operations/Changelog.md](../../../../operations/Changelog.md)。
+- [project/FrontendDesign.md](../../../../project/FrontendDesign.md)：如交互有变化再更新。
+- 本文：迁移完成后移入 `archive/design-and-plans/`，并从 [文档中心](../../../../README.md) 与 [编码前协议](../../../../agent/BeforeCoding.md) 移除登记。
 
 ## 8. 需要停下重新决策的情况
 

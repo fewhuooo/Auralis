@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### 2026-11-27 移动端 Tauri 2 迁移收口与原 Uni-app 版本归档
+
+- **Tauri 2 Android 双独立应用迁移完成（阶段 0～5）**：将 `Auralis-Mobile` 从 Uni-app 原地重构为 Vue 3.5 + Vite 8 + Pinia 3 + vue-router 4 + Tauri 2，按 `VITE_APP_TARGET` 拆分为竖屏手机 **Auralis**（`com.auralis.mobile`）与横屏平板 **Auralis HD**（`com.auralis.hd`）两个独立 Android APK；移除 `pages/launch`、全部 `@dcloudio/*`、`uni.*`/`plus.*`、条件编译注释、微信小程序与 Mobile H5；接入 `src/platform/` 原生/WebView 适配层、`tauri-plugin-sql` 真 SQLite（测试接入 Node 24 `node:sqlite`）、`MainActivity.kt` 全面屏 `WindowInsets`/返回键/生命周期桥接，以及 `scripts/build-mobile-release.ps1` 双目标编译与签名脚本。
+- **MuMu 15 实机比例、触控动效与清晰度修复**：清理桌面端以外的 `440px` 手机窄框约束；将共享组件（`StudyMetrics`、`ZenTaskRow`、`ZenWeekStrip`）中的 `:global()` 错误选择器替换为 `.is-tablet-target` 根类名解决平板视口 `28px` 截断；新增 `src/platform/touchFeedback.ts` 委托指针按压动效与登录滑块切换动画；将平板视口恢复为原生 `initial-scale=1.0`（保留 `data-app-target="tablet"` 紧凑令牌），消除 Android WebView Chromium 110 分数倍重采样文字模糊。
+- **验证与归档边界**：最终代码 `3dc3285` 通过 `vue-tsc -b`、`check:r4-mobile`（138 文件）、`test:r4-mobile`（152/152）、`test:tablet`、`check-tablet-sidebar-transition.mjs`、双端 Vite 与 Debug / Release-unsigned APK 构建，并在 MuMu 15（Android 15）验证手机全宽登录切换与平板清晰比例；原 Uni-app 版本完整快照已归档至 `D:\CodeBase\Archive\Auralis-Mobile-uniapp-20261127\` 及 Git 标签 `archive/mobile-uniapp-20261127`。详细范围与未关闭真机门禁见[Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)与[当前状态](../current/Status.md)。
+
 ### 2026-11-25 平板端本地持久化、端到端 UX 与 PC 工作区对齐收口
 
 - **平板本地持久化与端到端链路修复**：完成平板工作区 `@file-viewer/core` 原地文档预览与 H5 IndexedDB 二进制缓存（`localDocumentCache`），`source_files`、`ai_overview_cache`、`review_states_cache` 与 `subject_stats_cache` 均按作用域先读后刷并支持跨账号切换清理与离线创建/编辑保真；修复后端 AI `test-connection` 0ms 超时、SiliconFlow Provider 与跨 BYOK 槽位按更新序解析、CORS 通配符匹配，以及前端排期防覆盖、Focus Outbox 404 延后重试、WebSocket `OVERVIEW_UPDATED` 实时刷新、错误提示中文化、登录路由守卫、AI 409 版本刷新与冷启动防闪烁。

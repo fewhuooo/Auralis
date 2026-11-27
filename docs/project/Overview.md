@@ -1,6 +1,6 @@
 # Auralis 项目总览
 
-更新时间：2026-11-15
+更新时间：2026-11-27
 
 文档状态：现行
 
@@ -29,10 +29,12 @@ Auralis/
 │   ├── ocr-sidecar/                  # OCR sidecar 源码与打包输入
 │   ├── public/                       # Web 静态资源
 │   └── scripts/                      # PC 检查、回归、OCR 与打包工具
-├── Auralis-Mobile/                   # Uni-app 手机 / 平板应用
-│   ├── src/                          # 共享组件、Store、API、端侧服务与资源
-│   │   └── pages/                    # mobile、tablet 与启动分流页面
-│   └── scripts/                      # Mobile 协议与构建相关检查
+├── Auralis-Mobile/                   # Vue 3 + Vite + Tauri 2 Android 手机 / 平板应用
+│   ├── src/                          # 共享组件、平台适配、Store、API、端侧服务与资源
+│   │   ├── router/                   # phone.ts / tablet.ts 按编译目标裁剪双端路由
+│   │   └── pages/                    # mobile 与 tablet 页面（各端独立打包）
+│   ├── src-tauri/                    # Tauri 2 / Rust 插件宿主与 Android 原生工程
+│   └── scripts/                      # Mobile 静态检查、单元测试与 Android 构建脚本
 ├── Auralis-Server/                   # Spring Boot 后端
 │   ├── src/main/java/                # com.auralis.app 领域模块
 │   ├── src/main/resources/           # 应用配置、数据库迁移与资源
@@ -76,10 +78,10 @@ Git worktree 位置以 `git worktree list` 为准。已登记 worktree 使用 Gi
 | 领域 | 当前技术 | 权威入口 |
 | --- | --- | --- |
 | PC | Vue 3、Vite、TypeScript、Pinia、Element Plus、Tauri 2 | [PC 模块](../modules/FrontendPC.md)及 `Auralis-PC/package.json` / Cargo 配置 |
-| Mobile / Tablet | Uni-app、Vue、Pinia、TypeScript | [Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)及 `Auralis-Mobile/package.json` |
+| Mobile / Tablet | Vue 3、Vite、TypeScript、Pinia、vue-router、Tauri 2（Android 双独立包） | [Mobile / Tablet 模块](../modules/FrontendMobileTablet.md)及 `Auralis-Mobile/package.json` / `src-tauri/` |
 | Server | Java 21、Spring Boot 4.1、Spring Modulith、Spring Data JPA、Flyway | [后端模块](../modules/Backend.md)及 `Auralis-Server/pom.xml` |
 | 数据与资产 | PostgreSQL / pgvector、MinIO、端侧 SQLite / Storage | [基础设施](../modules/Infrastructure.md)、[数据库契约](../contracts/Database.md) |
-| 交付 | Docker Compose、PC Web / Tauri、H5、微信小程序 | [部署指南](../operations/Deployment.md) |
+| 交付 | Docker Compose、PC Tauri、Android 手机/平板 APK（Auralis / Auralis HD） | [部署指南](../operations/Deployment.md) |
 
 开发和验证命令由各模块文档维护。前端使用各自 lockfile，后端使用仓库 Maven Wrapper；配置与基础服务启动步骤遵循部署指南。基础 Compose 服务为 `db`、`minio`、`minio-init`、`backend`、`frontend`。
 
